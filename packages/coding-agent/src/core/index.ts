@@ -43,6 +43,7 @@ export {
 	defineTool,
 	discoverAndLoadExtensions,
 	type ExecOptions,
+	type ExecOutputTruncation,
 	type ExecResult,
 	type Extension,
 	type ExtensionAPI,

@@ -1612,12 +1612,33 @@ if (pi.getFlag("plan")) {
 
 ### pi.exec(command, args, options?)
 
-Execute a shell command.
+Execute a command without a shell.
 
 ```typescript
 const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 // result.stdout, result.stderr, result.code, result.killed
 ```
+
+`stdout` and `stderr` contain the complete output while each stream stays within the retained-output limit. Use `maxOutputBytes` to set the returned rolling-tail limit per stream. The default is 4 MiB, and values cannot exceed the 16 MiB hard ceiling. Non-positive, fractional, infinite, or otherwise invalid values use the default.
+
+Output above the retained limit is a behavioral change for large-output consumers: `stdout` or `stderr` becomes a UTF-8-safe rolling tail and the corresponding `stdoutTruncation` or `stderrTruncation` field is present. This is source-compatible because the fields are optional, but code that assumes arbitrarily large complete output must handle truncation metadata or redirect the command's output to an explicit file.
+
+Each truncation object contains:
+
+- `truncated: true`
+- `totalBytes`: total raw bytes observed on that stream
+- `retainedBytes`: raw tail bytes represented by the returned string
+- `retainedLimitBytes`: effective tail limit after defaulting and clamping
+- `spillLimitBytes`: maximum bytes that may be persisted for the stream (64 MiB)
+- `spill`: optional `{ path, bytes, complete }` metadata for a securely created (`0o600`) spill file
+- `discardedBytes`: bytes absent from the spill file (the returned tail may overlap these bytes)
+- `spillError`: optional file creation or write error; failed partial spill files are removed automatically
+
+A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them.
+
+Retained-output overflow, the spill cap, and spill backpressure do not kill the child (unlike Node's `maxBuffer` behavior). `killed` is true only when Pi sent a termination signal because of a timeout, abort, or internal collector failure. An unexpected collector or finalization failure is reported as `internalError` and forces `code` to `1`. Invalid arguments rejected synchronously by `spawn()` reject the `pi.exec()` promise, while a child-process launch error such as `ENOENT` resolves with `code: 1`.
+
+Commands that require complete output larger than these bounds should redirect output to a caller-managed file rather than raising `maxOutputBytes`. Registered tools must still apply their own LLM-context limits described in [Output Truncation](#output-truncation); `pi.exec()` bounds process capture, not tool-result context.
 
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 

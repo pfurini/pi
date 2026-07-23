@@ -56,6 +56,7 @@ export type {
 	EntryRenderer,
 	EntryRenderOptions,
 	ExecOptions,
+	ExecOutputTruncation,
 	ExecResult,
 	Extension,
 	ExtensionActions,

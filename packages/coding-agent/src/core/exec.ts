@@ -4,6 +4,14 @@
 
 import { spawn } from "node:child_process";
 import { waitForChildProcess } from "../utils/child-process.ts";
+import {
+	DEFAULT_EXEC_RETAINED_BYTES,
+	ExecOutputCollector,
+	type ExecOutputTruncation,
+	HARD_EXEC_RETAINED_BYTES,
+} from "./exec-output.ts";
+
+export type { ExecOutputTruncation } from "./exec-output.ts";
 
 /**
  * Options for executing shell commands.
@@ -15,16 +23,25 @@ export interface ExecOptions {
 	timeout?: number;
 	/** Working directory */
 	cwd?: string;
+	/** Rolling tail retained per stdout/stderr stream. Default 4 MiB; hard ceiling 16 MiB. */
+	maxOutputBytes?: number;
 }
 
 /**
  * Result of executing a shell command.
  */
 export interface ExecResult {
+	/** Full output below the retained limit, otherwise a UTF-8-safe rolling tail. */
 	stdout: string;
+	/** Full output below the retained limit, otherwise a UTF-8-safe rolling tail. */
 	stderr: string;
 	code: number;
+	/** Pi sent a termination signal (timeout, abort, or internal collector failure). */
 	killed: boolean;
+	stdoutTruncation?: ExecOutputTruncation;
+	stderrTruncation?: ExecOutputTruncation;
+	/** Unexpected collector/finalization failure. Normal truncation and spill limits are not errors. */
+	internalError?: string;
 }
 
 /**
@@ -37,71 +54,114 @@ export async function execCommand(
 	cwd: string,
 	options?: ExecOptions,
 ): Promise<ExecResult> {
-	return new Promise((resolve) => {
-		const proc = spawn(command, args, {
-			cwd,
-			shell: false,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-
-		let stdout = "";
-		let stderr = "";
-		let killed = false;
-		let timeoutId: NodeJS.Timeout | undefined;
-
-		const killProcess = () => {
-			if (!killed) {
-				killed = true;
-				proc.kill("SIGTERM");
-				// Force kill after 5 seconds if SIGTERM doesn't work
-				setTimeout(() => {
-					if (!proc.killed) {
-						proc.kill("SIGKILL");
-					}
-				}, 5000);
-			}
-		};
-
-		// Handle abort signal
-		if (options?.signal) {
-			if (options.signal.aborted) {
-				killProcess();
-			} else {
-				options.signal.addEventListener("abort", killProcess, { once: true });
-			}
-		}
-
-		// Handle timeout
-		if (options?.timeout && options.timeout > 0) {
-			timeoutId = setTimeout(() => {
-				killProcess();
-			}, options.timeout);
-		}
-
-		proc.stdout?.on("data", (data) => {
-			stdout += data.toString();
-		});
-
-		proc.stderr?.on("data", (data) => {
-			stderr += data.toString();
-		});
-
-		// Wait for process termination without hanging on inherited stdio handles
-		// held open by detached descendants.
-		waitForChildProcess(proc)
-			.then((code) => {
-				if (timeoutId) clearTimeout(timeoutId);
-				if (options?.signal) {
-					options.signal.removeEventListener("abort", killProcess);
-				}
-				resolve({ stdout, stderr, code: code ?? 0, killed });
-			})
-			.catch((_err) => {
-				if (timeoutId) clearTimeout(timeoutId);
-				if (options?.signal) {
-					options.signal.removeEventListener("abort", killProcess);
-				}
-				resolve({ stdout, stderr, code: 1, killed });
-			});
+	const requestedRetainedBytes = options?.maxOutputBytes;
+	const retainedLimitBytes =
+		requestedRetainedBytes !== undefined && Number.isSafeInteger(requestedRetainedBytes) && requestedRetainedBytes > 0
+			? Math.min(requestedRetainedBytes, HARD_EXEC_RETAINED_BYTES)
+			: DEFAULT_EXEC_RETAINED_BYTES;
+	const stdoutCollector = new ExecOutputCollector({
+		retainedLimitBytes,
+		tempFilePrefix: "pi-exec-stdout",
 	});
+	const stderrCollector = new ExecOutputCollector({
+		retainedLimitBytes,
+		tempFilePrefix: "pi-exec-stderr",
+	});
+
+	const proc = spawn(command, args, {
+		cwd,
+		shell: false,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	const forceWaitController = new AbortController();
+	let killed = false;
+	let acceptingOutput = true;
+	let internalError: string | undefined;
+	let timeoutId: NodeJS.Timeout | undefined;
+	let escalationId: NodeJS.Timeout | undefined;
+
+	const recordInternalError = (error: unknown): void => {
+		internalError ??= error instanceof Error ? error.message : String(error);
+	};
+	const terminate = (): void => {
+		if (killed) return;
+		killed = true;
+		try {
+			proc.kill("SIGTERM");
+		} catch (error) {
+			recordInternalError(error);
+		}
+		escalationId = setTimeout(() => {
+			try {
+				if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+			} catch (error) {
+				recordInternalError(error);
+			} finally {
+				forceWaitController.abort();
+			}
+		}, 5000);
+	};
+	const handleCollectorFailure = (error: unknown): void => {
+		recordInternalError(error);
+		acceptingOutput = false;
+		terminate();
+	};
+	const onStdout = (data: Buffer): void => {
+		if (!acceptingOutput) return;
+		try {
+			stdoutCollector.append(data);
+		} catch (error) {
+			handleCollectorFailure(error);
+		}
+	};
+	const onStderr = (data: Buffer): void => {
+		if (!acceptingOutput) return;
+		try {
+			stderrCollector.append(data);
+		} catch (error) {
+			handleCollectorFailure(error);
+		}
+	};
+
+	proc.stdout?.on("data", onStdout);
+	proc.stderr?.on("data", onStderr);
+	const waitPromise = waitForChildProcess(proc, { forceSignal: forceWaitController.signal });
+	const callerSignal = options?.signal;
+	if (callerSignal?.aborted) {
+		terminate();
+	} else {
+		callerSignal?.addEventListener("abort", terminate, { once: true });
+	}
+	if (options?.timeout && options.timeout > 0) timeoutId = setTimeout(terminate, options.timeout);
+
+	let code: number;
+	try {
+		try {
+			code = (await waitPromise) ?? 0;
+		} catch {
+			code = 1;
+		}
+	} finally {
+		acceptingOutput = false;
+		proc.stdout?.removeListener("data", onStdout);
+		proc.stderr?.removeListener("data", onStderr);
+		callerSignal?.removeEventListener("abort", terminate);
+		if (timeoutId) clearTimeout(timeoutId);
+		if (escalationId) clearTimeout(escalationId);
+	}
+
+	const [stdoutSnapshot, stderrSnapshot] = await Promise.all([stdoutCollector.finish(), stderrCollector.finish()]);
+	if (stdoutSnapshot.internalError) recordInternalError(stdoutSnapshot.internalError);
+	if (stderrSnapshot.internalError) recordInternalError(stderrSnapshot.internalError);
+	if (internalError) code = 1;
+
+	return {
+		stdout: stdoutSnapshot.text,
+		stderr: stderrSnapshot.text,
+		code,
+		killed,
+		...(stdoutSnapshot.truncation ? { stdoutTruncation: stdoutSnapshot.truncation } : {}),
+		...(stderrSnapshot.truncation ? { stderrTruncation: stderrSnapshot.truncation } : {}),
+		...(internalError ? { internalError } : {}),
+	};
 }

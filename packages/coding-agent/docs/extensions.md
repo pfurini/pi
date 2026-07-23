@@ -468,6 +468,7 @@ pi.on("session_before_compact", async (event, ctx) => {
       summary: "...",
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
+      // usage: summaryResponse.usage, // Optional; included in session totals
     }
   };
 });
@@ -489,7 +490,13 @@ pi.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
   return { cancel: true };
   // OR provide custom summary:
-  return { summary: { summary: "...", details: {} } };
+  return {
+    summary: {
+      summary: "...",
+      // usage: summaryResponse.usage, // Optional; included in session totals
+      details: {},
+    },
+  };
 });
 
 pi.on("session_tree", async (event, ctx) => {
@@ -813,7 +820,7 @@ In parallel tool mode, `tool_result` and `tool_execution_end` may interleave in 
 `tool_result` handlers chain like middleware:
 - Handlers run in extension load order
 - Each handler sees the latest result after previous handler changes
-- Handlers can return partial patches (`content`, `details`, or `isError`); omitted fields keep their current values
+- Handlers can return partial patches (`content`, `details`, `isError`, or `usage`); omitted fields keep their current values
 
 Use `ctx.signal` for nested async work inside the handler. This lets Esc cancel model calls, `fetch()`, and other abort-aware operations started by the extension.
 
@@ -822,7 +829,7 @@ import { isBashToolResult } from "@earendil-works/pi-coding-agent";
 
 pi.on("tool_result", async (event, ctx) => {
   // event.toolName, event.toolCallId, event.input
-  // event.content, event.details, event.isError
+  // event.content, event.details, event.isError, event.usage
 
   if (isBashToolResult(event)) {
     // event.details is typed as BashToolDetails
@@ -835,7 +842,7 @@ pi.on("tool_result", async (event, ctx) => {
   });
 
   // Modify result:
-  return { content: [...], details: {...}, isError: false };
+  return { content: [...], details: {...}, isError: false, usage: nestedModelUsage };
 });
 ```
 
@@ -975,9 +982,9 @@ ctx.sessionManager.buildContextEntries()    // Active branch entries with compac
 ctx.sessionManager.getLeafId()              // Current leaf entry ID
 ```
 
-### ctx.modelRegistry / ctx.model
+### ctx.modelRegistry / ctx.model / ctx.thinkingLevel
 
-Access to models, providers, and resolved authentication. `ctx.modelRegistry.getProvider(id)` returns the effective pi-ai provider, while `getProviderAuth(id)` resolves its current API key, headers, base URL, and provider-scoped environment without requiring a loaded model. `ctx.model` is the active model.
+Access to models, providers, and resolved authentication. `ctx.modelRegistry.getProvider(id)` returns the effective pi-ai provider, while `getProviderAuth(id)` resolves its current API key, headers, base URL, and provider-scoped environment without requiring a loaded model. `ctx.model` is the active model, and `ctx.thinkingLevel` is its current effective thinking level.
 
 ### ctx.signal
 
@@ -1605,12 +1612,33 @@ if (pi.getFlag("plan")) {
 
 ### pi.exec(command, args, options?)
 
-Execute a shell command.
+Execute a command without a shell.
 
 ```typescript
 const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 // result.stdout, result.stderr, result.code, result.killed
 ```
+
+`stdout` and `stderr` contain the complete output while each stream stays within the retained-output limit. Use `maxOutputBytes` to set the returned rolling-tail limit per stream. The default is 4 MiB, and values cannot exceed the 16 MiB hard ceiling. Non-positive, fractional, infinite, or otherwise invalid values use the default.
+
+Output above the retained limit is a behavioral change for large-output consumers: `stdout` or `stderr` becomes a UTF-8-safe rolling tail and the corresponding `stdoutTruncation` or `stderrTruncation` field is present. This is source-compatible because the fields are optional, but code that assumes arbitrarily large complete output must handle truncation metadata or redirect the command's output to an explicit file.
+
+Each truncation object contains:
+
+- `truncated: true`
+- `totalBytes`: total raw bytes observed on that stream
+- `retainedBytes`: raw tail bytes represented by the returned string
+- `retainedLimitBytes`: effective tail limit after defaulting and clamping
+- `spillLimitBytes`: maximum bytes that may be persisted for the stream (64 MiB)
+- `spill`: optional `{ path, bytes, complete }` metadata for a securely created (`0o600`) spill file
+- `discardedBytes`: bytes absent from the spill file (the returned tail may overlap these bytes)
+- `spillError`: optional file creation or write error; failed partial spill files are removed automatically
+
+A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them.
+
+Retained-output overflow, the spill cap, and spill backpressure do not kill the child (unlike Node's `maxBuffer` behavior). `killed` is true only when Pi sent a termination signal because of a timeout, abort, or internal collector failure. An unexpected collector or finalization failure is reported as `internalError` and forces `code` to `1`. Invalid arguments rejected synchronously by `spawn()` reject the `pi.exec()` promise, while a child-process launch error such as `ENOENT` resolves with `code: 1`.
+
+Commands that require complete output larger than these bounds should redirect output to a caller-managed file rather than raising `maxOutputBytes`. Registered tools must still apply their own LLM-context limits described in [Output Truncation](#output-truncation); `pi.exec()` bounds process capture, not tool-result context.
 
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 
@@ -1932,6 +1960,7 @@ pi.registerTool({
     return {
       content: [{ type: "text", text: "Done" }],  // Sent to LLM
       details: { data: result },                   // For rendering & state
+      // usage: nestedModelResponse.usage,          // Optional nested LLM usage
       // Optional: stop after this tool batch when every finalized tool result
       // in the batch also returns terminate: true.
       terminate: true,
@@ -1943,6 +1972,8 @@ pi.registerTool({
   renderResult(result, options, theme, context) { ... },
 });
 ```
+
+**Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Pi persists it on the tool result and includes it in footer, `/session`, and RPC session totals. `tool_result` handlers can inspect or replace this value.
 
 **Signaling errors:** To mark a tool execution as failed (sets `isError: true` on the result and reports it to the LLM), throw an error from `execute`. Returning a value never sets the error flag regardless of what properties you include in the return object.
 
@@ -2086,7 +2117,15 @@ const bashTool = createBashTool(cwd, {
 });
 ```
 
-See [examples/extensions/ssh.ts](../examples/extensions/ssh.ts) for a complete SSH example with `--ssh` flag.
+`createBashTool()` exposes the current session to commands through `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL`. Injection happens before `spawnHook`, so hooks receive these values in `env` and preserve them when they spread the existing environment as above. Set `exposeSessionEnvironment: false` to disable them:
+
+```typescript
+const bashTool = createBashTool(cwd, {
+  exposeSessionEnvironment: false,
+});
+```
+
+See [Bash tool session environment](environment-variables.md#bash-tool-session-environment) for variable semantics. See [examples/extensions/ssh.ts](../examples/extensions/ssh.ts) for a complete SSH example with `--ssh` flag.
 
 ### Output Truncation
 

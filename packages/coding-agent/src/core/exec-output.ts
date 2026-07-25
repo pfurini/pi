@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { createWriteStream, unlinkSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Writable } from "node:stream";
+import { forgetTempFile, registerTempFile } from "./temp-file-registry.ts";
 import { formatSize } from "./tools/truncate.ts";
 
 export const DEFAULT_EXEC_RETAINED_BYTES = 4 * 1024 * 1024;
@@ -94,31 +95,6 @@ export interface ExecOutputCollectorOptions {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Spill files outlive `execCommand()` on purpose (the caller may still want to read them), so we
- * track the exact paths we created and unlink them when the process exits. Only paths this process
- * created are ever removed, never a tmpdir glob, so a concurrent pi process keeps its live files.
- * An abnormal termination (SIGKILL, power loss) still leaves them behind.
- */
-const activeSpillPaths = new Set<string>();
-let spillExitCleanupRegistered = false;
-
-function registerSpillPath(path: string): void {
-	activeSpillPaths.add(path);
-	if (spillExitCleanupRegistered) return;
-	spillExitCleanupRegistered = true;
-	process.on("exit", () => {
-		for (const spillPath of activeSpillPaths) {
-			try {
-				unlinkSync(spillPath);
-			} catch {
-				// Best effort: the file may already be gone, or the caller may have moved it.
-			}
-		}
-		activeSpillPaths.clear();
-	});
 }
 
 function normalizeRetainedLimit(value: number): number {
@@ -222,7 +198,7 @@ export class ExecOutputCollector {
 				highWaterMark: EXEC_SPILL_HIGH_WATER_MARK_BYTES,
 			});
 			this.spillWriter = writer;
-			registerSpillPath(path);
+			registerTempFile(path);
 			this.writerSettled = new Promise<void>((resolve) => {
 				this.resolveWriterSettled = resolve;
 			});
@@ -274,7 +250,7 @@ export class ExecOutputCollector {
 		if (!path) return;
 		try {
 			await rm(path, { force: true });
-			activeSpillPaths.delete(path);
+			forgetTempFile(path);
 		} catch (error) {
 			this.noteSpillCleanupFailure(error);
 		}

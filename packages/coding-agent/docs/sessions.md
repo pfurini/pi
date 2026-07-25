@@ -21,9 +21,9 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 
 ## Prompt History
 
-Up/Down in the editor recalls previously submitted prompts. By default this is session-local: only prompts from the current session are recallable, capped at 100 entries.
+Up/Down in the editor recalls previously submitted prompts. By default this is session-local: only prompts from the current session are recallable, capped at 100 entries. Recall covers every prompt the session recorded, including ones on branches you have navigated away from and ones a `/compact` has dropped from the model's context.
 
-Set `promptHistory.scope: "project"` in [Settings](settings.md) to recall prompts from every saved session with the same working directory, not just the current one, including prompts from old sessions and abandoned branches. Combine with `promptHistory.maxEntries: 0` for unlimited recall:
+Set `promptHistory.scope: "project"` in [Settings](settings.md) to recall prompts from every saved session with the same working directory, not just the current one. Combine with `promptHistory.maxEntries: 0` for unlimited recall:
 
 ```json
 {

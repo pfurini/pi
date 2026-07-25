@@ -1632,9 +1632,9 @@ Each truncation object contains:
 - `spillLimitBytes`: maximum bytes that may be persisted for the stream (64 MiB)
 - `spill`: optional `{ path, bytes, complete }` metadata for a securely created (`0o600`) spill file
 - `discardedBytes`: bytes absent from the spill file (the returned tail may overlap these bytes)
-- `spillError`: optional file creation or write error; failed partial spill files are removed automatically
+- `spillError`: optional file creation or write error; failed partial spill files are removed automatically, and a failure to remove one is appended to this message rather than reported as `internalError`
 
-A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them.
+A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them. As a backstop, pi unlinks the spill files it created when the process exits normally, so a long session cannot accumulate them indefinitely. Read or copy a spill file before pi exits, and expect leftovers after an abnormal termination such as `SIGKILL`.
 
 Retained-output overflow, the spill cap, and spill backpressure do not kill the child (unlike Node's `maxBuffer` behavior). `killed` is true only when Pi sent a termination signal because of a timeout, abort, or internal collector failure. An unexpected collector or finalization failure is reported as `internalError` and forces `code` to `1`. Invalid arguments rejected synchronously by `spawn()` reject the `pi.exec()` promise, while a child-process launch error such as `ENOENT` resolves with `code: 1`.
 

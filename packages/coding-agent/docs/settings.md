@@ -72,14 +72,14 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 `promptHistory` controls only the editor's Up/Down recall list in memory. It is independent from:
 
-- **Saved session transcripts** — the JSONL files under the session directory, which are never read, deleted, truncated, or rewritten by this setting.
-- **LLM context compaction** — which prompts stay in the model's context window. `promptHistory` can recall prompts that compaction has already dropped from context, since it reads persisted `message` entries directly rather than the compaction-aware context.
+- **Saved session transcripts** (the JSONL files under the session directory), which are never read, deleted, truncated, or rewritten by this setting.
+- **LLM context compaction** (which prompts stay in the model's context window). `promptHistory` can recall prompts that compaction has already dropped from context, since it reads the session's `message` entries directly rather than the compaction-aware context.
 
-With `scope: "session"` (the default), Up/Down recalls prompts from the current session only, capped at `maxEntries` (default 100) — matching pi's behavior before this setting existed.
+With `scope: "session"` (the default), Up/Down recalls prompts from the current session only, capped at `maxEntries` (default 100), matching pi's behavior before this setting existed. Both scopes include prompts from branches no longer on the active path and prompts compacted out of context.
 
-With `scope: "project"`, Up/Down also recalls prompts from every other saved session whose `cwd` matches the current working directory, including prompts from branches no longer on the active path and prompts compacted out of context. `--no-session` sessions are always session-local in memory and never read or write any prompt-history file, regardless of this setting.
+With `scope: "project"`, Up/Down also recalls prompts from every other saved session whose `cwd` matches the current working directory. Sessions created by `/fork` copy their parent branch verbatim, and those copies are recognized and recalled once rather than twice. `--no-session` sessions are always session-local in memory and never read or write any prompt-history file, regardless of this setting.
 
-Set `maxEntries: 0` for unlimited recall. In a project with a very large prompt history, unlimited mode reads every matching session file at startup and after `/resume`/`/new`/`/fork`/`/reload`, which increases startup time and memory use proportionally to history size.
+Project scope reads every matching session file at startup and after `/resume`/`/new`/`/fork`/`/reload`, whatever `maxEntries` is set to, so in a project with hundreds of large sessions it adds noticeable startup time. Set `maxEntries: 0` for unlimited recall; that additionally makes memory use grow with the size of the whole project's prompt history rather than staying capped at the newest N prompts.
 
 Project-wide unlimited recall:
 

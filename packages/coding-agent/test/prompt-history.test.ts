@@ -200,6 +200,56 @@ describe("prompt-history collector", () => {
 		expect(result).toEqual(["older prompt", "fresh unflushed prompt"]);
 	});
 
+	it("recalls a forked session's inherited prompts once, not twice", async () => {
+		// createBranchedSession copies the parent branch's entries verbatim (same id, same timestamps)
+		// into the new file and leaves the parent file in place, so both files report those prompts.
+		const cwd = "/project";
+		const inherited = [
+			userMessageLine("p1", null, "2025-01-01T00:00:01Z", "one"),
+			assistantMessageLine("a1", "p1", "2025-01-01T00:00:02Z", "reply"),
+			userMessageLine("p2", "a1", "2025-01-01T00:00:03Z", "two"),
+		];
+		writeFile("parent.jsonl", [
+			sessionHeaderLine("parent", cwd, "2025-01-01T00:00:00Z"),
+			...inherited,
+			userMessageLine("p3", "p2", "2025-01-01T00:00:04Z", "abandoned"),
+		]);
+		writeFile("fork.jsonl", [
+			sessionHeaderLine("fork", cwd, "2025-01-02T00:00:00Z"),
+			...inherited,
+			userMessageLine("f1", "p2", "2025-01-02T00:00:01Z", "after the fork"),
+		]);
+
+		const result = await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 });
+		expect(result).toEqual(["one", "two", "abandoned", "after the fork"]);
+	});
+
+	it("keeps same-id prompts from unrelated sessions, since entry ids are only unique per session", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd, "2025-01-01T00:00:00Z"),
+			userMessageLine("dup", null, "2025-01-01T00:00:01Z", "from a"),
+		]);
+		writeFile("b.jsonl", [
+			sessionHeaderLine("b", cwd, "2025-01-02T00:00:00Z"),
+			userMessageLine("dup", null, "2025-01-02T00:00:01Z", "from b"),
+		]);
+
+		const result = await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 });
+		expect(result).toEqual(["from a", "from b"]);
+	});
+
+	it("stores prompt text trimmed, matching live submissions", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			userMessageLine("m1", null, "2025-01-01T00:00:01Z", "  deploy\n"),
+		]);
+
+		const records = await collectProjectPromptHistoryRecords({ cwd, sessionDir, maxEntries: 0 });
+		expect(records.map((record) => record.text)).toEqual(["deploy"]);
+	});
+
 	it("collapses only consecutive duplicates, preserving non-consecutive repeats", async () => {
 		const cwd = "/project";
 		writeFile("a.jsonl", [

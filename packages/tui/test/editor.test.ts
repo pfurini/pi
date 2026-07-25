@@ -421,6 +421,23 @@ describe("Editor component", () => {
 			editor.handleInput("\x1b[B");
 			assert.strictEqual(editor.getText(), "my draft");
 		});
+
+		it("setHistory() notifies onChange when it restores the stashed draft", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const changes: string[] = [];
+
+			editor.addToHistory("old entry");
+			editor.setText("!my draft");
+			editor.onChange = (text) => changes.push(text);
+
+			editor.handleInput("\x1b[A"); // Up - jumps to start of draft
+			editor.handleInput("\x1b[A"); // Up - browsing, draft stashed
+			editor.setHistory(["fresh one"]);
+
+			// Consumers deriving UI state from the buffer (bash mode, border color) must see the
+			// restored draft, exactly as they do when Down restores it.
+			assert.strictEqual(changes.at(-1), "!my draft");
+		});
 	});
 
 	describe("public state accessors", () => {

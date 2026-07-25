@@ -45,7 +45,6 @@ class FakeSession implements PromptHistorySessionSource {
 	sessionDir = "/project/sessions";
 	sessionFile: string | undefined = "/project/sessions/current.jsonl";
 	entries: SessionEntry[] = [];
-	contextEntries: SessionEntry[] = [];
 
 	isPersisted(): boolean {
 		return this.persisted;
@@ -61,9 +60,6 @@ class FakeSession implements PromptHistorySessionSource {
 	}
 	getEntries(): SessionEntry[] {
 		return this.entries;
-	}
-	buildContextEntries(): SessionEntry[] {
-		return this.contextEntries;
 	}
 }
 
@@ -120,11 +116,11 @@ class LegacyFakeEditor implements EditorComponent {
 }
 
 describe("PromptHistoryController", () => {
-	it("applies session-scope history from the current session's compaction-aware context", async () => {
+	it("applies session-scope history from every raw entry of the current session", async () => {
 		const settings = new FakeSettings();
 		settings.scope = "session";
 		const session = new FakeSession();
-		session.contextEntries = [
+		session.entries = [
 			userMessageEntry("m1", "first"),
 			assistantMessageEntry("m2", "reply", "m1"),
 			userMessageEntry("m3", "second", "m2"),
@@ -203,7 +199,7 @@ describe("PromptHistoryController", () => {
 	it("preserves the visible draft: applyToEditor never calls setText", async () => {
 		const settings = new FakeSettings();
 		const session = new FakeSession();
-		session.contextEntries = [userMessageEntry("m1", "seed")];
+		session.entries = [userMessageEntry("m1", "seed")];
 		const controller = new PromptHistoryController({ settings });
 		const editor = new FakeEditor();
 		const setTextSpy = vi.spyOn(editor, "setText");
@@ -218,7 +214,7 @@ describe("PromptHistoryController", () => {
 	it("uses setHistory for a modern custom editor", async () => {
 		const settings = new FakeSettings();
 		const session = new FakeSession();
-		session.contextEntries = [userMessageEntry("m1", "hello")];
+		session.entries = [userMessageEntry("m1", "hello")];
 		const controller = new PromptHistoryController({ settings });
 		const editor = new FakeEditor();
 
@@ -231,7 +227,7 @@ describe("PromptHistoryController", () => {
 	it("falls back to replaying addToHistory for a legacy custom editor", async () => {
 		const settings = new FakeSettings();
 		const session = new FakeSession();
-		session.contextEntries = [userMessageEntry("m1", "one"), userMessageEntry("m2", "two", "m1")];
+		session.entries = [userMessageEntry("m1", "one"), userMessageEntry("m2", "two", "m1")];
 		const controller = new PromptHistoryController({ settings });
 		const legacyEditor = new LegacyFakeEditor();
 
@@ -381,7 +377,7 @@ describe("PromptHistoryController", () => {
 		settings.scope = "project";
 		const session = new FakeSession();
 		session.persisted = false;
-		session.contextEntries = [userMessageEntry("m1", "ephemeral prompt")];
+		session.entries = [userMessageEntry("m1", "ephemeral prompt")];
 
 		const loadProjectHistory = vi.fn(async () => ["should not be used"]);
 		const controller = new PromptHistoryController({ settings, loadProjectHistory });
@@ -398,7 +394,7 @@ describe("PromptHistoryController", () => {
 		const settings = new FakeSettings();
 		settings.scope = "project";
 		const session = new FakeSession();
-		session.contextEntries = [userMessageEntry("m1", "fallback prompt")];
+		session.entries = [userMessageEntry("m1", "fallback prompt")];
 
 		const loadProjectHistory = vi.fn(async () => {
 			throw new Error("disk read failed");
@@ -411,5 +407,118 @@ describe("PromptHistoryController", () => {
 
 		expect(result.warning).toBeDefined();
 		expect(editor.historyCalls.at(-1)).toEqual(["fallback prompt"]);
+	});
+
+	it("keeps recalling prompts that a compaction dropped from the model's context", async () => {
+		const settings = new FakeSettings();
+		const session = new FakeSession();
+		// Raw entries keep everything; only the compaction-aware context view drops the early prompts.
+		session.entries = [
+			userMessageEntry("m1", "before compaction"),
+			assistantMessageEntry("m2", "reply", "m1"),
+			{
+				type: "compaction",
+				id: "c1",
+				parentId: "m2",
+				timestamp: "2025-01-01T00:00:00Z",
+				firstKeptEntryId: "m3",
+			} as unknown as SessionEntry,
+			userMessageEntry("m3", "after compaction", "c1"),
+		];
+
+		const controller = new PromptHistoryController({ settings });
+		const editor = new FakeEditor();
+		controller.setEditor(editor);
+
+		await controller.refresh(session);
+
+		expect(editor.historyCalls.at(-1)).toEqual(["before compaction", "after compaction"]);
+	});
+
+	it("passes the configured limit to the project loader", async () => {
+		const settings = new FakeSettings();
+		settings.scope = "project";
+		settings.maxEntries = 42;
+		const session = new FakeSession();
+
+		const loadProjectHistory = vi.fn(async (_options: LoadProjectPromptHistoryOptions) => ["one"]);
+		const controller = new PromptHistoryController({ settings, loadProjectHistory });
+		controller.setEditor(new FakeEditor());
+
+		await controller.refresh(session);
+
+		expect(loadProjectHistory.mock.calls[0]?.[0].maxEntries).toBe(42);
+	});
+
+	it("replays only unseen entries to a legacy editor across refreshes", async () => {
+		const settings = new FakeSettings();
+		const session = new FakeSession();
+		session.entries = [userMessageEntry("m1", "one"), userMessageEntry("m2", "two", "m1")];
+		const controller = new PromptHistoryController({ settings });
+		const legacyEditor = new LegacyFakeEditor();
+		controller.setEditor(legacyEditor);
+
+		await controller.refresh(session);
+		await controller.refresh(session);
+		session.entries = [...session.entries, userMessageEntry("m3", "three", "m2")];
+		await controller.refresh(session);
+
+		expect(legacyEditor.addToHistoryCalls).toEqual(["one", "two", "three"]);
+	});
+
+	it("reports a throwing editor as a warning instead of rejecting", async () => {
+		const settings = new FakeSettings();
+		const session = new FakeSession();
+		session.entries = [userMessageEntry("m1", "prompt")];
+		const controller = new PromptHistoryController({ settings });
+		const editor = new FakeEditor();
+		editor.setHistory = () => {
+			throw new Error("extension editor exploded");
+		};
+		controller.setEditor(editor);
+
+		const result = await controller.refresh(session);
+
+		expect(result.warning).toContain("extension editor exploded");
+	});
+
+	it("does not strand the mid-refresh buffer when discovery fails completely", async () => {
+		const settings = new FakeSettings();
+		settings.scope = "project";
+		const session = new FakeSession();
+		// The project loader rejects and the session-local fallback then throws too, the path that
+		// used to leave recordedDuringLoad set forever (and reject).
+		let entriesCalls = 0;
+		session.getEntries = () => {
+			entriesCalls++;
+			if (entriesCalls === 1) return [];
+			throw new Error("session entries unavailable");
+		};
+
+		let rejectLoad: (error: Error) => void = () => {};
+		const loadProjectHistory = vi.fn(
+			() =>
+				new Promise<string[]>((_resolve, reject) => {
+					rejectLoad = reject;
+				}),
+		);
+		const controller = new PromptHistoryController({ settings, loadProjectHistory });
+		const editor = new FakeEditor();
+		controller.setEditor(editor);
+
+		const inFlight = controller.refresh(session);
+		controller.record("live prompt", editor);
+		rejectLoad(new Error("disk read failed"));
+		const result = await inFlight;
+
+		expect(result.warning).toContain("disk read failed");
+		expect(editor.historyCalls.at(-1)).toEqual(["live prompt"]);
+
+		settings.scope = "session";
+		session.getEntries = () => [userMessageEntry("m1", "collected")];
+		await controller.refresh(session);
+
+		// The stranded buffer used to be re-appended to every later refresh.
+		expect(editor.historyCalls.at(-1)).toEqual(["collected"]);
 	});
 });

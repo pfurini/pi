@@ -432,6 +432,9 @@ export class Editor implements Component, Focusable {
 			this.preferredVisualCol = null;
 			this.snappedFromCursorCol = null;
 			this.scrollOffset = 0;
+			// Same notification navigateHistory() sends when Down restores the draft: onChange consumers
+			// derive UI state (bash-mode detection, border color) from the buffer and would go stale.
+			if (this.onChange) this.onChange(this.getText());
 			this.tui.requestRender();
 		}
 		this.historyIndex = -1;

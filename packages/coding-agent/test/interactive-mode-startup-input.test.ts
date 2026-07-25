@@ -124,7 +124,6 @@ describe("InteractiveMode startup input", () => {
 			getSessionDir: () => "/project/sessions",
 			getSessionFile: () => "/project/sessions/current.jsonl",
 			getEntries: () => [],
-			buildContextEntries: () => [],
 		};
 		const refreshPromise = controller.refresh(fakeSession);
 

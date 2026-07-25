@@ -1,5 +1,9 @@
 import type { EditorComponent } from "@earendil-works/pi-tui";
-import { type LoadProjectPromptHistoryOptions, loadProjectPromptHistory } from "../../core/prompt-history.ts";
+import {
+	extractUserMessageText,
+	type LoadProjectPromptHistoryOptions,
+	loadProjectPromptHistory,
+} from "../../core/prompt-history.ts";
 import type { SessionEntry } from "../../core/session-manager.ts";
 
 /** Narrow view of SettingsManager the controller needs; keeps the controller testable without a full SettingsManager. */
@@ -14,10 +18,12 @@ export interface PromptHistorySessionSource {
 	getCwd(): string;
 	getSessionDir(): string;
 	getSessionFile(): string | undefined;
-	/** All raw entries (every branch), excluding the header. */
+	/**
+	 * All raw entries (every branch), excluding the header. Prompt history deliberately reads these
+	 * rather than the compaction-aware context: recall must keep working for prompts that compaction
+	 * has dropped from the model's context, and for prompts on branches no longer on the active path.
+	 */
 	getEntries(): SessionEntry[];
-	/** Active, compaction-aware entry list for the current leaf. */
-	buildContextEntries(): SessionEntry[];
 }
 
 export type ProjectPromptHistoryLoader = (options: LoadProjectPromptHistoryOptions) => Promise<string[]>;
@@ -31,23 +37,6 @@ export interface PromptHistoryControllerDeps {
 export interface PromptHistoryRefreshResult {
 	/** Set when discovery failed and the controller fell back to session-local history. */
 	warning?: string;
-}
-
-function extractUserMessageText(message: unknown): string | null {
-	if (typeof message !== "object" || message === null) return null;
-	const role = (message as { role?: unknown }).role;
-	if (role !== "user") return null;
-
-	const content = (message as { content?: unknown }).content;
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return null;
-
-	return content
-		.filter((block): block is { type: string; text: string } => {
-			return typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text";
-		})
-		.map((block) => (typeof block.text === "string" ? block.text : ""))
-		.join("");
 }
 
 function extractSessionScopeHistory(entries: readonly SessionEntry[]): string[] {
@@ -113,27 +102,46 @@ export class PromptHistoryController {
 		this.applyToEditor(editor);
 	}
 
-	/** Apply the current cache and limit to `editor`. Never replaces or wraps the editor implementation. */
-	applyToEditor(editor: EditorComponent): void {
-		const maxEntries = this.getMaxEntries();
-		editor.setHistoryMaxEntries?.(maxEntries);
-		if (editor.setHistory) {
-			editor.setHistory(this.cache);
-		} else if (editor.addToHistory) {
-			// Legacy custom editor: best-effort replay, oldest to newest. addToHistory has no way to
-			// clear existing entries, so a second replay of the same cache object would pile up
-			// duplicates (it only collapses consecutive duplicates, and a full oldest-to-newest replay
-			// rarely lands consecutively against whatever is already at the front). This guard only
-			// catches the same cache array being reapplied unchanged; it cannot dedupe across two
-			// refreshes that both produce equivalent but distinct cache arrays, since there is no way
-			// to ask a legacy editor to forget what it was already given.
-			if (this.lastReplayedCache.get(editor) !== this.cache) {
-				for (const entry of this.cache) {
-					editor.addToHistory(entry);
-				}
-				this.lastReplayedCache.set(editor, this.cache);
+	/**
+	 * Apply the current cache and limit to `editor`. Never replaces or wraps the editor implementation.
+	 * Returns an error message instead of throwing, so a misbehaving extension-provided editor cannot
+	 * turn a fire-and-forget refresh into an unhandled rejection.
+	 */
+	applyToEditor(editor: EditorComponent): string | undefined {
+		try {
+			const maxEntries = this.getMaxEntries();
+			editor.setHistoryMaxEntries?.(maxEntries);
+			if (editor.setHistory) {
+				editor.setHistory(this.cache);
+			} else if (editor.addToHistory) {
+				this.replayToLegacyEditor(editor, editor.addToHistory.bind(editor));
 			}
+			return undefined;
+		} catch (error) {
+			return `Failed to apply prompt history to the editor: ${error instanceof Error ? error.message : String(error)}`;
 		}
+	}
+
+	/**
+	 * Legacy custom editor: best-effort replay, oldest to newest. addToHistory has no way to clear
+	 * existing entries, so replaying the whole cache again would pile up duplicates (it only collapses
+	 * consecutive duplicates, and a full oldest-to-newest replay rarely lands consecutively against
+	 * whatever is already at the front). Refreshes normally only append, so replay just the suffix the
+	 * editor has not seen. When the cache is no longer an extension of the last replay (the limit
+	 * trimmed its front, or a refresh replaced it wholesale) there is no way to ask the editor to
+	 * forget what it was given, so a full replay is the only option left.
+	 */
+	private replayToLegacyEditor(editor: EditorComponent, addToHistory: (text: string) => void): void {
+		const replayed = this.lastReplayedCache.get(editor);
+		const isExtension =
+			replayed !== undefined &&
+			replayed.length <= this.cache.length &&
+			replayed.every((entry, index) => this.cache[index] === entry);
+
+		for (let index = isExtension ? replayed.length : 0; index < this.cache.length; index++) {
+			addToHistory(this.cache[index]);
+		}
+		this.lastReplayedCache.set(editor, [...this.cache]);
 	}
 
 	/** Record a live submission: update the cache and the active editor's native history immediately. */
@@ -159,7 +167,8 @@ export class PromptHistoryController {
 	/**
 	 * Recompute the cache from current settings and the given session, then apply it to the active
 	 * editor (if any). Safe to call repeatedly and concurrently; only the most recently started
-	 * refresh's result is ever published.
+	 * refresh's result is ever published. Never rejects: every failure is reported as a warning, so
+	 * callers may discard the promise without risking an unhandled rejection.
 	 */
 	async refresh(session: PromptHistorySessionSource): Promise<PromptHistoryRefreshResult> {
 		const myGeneration = ++this.generation;
@@ -180,17 +189,23 @@ export class PromptHistoryController {
 					sessionDir: session.getSessionDir(),
 					excludeSessionFile: session.getSessionFile(),
 					currentEntries: session.getEntries(),
-					// Limit is applied locally after merging in anything recorded during this load.
-					maxEntries: 0,
+					// Pre-trimming to the same limit is safe: anything recorded during this load is newer
+					// than everything collected, so merging it in and re-applying the limit below yields
+					// the same newest-N list an untrimmed load would have produced.
+					maxEntries: this.getMaxEntries(),
 				});
 			} else {
-				collected = extractSessionScopeHistory(session.buildContextEntries());
+				collected = extractSessionScopeHistory(session.getEntries());
 			}
 		} catch (error) {
 			warning = `Failed to load project prompt history, falling back to session history: ${
 				error instanceof Error ? error.message : String(error)
 			}`;
-			collected = extractSessionScopeHistory(session.buildContextEntries());
+			try {
+				collected = extractSessionScopeHistory(session.getEntries());
+			} catch {
+				collected = [];
+			}
 		}
 
 		if (myGeneration !== this.generation) {
@@ -205,7 +220,8 @@ export class PromptHistoryController {
 		this.cache = applyLimit(merged, this.getMaxEntries());
 
 		if (this.activeEditor) {
-			this.applyToEditor(this.activeEditor);
+			const applyError = this.applyToEditor(this.activeEditor);
+			if (applyError) warning = warning ? `${warning}; ${applyError}` : applyError;
 		}
 
 		return { warning };

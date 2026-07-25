@@ -83,7 +83,7 @@ import {
 	resolveModelScopeWithDiagnostics,
 } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
-import { loadProjectPromptHistory } from "../../core/prompt-history.ts";
+import { extractUserMessageText, loadProjectPromptHistory } from "../../core/prompt-history.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
@@ -1747,6 +1747,15 @@ export class InteractiveMode {
 		}
 	}
 
+	/** Fire-and-forget refresh for callers that cannot await, keeping any failure out of the unhandled-rejection path. */
+	private schedulePromptHistoryRefresh(): void {
+		this.refreshPromptHistory().catch((error: unknown) => {
+			this.showWarning(
+				`Failed to refresh prompt history: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
+	}
+
 	private async rebindCurrentSession(options: { renderBeforeBind?: boolean } = {}): Promise<void> {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
@@ -3187,12 +3196,7 @@ export class InteractiveMode {
 
 	/** Extract text content from a user message */
 	private getUserMessageText(message: Message): string {
-		if (message.role !== "user") return "";
-		const textBlocks =
-			typeof message.content === "string"
-				? [{ type: "text", text: message.content }]
-				: message.content.filter((c: { type: string }) => c.type === "text");
-		return textBlocks.map((c) => (c as { text: string }).text).join("");
+		return extractUserMessageText(message) ?? "";
 	}
 
 	/** Record an accepted live editor submission into the prompt-history cache and the active editor. */
@@ -4303,11 +4307,11 @@ export class InteractiveMode {
 					},
 					onPromptHistoryScopeChange: (scope) => {
 						this.settingsManager.setPromptHistoryScope(scope);
-						void this.refreshPromptHistory();
+						this.schedulePromptHistoryRefresh();
 					},
 					onPromptHistoryMaxEntriesChange: (maxEntries) => {
 						this.settingsManager.setPromptHistoryMaxEntries(maxEntries);
-						void this.refreshPromptHistory();
+						this.schedulePromptHistoryRefresh();
 					},
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
@@ -4740,6 +4744,7 @@ export class InteractiveMode {
 						// Update UI
 						this.chatContainer.clear();
 						this.renderInitialMessages();
+						await this.refreshPromptHistory();
 						if (result.editorText && !this.editor.getText().trim()) {
 							this.editor.setText(result.editorText);
 						}

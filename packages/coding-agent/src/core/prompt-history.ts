@@ -6,10 +6,17 @@ import { resolvePath } from "../utils/paths.ts";
 import { parseSessionEntryLine, type SessionEntry, type SessionHeader } from "./session-manager.ts";
 
 export interface PromptHistoryRecord {
+	/** Trimmed prompt text, matching what PromptHistoryController caches for live submissions. */
 	text: string;
 	timestamp: number;
 	sessionPath: string;
 	ordinal: number;
+	/**
+	 * Session entry id. `createBranchedSession` copies the parent branch's entries verbatim into the
+	 * new file, so the same prompt appears in both files under the same id; deduping on it keeps a
+	 * fork from replaying its parent's prompts a second time.
+	 */
+	entryId?: string;
 }
 
 export interface LoadProjectPromptHistoryOptions {
@@ -31,11 +38,12 @@ function cwdMatches(headerCwd: unknown, resolvedCwd: string): boolean {
 }
 
 /**
- * Extract text from a user message, joining text blocks with "" to match
- * InteractiveMode.getUserMessageText() exactly. Returns null for non-user messages,
+ * Extract text from a user message, joining text blocks with "". Returns null for non-user messages,
  * and "" for image-only user messages (callers should treat that as "nothing to record").
+ * Shared by prompt-history discovery, PromptHistoryController and InteractiveMode so recalled text
+ * is always identical to what was submitted.
  */
-function extractUserMessageText(message: unknown): string | null {
+export function extractUserMessageText(message: unknown): string | null {
 	if (typeof message !== "object" || message === null) return null;
 	const role = (message as { role?: unknown }).role;
 	if (role !== "user") return null;
@@ -106,10 +114,18 @@ async function scanSessionFile(filePath: string, resolvedCwd: string): Promise<P
 			if (entry.type !== "message") continue;
 
 			const text = extractUserMessageText(entry.message);
-			if (text === null || text.trim() === "") continue;
+			if (text === null) continue;
+			const trimmed = text.trim();
+			if (!trimmed) continue;
 
 			const timestamp = deriveOrderingTime(entry.message, entry.timestamp, header.timestamp);
-			records.push({ text, timestamp, sessionPath: filePath, ordinal: ordinal++ });
+			records.push({
+				text: trimmed,
+				timestamp,
+				sessionPath: filePath,
+				ordinal: ordinal++,
+				entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,
+			});
 		}
 
 		if (rejected || !header) return [];
@@ -166,11 +182,40 @@ function extractRecordsFromCurrentEntries(
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
 		const text = extractUserMessageText(entry.message);
-		if (text === null || text.trim() === "") continue;
+		if (text === null) continue;
+		const trimmed = text.trim();
+		if (!trimmed) continue;
 		const timestamp = deriveOrderingTime(entry.message, entry.timestamp, entry.timestamp);
-		records.push({ text, timestamp, sessionPath: sessionPathLabel, ordinal: ordinal++ });
+		records.push({
+			text: trimmed,
+			timestamp,
+			sessionPath: sessionPathLabel,
+			ordinal: ordinal++,
+			entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,
+		});
 	}
 	return records;
+}
+
+/**
+ * Drop records that are copies of one another, keeping the oldest occurrence. Entry ids are only
+ * 8 characters and unique within a single session, so an id alone would eventually collide across a
+ * large project and silently swallow an unrelated prompt; matching on id, ordering time and text
+ * together only ever matches entries that really were copied verbatim (which is exactly what
+ * `createBranchedSession` produces). Records without an id are always kept.
+ */
+function dropCopiedRecords(records: readonly PromptHistoryRecord[]): PromptHistoryRecord[] {
+	const seen = new Set<string>();
+	const result: PromptHistoryRecord[] = [];
+	for (const record of records) {
+		if (record.entryId) {
+			const key = `${record.entryId}\u0000${record.timestamp}\u0000${record.text}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+		}
+		result.push(record);
+	}
+	return result;
 }
 
 /**
@@ -203,7 +248,7 @@ export async function collectProjectPromptHistoryRecords(
 		return a.ordinal - b.ordinal;
 	});
 
-	return records;
+	return dropCopiedRecords(records);
 }
 
 /**

@@ -8,6 +8,7 @@ import {
 	EXEC_SPILL_LIMIT_BYTES,
 	HARD_EXEC_RETAINED_BYTES,
 } from "../src/core/exec-output.ts";
+import { truncateTail } from "../src/core/tools/truncate.ts";
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 	let timeout: NodeJS.Timeout | undefined;
@@ -60,7 +61,11 @@ describe("execCommand", () => {
 
 	it("returns an exact stdout tail and complete spill without changing the exit code", async () => {
 		const totalBytes = 1024 * 1024;
-		const result = await execNode(writerScript(1, totalBytes, 0x78, 23), { maxOutputBytes: 4096 });
+		// truncationNotice: false keeps stdout raw, so these assertions cover capture alone.
+		const result = await execNode(writerScript(1, totalBytes, 0x78, 23), {
+			maxOutputBytes: 4096,
+			truncationNotice: false,
+		});
 
 		expect(result.code).toBe(23);
 		expect(result.killed).toBe(false);
@@ -78,7 +83,10 @@ describe("execCommand", () => {
 
 	it("applies the same bounded behavior independently to stderr", async () => {
 		const totalBytes = 256 * 1024;
-		const result = await execNode(writerScript(2, totalBytes, 0x65, 17), { maxOutputBytes: 2048 });
+		const result = await execNode(writerScript(2, totalBytes, 0x65, 17), {
+			maxOutputBytes: 2048,
+			truncationNotice: false,
+		});
 
 		expect(result.code).toBe(17);
 		expect(result.killed).toBe(false);
@@ -95,7 +103,7 @@ describe("execCommand", () => {
 	it("bounds simultaneous stdout and stderr floods independently", async () => {
 		const totalBytes = 256 * 1024;
 		const script = `const { writeSync } = require("node:fs"); const out = Buffer.alloc(64 * 1024, 0x6f); const err = Buffer.alloc(64 * 1024, 0x65); for (let i = 0; i < 4; i++) { writeSync(1, out); writeSync(2, err); } process.exitCode = 9;`;
-		const result = await execNode(script, { maxOutputBytes: 1024 });
+		const result = await execNode(script, { maxOutputBytes: 1024, truncationNotice: false });
 
 		expect(result.code).toBe(9);
 		expect(result.stdout).toBe("o".repeat(1024));
@@ -124,6 +132,46 @@ describe("execCommand", () => {
 			retainedBytes: HARD_EXEC_RETAINED_BYTES,
 			spillLimitBytes: EXEC_SPILL_LIMIT_BYTES,
 		});
+	});
+
+	it("marks a truncated stream so a caller that forwards it cannot present a tail as the whole output", async () => {
+		const totalBytes = 1024 * 1024;
+		const result = await execNode(writerScript(1, totalBytes, 0x78), { maxOutputBytes: 4096 });
+
+		expect(result.stdout.startsWith("x".repeat(4096))).toBe(true);
+		expect(result.stdout).toContain("[pi.exec: stdout truncated, showing the last 4.0KB of 1.0MB.");
+		expect(result.stdout).toContain(result.stdoutTruncation?.spill?.path ?? "no spill path");
+		expect(result.stdout).toContain("Complete output saved to");
+		// Untruncated streams are never annotated.
+		expect(result.stderr).toBe("");
+	});
+
+	it("marks stdout and stderr separately, naming the stream", async () => {
+		const script = `const { writeSync } = require("node:fs"); const out = Buffer.alloc(64 * 1024, 0x6f); const err = Buffer.alloc(64 * 1024, 0x65); for (let i = 0; i < 4; i++) { writeSync(1, out); writeSync(2, err); }`;
+		const result = await execNode(script, { maxOutputBytes: 1024 });
+
+		expect(result.stdout).toContain("[pi.exec: stdout truncated,");
+		expect(result.stderr).toContain("[pi.exec: stderr truncated,");
+	});
+
+	it("keeps the notice reachable after the tool-result layer truncates the tail", async () => {
+		// The whole point of appending rather than prepending: an unmodified extension that pipes
+		// stdout through truncateTail (as pi's own bash tool does) still ships the notice to the model.
+		const result = await execNode(writerScript(1, 1024 * 1024, 0x78), { maxOutputBytes: 4096 });
+		const forwarded = truncateTail(result.stdout, { maxBytes: 512, maxLines: 10 });
+
+		expect(forwarded.truncated).toBe(true);
+		expect(forwarded.content).toContain("[pi.exec: stdout truncated,");
+	});
+
+	it("omits the notice when the caller opts out", async () => {
+		const result = await execNode(writerScript(1, 1024 * 1024, 0x78), {
+			maxOutputBytes: 4096,
+			truncationNotice: false,
+		});
+
+		expect(result.stdout).toBe("x".repeat(4096));
+		expect(result.stdoutTruncation).toBeDefined();
 	});
 
 	it("resolves ENOENT as code 1 and rejects synchronous spawn validation errors", async () => {

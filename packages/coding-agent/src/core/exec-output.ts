@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Writable } from "node:stream";
+import { formatSize } from "./tools/truncate.ts";
 
 export const DEFAULT_EXEC_RETAINED_BYTES = 4 * 1024 * 1024;
 export const HARD_EXEC_RETAINED_BYTES = 16 * 1024 * 1024;
@@ -45,6 +46,28 @@ export interface ExecOutputTruncation {
 	discardedBytes: number;
 	/** File creation/write failure; partial files are deleted and spill is omitted. */
 	spillError?: string;
+}
+
+/**
+ * Self-describing marker appended to a truncated stream, so a consumer that simply forwards the
+ * text (an extension's tool result, a slash command, a hook) still tells the model that it is
+ * looking at a tail, how much it is missing, and where the rest is. Appended at the end because
+ * the tool-result layer truncates from the tail (see tools/truncate.ts), which keeps it.
+ */
+export function formatExecTruncationNotice(stream: "stdout" | "stderr", truncation: ExecOutputTruncation): string {
+	const shown = `showing the last ${formatSize(truncation.retainedBytes)} of ${formatSize(truncation.totalBytes)}`;
+	const spill = truncation.spill;
+	let rest: string;
+	if (spill?.complete) {
+		rest = `Complete output saved to ${spill.path} (removed when pi exits)`;
+	} else if (spill) {
+		rest = `First ${formatSize(spill.bytes)} saved to ${spill.path} (removed when pi exits)`;
+	} else if (truncation.spillError) {
+		rest = `The rest could not be saved: ${truncation.spillError}`;
+	} else {
+		rest = "The rest was discarded";
+	}
+	return `[pi.exec: ${stream} truncated, ${shown}. ${rest}]`;
 }
 
 export interface ExecOutputSnapshot {

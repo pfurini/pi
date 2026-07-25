@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	EXEC_SPILL_HIGH_WATER_MARK_BYTES,
 	ExecOutputCollector,
+	formatExecTruncationNotice,
 	type SpillWriterFactory,
 } from "../src/core/exec-output.ts";
 
@@ -284,6 +285,39 @@ describe("ExecOutputCollector", () => {
 		expect(snapshot.truncation?.spill).toBeUndefined();
 		expect(snapshot.truncation?.spillError).toContain("injected spill failure");
 		expect(snapshot.truncation?.spillError).toContain("failed to remove partial spill file");
+	});
+
+	it("states where the rest of the output went in every spill outcome", () => {
+		const base = {
+			truncated: true as const,
+			totalBytes: 100 * 1024 * 1024,
+			retainedBytes: 4 * 1024 * 1024,
+			retainedLimitBytes: 4 * 1024 * 1024,
+			spillLimitBytes: 64 * 1024 * 1024,
+			discardedBytes: 0,
+		};
+
+		expect(
+			formatExecTruncationNotice("stdout", {
+				...base,
+				spill: { path: "/tmp/full.log", bytes: base.totalBytes, complete: true },
+			}),
+		).toBe(
+			"[pi.exec: stdout truncated, showing the last 4.0MB of 100.0MB. Complete output saved to /tmp/full.log (removed when pi exits)]",
+		);
+
+		expect(
+			formatExecTruncationNotice("stderr", {
+				...base,
+				spill: { path: "/tmp/partial.log", bytes: 64 * 1024 * 1024, complete: false },
+			}),
+		).toContain("First 64.0MB saved to /tmp/partial.log");
+
+		expect(formatExecTruncationNotice("stdout", { ...base, spillError: "ENOSPC" })).toContain(
+			"The rest could not be saved: ENOSPC",
+		);
+
+		expect(formatExecTruncationNotice("stdout", base)).toContain("The rest was discarded");
 	});
 
 	it.skipIf(process.platform === "win32")("creates real spill files with mode 0o600", async () => {

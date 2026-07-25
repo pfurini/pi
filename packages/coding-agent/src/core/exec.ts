@@ -7,7 +7,9 @@ import { waitForChildProcess } from "../utils/child-process.ts";
 import {
 	DEFAULT_EXEC_RETAINED_BYTES,
 	ExecOutputCollector,
+	type ExecOutputSnapshot,
 	type ExecOutputTruncation,
+	formatExecTruncationNotice,
 	HARD_EXEC_RETAINED_BYTES,
 } from "./exec-output.ts";
 
@@ -25,15 +27,28 @@ export interface ExecOptions {
 	cwd?: string;
 	/** Rolling tail retained per stdout/stderr stream. Default 4 MiB; hard ceiling 16 MiB. */
 	maxOutputBytes?: number;
+	/**
+	 * Append a `[pi.exec: ... truncated ...]` marker to a stream that was truncated, so callers that
+	 * forward the text to a model do not silently present a tail as the whole output. Default `true`.
+	 * Set to `false` when parsing the output programmatically and you handle the truncation fields
+	 * yourself; the returned text is then raw bytes only.
+	 */
+	truncationNotice?: boolean;
 }
 
 /**
  * Result of executing a shell command.
  */
 export interface ExecResult {
-	/** Full output below the retained limit, otherwise a UTF-8-safe rolling tail. */
+	/**
+	 * Full output below the retained limit, otherwise a UTF-8-safe rolling tail followed by a
+	 * truncation marker (suppress it with `truncationNotice: false`).
+	 */
 	stdout: string;
-	/** Full output below the retained limit, otherwise a UTF-8-safe rolling tail. */
+	/**
+	 * Full output below the retained limit, otherwise a UTF-8-safe rolling tail followed by a
+	 * truncation marker (suppress it with `truncationNotice: false`).
+	 */
 	stderr: string;
 	code: number;
 	/** Pi sent a termination signal (timeout, abort, or internal collector failure). */
@@ -155,9 +170,15 @@ export async function execCommand(
 	if (stderrSnapshot.internalError) recordInternalError(stderrSnapshot.internalError);
 	if (internalError) code = 1;
 
+	const withNotice = (snapshot: ExecOutputSnapshot, stream: "stdout" | "stderr"): string => {
+		if (!snapshot.truncation || options?.truncationNotice === false) return snapshot.text;
+		const notice = formatExecTruncationNotice(stream, snapshot.truncation);
+		return snapshot.text ? `${snapshot.text}\n\n${notice}` : notice;
+	};
+
 	return {
-		stdout: stdoutSnapshot.text,
-		stderr: stderrSnapshot.text,
+		stdout: withNotice(stdoutSnapshot, "stdout"),
+		stderr: withNotice(stderrSnapshot, "stderr"),
 		code,
 		killed,
 		...(stdoutSnapshot.truncation ? { stdoutTruncation: stdoutSnapshot.truncation } : {}),

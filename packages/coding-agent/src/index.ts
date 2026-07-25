@@ -251,6 +251,7 @@ export {
 	type DefaultProjectTrust,
 	type ImageSettings,
 	type PackageSource,
+	type PromptHistorySettings,
 	type RetrySettings,
 	SettingsManager,
 	type SettingsManagerCreateOptions,

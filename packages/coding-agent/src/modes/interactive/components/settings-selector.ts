@@ -75,6 +75,8 @@ export interface SettingsConfig {
 	editorPaddingX: number;
 	outputPad: 0 | 1;
 	autocompleteMaxVisible: number;
+	promptHistoryScope: "session" | "project";
+	promptHistoryMaxEntries: number;
 	quietStartup: boolean;
 	defaultProjectTrust: DefaultProjectTrust;
 	clearOnShrink: boolean;
@@ -106,6 +108,8 @@ export interface SettingsCallbacks {
 	onEditorPaddingXChange: (padding: number) => void;
 	onOutputPadChange: (padding: 0 | 1) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
+	onPromptHistoryScopeChange: (scope: "session" | "project") => void;
+	onPromptHistoryMaxEntriesChange: (maxEntries: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
 	onDefaultProjectTrustChange: (defaultProjectTrust: DefaultProjectTrust) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
@@ -708,9 +712,29 @@ export class SettingsSelectorComponent extends Container {
 			values: ["3", "5", "7", "10", "15", "20"],
 		});
 
-		// Clear on shrink toggle (insert after autocomplete-max-visible)
+		// Prompt history scope toggle (insert after autocomplete-max-visible)
 		const autocompleteIndex = items.findIndex((item) => item.id === "autocomplete-max-visible");
 		items.splice(autocompleteIndex + 1, 0, {
+			id: "prompt-history-scope",
+			label: "Prompt history scope",
+			description: "Recall prompts from just this session, or from every session in this project",
+			currentValue: config.promptHistoryScope,
+			values: ["session", "project"],
+		});
+
+		// Prompt history max entries toggle (insert after prompt-history-scope)
+		const promptHistoryScopeIndex = items.findIndex((item) => item.id === "prompt-history-scope");
+		items.splice(promptHistoryScopeIndex + 1, 0, {
+			id: "prompt-history-max-entries",
+			label: "Prompt history max entries",
+			description: "Max prompts recalled with Up/Down (0 = unlimited)",
+			currentValue: String(config.promptHistoryMaxEntries),
+			values: ["100", "500", "1000", "0"],
+		});
+
+		// Clear on shrink toggle (insert after prompt-history-max-entries)
+		const promptHistoryMaxEntriesIndex = items.findIndex((item) => item.id === "prompt-history-max-entries");
+		items.splice(promptHistoryMaxEntriesIndex + 1, 0, {
 			id: "clear-on-shrink",
 			label: "Clear on shrink",
 			description: "Clear empty rows when content shrinks (may cause flicker)",
@@ -812,6 +836,12 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "autocomplete-max-visible":
 						callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
+						break;
+					case "prompt-history-scope":
+						callbacks.onPromptHistoryScopeChange(newValue as "session" | "project");
+						break;
+					case "prompt-history-max-entries":
+						callbacks.onPromptHistoryMaxEntriesChange(parseInt(newValue, 10));
 						break;
 					case "clear-on-shrink":
 						callbacks.onClearOnShrinkChange(newValue === "true");

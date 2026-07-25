@@ -65,6 +65,32 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `outputPad` | number | `1` | Horizontal padding for user messages, assistant messages, and thinking (0 or 1) |
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
+| `promptHistory.scope` | string | `"session"` | Editor Up/Down recall scope: `"session"` (current session only) or `"project"` (every saved session with the same working directory) |
+| `promptHistory.maxEntries` | number | `100` | Max prompts kept in the in-memory Up/Down recall list. `0` means unlimited |
+
+#### promptHistory
+
+`promptHistory` controls only the editor's Up/Down recall list in memory. It is independent from:
+
+- **Saved session transcripts** — the JSONL files under the session directory, which are never read, deleted, truncated, or rewritten by this setting.
+- **LLM context compaction** — which prompts stay in the model's context window. `promptHistory` can recall prompts that compaction has already dropped from context, since it reads persisted `message` entries directly rather than the compaction-aware context.
+
+With `scope: "session"` (the default), Up/Down recalls prompts from the current session only, capped at `maxEntries` (default 100) — matching pi's behavior before this setting existed.
+
+With `scope: "project"`, Up/Down also recalls prompts from every other saved session whose `cwd` matches the current working directory, including prompts from branches no longer on the active path and prompts compacted out of context. `--no-session` sessions are always session-local in memory and never read or write any prompt-history file, regardless of this setting.
+
+Set `maxEntries: 0` for unlimited recall. In a project with a very large prompt history, unlimited mode reads every matching session file at startup and after `/resume`/`/new`/`/fork`/`/reload`, which increases startup time and memory use proportionally to history size.
+
+Project-wide unlimited recall:
+
+```json
+{
+  "promptHistory": {
+    "scope": "project",
+    "maxEntries": 0
+  }
+}
+```
 
 For VS Code, include `--wait` so pi resumes after the editor exits:
 
@@ -288,6 +314,10 @@ See [packages.md](packages.md) for package management details.
     "maxRetries": 3
   },
   "enabledModels": ["claude-*", "gpt-4o"],
+  "promptHistory": {
+    "scope": "project",
+    "maxEntries": 0
+  },
   "warnings": {
     "anthropicExtraUsage": true
   },
@@ -317,3 +347,5 @@ Project settings (`.pi/settings.json`) override global settings. Nested objects 
   "compaction": { "enabled": true, "reserveTokens": 8192 }
 }
 ```
+
+This applies to `promptHistory` too: a project override of just `maxEntries` keeps the global `scope`, and vice versa.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Editor` prompt history now supports a configurable entry limit (`EditorOptions.historyMaxEntries`, `0` for unlimited) and bulk replacement via `setHistory()`/`setHistoryMaxEntries()`, in addition to the existing `addToHistory()`. `EditorComponent` exposes both as optional methods for custom editors.
+
 ## [0.82.1] - 2026-07-25
 
 ## [0.82.0] - 2026-07-24

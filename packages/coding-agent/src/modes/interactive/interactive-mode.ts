@@ -83,6 +83,7 @@ import {
 	resolveModelScopeWithDiagnostics,
 } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
+import { loadProjectPromptHistory } from "../../core/prompt-history.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
@@ -144,6 +145,7 @@ import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { editInExternalEditor } from "./external-editor.ts";
 import { getModelSearchText } from "./model-search.ts";
+import { PromptHistoryController } from "./prompt-history-controller.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -330,6 +332,7 @@ export class InteractiveMode {
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
+	private promptHistoryController: PromptHistoryController;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -472,10 +475,16 @@ export class InteractiveMode {
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
+			historyMaxEntries: this.settingsManager.getPromptHistoryMaxEntries(),
 		});
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
+		this.promptHistoryController = new PromptHistoryController({
+			settings: this.settingsManager,
+			loadProjectHistory: loadProjectPromptHistory,
+		});
+		this.promptHistoryController.setEditor(this.editor);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
@@ -1672,6 +1681,7 @@ export class InteractiveMode {
 
 					this.chatContainer.clear();
 					this.renderInitialMessages();
+					await this.refreshPromptHistory();
 					if (result.editorText && !this.editor.getText().trim()) {
 						this.editor.setText(result.editorText);
 					}
@@ -1729,10 +1739,19 @@ export class InteractiveMode {
 		}
 	}
 
+	/** Recompute prompt history from current settings/session and apply it to the active editor. */
+	private async refreshPromptHistory(): Promise<void> {
+		const { warning } = await this.promptHistoryController.refresh(this.sessionManager);
+		if (warning) {
+			this.showWarning(warning);
+		}
+	}
+
 	private async rebindCurrentSession(options: { renderBeforeBind?: boolean } = {}): Promise<void> {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.applyRuntimeSettings();
+		await this.refreshPromptHistory();
 		if (options.renderBeforeBind) {
 			this.renderCurrentSessionState();
 			this.subscribeToAgent();
@@ -2426,6 +2445,7 @@ export class InteractiveMode {
 			this.editor = this.defaultEditor;
 		}
 
+		this.promptHistoryController.setEditor(this.editor);
 		this.editorContainer.addChild(this.editor as Component);
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
@@ -2786,7 +2806,7 @@ export class InteractiveMode {
 						this.editor.setText(text);
 						return;
 					}
-					this.editor.addToHistory?.(text);
+					this.recordPromptHistory(text);
 					await this.handleBashCommand(command, isExcluded);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
@@ -2797,7 +2817,7 @@ export class InteractiveMode {
 			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
 				if (this.isExtensionCommand(text)) {
-					this.editor.addToHistory?.(text);
+					this.recordPromptHistory(text);
 					this.editor.setText("");
 					await this.session.prompt(text);
 				} else {
@@ -2809,7 +2829,7 @@ export class InteractiveMode {
 			// If streaming, use prompt() with steer behavior
 			// This handles extension commands (execute immediately), prompt template expansion, and queueing
 			if (this.session.isStreaming) {
-				this.editor.addToHistory?.(text);
+				this.recordPromptHistory(text);
 				this.editor.setText("");
 				await this.session.prompt(text, { streamingBehavior: "steer" });
 				this.updatePendingMessagesDisplay();
@@ -2826,7 +2846,7 @@ export class InteractiveMode {
 			} else {
 				this.pendingUserInputs.push(text);
 			}
-			this.editor.addToHistory?.(text);
+			this.recordPromptHistory(text);
 		};
 	}
 
@@ -3175,6 +3195,11 @@ export class InteractiveMode {
 		return textBlocks.map((c) => (c as { text: string }).text).join("");
 	}
 
+	/** Record an accepted live editor submission into the prompt-history cache and the active editor. */
+	private recordPromptHistory(text: string): void {
+		this.promptHistoryController.record(text, this.editor);
+	}
+
 	/**
 	 * Show a status message in the chat.
 	 *
@@ -3223,7 +3248,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(component);
 	}
 
-	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+	private addMessageToChat(message: AgentMessage): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -3300,9 +3325,6 @@ export class InteractiveMode {
 						);
 						this.chatContainer.addChild(userComponent);
 					}
-					if (options?.populateHistory) {
-						this.editor.addToHistory?.(textContent);
-					}
 				}
 				break;
 			}
@@ -3327,10 +3349,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private renderSessionItems(
-		items: readonly RenderSessionItem[],
-		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
-	): void {
+	private renderSessionItems(items: readonly RenderSessionItem[], options: { updateFooter?: boolean } = {}): void {
 		this.pendingTools.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache-miss notices are not persisted; re-derive them from the full entry
@@ -3402,7 +3421,7 @@ export class InteractiveMode {
 				}
 			} else {
 				// All other messages use standard rendering
-				this.addMessageToChat(message, options);
+				this.addMessageToChat(message);
 			}
 		}
 
@@ -3416,12 +3435,8 @@ export class InteractiveMode {
 	 * Render session entries to chat. Used for initial load and rebuild after compaction.
 	 * @param entries Compaction-aware session entries to render
 	 * @param options.updateFooter Update footer state
-	 * @param options.populateHistory Add user messages to editor history
 	 */
-	private renderSessionEntries(
-		entries: SessionEntry[],
-		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
-	): void {
+	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
 		const items = entries.flatMap((entry): RenderSessionItem[] => {
 			if (entry.type === "custom") {
 				return [entry];
@@ -3464,7 +3479,6 @@ export class InteractiveMode {
 		const entries = this.sessionManager.buildContextEntries();
 		this.renderSessionEntries(entries, {
 			updateFooter: true,
-			populateHistory: true,
 		});
 		this.renderProjectTrustWarningIfNeeded();
 
@@ -3721,7 +3735,7 @@ export class InteractiveMode {
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
-				this.editor.addToHistory?.(text);
+				this.recordPromptHistory(text);
 				this.editor.setText("");
 				await this.session.prompt(text);
 			} else {
@@ -3733,7 +3747,7 @@ export class InteractiveMode {
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
 		// This handles extension commands (execute immediately), prompt template expansion, and queueing
 		if (this.session.isStreaming) {
-			this.editor.addToHistory?.(text);
+			this.recordPromptHistory(text);
 			this.editor.setText("");
 			await this.session.prompt(text, { streamingBehavior: "followUp" });
 			this.updatePendingMessagesDisplay();
@@ -3997,7 +4011,7 @@ export class InteractiveMode {
 
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		this.compactionQueuedMessages.push({ text, mode });
-		this.editor.addToHistory?.(text);
+		this.recordPromptHistory(text);
 		this.editor.setText("");
 		this.updatePendingMessagesDisplay();
 		this.showStatus("Queued message for after compaction");
@@ -4152,6 +4166,8 @@ export class InteractiveMode {
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					outputPad: this.settingsManager.getOutputPad(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
+					promptHistoryScope: this.settingsManager.getPromptHistoryScope(),
+					promptHistoryMaxEntries: this.settingsManager.getPromptHistoryMaxEntries(),
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
@@ -4284,6 +4300,14 @@ export class InteractiveMode {
 						if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
 							this.editor.setAutocompleteMaxVisible(maxVisible);
 						}
+					},
+					onPromptHistoryScopeChange: (scope) => {
+						this.settingsManager.setPromptHistoryScope(scope);
+						void this.refreshPromptHistory();
+					},
+					onPromptHistoryMaxEntriesChange: (maxEntries) => {
+						this.settingsManager.setPromptHistoryMaxEntries(maxEntries);
+						void this.refreshPromptHistory();
 					},
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
@@ -5385,6 +5409,7 @@ export class InteractiveMode {
 			this.setupAutocompleteProvider();
 			const runner = this.session.extensionRunner;
 			this.setupExtensionShortcuts(runner);
+			await this.refreshPromptHistory();
 			this.showLoadedResources({
 				force: false,
 				showDiagnosticsWhenQuiet: true,

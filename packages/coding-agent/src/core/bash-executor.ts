@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripAnsi } from "../utils/ansi.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";
+import { registerTempFile } from "./temp-file-registry.ts";
 import type { BashOperations } from "./tools/bash.ts";
+import { DEFAULT_MAX_TEMP_FILE_BYTES } from "./tools/output-accumulator.ts";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.ts";
 
 // ============================================================================
@@ -37,6 +39,8 @@ export interface BashResult {
 	truncated: boolean;
 	/** Path to temp file containing full output (if output exceeded truncation threshold) */
 	fullOutputPath?: string;
+	/** True when that file holds only a prefix because the persistence cap was reached. */
+	fullOutputCapped?: boolean;
 }
 
 // ============================================================================
@@ -60,6 +64,32 @@ export async function executeBashWithOperations(
 	let tempFilePath: string | undefined;
 	let tempFileStream: WriteStream | undefined;
 	let totalBytes = 0;
+	let tempFileBytes = 0;
+	let tempFileCapped = false;
+
+	/** Persist up to the cap, then stop, so a runaway command cannot fill tmpdir. */
+	const writeToTempFile = (text: string) => {
+		if (!tempFileStream || tempFileCapped || text.length === 0) return;
+		const bytes = Buffer.byteLength(text, "utf-8");
+		const remaining = DEFAULT_MAX_TEMP_FILE_BYTES - tempFileBytes;
+		if (remaining <= 0) {
+			tempFileCapped = true;
+			return;
+		}
+		if (bytes <= remaining) {
+			tempFileStream.write(text);
+			tempFileBytes += bytes;
+			return;
+		}
+		// Cut on a character boundary so the saved prefix stays valid UTF-8.
+		const chunk = Buffer.from(text, "utf-8")
+			.subarray(0, remaining)
+			.toString("utf-8")
+			.replace(/\uFFFD$/, "");
+		tempFileStream.write(chunk);
+		tempFileBytes += Buffer.byteLength(chunk, "utf-8");
+		tempFileCapped = true;
+	};
 
 	const ensureTempFile = () => {
 		if (tempFilePath) {
@@ -67,9 +97,12 @@ export async function executeBashWithOperations(
 		}
 		const id = randomBytes(8).toString("hex");
 		tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+		// The path is handed to the user and the model, so it outlives this call; register it so the
+		// session removes it at exit instead of leaving it in tmpdir forever.
+		registerTempFile(tempFilePath);
 		tempFileStream = createWriteStream(tempFilePath);
 		for (const chunk of outputChunks) {
-			tempFileStream.write(chunk);
+			writeToTempFile(chunk);
 		}
 	};
 
@@ -86,9 +119,7 @@ export async function executeBashWithOperations(
 			ensureTempFile();
 		}
 
-		if (tempFileStream) {
-			tempFileStream.write(text);
-		}
+		writeToTempFile(text);
 
 		// Keep rolling buffer
 		outputChunks.push(text);
@@ -126,6 +157,7 @@ export async function executeBashWithOperations(
 			cancelled,
 			truncated: truncationResult.truncated,
 			fullOutputPath: tempFilePath,
+			fullOutputCapped: tempFileCapped,
 		};
 	} catch (err) {
 		// Check if it was an abort
@@ -144,6 +176,7 @@ export async function executeBashWithOperations(
 				cancelled: true,
 				truncated: truncationResult.truncated,
 				fullOutputPath: tempFilePath,
+				fullOutputCapped: tempFileCapped,
 			};
 		}
 

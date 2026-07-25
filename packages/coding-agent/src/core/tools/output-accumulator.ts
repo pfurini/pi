@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerTempFile } from "../temp-file-registry.ts";
+import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "../temp-file-registry.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.ts";
 
 export interface OutputAccumulatorOptions {
@@ -12,13 +12,6 @@ export interface OutputAccumulatorOptions {
 	/** Max bytes persisted to the full-output temp file. 0 means unlimited. */
 	maxTempFileBytes?: number;
 }
-
-/**
- * Ceiling on the full-output temp file. Without one, a runaway command writes its entire output to
- * tmpdir at disk speed: nothing about a fast disk prevents that, it just fills faster. Matches the
- * per-stream spill cap execCommand applies for the same reason.
- */
-export const DEFAULT_MAX_TEMP_FILE_BYTES = 64 * 1024 * 1024;
 
 export interface OutputSnapshot {
 	content: string;

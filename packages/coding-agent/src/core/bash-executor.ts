@@ -12,9 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripAnsi } from "../utils/ansi.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";
-import { registerTempFile } from "./temp-file-registry.ts";
+import { trimIncompleteTrailingUtf8 } from "../utils/utf8.ts";
+import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "./temp-file-registry.ts";
 import type { BashOperations } from "./tools/bash.ts";
-import { DEFAULT_MAX_TEMP_FILE_BYTES } from "./tools/output-accumulator.ts";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.ts";
 
 // ============================================================================
@@ -81,13 +81,12 @@ export async function executeBashWithOperations(
 			tempFileBytes += bytes;
 			return;
 		}
-		// Cut on a character boundary so the saved prefix stays valid UTF-8.
-		const chunk = Buffer.from(text, "utf-8")
-			.subarray(0, remaining)
-			.toString("utf-8")
-			.replace(/\uFFFD$/, "");
+		// Cut on a character boundary so the saved prefix stays valid UTF-8. Trimming the bytes
+		// beats stripping a trailing U+FFFD after decoding, which cannot tell a decoder artifact
+		// apart from a replacement character the output genuinely contained.
+		const chunk = trimIncompleteTrailingUtf8(Buffer.from(text, "utf-8").subarray(0, remaining));
 		tempFileStream.write(chunk);
-		tempFileBytes += Buffer.byteLength(chunk, "utf-8");
+		tempFileBytes += chunk.length;
 		tempFileCapped = true;
 	};
 

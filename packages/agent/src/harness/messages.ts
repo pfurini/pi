@@ -24,6 +24,12 @@ export interface BashExecutionMessage {
 	cancelled: boolean;
 	truncated: boolean;
 	fullOutputPath?: string;
+	/**
+	 * True when `fullOutputPath` holds only a prefix because the persistence cap was reached.
+	 * Mirrors the coding-agent declaration: both packages merge this interface into the same
+	 * `CustomAgentMessages["bashExecution"]` slot, so the two must stay structurally identical.
+	 */
+	fullOutputCapped?: boolean;
 	timestamp: number;
 	excludeFromContext?: boolean;
 }

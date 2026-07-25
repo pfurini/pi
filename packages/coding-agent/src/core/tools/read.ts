@@ -11,6 +11,7 @@ import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/inte
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
+import { trimIncompleteTrailingUtf8 } from "../../utils/utf8.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.ts";
@@ -64,18 +65,6 @@ export interface ReadOperations {
  * Matches the retained-output bound pi.exec applies to foreign input.
  */
 export const MAX_READ_FILE_BYTES = 4 * 1024 * 1024;
-
-/** Drop a trailing UTF-8 sequence cut in half by a prefix read, so decoding cannot end in U+FFFD. */
-function trimIncompleteTrailingUtf8(buffer: Buffer): Buffer {
-	for (let back = 1; back <= 3 && back <= buffer.length; back++) {
-		const index = buffer.length - back;
-		const byte = buffer[index];
-		if ((byte & 0xc0) === 0x80) continue;
-		const sequenceLength = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-		return sequenceLength > back ? buffer.subarray(0, index) : buffer;
-	}
-	return buffer;
-}
 
 const defaultReadOperations: ReadOperations = {
 	readFile: (path) => fsReadFile(path),

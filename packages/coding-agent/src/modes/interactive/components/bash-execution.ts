@@ -26,6 +26,7 @@ export class BashExecutionComponent extends Container {
 	private loader: Loader;
 	private truncationResult?: TruncationResult;
 	private fullOutputPath?: string;
+	private fullOutputCapped?: boolean;
 	private expanded = false;
 	private contentContainer: Container;
 
@@ -100,6 +101,7 @@ export class BashExecutionComponent extends Container {
 		cancelled: boolean,
 		truncationResult?: TruncationResult,
 		fullOutputPath?: string,
+		fullOutputCapped?: boolean,
 	): void {
 		this.exitCode = exitCode;
 		this.status = cancelled
@@ -109,6 +111,7 @@ export class BashExecutionComponent extends Container {
 				: "complete";
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
+		this.fullOutputCapped = fullOutputCapped;
 
 		// Stop loader
 		this.loader.stop();
@@ -195,7 +198,10 @@ export class BashExecutionComponent extends Container {
 			// Add truncation warning (context truncation, not preview truncation)
 			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
 			if (wasTruncated && this.fullOutputPath) {
-				statusParts.push(theme.fg("warning", `Output truncated. Full output: ${this.fullOutputPath}`));
+				const savedFile = this.fullOutputCapped
+					? `Output truncated. First part saved to: ${this.fullOutputPath}`
+					: `Output truncated. Full output: ${this.fullOutputPath}`;
+				statusParts.push(theme.fg("warning", savedFile));
 			}
 
 			if (statusParts.length > 0) {

@@ -59,6 +59,21 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export interface PromptHistorySettings {
+	scope?: "session" | "project"; // default: "session"
+	maxEntries?: number; // default: 100; 0 means unlimited
+}
+
+const DEFAULT_PROMPT_HISTORY_MAX_ENTRIES = 100;
+
+/** `0` means unlimited; finite positive values are floored; invalid/negative values fall back to the default. */
+export function normalizePromptHistoryMaxEntries(maxEntries: number | undefined): number {
+	if (maxEntries === undefined) return DEFAULT_PROMPT_HISTORY_MAX_ENTRIES;
+	if (maxEntries === 0) return 0;
+	if (Number.isFinite(maxEntries) && maxEntries > 0) return Math.floor(maxEntries);
+	return DEFAULT_PROMPT_HISTORY_MAX_ENTRIES;
+}
+
 export type DefaultProjectTrust = "ask" | "always" | "never";
 
 export type TransportSetting = Transport;
@@ -126,6 +141,7 @@ export interface Settings {
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+	promptHistory?: PromptHistorySettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1216,6 +1232,39 @@ export class SettingsManager {
 		this.globalSettings.autocompleteMaxVisible = Math.max(3, Math.min(20, Math.floor(maxVisible)));
 		this.markModified("autocompleteMaxVisible");
 		this.save();
+	}
+
+	getPromptHistoryScope(): "session" | "project" {
+		return this.settings.promptHistory?.scope === "project" ? "project" : "session";
+	}
+
+	setPromptHistoryScope(scope: "session" | "project"): void {
+		if (!this.globalSettings.promptHistory) {
+			this.globalSettings.promptHistory = {};
+		}
+		this.globalSettings.promptHistory.scope = scope === "project" ? "project" : "session";
+		this.markModified("promptHistory", "scope");
+		this.save();
+	}
+
+	getPromptHistoryMaxEntries(): number {
+		return normalizePromptHistoryMaxEntries(this.settings.promptHistory?.maxEntries);
+	}
+
+	setPromptHistoryMaxEntries(maxEntries: number): void {
+		if (!this.globalSettings.promptHistory) {
+			this.globalSettings.promptHistory = {};
+		}
+		this.globalSettings.promptHistory.maxEntries = normalizePromptHistoryMaxEntries(maxEntries);
+		this.markModified("promptHistory", "maxEntries");
+		this.save();
+	}
+
+	getPromptHistorySettings(): { scope: "session" | "project"; maxEntries: number } {
+		return {
+			scope: this.getPromptHistoryScope(),
+			maxEntries: this.getPromptHistoryMaxEntries(),
+		};
 	}
 
 	getCodeBlockIndent(): string {

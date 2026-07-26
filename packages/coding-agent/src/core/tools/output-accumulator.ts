@@ -2,18 +2,25 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "../temp-file-registry.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.ts";
 
 export interface OutputAccumulatorOptions {
 	maxLines?: number;
 	maxBytes?: number;
 	tempFilePrefix?: string;
+	/** Max bytes persisted to the full-output temp file. 0 means unlimited. */
+	maxTempFileBytes?: number;
 }
 
 export interface OutputSnapshot {
 	content: string;
 	truncation: TruncationResult;
 	fullOutputPath?: string;
+	/** Bytes persisted to `fullOutputPath`. */
+	fullOutputBytes?: number;
+	/** True when the temp file holds only a prefix because the cap was reached. */
+	fullOutputCapped?: boolean;
 }
 
 function defaultTempFilePath(prefix: string): string {
@@ -37,6 +44,7 @@ export class OutputAccumulator {
 	private readonly maxBytes: number;
 	private readonly maxRollingBytes: number;
 	private readonly tempFilePrefix: string;
+	private readonly maxTempFileBytes: number;
 	private readonly decoder = new TextDecoder();
 
 	private rawChunks: Buffer[] = [];
@@ -53,12 +61,15 @@ export class OutputAccumulator {
 
 	private tempFilePath: string | undefined;
 	private tempFileStream: WriteStream | undefined;
+	private tempFileBytes = 0;
+	private tempFileCapped = false;
 
 	constructor(options: OutputAccumulatorOptions = {}) {
 		this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
 		this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
 		this.tempFilePrefix = options.tempFilePrefix ?? "pi-output";
+		this.maxTempFileBytes = options.maxTempFileBytes ?? DEFAULT_MAX_TEMP_FILE_BYTES;
 	}
 
 	append(data: Buffer): void {
@@ -71,7 +82,7 @@ export class OutputAccumulator {
 
 		if (this.tempFileStream || this.shouldUseTempFile()) {
 			this.ensureTempFile();
-			this.tempFileStream?.write(data);
+			this.writeToTempFile(data);
 		} else if (data.length > 0) {
 			this.rawChunks.push(data);
 		}
@@ -115,6 +126,8 @@ export class OutputAccumulator {
 			content: truncation.content,
 			truncation,
 			fullOutputPath: this.tempFilePath,
+			fullOutputBytes: this.tempFilePath ? this.tempFileBytes : undefined,
+			fullOutputCapped: this.tempFilePath ? this.tempFileCapped : undefined,
 		};
 	}
 
@@ -202,6 +215,28 @@ export class OutputAccumulator {
 		return firstNewline === -1 ? this.tailText : this.tailText.slice(firstNewline + 1);
 	}
 
+	/** Persist up to the cap, then stop; the snapshot reports the file as a prefix. */
+	private writeToTempFile(data: Buffer): void {
+		const stream = this.tempFileStream;
+		if (!stream || this.tempFileCapped || data.length === 0) return;
+
+		if (this.maxTempFileBytes <= 0) {
+			stream.write(data);
+			this.tempFileBytes += data.length;
+			return;
+		}
+
+		const remaining = this.maxTempFileBytes - this.tempFileBytes;
+		if (remaining <= 0) {
+			this.tempFileCapped = true;
+			return;
+		}
+		const chunk = data.length <= remaining ? data : data.subarray(0, remaining);
+		stream.write(chunk);
+		this.tempFileBytes += chunk.length;
+		if (chunk.length < data.length) this.tempFileCapped = true;
+	}
+
 	private shouldUseTempFile(): boolean {
 		return (
 			this.totalRawBytes > this.maxBytes || this.totalDecodedBytes > this.maxBytes || this.totalLines > this.maxLines
@@ -213,9 +248,12 @@ export class OutputAccumulator {
 			return;
 		}
 		this.tempFilePath = defaultTempFilePath(this.tempFilePrefix);
+		// The path is handed to the model as `fullOutputPath`, so it has to outlive this call;
+		// registering it means the session cleans up after itself instead of filling tmpdir.
+		registerTempFile(this.tempFilePath);
 		this.tempFileStream = createWriteStream(this.tempFilePath);
 		for (const chunk of this.rawChunks) {
-			this.tempFileStream.write(chunk);
+			this.writeToTempFile(chunk);
 		}
 		this.rawChunks = [];
 	}

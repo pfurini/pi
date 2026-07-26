@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Configurable project-wide prompt history: `promptHistory.scope: "project"` recalls Up/Down prompts from every saved session in the same working directory, not just the current one, and `promptHistory.maxEntries: 0` removes the recall cap. Defaults to the existing session-local, 100-entry behavior. See [Sessions](docs/sessions.md#prompt-history) and [Settings](docs/settings.md).
+
 ## [0.82.1] - 2026-07-25
 
 ### New Features

@@ -39,6 +39,12 @@ export interface EditorComponent extends Component {
 	/** Add text to history for up/down navigation */
 	addToHistory?(text: string): void;
 
+	/** Replace the entire history list (chronological, oldest first). Optional bulk-seeding API. */
+	setHistory?(entries: readonly string[]): void;
+
+	/** Update the configured history limit. `0` means unlimited. Optional. */
+	setHistoryMaxEntries?(maxEntries: number): void;
+
 	// =========================================================================
 	// Advanced text manipulation (optional)
 	// =========================================================================

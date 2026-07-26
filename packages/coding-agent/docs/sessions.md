@@ -19,6 +19,23 @@ Use `/session` in interactive mode to see the current session file, session ID, 
 
 For the JSONL file format and SessionManager API, see [Session Format](session-format.md).
 
+## Prompt History
+
+Up/Down in the editor recalls previously submitted prompts. By default this is session-local: only prompts from the current session are recallable, capped at 100 entries. Recall covers every prompt the session recorded, including ones on branches you have navigated away from and ones a `/compact` has dropped from the model's context.
+
+Set `promptHistory.scope: "project"` in [Settings](settings.md) to recall prompts from every saved session with the same working directory, not just the current one. Combine with `promptHistory.maxEntries: 0` for unlimited recall:
+
+```json
+{
+  "promptHistory": {
+    "scope": "project",
+    "maxEntries": 0
+  }
+}
+```
+
+This only affects what Up/Down can recall in the editor; it never reads session files for any other purpose and never deletes, truncates, or rewrites them.
+
 ## Session Commands
 
 | Command | Description |

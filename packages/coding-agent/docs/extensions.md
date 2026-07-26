@@ -1623,6 +1623,18 @@ const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 
 Output above the retained limit is a behavioral change for large-output consumers: `stdout` or `stderr` becomes a UTF-8-safe rolling tail and the corresponding `stdoutTruncation` or `stderrTruncation` field is present. This is source-compatible because the fields are optional, but code that assumes arbitrarily large complete output must handle truncation metadata or redirect the command's output to an explicit file.
 
+A truncated stream also ends with a marker describing what happened:
+
+```
+...last retained bytes of real output...
+
+[pi.exec: stdout truncated, showing the last 4.0MB of 312.5MB. Complete output saved to /tmp/pi-exec-stdout-9f2c.log (removed when pi exits)]
+```
+
+The marker exists so that an extension which forwards `result.stdout` to the model (a tool result, a slash command's output, a hook) reports a tail as a tail rather than as the whole output, without the extension having to know about truncation at all. It is appended rather than prepended because the tool-result layer truncates from the end (see [Output Truncation](#output-truncation)), so the marker survives a second round of truncation. It appears only when the stream was actually truncated, which is exactly when the returned text is no longer the command's output.
+
+Pass `truncationNotice: false` when parsing the output programmatically and handling the truncation fields yourself; the returned text is then raw bytes only.
+
 Each truncation object contains:
 
 - `truncated: true`
@@ -1632,13 +1644,13 @@ Each truncation object contains:
 - `spillLimitBytes`: maximum bytes that may be persisted for the stream (64 MiB)
 - `spill`: optional `{ path, bytes, complete }` metadata for a securely created (`0o600`) spill file
 - `discardedBytes`: bytes absent from the spill file (the returned tail may overlap these bytes)
-- `spillError`: optional file creation or write error; failed partial spill files are removed automatically
+- `spillError`: optional file creation or write error; failed partial spill files are removed automatically, and a failure to remove one is appended to this message rather than reported as `internalError`
 
-A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them.
+A successful spill contains a contiguous raw prefix. It may be incomplete because persistence is capped at 64 MiB per stream or because backpressure prevented a gap-free continuation. Check `spill.complete` before treating it as full output. Successful spill files can contain sensitive data and remain available after `pi.exec()` resolves; the caller owns deleting them. As a backstop, pi unlinks the spill files it created when the process exits normally, so a long session cannot accumulate them indefinitely. Read or copy a spill file before pi exits, and expect leftovers after an abnormal termination such as `SIGKILL`.
 
 Retained-output overflow, the spill cap, and spill backpressure do not kill the child (unlike Node's `maxBuffer` behavior). `killed` is true only when Pi sent a termination signal because of a timeout, abort, or internal collector failure. An unexpected collector or finalization failure is reported as `internalError` and forces `code` to `1`. Invalid arguments rejected synchronously by `spawn()` reject the `pi.exec()` promise, while a child-process launch error such as `ENOENT` resolves with `code: 1`.
 
-Commands that require complete output larger than these bounds should redirect output to a caller-managed file rather than raising `maxOutputBytes`. Registered tools must still apply their own LLM-context limits described in [Output Truncation](#output-truncation); `pi.exec()` bounds process capture, not tool-result context.
+Commands that require complete output larger than these bounds should redirect output to a caller-managed file rather than raising `maxOutputBytes`. Registered tools must still apply their own LLM-context limits described in [Output Truncation](#output-truncation); `pi.exec()` bounds process capture, not tool-result context. The two layers compose: the truncation marker `pi.exec()` appends survives the tool-result layer, so the model sees both what the tool dropped and what the process capture dropped.
 
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 

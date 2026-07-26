@@ -409,13 +409,18 @@ export function createBashToolDefinition(
 					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
+					// A capped file is a prefix, not the full output; saying otherwise sends the model
+					// looking for content that was never written.
+					const savedFile = snapshot.fullOutputCapped
+						? `First ${formatSize(snapshot.fullOutputBytes ?? 0)} saved to: ${snapshot.fullOutputPath}`
+						: `Full output: ${snapshot.fullOutputPath}`;
 					if (truncation.lastLinePartial) {
 						const lastLineSize = formatSize(output.getLastLineBytes());
-						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
+						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). ${savedFile}]`;
 					} else if (truncation.truncatedBy === "lines") {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
+						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. ${savedFile}]`;
 					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
+						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). ${savedFile}]`;
 					}
 				}
 				return { text, details };

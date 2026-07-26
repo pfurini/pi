@@ -284,6 +284,162 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Configurable prompt history", () => {
+		it("defaults to a cap of 100 entries", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			for (let i = 0; i < 105; i++) {
+				editor.addToHistory(`prompt ${i}`);
+			}
+
+			for (let i = 0; i < 100; i++) {
+				editor.handleInput("\x1b[A");
+			}
+
+			assert.strictEqual(editor.getText(), "prompt 5");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "prompt 5");
+		});
+
+		it("honors a smaller configured cap from EditorOptions", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { historyMaxEntries: 3 });
+
+			for (let i = 0; i < 5; i++) {
+				editor.addToHistory(`prompt ${i}`);
+			}
+
+			for (let i = 0; i < 3; i++) {
+				editor.handleInput("\x1b[A");
+			}
+			assert.strictEqual(editor.getText(), "prompt 2");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "prompt 2");
+		});
+
+		it("retains and navigates more than 100 entries when maxEntries is 0", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { historyMaxEntries: 0 });
+
+			for (let i = 0; i < 150; i++) {
+				editor.addToHistory(`prompt ${i}`);
+			}
+
+			for (let i = 0; i < 150; i++) {
+				editor.handleInput("\x1b[A");
+			}
+			assert.strictEqual(editor.getText(), "prompt 0");
+		});
+
+		it("trims oldest entries immediately when the limit is reduced at runtime", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			for (let i = 0; i < 10; i++) {
+				editor.addToHistory(`prompt ${i}`);
+			}
+
+			editor.setHistoryMaxEntries(3);
+
+			for (let i = 0; i < 3; i++) {
+				editor.handleInput("\x1b[A");
+			}
+			assert.strictEqual(editor.getText(), "prompt 7");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "prompt 7");
+		});
+
+		it("stops trimming once switched from finite to unlimited", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { historyMaxEntries: 3 });
+
+			for (let i = 0; i < 5; i++) {
+				editor.addToHistory(`prompt ${i}`);
+			}
+			// Only the newest 3 survive the finite cap.
+			editor.setHistoryMaxEntries(0);
+			editor.addToHistory("prompt 5");
+
+			for (let i = 0; i < 4; i++) {
+				editor.handleInput("\x1b[A");
+			}
+			assert.strictEqual(editor.getText(), "prompt 2");
+		});
+
+		it("setHistory() presents entries newest-first on Up", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setHistory(["oldest", "middle", "newest"]);
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "newest");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "middle");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "oldest");
+		});
+
+		it("setHistory() discards empty entries and collapses only consecutive duplicates", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setHistory(["a", "", "  ", "a", "b", "b", "c"]);
+
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "c");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "b");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "a");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "a");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "a");
+		});
+
+		it("setHistory() called while not browsing preserves the visible draft", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("my draft");
+			editor.setHistory(["one", "two"]);
+
+			assert.strictEqual(editor.getText(), "my draft");
+		});
+
+		it("setHistory() called mid-browse restores the stashed draft and resets the browse index", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.addToHistory("old entry");
+			editor.setText("my draft");
+			editor.handleInput("\x1b[A"); // Up - jumps to start of draft
+			editor.handleInput("\x1b[A"); // Up - browsing, draft stashed
+			assert.strictEqual(editor.getText(), "old entry");
+
+			editor.setHistory(["fresh one", "fresh two"]);
+
+			// The stashed draft comes back, not a recalled entry.
+			assert.strictEqual(editor.getText(), "my draft");
+
+			// Down-to-draft / Up navigation now works against the new list.
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "fresh two");
+			editor.handleInput("\x1b[B");
+			assert.strictEqual(editor.getText(), "my draft");
+		});
+
+		it("setHistory() notifies onChange when it restores the stashed draft", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const changes: string[] = [];
+
+			editor.addToHistory("old entry");
+			editor.setText("!my draft");
+			editor.onChange = (text) => changes.push(text);
+
+			editor.handleInput("\x1b[A"); // Up - jumps to start of draft
+			editor.handleInput("\x1b[A"); // Up - browsing, draft stashed
+			editor.setHistory(["fresh one"]);
+
+			// Consumers deriving UI state from the buffer (bash mode, border color) must see the
+			// restored draft, exactly as they do when Down restores it.
+			assert.strictEqual(changes.at(-1), "!my draft");
+		});
+	});
+
 	describe("public state accessors", () => {
 		it("returns cursor position", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);

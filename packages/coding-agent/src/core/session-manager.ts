@@ -500,7 +500,8 @@ class SessionHeaderScanLimitError extends Error {
 	}
 }
 
-function parseSessionEntryLine(line: string): FileEntry | null {
+/** Exported for testing */
+export function parseSessionEntryLine(line: string): FileEntry | null {
 	if (!line.trim()) return null;
 	try {
 		return JSON.parse(line) as FileEntry;

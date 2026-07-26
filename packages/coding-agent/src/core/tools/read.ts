@@ -3,7 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { access as fsAccess, open as fsOpen, readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.ts";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.ts";
@@ -11,6 +11,7 @@ import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/inte
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
+import { trimIncompleteTrailingUtf8 } from "../../utils/utf8.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.ts";
@@ -47,12 +48,39 @@ export interface ReadOperations {
 	access: (absolutePath: string) => Promise<void>;
 	/** Detect image MIME type, return null or undefined for non-images */
 	detectImageMimeType?: (absolutePath: string) => Promise<string | null | undefined>;
+	/**
+	 * File size in bytes, used to avoid loading an arbitrarily large file into memory.
+	 * Optional together with `readFilePrefix`: a backend that provides neither keeps the
+	 * unbounded whole-file read, so existing remote operations stay source-compatible.
+	 */
+	fileSize?: (absolutePath: string) => Promise<number>;
+	/** Read at most `maxBytes` from the start of the file. */
+	readFilePrefix?: (absolutePath: string, maxBytes: number) => Promise<Buffer>;
 }
+
+/**
+ * Largest text file read whole. Above this only a prefix is loaded: the tool caps its own output
+ * at DEFAULT_MAX_BYTES anyway, and decoding a multi-gigabyte file costs several times its size in
+ * memory (Buffer, then a JS string, then the split line array) before that cap is ever applied.
+ * Matches the retained-output bound pi.exec applies to foreign input.
+ */
+export const MAX_READ_FILE_BYTES = 4 * 1024 * 1024;
 
 const defaultReadOperations: ReadOperations = {
 	readFile: (path) => fsReadFile(path),
 	access: (path) => fsAccess(path, constants.R_OK),
 	detectImageMimeType: detectSupportedImageMimeTypeFromFile,
+	fileSize: async (path) => (await fsStat(path)).size,
+	readFilePrefix: async (path, maxBytes) => {
+		const handle = await fsOpen(path, "r");
+		try {
+			const buffer = Buffer.allocUnsafe(maxBytes);
+			const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+			return buffer.subarray(0, bytesRead);
+		} finally {
+			await handle.close();
+		}
+	},
 };
 
 export interface ReadToolOptions {
@@ -209,7 +237,7 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete. Only the first ${MAX_READ_FILE_BYTES / (1024 * 1024)}MB of a text file is reachable through this tool; use bash (sed/awk) beyond that.`,
 		promptSnippet: "Read file contents",
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
@@ -262,17 +290,42 @@ export function createReadToolDefinition(
 									];
 								}
 							} else {
-								// Read text content.
-								const buffer = await ops.readFile(absolutePath);
+								// Read text content, loading only a prefix when the file is too large to hold whole.
+								const readPrefix = ops.readFilePrefix;
+								const measuredSize = ops.fileSize && readPrefix ? await ops.fileSize(absolutePath) : undefined;
+								// Set only when the file is both measurable and too large, which is exactly when the
+								// prefix path applies; keeping the size in the variable lets it be reported truthfully.
+								const oversizedBytes =
+									readPrefix && measuredSize !== undefined && measuredSize > MAX_READ_FILE_BYTES
+										? measuredSize
+										: undefined;
+								const buffer =
+									oversizedBytes !== undefined && readPrefix
+										? trimIncompleteTrailingUtf8(await readPrefix(absolutePath, MAX_READ_FILE_BYTES))
+										: await ops.readFile(absolutePath);
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
+								// The prefix almost certainly ends mid-line; drop that partial line rather than
+								// presenting it as a complete one.
+								if (oversizedBytes !== undefined && allLines.length > 1) allLines.pop();
 								const totalFileLines = allLines.length;
+								const prefixNote =
+									oversizedBytes !== undefined
+										? `\n\n[File is ${formatSize(oversizedBytes)}, above the ${formatSize(MAX_READ_FILE_BYTES)} read limit: only its first ${allLines.length} lines are reachable here. Use bash for the rest, e.g. sed -n 'START,ENDp' ${path}]`
+										: "";
+								// A bounded read only knows the lines it loaded, so counts are reported as a floor.
+								const totalLinesDisplay =
+									oversizedBytes !== undefined ? `${totalFileLines}+` : `${totalFileLines}`;
 								// Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
 								const startLine = offset ? Math.max(0, offset - 1) : 0;
 								const startLineDisplay = startLine + 1;
 								// Check if offset is out of bounds.
 								if (startLine >= allLines.length) {
-									throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
+									throw new Error(
+										oversizedBytes !== undefined
+											? `Offset ${offset} is beyond the first ${allLines.length} lines, the most this tool can read from a ${formatSize(oversizedBytes)} file. Use bash: sed -n '${offset},${(offset ?? 1) + 200}p' ${path}`
+											: `Offset ${offset} is beyond end of file (${allLines.length} lines total)`,
+									);
 								}
 								let selectedContent: string;
 								let userLimitedLines: number | undefined;
@@ -298,9 +351,9 @@ export function createReadToolDefinition(
 									const nextOffset = endLineDisplay + 1;
 									outputText = truncation.content;
 									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalLinesDisplay}. Use offset=${nextOffset} to continue.]`;
 									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalLinesDisplay} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
 									}
 									details = { truncation };
 								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
@@ -312,7 +365,7 @@ export function createReadToolDefinition(
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
 								}
-								content = [{ type: "text", text: outputText }];
+								content = [{ type: "text", text: outputText + prefixNote }];
 							}
 
 							if (aborted) return;

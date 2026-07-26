@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	EXEC_SPILL_HIGH_WATER_MARK_BYTES,
 	ExecOutputCollector,
+	formatExecTruncationNotice,
 	type SpillWriterFactory,
 } from "../src/core/exec-output.ts";
 
@@ -211,6 +212,112 @@ describe("ExecOutputCollector", () => {
 
 		expect(snapshot.text).toBe(expected);
 		expect(snapshot.truncation?.retainedBytes).toBe(32);
+	});
+
+	it("keeps a large retained tail linear in the number of small appends", async () => {
+		// Regression: the tail used to be trimmed by recopying its head buffer on every append once
+		// full, which made a line-flushing child (many small writes) quadratic in the retained limit.
+		const retainedLimitBytes = 4 * 1024 * 1024;
+		const chunk = Buffer.alloc(64, 0x61);
+		const collector = createCollector(retainedLimitBytes, { spillLimitBytes: 1 });
+		const chunkCount = Math.floor((retainedLimitBytes * 2) / chunk.length);
+
+		const startedAt = Date.now();
+		for (let index = 0; index < chunkCount; index++) collector.append(chunk);
+		const tailMarker = Buffer.from("END");
+		collector.append(tailMarker);
+		const elapsedMs = Date.now() - startedAt;
+		const snapshot = await collector.finish();
+		trackSpill(snapshot);
+
+		expect(snapshot.text.endsWith("END")).toBe(true);
+		expect(snapshot.truncation?.retainedBytes).toBe(retainedLimitBytes);
+		expect(snapshot.truncation?.totalBytes).toBe(chunkCount * chunk.length + tailMarker.length);
+		// The quadratic version needed minutes for this input; a generous bound still catches it.
+		expect(elapsedMs).toBeLessThan(5000);
+	});
+
+	it("keeps a complete spill prefix when the tail switches representation before overflowing", async () => {
+		// Enough small appends to trip the chunk-count guard well before the retained limit, so the
+		// spill's pre-overflow prefix is replayed out of the ring rather than the chunk list.
+		const retainedLimitBytes = 4096;
+		const total = Buffer.alloc(retainedLimitBytes * 2);
+		for (let index = 0; index < total.length; index++) total[index] = 0x41 + (index % 26);
+
+		const collector = createCollector(retainedLimitBytes);
+		for (let offset = 0; offset < total.length; offset += 2) collector.append(total.subarray(offset, offset + 2));
+		const snapshot = await collector.finish();
+		trackSpill(snapshot);
+
+		expect(snapshot.truncation?.spill).toMatchObject({ bytes: total.length, complete: true });
+		expect(readFileSync(snapshot.truncation?.spill?.path ?? "")).toEqual(total);
+		expect(Buffer.from(snapshot.text)).toEqual(total.subarray(total.length - retainedLimitBytes));
+	});
+
+	it("wraps the retained tail across many appends of uneven sizes", async () => {
+		const collector = createCollector(10, { spillLimitBytes: 1 });
+		for (const part of ["abc", "de", "fghij", "k", "lmnopqrs", "tuv"]) collector.append(Buffer.from(part));
+		const snapshot = await collector.finish();
+		trackSpill(snapshot);
+
+		expect(snapshot.text).toBe("mnopqrstuv");
+		expect(snapshot.truncation?.retainedBytes).toBe(10);
+	});
+
+	it("reports a failure to delete a partial spill as a spill error, not an internal error", async () => {
+		// rm() without `recursive` rejects on a directory, which stands in for a real unlink failure
+		// (read-only tmpdir, EPERM, a Windows handle still open on the partial file).
+		const collector = createCollector(4, {
+			spillWriterFactory: (path) => {
+				mkdirSync(path);
+				return new Writable({
+					write(_chunk, _encoding, callback) {
+						queueMicrotask(() => callback(new Error("injected spill failure")));
+					},
+				});
+			},
+		});
+		collector.append(Buffer.from("abcdefgh"));
+		const snapshot = await collector.finish();
+
+		expect(snapshot.text).toBe("efgh");
+		expect(snapshot.internalError).toBeUndefined();
+		expect(snapshot.truncation?.spill).toBeUndefined();
+		expect(snapshot.truncation?.spillError).toContain("injected spill failure");
+		expect(snapshot.truncation?.spillError).toContain("failed to remove partial spill file");
+	});
+
+	it("states where the rest of the output went in every spill outcome", () => {
+		const base = {
+			truncated: true as const,
+			totalBytes: 100 * 1024 * 1024,
+			retainedBytes: 4 * 1024 * 1024,
+			retainedLimitBytes: 4 * 1024 * 1024,
+			spillLimitBytes: 64 * 1024 * 1024,
+			discardedBytes: 0,
+		};
+
+		expect(
+			formatExecTruncationNotice("stdout", {
+				...base,
+				spill: { path: "/tmp/full.log", bytes: base.totalBytes, complete: true },
+			}),
+		).toBe(
+			"[pi.exec: stdout truncated, showing the last 4.0MB of 100.0MB. Complete output saved to /tmp/full.log (removed when pi exits)]",
+		);
+
+		expect(
+			formatExecTruncationNotice("stderr", {
+				...base,
+				spill: { path: "/tmp/partial.log", bytes: 64 * 1024 * 1024, complete: false },
+			}),
+		).toContain("First 64.0MB saved to /tmp/partial.log");
+
+		expect(formatExecTruncationNotice("stdout", { ...base, spillError: "ENOSPC" })).toContain(
+			"The rest could not be saved: ENOSPC",
+		);
+
+		expect(formatExecTruncationNotice("stdout", base)).toContain("The rest was discarded");
 	});
 
 	it.skipIf(process.platform === "win32")("creates real spill files with mode 0o600", async () => {

@@ -34,6 +34,8 @@ export interface BashExecutionMessage {
 	cancelled: boolean;
 	truncated: boolean;
 	fullOutputPath?: string;
+	/** True when `fullOutputPath` holds only a prefix because the persistence cap was reached. */
+	fullOutputCapped?: boolean;
 	timestamp: number;
 	/** If true, this message is excluded from LLM context (!! prefix) */
 	excludeFromContext?: boolean;
@@ -92,7 +94,9 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 		text += `\n\nCommand exited with code ${msg.exitCode}`;
 	}
 	if (msg.truncated && msg.fullOutputPath) {
-		text += `\n\n[Output truncated. Full output: ${msg.fullOutputPath}]`;
+		text += msg.fullOutputCapped
+			? `\n\n[Output truncated. Only the first part of the output was saved, to: ${msg.fullOutputPath}]`
+			: `\n\n[Output truncated. Full output: ${msg.fullOutputPath}]`;
 	}
 	return text;
 }

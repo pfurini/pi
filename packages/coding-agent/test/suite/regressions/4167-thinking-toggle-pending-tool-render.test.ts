@@ -30,7 +30,7 @@ const EMPTY_USAGE: Usage = {
 type RenderSessionItems = (
 	this: RenderSessionContextThis,
 	items: AgentMessage[],
-	options?: { updateFooter?: boolean; populateHistory?: boolean },
+	options?: { updateFooter?: boolean },
 ) => void;
 
 type RenderSessionContextThis = {
@@ -49,14 +49,14 @@ type RenderSessionContextThis = {
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
-	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void;
+	addMessageToChat(message: AgentMessage): void;
 	renderSessionItems: RenderSessionItems;
 };
 
 type RenderSessionEntries = (
 	this: RenderSessionContextThis,
 	entries: SessionEntry[],
-	options?: { updateFooter?: boolean; populateHistory?: boolean },
+	options?: { updateFooter?: boolean },
 ) => void;
 
 type HandleEvent = (this: RenderSessionContextThis, event: AgentSessionEvent) => Promise<void>;

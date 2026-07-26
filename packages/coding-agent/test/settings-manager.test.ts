@@ -508,4 +508,91 @@ describe("SettingsManager", () => {
 			expect(manager.getShellPath()).toBe(homedir());
 		});
 	});
+
+	describe("promptHistory", () => {
+		it("should default to session scope and 100 max entries", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getPromptHistorySettings()).toEqual({ scope: "session", maxEntries: 100 });
+		});
+
+		it("should accept explicit project scope and unlimited (0) max entries", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ promptHistory: { scope: "project", maxEntries: 0 } }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getPromptHistorySettings()).toEqual({ scope: "project", maxEntries: 0 });
+		});
+
+		it("should floor positive fractional maxEntries", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ promptHistory: { maxEntries: 250.9 } }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getPromptHistoryMaxEntries()).toBe(250);
+		});
+
+		it("should fall back to session scope on an invalid scope value", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ promptHistory: { scope: "nonsense" } }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getPromptHistoryScope()).toBe("session");
+		});
+
+		it.each([-1, "not-a-number", null])(
+			"should fall back to 100 for a settings-file maxEntries value of %s",
+			(value) => {
+				writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ promptHistory: { maxEntries: value } }));
+				const manager = SettingsManager.create(projectDir, agentDir);
+				expect(manager.getPromptHistoryMaxEntries()).toBe(100);
+			},
+		);
+
+		it("should fall back to 100 for NaN and Infinity passed to setPromptHistoryMaxEntries", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setPromptHistoryMaxEntries(Number.NaN);
+			expect(manager.getPromptHistoryMaxEntries()).toBe(100);
+
+			manager.setPromptHistoryMaxEntries(Number.POSITIVE_INFINITY);
+			expect(manager.getPromptHistoryMaxEntries()).toBe(100);
+		});
+
+		it("should merge global settings with a project override of only one child key", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ promptHistory: { scope: "project", maxEntries: 500 } }),
+			);
+			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ promptHistory: { maxEntries: 0 } }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getPromptHistorySettings()).toEqual({ scope: "project", maxEntries: 0 });
+		});
+
+		it("setPromptHistoryScope should preserve the sibling maxEntries key and unrelated settings", async () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ theme: "dark", promptHistory: { maxEntries: 500 } }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setPromptHistoryScope("project");
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(savedSettings.promptHistory).toEqual({ scope: "project", maxEntries: 500 });
+			expect(savedSettings.theme).toBe("dark");
+		});
+
+		it("setPromptHistoryMaxEntries should preserve the sibling scope key and unrelated settings", async () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ theme: "dark", promptHistory: { scope: "project" } }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setPromptHistoryMaxEntries(0);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(savedSettings.promptHistory).toEqual({ scope: "project", maxEntries: 0 });
+			expect(savedSettings.theme).toBe("dark");
+		});
+	});
 });

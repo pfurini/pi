@@ -233,6 +233,16 @@ export interface EditorTheme {
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	historyMaxEntries?: number;
+}
+
+const DEFAULT_HISTORY_MAX_ENTRIES = 100;
+
+/** `0` means unlimited; finite positive values are floored; invalid values fall back to the default. */
+function normalizeHistoryMaxEntries(maxEntries: number): number {
+	if (maxEntries === 0) return 0;
+	if (Number.isFinite(maxEntries) && maxEntries > 0) return Math.floor(maxEntries);
+	return DEFAULT_HISTORY_MAX_ENTRIES;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -317,6 +327,7 @@ export class Editor implements Component, Focusable {
 	private history: string[] = [];
 	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
 	private historyDraft: EditorState | null = null;
+	private historyMaxEntries: number = DEFAULT_HISTORY_MAX_ENTRIES;
 
 	// Kill ring for Emacs-style kill/yank operations
 	private killRing = new KillRing();
@@ -350,6 +361,7 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		this.historyMaxEntries = normalizeHistoryMaxEntries(options.historyMaxEntries ?? DEFAULT_HISTORY_MAX_ENTRIES);
 	}
 
 	/** Set of currently valid paste IDs, for marker-aware segmentation. */
@@ -402,9 +414,51 @@ export class Editor implements Component, Focusable {
 		// Don't add consecutive duplicates
 		if (this.history.length > 0 && this.history[0] === trimmed) return;
 		this.history.unshift(trimmed);
-		// Limit history size
-		if (this.history.length > 100) {
-			this.history.pop();
+		// Limit history size (0 means unlimited)
+		if (this.historyMaxEntries > 0 && this.history.length > this.historyMaxEntries) {
+			this.history.length = this.historyMaxEntries;
+		}
+	}
+
+	/**
+	 * Replace the entire history list, e.g. when seeding from persisted sessions.
+	 * `entries` must be chronological (oldest first); consecutive duplicates are collapsed
+	 * and the current limit is applied. If called mid-browse, the stashed draft is restored
+	 * to the buffer first so no history entry is left on screen and Down-to-draft keeps working.
+	 */
+	setHistory(entries: readonly string[]): void {
+		if (this.historyIndex >= 0 && this.historyDraft) {
+			this.state = this.historyDraft;
+			this.preferredVisualCol = null;
+			this.snappedFromCursorCol = null;
+			this.scrollOffset = 0;
+			// Same notification navigateHistory() sends when Down restores the draft: onChange consumers
+			// derive UI state (bash-mode detection, border color) from the buffer and would go stale.
+			if (this.onChange) this.onChange(this.getText());
+			this.tui.requestRender();
+		}
+		this.historyIndex = -1;
+		this.historyDraft = null;
+
+		const normalized: string[] = [];
+		for (const entry of entries) {
+			const trimmed = entry.trim();
+			if (!trimmed) continue;
+			if (normalized.length > 0 && normalized[normalized.length - 1] === trimmed) continue;
+			normalized.push(trimmed);
+		}
+		normalized.reverse(); // newest first, matching internal storage order
+		if (this.historyMaxEntries > 0 && normalized.length > this.historyMaxEntries) {
+			normalized.length = this.historyMaxEntries;
+		}
+		this.history = normalized;
+	}
+
+	/** Update the configured history limit. `0` means unlimited. Reducing the limit trims oldest entries immediately. */
+	setHistoryMaxEntries(maxEntries: number): void {
+		this.historyMaxEntries = normalizeHistoryMaxEntries(maxEntries);
+		if (this.historyMaxEntries > 0 && this.history.length > this.historyMaxEntries) {
+			this.history.length = this.historyMaxEntries;
 		}
 	}
 

@@ -76,6 +76,7 @@ type LoadedResourcesContext = {
 type RebindContext = {
 	unsubscribe?: () => void;
 	applyRuntimeSettings: () => void;
+	refreshPromptHistory: () => Promise<void>;
 	renderCurrentSessionState: () => void;
 	bindCurrentSessionExtensions: () => Promise<void>;
 	subscribeToAgent: () => void;
@@ -115,6 +116,7 @@ type ReloadCommandContext = {
 	};
 	editor: unknown;
 	defaultEditor: { setPaddingX: (padding: number) => void; setAutocompleteMaxVisible: (maxVisible: number) => void };
+	refreshPromptHistory: () => Promise<void>;
 	themeController: { applyFromSettings: () => Promise<void> };
 	resetExtensionUI: () => void;
 	rebuildChatFromMessages: () => void;
@@ -187,6 +189,7 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 		},
 		editor,
 		defaultEditor: { setPaddingX: () => {}, setAutocompleteMaxVisible: () => {}, ...overrides.defaultEditor },
+		refreshPromptHistory: async () => {},
 		themeController: { applyFromSettings: async () => {}, ...overrides.themeController },
 		customHeader: overrides.customHeader,
 		builtInHeader: overrides.builtInHeader,
@@ -284,6 +287,7 @@ describe("regression #5943: session_start transient UI", () => {
 		try {
 			const context: RebindContext = {
 				applyRuntimeSettings: () => events.push("apply"),
+				refreshPromptHistory: async () => {},
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");
@@ -325,6 +329,7 @@ describe("regression #5943: session_start transient UI", () => {
 		try {
 			const context: RebindContext = {
 				applyRuntimeSettings: () => {},
+				refreshPromptHistory: async () => {},
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");
@@ -377,6 +382,7 @@ describe("regression #5943: session_start transient UI", () => {
 		try {
 			const context: RebindContext = {
 				applyRuntimeSettings: () => {},
+				refreshPromptHistory: async () => {},
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");

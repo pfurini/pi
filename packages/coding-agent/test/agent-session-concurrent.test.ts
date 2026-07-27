@@ -120,6 +120,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader: createTestResourceLoader(),
 		});
@@ -255,6 +256,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader: createTestResourceLoader({ extensionsResult }),
 		});
@@ -322,6 +324,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader: createTestResourceLoader(),
 		});
@@ -428,6 +431,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
@@ -575,6 +579,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },

@@ -963,6 +963,24 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
+### ctx.agentDir
+
+Agent config directory backing the current session (`~/.pi/agent` by default). Sessions created with an explicit `agentDir`, for example `createAgentSession({ agentDir })`, report that directory here.
+
+Resolve global extension config from `ctx.agentDir` rather than from the process-wide agent directory, otherwise an isolated session reads the operator's personal config.
+
+```typescript
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", (_event, ctx) => {
+    const globalConfigPath = join(ctx.agentDir, "my-extension.json");
+    // ...
+  });
+}
+```
+
 ### ctx.isProjectTrusted()
 
 Returns whether project-local trust is active for the current session context. This includes temporary trust decisions and CLI trust overrides, not just saved decisions in the global trust store.

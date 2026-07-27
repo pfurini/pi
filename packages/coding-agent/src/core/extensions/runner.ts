@@ -269,6 +269,7 @@ export class ExtensionRunner {
 	private uiContext: ExtensionUIContext;
 	private mode: ExtensionMode = "print";
 	private cwd: string;
+	private agentDir: string;
 	private sessionManager: SessionManager;
 	private modelRegistry: ModelRegistry;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
@@ -297,6 +298,7 @@ export class ExtensionRunner {
 		extensions: Extension[],
 		runtime: ExtensionRuntime,
 		cwd: string,
+		agentDir: string,
 		sessionManager: SessionManager,
 		modelRegistry: ModelRegistry,
 	) {
@@ -304,6 +306,7 @@ export class ExtensionRunner {
 		this.runtime = runtime;
 		this.uiContext = noOpUIContext;
 		this.cwd = cwd;
+		this.agentDir = agentDir;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
 	}
@@ -632,6 +635,11 @@ export class ExtensionRunner {
 		return this.modelRegistry;
 	}
 
+	/** Agent config directory backing this session. */
+	getAgentDir(): string {
+		return this.agentDir;
+	}
+
 	getRegisteredCommands(): ResolvedCommand[] {
 		this.commandDiagnostics = [];
 		return this.resolveRegisteredCommands();
@@ -681,6 +689,10 @@ export class ExtensionRunner {
 			get cwd() {
 				runner.assertActive();
 				return runner.cwd;
+			},
+			get agentDir() {
+				runner.assertActive();
+				return runner.agentDir;
 			},
 			get sessionManager() {
 				runner.assertActive();

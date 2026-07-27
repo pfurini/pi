@@ -312,6 +312,12 @@ export interface ExtensionContext {
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
+	/**
+	 * Agent config directory backing this session (auth, settings, extensions, sessions).
+	 * Sessions created with an explicit agentDir report that dir, not the global one,
+	 * so extensions must resolve their own config paths from here.
+	 */
+	agentDir: string;
 	/** Session manager (read-only) */
 	sessionManager: ReadonlySessionManager;
 	/** Model registry for API key resolution */

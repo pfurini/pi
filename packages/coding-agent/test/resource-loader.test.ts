@@ -283,6 +283,7 @@ export default function(pi) {
 				extensionsResult.extensions,
 				extensionsResult.runtime,
 				cwd,
+				agentDir,
 				sessionManager,
 				modelRegistry,
 			);
@@ -743,6 +744,7 @@ export default function(pi: ExtensionAPI) {
 				extensionsResult.extensions,
 				extensionsResult.runtime,
 				cwd,
+				agentDir,
 				sessionManager,
 				modelRegistry,
 			);

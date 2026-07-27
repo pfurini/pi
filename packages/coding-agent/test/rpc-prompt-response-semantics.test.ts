@@ -139,6 +139,7 @@ async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: 
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
+		agentDir: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader: createTestResourceLoader(),
 	});

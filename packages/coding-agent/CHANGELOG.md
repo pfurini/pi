@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `AgentSessionConfig` now requires `agentDir`, and the `ExtensionRunner` constructor takes `agentDir` as its fourth argument (after `cwd`). Callers constructing either directly must pass the agent directory backing the session.
+
 ### Added
 
 - Configurable project-wide prompt history: `promptHistory.scope: "project"` recalls Up/Down prompts from every saved session in the same working directory, not just the current one, and `promptHistory.maxEntries: 0` removes the recall cap. Defaults to the existing session-local, 100-entry behavior. See [Sessions](docs/sessions.md#prompt-history) and [Settings](docs/settings.md).
+- Added `ctx.agentDir` to the extension context, so extensions can resolve global config from the session's agent directory instead of the process-wide one. See [Extensions](docs/extensions.md#ctxagentdir).
 
 ## [0.82.1] - 2026-07-25
 

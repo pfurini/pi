@@ -114,6 +114,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
+			agentDir: tempDir,
 			modelRuntime: getModelRuntime(modelRegistry),
 			resourceLoader,
 		});

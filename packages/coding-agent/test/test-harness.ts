@@ -414,6 +414,7 @@ async function createHarnessWithResourceLoader(
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
+		agentDir: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader,
 		baseToolsOverride: options.baseToolsOverride,

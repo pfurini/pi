@@ -86,6 +86,7 @@ async function createSession() {
 		sessionManager,
 		settingsManager,
 		cwd: process.cwd(),
+		agentDir: process.cwd(),
 		modelRuntime: getModelRuntime(await createInMemoryModelRegistry(authStorage)),
 		resourceLoader: createTestResourceLoader(),
 	});

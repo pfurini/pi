@@ -264,6 +264,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
+		agentDir: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader: createTestResourceLoader(),
 	});

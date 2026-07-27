@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { findProjectRoot } from "../utils/project-root.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -85,9 +86,25 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	return null;
 }
 
+/**
+ * How far up from the working directory project context files are collected.
+ *
+ * - `project` (default): stop at the nearest project root, or read only the
+ *   working directory when it is not inside a checkout.
+ * - `cwd`: read only the working directory.
+ *
+ * There is deliberately no "walk to the filesystem root" option. Doing so let a
+ * stray AGENTS.md in any ancestor - a parent workspace directory, or $HOME -
+ * put instructions into the system prompt of every project underneath it, with
+ * no trust prompt and nothing on screen saying where they came from. User-level
+ * instructions belong in the agent directory, which is always read.
+ */
+export type ContextFileScope = "project" | "cwd";
+
 export function loadProjectContextFiles(options: {
 	cwd: string;
 	agentDir: string;
+	scope?: ContextFileScope;
 }): Array<{ path: string; content: string }> {
 	const resolvedCwd = resolvePath(options.cwd);
 	const resolvedAgentDir = resolvePath(options.agentDir);
@@ -101,6 +118,11 @@ export function loadProjectContextFiles(options: {
 		seenPaths.add(globalContext.path);
 	}
 
+	// A cwd above the project roots it contains resolves to null here, the same
+	// as a cwd outside any checkout, and both correctly read cwd alone.
+	const boundary =
+		(options.scope ?? "project") === "cwd" ? resolvedCwd : (findProjectRoot(resolvedCwd) ?? resolvedCwd);
+
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
 	let currentDir = resolvedCwd;
@@ -112,6 +134,8 @@ export function loadProjectContextFiles(options: {
 			seenPaths.add(contextFile.path);
 		}
 
+		// Nearest file last, so the innermost instructions win on conflict.
+		if (currentDir === boundary) break;
 		const parentDir = dirname(currentDir);
 		if (parentDir === currentDir) break;
 		currentDir = parentDir;
@@ -137,6 +161,7 @@ export interface DefaultResourceLoaderOptions {
 	noPromptTemplates?: boolean;
 	noThemes?: boolean;
 	noContextFiles?: boolean;
+	contextFileScope?: ContextFileScope;
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
@@ -175,6 +200,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private noPromptTemplates: boolean;
 	private noThemes: boolean;
 	private noContextFiles: boolean;
+	private contextFileScope: ContextFileScope;
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string[];
 	private extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
@@ -234,6 +260,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
+		this.contextFileScope = options.contextFileScope ?? "project";
 		this.systemPromptSource = options.systemPrompt;
 		this.appendSystemPromptSource = options.appendSystemPrompt;
 		this.extensionsOverride = options.extensionsOverride;
@@ -469,6 +496,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				: loadProjectContextFiles({
 						cwd: this.cwd,
 						agentDir: this.agentDir,
+						scope: this.contextFileScope,
 					}),
 		};
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;

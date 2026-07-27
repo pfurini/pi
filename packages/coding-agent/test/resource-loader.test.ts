@@ -436,6 +436,34 @@ Content`,
 			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(worktree, "AGENTS.md")]);
 		});
 
+		it("should treat a .git symlink whose target is missing as a project root", async () => {
+			// existsSync follows the link and reports false for a gitdir that has moved
+			// or lives on an unmounted volume, which would walk past this root.
+			const repo = join(cwd, "repo");
+			mkdirSync(join(repo, "src"), { recursive: true });
+			symlinkSync(join(tempDir, "gone", "gitdir"), join(repo, ".git"));
+			writeFileSync(join(cwd, "AGENTS.md"), "Ancestor instructions");
+			writeFileSync(join(repo, "AGENTS.md"), "Repo instructions");
+
+			const loader = new DefaultResourceLoader({ cwd: join(repo, "src"), agentDir });
+			await loader.reload();
+
+			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(repo, "AGENTS.md")]);
+		});
+
+		it("should recognize non-git project roots", async () => {
+			mkdirSync(join(cwd, ".jj"), { recursive: true });
+			const nested = join(cwd, "sub");
+			mkdirSync(nested, { recursive: true });
+			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
+			writeFileSync(join(cwd, "AGENTS.md"), "Repo instructions");
+
+			const loader = new DefaultResourceLoader({ cwd: nested, agentDir });
+			await loader.reload();
+
+			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(cwd, "AGENTS.md")]);
+		});
+
 		it("should read only the working directory when it sits above the project roots it contains", async () => {
 			mkdirSync(join(cwd, "sub", ".git"), { recursive: true });
 			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
@@ -462,6 +490,8 @@ Content`,
 
 		it("should always load the agent directory context file first", async () => {
 			writeFileSync(join(agentDir, "AGENTS.md"), "Global instructions");
+			// An ancestor file, so an unbounded walk would show up here as a third entry.
+			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
 			writeFileSync(join(cwd, "AGENTS.md"), "Project instructions");
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir, contextFileScope: "cwd" });

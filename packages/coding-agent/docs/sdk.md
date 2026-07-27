@@ -362,7 +362,7 @@ const { session } = await createAgentSession({
 - Credentials (`auth.json`)
 - Sessions (`sessions/`)
 
-When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control resource discovery. They still influence session naming and tool path resolution.
+When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control resource discovery. They still influence session naming and tool path resolution. `noContextFiles` and `contextFileScope` are applied to the default loader only, so they have no effect at all when you supply your own - set them on the loader you construct instead.
 
 ### Model
 

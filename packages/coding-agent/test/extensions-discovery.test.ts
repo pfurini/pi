@@ -506,7 +506,7 @@ describe("extensions discovery", () => {
 
 		// Use loadExtensions directly to skip discovery
 		const { loadExtensions } = await import("../src/core/extensions/loader.ts");
-		const result = await loadExtensions([explicitPath], tempDir);
+		const result = await loadExtensions([explicitPath], tempDir, tempDir);
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
@@ -520,7 +520,7 @@ describe("extensions discovery", () => {
 
 		// Use loadExtensions directly with empty paths
 		const { loadExtensions } = await import("../src/core/extensions/loader.ts");
-		const result = await loadExtensions([], tempDir);
+		const result = await loadExtensions([], tempDir, tempDir);
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(0);

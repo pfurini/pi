@@ -231,9 +231,13 @@ function createExtensionAPI(
 	extension: Extension,
 	runtime: ExtensionRuntime,
 	cwd: string,
+	agentDir: string,
 	eventBus: EventBus,
 ): ExtensionAPI {
 	const api = {
+		cwd,
+		agentDir,
+
 		// Registration methods - write to extension
 		on(event: string, handler: HandlerFn): void {
 			runtime.assertActive();
@@ -454,6 +458,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 async function loadExtension(
 	extensionPath: string,
 	cwd: string,
+	agentDir: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
 	cacheToken?: ExtensionCacheToken,
@@ -468,7 +473,7 @@ async function loadExtension(
 		}
 
 		const extension = createExtension(extensionPath, resolvedPath);
-		const api = createExtensionAPI(extension, runtime, cwd, eventBus);
+		const api = createExtensionAPI(extension, runtime, cwd, agentDir, eventBus);
 		await factory(api);
 		time(`${extensionPath} factory`, "extensions");
 
@@ -485,13 +490,14 @@ async function loadExtension(
 export async function loadExtensionFromFactory(
 	factory: ExtensionFactory,
 	cwd: string,
+	agentDir: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
 	extensionPath = "<inline>",
 ): Promise<Extension> {
 	const extension = createExtension(extensionPath, extensionPath);
 	const resolvedCwd = resolvePath(cwd);
-	const api = createExtensionAPI(extension, runtime, resolvedCwd, eventBus);
+	const api = createExtensionAPI(extension, runtime, resolvedCwd, resolvePath(agentDir), eventBus);
 	await factory(api);
 	time(`${extensionPath} factory`, "extensions");
 	return extension;
@@ -503,6 +509,7 @@ export async function loadExtensionFromFactory(
 async function loadExtensionsInternal(
 	paths: string[],
 	cwd: string,
+	agentDir: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
 	useCache = false,
@@ -511,6 +518,7 @@ async function loadExtensionsInternal(
 	const errors: Array<{ path: string; error: string }> = [];
 	const cacheToken = useCache ? useExtensionCacheCwd(cwd) : undefined;
 	const resolvedCwd = cacheToken?.cwd ?? resolvePath(cwd);
+	const resolvedAgentDir = resolvePath(agentDir);
 	const resolvedEventBus = eventBus ?? createEventBus();
 	const resolvedRuntime = runtime ?? createExtensionRuntime();
 
@@ -518,6 +526,7 @@ async function loadExtensionsInternal(
 		const { extension, error } = await loadExtension(
 			extPath,
 			resolvedCwd,
+			resolvedAgentDir,
 			resolvedEventBus,
 			resolvedRuntime,
 			cacheToken,
@@ -543,19 +552,21 @@ async function loadExtensionsInternal(
 export async function loadExtensions(
 	paths: string[],
 	cwd: string,
+	agentDir: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
 ): Promise<LoadExtensionsResult> {
-	return loadExtensionsInternal(paths, cwd, eventBus, runtime);
+	return loadExtensionsInternal(paths, cwd, agentDir, eventBus, runtime);
 }
 
 export async function loadExtensionsCached(
 	paths: string[],
 	cwd: string,
+	agentDir: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
 ): Promise<LoadExtensionsResult> {
-	return loadExtensionsInternal(paths, cwd, eventBus, runtime, true);
+	return loadExtensionsInternal(paths, cwd, agentDir, eventBus, runtime, true);
 }
 
 interface PiManifest {
@@ -717,5 +728,5 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, resolvedCwd, eventBus);
+	return loadExtensions(allPaths, resolvedCwd, resolvedAgentDir, eventBus);
 }

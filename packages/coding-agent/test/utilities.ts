@@ -196,7 +196,7 @@ export async function createTestExtensionsResult(
 		const factory = isObject ? input.factory : input;
 		const extensionPath = hasName ? `<inline:${input.name}>` : hasPath ? input.path : `<inline:${index + 1}>`;
 
-		extensions.push(await loadExtensionFromFactory(factory, cwd, eventBus, runtime, extensionPath));
+		extensions.push(await loadExtensionFromFactory(factory, cwd, cwd, eventBus, runtime, extensionPath));
 	}
 
 	return {

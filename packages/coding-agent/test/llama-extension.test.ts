@@ -44,6 +44,7 @@ describe("llama.cpp extension", () => {
 		const extension = await loadExtensionFromFactory(
 			llamaExtension,
 			process.cwd(),
+			process.cwd(),
 			createEventBus(),
 			runtime,
 			"<inline:llama.cpp>",

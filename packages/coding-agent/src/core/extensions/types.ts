@@ -1184,6 +1184,24 @@ export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContex
  */
 export interface ExtensionAPI {
 	// =========================================================================
+	// Session Paths
+	// =========================================================================
+
+	/**
+	 * Working directory of the session loading this extension.
+	 * Available during load, before any event fires, unlike ctx.cwd.
+	 */
+	readonly cwd: string;
+
+	/**
+	 * Agent config directory of the session loading this extension (same value
+	 * the handlers later see as ctx.agentDir). Available during load, so
+	 * registrations that pi flushes before the first event (providers, models,
+	 * tools) can still be configured per session rather than process-wide.
+	 */
+	readonly agentDir: string;
+
+	// =========================================================================
 	// Event Subscription
 	// =========================================================================
 

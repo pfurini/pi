@@ -178,6 +178,23 @@ export default function (pi: ExtensionAPI) {
 
 Extensions are loaded via [jiti](https://github.com/unjs/jiti), so TypeScript works without compilation.
 
+### pi.cwd / pi.agentDir
+
+The factory receives the session's working directory as `pi.cwd` and its agent config directory as `pi.agentDir`, the same values handlers later see as `ctx.cwd` and `ctx.agentDir`. Use them for load-time configuration; `process.cwd()` and the process-wide agent directory belong to the host process, which for an SDK or harness caller is not the session.
+
+This matters for anything pi registers before the first event fires, such as providers, models, and tools: those are configured in the factory, so re-reading config on `session_start` is too late to change them.
+
+```typescript
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
+import { readFileSync } from "node:fs";
+
+export default function (pi: ExtensionAPI) {
+  const config = JSON.parse(readFileSync(join(pi.agentDir, "my-extension.json"), "utf-8"));
+  pi.registerProvider("my-proxy", { baseUrl: config.baseUrl, ... });
+}
+```
+
 If the factory returns a `Promise`, pi awaits it before continuing startup. That means async initialization completes before `session_start`, before `resources_discover`, and before provider registrations queued via `pi.registerProvider()` are flushed.
 
 ### Async factory functions
@@ -967,7 +984,7 @@ export default function (pi: ExtensionAPI) {
 
 Agent config directory backing the current session (`~/.pi/agent` by default). Sessions created with an explicit `agentDir`, for example `createAgentSession({ agentDir })`, report that directory here.
 
-Resolve global extension config from `ctx.agentDir` rather than from the process-wide agent directory, otherwise an isolated session reads the operator's personal config.
+Resolve global extension config from `ctx.agentDir` rather than from the process-wide agent directory, otherwise an isolated session reads the operator's personal config. The same value is available to the factory as [`pi.agentDir`](#picwd--piagentdir), before any event fires.
 
 ```typescript
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

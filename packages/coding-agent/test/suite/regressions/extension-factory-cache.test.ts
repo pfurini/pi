@@ -71,8 +71,8 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		const first = await loadExtensionsCached([extensionPath], cwd);
-		const second = await loadExtensionsCached([extensionPath], cwd);
+		const first = await loadExtensionsCached([extensionPath], cwd, cwd);
+		const second = await loadExtensionsCached([extensionPath], cwd, cwd);
 
 		expect(state().moduleLoads).toBe(1);
 		expect(state().factoryRuns).toBe(2);
@@ -85,8 +85,8 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		await loadExtensions([extensionPath], cwd);
-		await loadExtensions([extensionPath], cwd);
+		await loadExtensions([extensionPath], cwd, cwd);
+		await loadExtensions([extensionPath], cwd, cwd);
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(2);
@@ -121,9 +121,9 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		await loadExtensionsCached([extensionPath], firstCwd);
-		await loadExtensionsCached([extensionPath], secondCwd);
-		await loadExtensionsCached([extensionPath], secondCwd);
+		await loadExtensionsCached([extensionPath], firstCwd, firstCwd);
+		await loadExtensionsCached([extensionPath], secondCwd, secondCwd);
+		await loadExtensionsCached([extensionPath], secondCwd, secondCwd);
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(3);

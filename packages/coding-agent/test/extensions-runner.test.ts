@@ -118,7 +118,7 @@ describe("ExtensionRunner", () => {
 }`,
 			);
 
-			const extensionsResult = await loadExtensions([undecidedPath, decidedPath], tempDir);
+			const extensionsResult = await loadExtensions([undecidedPath, decidedPath], tempDir, tempDir);
 			const result = await emitProjectTrustEvent(
 				extensionsResult,
 				{ type: "project_trust", cwd: tempDir },

@@ -18,9 +18,10 @@
  * itself to the cap and appended its own notice is not truncated a second
  * time.
  *
- * The notice is CANONICAL on purpose. Measurement broke twice on marker
- * phrasing drift between tools; every policy truncation announces itself with
- * the same prefix, so one string finds them all.
+ * The notice is CANONICAL and NAMESPACED on purpose. Measurement broke twice
+ * on marker phrasing drift between tools, so every policy truncation announces
+ * itself with one stable prefix - and that prefix is distinct from every
+ * tool's own self-cap notice, because the two events mean opposite things.
  */
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "./tools/truncate.ts";
 
@@ -37,8 +38,17 @@ export interface ToolOutputPolicyOptions {
 export const POLICY_SLACK_BYTES = 4 * 1024;
 export const POLICY_SLACK_LINES = 16;
 
-/** Canonical marker prefix; keep stable, measurement greps for it. */
-export const POLICY_NOTICE_PREFIX = "[Output truncated: ";
+/**
+ * Canonical marker prefix; keep stable, measurement greps for it.
+ *
+ * Namespaced like the fork's own "[pi.exec: " marker, and deliberately NOT
+ * "[Output truncated: " - that exact prefix is what the hypa extensions use
+ * for their own self-capping. The two events mean opposite things: a tool
+ * self-cap is cooperation, a policy clip is a tool that flooded and had to be
+ * stopped. Sharing a prefix would make the alarm indistinguishable from the
+ * routine.
+ */
+export const POLICY_NOTICE_PREFIX = "[pi.cap: ";
 
 export interface ToolOutputPolicyResult<TBlock> {
 	content: TBlock[];
@@ -120,7 +130,7 @@ export function applyToolOutputPolicy<TBlock extends TextishBlock>(
 	}
 
 	const notice =
-		`${POLICY_NOTICE_PREFIX}showing ${keptLines} of ${totalLines} lines ` +
+		`${POLICY_NOTICE_PREFIX}tool output exceeded the result limit; showing ${keptLines} of ${totalLines} lines ` +
 		`(${formatSize(keptBytes)} of ${formatSize(totalBytes)}). ` +
 		`Narrow the query, or page with offset/limit if the tool supports it.]`;
 	kept.push({ type: "text", text: notice } as unknown as TBlock);

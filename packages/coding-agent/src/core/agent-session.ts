@@ -50,6 +50,7 @@ import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
+import { applyToolOutputPolicy } from "./tool-output-policy.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
 	type CompactionResult,
@@ -493,30 +494,39 @@ export class AgentSession {
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_result")) {
-				return undefined;
+
+			let hookResult: Awaited<ReturnType<typeof runner.emitToolResult>> | undefined;
+			if (runner.hasHandlers("tool_result")) {
+				hookResult = await runner.emitToolResult({
+					type: "tool_result",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+					content: result.content,
+					details: result.details,
+					isError,
+					usage: result.usage,
+				});
 			}
 
-			const hookResult = await runner.emitToolResult({
-				type: "tool_result",
-				toolName: toolCall.name,
-				toolCallId: toolCall.id,
-				input: args as Record<string, unknown>,
-				content: result.content,
-				details: result.details,
-				isError,
-				usage: result.usage,
-			});
+			// Central output cap, applied AFTER extension hooks so it bounds
+			// whatever actually enters context - including content a hook
+			// substituted. Builtins and well-behaved extensions truncate
+			// themselves and pass through untouched (see POLICY_SLACK); tools
+			// that do not are capped here instead of flooding the context, with
+			// one canonical notice replacing per-tool marker phrasing.
+			const mergedContent = hookResult?.content ?? result.content;
+			const policy = applyToolOutputPolicy(mergedContent);
 
-			if (!hookResult) {
+			if (!hookResult && !policy.truncated) {
 				return undefined;
 			}
 
 			return {
-				content: hookResult.content,
-				details: hookResult.details,
-				isError: hookResult.isError ?? isError,
-				usage: hookResult.usage,
+				content: policy.truncated ? policy.content : mergedContent,
+				details: hookResult?.details,
+				isError: hookResult?.isError ?? isError,
+				usage: hookResult?.usage,
 			};
 		};
 	}

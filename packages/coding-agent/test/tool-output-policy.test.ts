@@ -12,11 +12,7 @@ import {
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
-import {
-	POLICY_NOTICE_PREFIX,
-	POLICY_SLACK_BYTES,
-	applyToolOutputPolicy,
-} from "../src/core/tool-output-policy.ts";
+import { applyToolOutputPolicy, POLICY_NOTICE_PREFIX, POLICY_SLACK_BYTES } from "../src/core/tool-output-policy.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "../src/core/tools/truncate.ts";
 import type { ExtensionFactory } from "../src/index.ts";
 
@@ -55,7 +51,8 @@ describe("applyToolOutputPolicy (unit)", () => {
 
 	it("leaves a self-truncated result (cap + own notice) alone - the slack", () => {
 		// A well-behaved tool returns cap-sized content plus its own marker line.
-		const selfCapped = "z".repeat(DEFAULT_MAX_BYTES - 10) + "\n[Showing lines 1-2000 of 9999. Use offset=2001 to continue.]";
+		const selfCapped =
+			"z".repeat(DEFAULT_MAX_BYTES - 10) + "\n[Showing lines 1-2000 of 9999. Use offset=2001 to continue.]";
 		expect(Buffer.byteLength(selfCapped, "utf-8")).toBeGreaterThan(DEFAULT_MAX_BYTES);
 		expect(Buffer.byteLength(selfCapped, "utf-8")).toBeLessThan(DEFAULT_MAX_BYTES + POLICY_SLACK_BYTES);
 		const r = applyToolOutputPolicy([{ type: "text", text: selfCapped }]);
@@ -82,9 +79,9 @@ describe("applyToolOutputPolicy (unit)", () => {
 
 	it("splits the budget across multiple text blocks in order", () => {
 		const r = applyToolOutputPolicy([
-			{ type: "text", text: "first-".repeat(5000) },   // ~30KB
-			{ type: "text", text: "second-".repeat(5000) },  // ~35KB -> partially kept
-			{ type: "text", text: "third-".repeat(5000) },   // dropped
+			{ type: "text", text: "first-".repeat(5000) }, // ~30KB
+			{ type: "text", text: "second-".repeat(5000) }, // ~35KB -> partially kept
+			{ type: "text", text: "third-".repeat(5000) }, // dropped
 		]);
 		expect(r.truncated).toBe(true);
 		expect(textBytes(r.content)).toBeLessThanOrEqual(DEFAULT_MAX_BYTES + 256);
@@ -101,7 +98,7 @@ describe("applyToolOutputPolicy (unit)", () => {
 
 	// ---- stress ------------------------------------------------------------
 	it("stress: 10MB single block is capped fast and linearly", () => {
-		const big = ("line of stress test payload\n").repeat(400_000); // ~10.7MB
+		const big = "line of stress test payload\n".repeat(400_000); // ~10.7MB
 		const t0 = performance.now();
 		const r = applyToolOutputPolicy([{ type: "text", text: big }]);
 		const ms = performance.now() - t0;
@@ -112,7 +109,10 @@ describe("applyToolOutputPolicy (unit)", () => {
 	});
 
 	it("stress: 1000 blocks of mixed size stay within cap and keep order", () => {
-		const blocks = Array.from({ length: 1000 }, (_, i) => ({ type: "text", text: `block${i} ` + "p".repeat(i % 97) + "\n" }));
+		const blocks = Array.from({ length: 1000 }, (_, i) => ({
+			type: "text",
+			text: `block${i} ` + "p".repeat(i % 97) + "\n",
+		}));
 		const t0 = performance.now();
 		const r = applyToolOutputPolicy(blocks);
 		const ms = performance.now() - t0;
@@ -157,11 +157,19 @@ describe("tool output policy (end-to-end through a live session)", () => {
 		modelRuntime.registerProvider(model.provider, {
 			baseUrl: model.baseUrl,
 			api: model.api,
-			models: [{
-				id: model.id, name: model.name, api: model.api, reasoning: model.reasoning,
-				input: model.input, cost: model.cost, contextWindow: model.contextWindow,
-				maxTokens: model.maxTokens, baseUrl: model.baseUrl,
-			}],
+			models: [
+				{
+					id: model.id,
+					name: model.name,
+					api: model.api,
+					reasoning: model.reasoning,
+					input: model.input,
+					cost: model.cost,
+					contextWindow: model.contextWindow,
+					maxTokens: model.maxTokens,
+					baseUrl: model.baseUrl,
+				},
+			],
 		});
 
 		const runtimeOptions = {
@@ -179,7 +187,10 @@ describe("tool output policy (end-to-end through a live session)", () => {
 			const services = await createAgentSessionServices({ ...runtimeOptions, cwd });
 			return {
 				...(await createAgentSessionFromServices({
-					services, sessionManager, sessionStartEvent, model: faux.getModel(),
+					services,
+					sessionManager,
+					sessionStartEvent,
+					model: faux.getModel(),
 				})),
 				services,
 				diagnostics: services.diagnostics,
@@ -206,7 +217,7 @@ describe("tool output policy (end-to-end through a live session)", () => {
 			| undefined;
 
 	it("caps a flooding extension tool before its output enters context", async () => {
-		const FLOOD = ("flood line with some sensible width to it\n").repeat(40_000); // ~1.7MB
+		const FLOOD = "flood line with some sensible width to it\n".repeat(40_000); // ~1.7MB
 		const { runtimeHost } = await createHost(
 			(pi) => {
 				pi.registerTool({
@@ -217,10 +228,7 @@ describe("tool output policy (end-to-end through a live session)", () => {
 					execute: async () => ({ content: [{ type: "text", text: FLOOD }], details: {} }),
 				} as never);
 			},
-			[
-				fauxAssistantMessage([fauxToolCall("flood", {})]),
-				fauxAssistantMessage("done"),
-			],
+			[fauxAssistantMessage([fauxToolCall("flood", {})]), fauxAssistantMessage("done")],
 		);
 
 		await runtimeHost.session.prompt("run the flood tool");
@@ -233,7 +241,7 @@ describe("tool output policy (end-to-end through a live session)", () => {
 	});
 
 	it("caps content substituted by an extension tool_result hook", async () => {
-		const HOOK_FLOOD = ("hook-injected line\n").repeat(60_000); // ~1.1MB
+		const HOOK_FLOOD = "hook-injected line\n".repeat(60_000); // ~1.1MB
 		const { runtimeHost } = await createHost(
 			(pi) => {
 				pi.registerTool({
@@ -245,10 +253,7 @@ describe("tool output policy (end-to-end through a live session)", () => {
 				} as never);
 				pi.on("tool_result", async () => ({ content: [{ type: "text", text: HOOK_FLOOD }] }));
 			},
-			[
-				fauxAssistantMessage([fauxToolCall("tiny", {})]),
-				fauxAssistantMessage("done"),
-			],
+			[fauxAssistantMessage([fauxToolCall("tiny", {})]), fauxAssistantMessage("done")],
 		);
 
 		await runtimeHost.session.prompt("run tiny");
@@ -271,10 +276,7 @@ describe("tool output policy (end-to-end through a live session)", () => {
 					execute: async () => ({ content: [{ type: "text", text: "exact small output" }], details: {} }),
 				} as never);
 			},
-			[
-				fauxAssistantMessage([fauxToolCall("small", {})]),
-				fauxAssistantMessage("done"),
-			],
+			[fauxAssistantMessage([fauxToolCall("small", {})]), fauxAssistantMessage("done")],
 		);
 
 		await runtimeHost.session.prompt("run small");

@@ -1,10 +1,11 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai/compat";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
+import { installComposedDefaultStreamFn, installDefaultStreamRuntime } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -30,10 +31,13 @@ import {
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
-// Preserve the pre-0.81 fallback for extensions that construct Agent instances
-// or invoke low-level agent loops without supplying streamFn. Agent core remains
-// provider-agnostic and does not import pi-ai/compat itself.
-setDefaultStreamFn(streamSimple);
+// Default fallback for extensions that construct Agent instances or invoke low-level
+// agent loops without supplying streamFn. The composed default routes through the
+// session's ModelRuntime once one exists (installed below in createAgentSession), so
+// bare Agents get provider composition (extension middleware, configured auth) instead
+// of pi-ai's raw compat path. Agent core remains provider-agnostic and does not import
+// pi-ai/compat itself.
+installComposedDefaultStreamFn();
 
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
@@ -373,6 +377,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
+	// Make this runtime the process-default stream target for bare Agent/loop callers
+	// (last-created session wins). The session releases the installation on dispose.
+	const releaseDefaultStreamRuntime = installDefaultStreamRuntime(modelRuntime);
+
 	const session = new AgentSession({
 		agent,
 		sessionManager,
@@ -388,6 +396,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		releaseDefaultStreamRuntime,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

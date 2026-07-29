@@ -1,11 +1,11 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
-import { installComposedDefaultStreamFn, installDefaultStreamRuntime } from "./default-stream-fn.ts";
+import { composedDefaultStreamFn, installDefaultStreamRuntime } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -32,12 +32,12 @@ import {
 } from "./tools/index.ts";
 
 // Default fallback for extensions that construct Agent instances or invoke low-level
-// agent loops without supplying streamFn. The composed default routes through the
-// session's ModelRuntime once one exists (installed below in createAgentSession), so
-// bare Agents get provider composition (extension middleware, configured auth) instead
-// of pi-ai's raw compat path. Agent core remains provider-agnostic and does not import
-// pi-ai/compat itself.
-installComposedDefaultStreamFn();
+// agent loops without supplying streamFn. The composed default routes served models
+// through the session's ModelRuntime once one exists (installed below in
+// createAgentSession), so bare Agents get provider composition (extension overlay
+// middleware, configured auth) instead of pi-ai's raw compat path. Agent core remains
+// provider-agnostic and does not import pi-ai/compat itself.
+setDefaultStreamFn(composedDefaultStreamFn);
 
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
@@ -378,31 +378,37 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Make this runtime the process-default stream target for bare Agent/loop callers
-	// (last-created session wins). The session releases the installation on dispose.
+	// (last-created session wins). The session releases the installation on dispose;
+	// if construction fails before the caller ever receives the session, release here
+	// so the failed session's runtime does not stay the process default.
 	const releaseDefaultStreamRuntime = installDefaultStreamRuntime(modelRuntime);
+	try {
+		const session = new AgentSession({
+			agent,
+			sessionManager,
+			settingsManager,
+			cwd,
+			agentDir,
+			scopedModels: options.scopedModels,
+			resourceLoader,
+			customTools: options.customTools,
+			modelRuntime,
+			initialActiveToolNames,
+			allowedToolNames,
+			excludedToolNames,
+			extensionRunnerRef,
+			sessionStartEvent: options.sessionStartEvent,
+			releaseDefaultStreamRuntime,
+		});
+		const extensionsResult = resourceLoader.getExtensions();
 
-	const session = new AgentSession({
-		agent,
-		sessionManager,
-		settingsManager,
-		cwd,
-		agentDir,
-		scopedModels: options.scopedModels,
-		resourceLoader,
-		customTools: options.customTools,
-		modelRuntime,
-		initialActiveToolNames,
-		allowedToolNames,
-		excludedToolNames,
-		extensionRunnerRef,
-		sessionStartEvent: options.sessionStartEvent,
-		releaseDefaultStreamRuntime,
-	});
-	const extensionsResult = resourceLoader.getExtensions();
-
-	return {
-		session,
-		extensionsResult,
-		modelFallbackMessage,
-	};
+		return {
+			session,
+			extensionsResult,
+			modelFallbackMessage,
+		};
+	} catch (error) {
+		releaseDefaultStreamRuntime();
+		throw error;
+	}
 }

@@ -43,7 +43,6 @@ import {
 	modelsAreEqual,
 	type RetryCallbacks,
 	resetApiProviders,
-	streamSimple,
 } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
@@ -62,6 +61,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
+import { isDefaultStreamFn } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
@@ -456,7 +456,7 @@ export class AgentSession {
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
 	}> {
-		if (this.agent.streamFunction === streamSimple) {
+		if (isDefaultStreamFn(this.agent.streamFunction)) {
 			return this._getRequiredRequestAuth(model);
 		}
 
@@ -2081,7 +2081,7 @@ export class AgentSession {
 			let apiKey: string | undefined;
 			let headers: Record<string, string> | undefined;
 			let env: Record<string, string> | undefined;
-			if (this.agent.streamFunction === streamSimple) {
+			if (isDefaultStreamFn(this.agent.streamFunction)) {
 				({ apiKey, headers, env } = await this._getRequiredRequestAuth(this.model));
 			} else {
 				({ apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model));

@@ -119,7 +119,7 @@ describe("composed default stream function", () => {
 		const model = createModel("no-runtime-provider", "test-unregistered-api");
 
 		// The raw compat path resolves the global API registry and throws for unknown
-		// API ids — proof the call did not route through any ModelRuntime.
+		// API ids (proof the call did not route through any ModelRuntime).
 		await expect(async () => {
 			const stream = await agent.streamFunction(model, { messages: [] }, {});
 			await stream.result();
@@ -174,6 +174,61 @@ describe("composed default stream function", () => {
 			const stream = await agent.streamFunction(unknownModel, { messages: [] }, {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
+	});
+
+	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {
+		const marker = { calls: 0 };
+		const authStorage = AuthStorage.create(join(agentDir, "builtin-auth.json"));
+		await authStorage.modify("openai", async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "builtin-models.json"));
+		modelRegistry.registerProvider("capture-provider", {
+			api: "openai-completions",
+			streamSimple: () => {
+				marker.calls++;
+				return createDoneStream("openai-completions", "capture-provider");
+			},
+		});
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: createModel("capture-provider", "openai-completions"),
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(session);
+
+		// "openai" has configured auth in this runtime and its untouched builtin provider is
+		// registered, but its catalog does not serve this model's api: the call must stay on
+		// the raw compat path instead of streaming through the wrong-protocol provider.
+		const agent = bareAgent();
+		const adHocModel = createModel("openai", "test-unregistered-api");
+		await expect(async () => {
+			const stream = await agent.streamFunction(adHocModel, { messages: [] }, {});
+			await stream.result();
+		}).rejects.toThrow(/No API provider registered/);
+		expect(marker.calls).toBe(0);
+	});
+
+	it("release removes only its own installation when the same runtime is installed repeatedly", async () => {
+		const agent = bareAgent();
+		const markerR1 = { calls: 0 };
+		const markerR2 = { calls: 0 };
+		const {
+			session: sessionA,
+			model,
+			modelRuntime: runtime1,
+		} = await createSessionWithOverlayProvider("capture-provider", markerR1);
+		await createSessionWithOverlayProvider("capture-provider", markerR2);
+		await createSessionWithOverlayProvider("capture-provider", markerR1, { modelRuntime: runtime1 });
+
+		// Stack is [runtime1, runtime2, runtime1]; disposing the first session must remove
+		// its own entry, leaving the third session's runtime1 entry on top.
+		sessionA.dispose();
+
+		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		expect(markerR1.calls).toBe(1);
+		expect(markerR2.calls).toBe(0);
 	});
 
 	it("double dispose does not release another session's installation of the same runtime", async () => {

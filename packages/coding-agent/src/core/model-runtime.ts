@@ -354,6 +354,15 @@ export class ModelRuntime implements Models {
 		return this.nativeExtensionProviders.get(providerId);
 	}
 
+	/** Whether the provider has a composition overlay (models.json config, extension, or native extension). */
+	hasProviderOverlay(providerId: string): boolean {
+		return (
+			this.nativeExtensionProviders.has(providerId) ||
+			this.extensionProviders.has(providerId) ||
+			this.config.getProvider(providerId) !== undefined
+		);
+	}
+
 	/** @internal Compatibility fallback for ModelRegistry when provider auth is unconfigured. */
 	getCompatibilityRequestConfig(model: Model<Api>): CompatibilityRequestConfig {
 		return resolveCompatibilityRequestConfig(

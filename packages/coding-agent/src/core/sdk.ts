@@ -1,11 +1,18 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+	Agent,
+	type AgentMessage,
+	type StreamFn,
+	setDefaultStreamFn,
+	type ThinkingLevel,
+} from "@earendil-works/pi-agent-core";
+import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
-import { composedDefaultStreamFn, installDefaultStreamRuntime } from "./default-stream-fn.ts";
+import { composedDefaultStreamFn, installDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -313,6 +320,57 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
+	const onProviderPayload: SimpleStreamOptions["onPayload"] = async (payload, _model) => {
+		const runner = extensionRunnerRef.current;
+		if (!runner?.hasHandlers("before_provider_request")) {
+			return payload;
+		}
+		return runner.emitBeforeProviderRequest(payload);
+	};
+	const onProviderResponse: SimpleStreamOptions["onResponse"] = async (response, _model) => {
+		const runner = extensionRunnerRef.current;
+		if (!runner?.hasHandlers("after_provider_response")) {
+			return;
+		}
+		await runner.emit({
+			type: "after_provider_response",
+			status: response.status,
+			headers: response.headers,
+		});
+	};
+
+	// The single definition of how this session streams: used by the session's Agent below
+	// and installed as the process-default stream target for bare Agent/loop callers, so
+	// both get retry settings, timeouts, attribution headers, and the provider extension
+	// hooks. The session's Agent carries onPayload/onResponse itself (they arrive via
+	// options); the fallbacks wire them for bare callers that never configured them.
+	const sessionStreamFn: StreamFn = async (model, context, options) => {
+		const providerRetrySettings = settingsManager.getProviderRetrySettings();
+		const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
+		// SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
+		// Use max int32 to effectively disable the timeout.
+		const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
+		const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
+		const websocketConnectTimeoutMs =
+			options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
+		const headerRunner = extensionRunnerRef.current;
+		return modelRuntime.streamSimple(model, context, {
+			...options,
+			timeoutMs,
+			websocketConnectTimeoutMs,
+			maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+			maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+			onPayload: options?.onPayload ?? onProviderPayload,
+			onResponse: options?.onResponse ?? onProviderResponse,
+			transformHeaders: async (requestHeaders) => {
+				const headers = mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, requestHeaders);
+				return headerRunner?.hasHandlers("before_provider_headers")
+					? headerRunner.emitBeforeProviderHeaders(headers ?? {})
+					: (headers ?? {});
+			},
+		});
+	};
+
 	agent = new Agent({
 		initialState: {
 			systemPrompt: "",
@@ -321,53 +379,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: [],
 		},
 		convertToLlm: convertToLlmWithBlockImages,
-		streamFn: async (model, context, options) => {
-			const providerRetrySettings = settingsManager.getProviderRetrySettings();
-			const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
-			// SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
-			// Use max int32 to effectively disable the timeout.
-			const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
-			const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
-			const websocketConnectTimeoutMs =
-				options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
-			const headerRunner = extensionRunnerRef.current;
-			return modelRuntime.streamSimple(model, context, {
-				...options,
-				timeoutMs,
-				websocketConnectTimeoutMs,
-				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-				transformHeaders: async (requestHeaders) => {
-					const headers = mergeProviderAttributionHeaders(
-						model,
-						settingsManager,
-						options?.sessionId,
-						requestHeaders,
-					);
-					return headerRunner?.hasHandlers("before_provider_headers")
-						? headerRunner.emitBeforeProviderHeaders(headers ?? {})
-						: (headers ?? {});
-				},
-			});
-		},
-		onPayload: async (payload, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("before_provider_request")) {
-				return payload;
-			}
-			return runner.emitBeforeProviderRequest(payload);
-		},
-		onResponse: async (response, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("after_provider_response")) {
-				return;
-			}
-			await runner.emit({
-				type: "after_provider_response",
-				status: response.status,
-				headers: response.headers,
-			});
-		},
+		streamFn: sessionStreamFn,
+		onPayload: onProviderPayload,
+		onResponse: onProviderResponse,
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;
@@ -395,11 +409,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	// Make this runtime the process-default stream target for bare Agent/loop callers
+	// Make this session the process-default stream target for bare Agent/loop callers
 	// (last-created session wins). The session releases the installation on dispose;
 	// if construction fails before the caller ever receives the session, release here
 	// so the failed session's runtime does not stay the process default.
-	const releaseDefaultStreamRuntime = installDefaultStreamRuntime(modelRuntime);
+	const releaseDefaultStreamRuntime = installDefaultStreamTarget({ runtime: modelRuntime, streamFn: sessionStreamFn });
 	try {
 		const session = new AgentSession({
 			agent,

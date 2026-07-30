@@ -3,17 +3,27 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { ModelRuntime } from "./model-runtime.ts";
 
-/** One default-stream installation. A unique token per install lets release remove exactly its own entry. */
-interface DefaultStreamInstallation {
+/**
+ * One default-stream target: the runtime that decides whether a model is served, and the
+ * session stream function used to serve it (the same wrapper the session's own Agent uses,
+ * so bare callers get retry settings, timeouts, attribution headers, and extension hooks).
+ */
+export interface DefaultStreamTarget {
 	runtime: ModelRuntime;
+	streamFn: StreamFn;
 }
 
 /**
  * Late-bound default-stream installations, in installation order (mirrors extensionRunnerRef).
- * createAgentSession installs each ModelRuntime it uses; the composed default resolves the
- * target at call time, so Agents constructed before any runtime exists still pick it up.
+ * createAgentSession installs a target per session; the composed default resolves at call
+ * time, so Agents constructed before any runtime exists still pick it up.
+ *
+ * Entries are WeakRefs: the release closure handed to the session holds the only strong
+ * reference, so a session dropped without dispose() lets its target (and runtime) collect,
+ * and dead entries are pruned during dispatch. Release stays the deterministic path;
+ * garbage collection is the backstop.
  */
-const installations: DefaultStreamInstallation[] = [];
+const installations: WeakRef<DefaultStreamTarget>[] = [];
 
 /**
  * Whether routing `model` through `runtime` is safe and useful:
@@ -39,20 +49,23 @@ function runtimeServesModel(runtime: ModelRuntime, model: Model<Api>): boolean {
 /**
  * Process-default stream function for Agent and low-level loop callers that omit streamFn.
  *
- * Dispatch: the most recently installed ModelRuntime that serves the model (see
- * runtimeServesModel) wins, so bare Agents get the composed provider pipeline (extension
- * overlay middleware plus the runtime's auth resolution, including credential baseUrl
- * overrides, matching what a session request resolves). Session-level streamFn concerns
- * (retry settings, idle timeouts, attribution headers, the before_provider_headers hook)
- * do not apply here; callers that need them must pass an explicit streamFn. Models no
- * installed runtime serves, and all calls before a runtime exists, keep the pre-existing
- * raw compat behavior.
+ * Dispatch: the most recently installed target whose runtime serves the model (see
+ * runtimeServesModel) wins, and the call goes through that session's stream function, so
+ * bare Agents get the full session pipeline: composed providers (extension overlay
+ * middleware, configured auth incl. credential baseUrl overrides), retry settings,
+ * timeouts, attribution headers, and the provider extension hooks. Models no installed
+ * runtime serves, and all calls before a runtime exists, keep the pre-existing raw compat
+ * behavior.
  */
 export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
 	for (let i = installations.length - 1; i >= 0; i--) {
-		const runtime = installations[i].runtime;
-		if (runtimeServesModel(runtime, model)) {
-			return runtime.streamSimple(model, context, options);
+		const target = installations[i].deref();
+		if (!target) {
+			installations.splice(i, 1);
+			continue;
+		}
+		if (runtimeServesModel(target.runtime, model)) {
+			return target.streamFn(model, context, options);
 		}
 	}
 	return streamSimple(model, context, options);
@@ -68,18 +81,23 @@ export function isDefaultStreamFn(streamFn: unknown): boolean {
 }
 
 /**
- * Register a ModelRuntime as a default-stream target. The most recent installation wins.
+ * Register a default-stream target. The most recent installation wins.
  *
  * Returns an idempotent release function bound to this installation only: releasing removes
  * exactly this entry (repeated installations of the same runtime are unaffected), and the
- * previously installed runtime (or the raw compat fallback when none remain) becomes the
- * default again, so a disposed session's runtime never stays the default.
+ * previously installed target (or the raw compat fallback when none remain) becomes the
+ * default again, so a disposed session's runtime never stays the default. The release
+ * closure also carries the only strong reference to the target; dropping it (session
+ * garbage collected without dispose) makes the entry collectable.
  */
-export function installDefaultStreamRuntime(runtime: ModelRuntime): () => void {
-	const installation: DefaultStreamInstallation = { runtime };
-	installations.push(installation);
+export function installDefaultStreamTarget(target: DefaultStreamTarget): () => void {
+	const ref = new WeakRef(target);
+	installations.push(ref);
+	// biome-ignore lint/correctness/noUnusedVariables: pins the target while the session holds this release closure; released (or a collected closure) lets the WeakRef entry die
+	let keepAlive: DefaultStreamTarget | undefined = target;
 	return () => {
-		const index = installations.indexOf(installation);
+		keepAlive = undefined;
+		const index = installations.indexOf(ref);
 		if (index !== -1) installations.splice(index, 1);
 	};
 }

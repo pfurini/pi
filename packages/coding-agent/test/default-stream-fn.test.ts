@@ -1,8 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core";
-import { type Api, type AssistantMessage, createAssistantMessageEventStream, type Model } from "@earendil-works/pi-ai";
+import {
+	type Api,
+	type AssistantMessage,
+	createAssistantMessageEventStream,
+	type Model,
+	type SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -174,6 +180,54 @@ describe("composed default stream function", () => {
 			const stream = await agent.streamFunction(unknownModel, { messages: [] }, {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
+	});
+
+	it("gives bare Agents the session stream wrapper: settings, header hook, payload hook", async () => {
+		const provider = "wrapper-provider";
+		const extensionsDir = join(agentDir, "extensions");
+		mkdirSync(extensionsDir, { recursive: true });
+		writeFileSync(
+			join(extensionsDir, "hooks.ts"),
+			`export default function (pi) {
+				pi.on("before_provider_headers", (event) => {
+					event.headers["x-hook"] = "on";
+				});
+				pi.on("before_provider_request", (event) => ({ ...event.payload, hooked: true }));
+			}`,
+		);
+
+		let captured: SimpleStreamOptions | undefined;
+		const authStorage = AuthStorage.create(join(agentDir, "wrapper-auth.json"));
+		await authStorage.modify(provider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "wrapper-models.json"));
+		modelRegistry.registerProvider(provider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				captured = providerOptions;
+				return createDoneStream("openai-completions", provider);
+			},
+		});
+		const model = createModel(provider, "openai-completions");
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			model,
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager: SettingsManager.inMemory({ httpIdleTimeoutMs: 1234 }),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(session);
+
+		const agent = bareAgent();
+		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+
+		expect(captured?.timeoutMs).toBe(1234);
+		expect(captured?.headers).toMatchObject({ "x-hook": "on" });
+		expect(typeof captured?.onPayload).toBe("function");
+		await expect(captured?.onPayload?.({ base: true }, model)).resolves.toMatchObject({
+			base: true,
+			hooked: true,
+		});
 	});
 
 	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {

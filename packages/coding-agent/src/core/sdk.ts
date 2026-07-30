@@ -19,7 +19,7 @@ import { convertToLlm } from "./messages.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import { ModelRuntime } from "./model-runtime.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
-import type { ContextFileScope, ResourceLoader } from "./resource-loader.ts";
+import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
@@ -85,18 +85,6 @@ export interface CreateAgentSessionOptions {
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
-
-	/**
-	 * Skip AGENTS.md / CLAUDE.md discovery entirely. Convenience for the default
-	 * loader; ignored when `resourceLoader` is supplied, since that loader carries
-	 * its own setting.
-	 */
-	noContextFiles?: boolean;
-	/**
-	 * How far up from `cwd` context files are collected. Default `project`, which
-	 * stops at the nearest project root. Ignored when `resourceLoader` is supplied.
-	 */
-	contextFileScope?: ContextFileScope;
 
 	/** Session manager. Default: SessionManager.create(cwd) */
 	sessionManager?: SessionManager;
@@ -206,8 +194,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			cwd,
 			agentDir,
 			settingsManager,
-			noContextFiles: options.noContextFiles,
-			contextFileScope: options.contextFileScope,
 		});
 		await resourceLoader.reload();
 		time("resourceLoader.reload");

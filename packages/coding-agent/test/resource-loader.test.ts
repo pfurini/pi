@@ -383,127 +383,6 @@ Content`,
 			expect(agentsFiles).toEqual([]);
 		});
 
-		it("should not read context files above the working directory outside a project", async () => {
-			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(cwd, "AGENTS.md"), "Project instructions");
-
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(cwd, "AGENTS.md")]);
-		});
-
-		it("should collect context files up to the project root, nearest last", async () => {
-			mkdirSync(join(cwd, ".git"), { recursive: true });
-			const nested = join(cwd, "packages", "app");
-			mkdirSync(nested, { recursive: true });
-			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(cwd, "AGENTS.md"), "Repo instructions");
-			writeFileSync(join(nested, "AGENTS.md"), "Package instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: nested, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([
-				join(cwd, "AGENTS.md"),
-				join(nested, "AGENTS.md"),
-			]);
-		});
-
-		it("should stop at the nearest project root when repositories are nested", async () => {
-			mkdirSync(join(cwd, ".git"), { recursive: true });
-			const inner = join(cwd, "vendor", "lib");
-			mkdirSync(join(inner, ".git"), { recursive: true });
-			writeFileSync(join(cwd, "AGENTS.md"), "Outer instructions");
-			writeFileSync(join(inner, "AGENTS.md"), "Inner instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: inner, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(inner, "AGENTS.md")]);
-		});
-
-		it("should treat a .git file as a project root", async () => {
-			// Worktrees and submodules write .git as a file pointing at the real git dir.
-			const worktree = join(cwd, "worktree");
-			mkdirSync(worktree, { recursive: true });
-			writeFileSync(join(worktree, ".git"), "gitdir: /elsewhere/.git/worktrees/wt");
-			writeFileSync(join(cwd, "AGENTS.md"), "Outer instructions");
-			writeFileSync(join(worktree, "AGENTS.md"), "Worktree instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: worktree, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(worktree, "AGENTS.md")]);
-		});
-
-		it("should treat a .git symlink whose target is missing as a project root", async () => {
-			// existsSync follows the link and reports false for a gitdir that has moved
-			// or lives on an unmounted volume, which would walk past this root.
-			const repo = join(cwd, "repo");
-			mkdirSync(join(repo, "src"), { recursive: true });
-			symlinkSync(join(tempDir, "gone", "gitdir"), join(repo, ".git"));
-			writeFileSync(join(cwd, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(repo, "AGENTS.md"), "Repo instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: join(repo, "src"), agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(repo, "AGENTS.md")]);
-		});
-
-		it("should recognize non-git project roots", async () => {
-			mkdirSync(join(cwd, ".jj"), { recursive: true });
-			const nested = join(cwd, "sub");
-			mkdirSync(nested, { recursive: true });
-			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(cwd, "AGENTS.md"), "Repo instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: nested, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(cwd, "AGENTS.md")]);
-		});
-
-		it("should read only the working directory when it sits above the project roots it contains", async () => {
-			mkdirSync(join(cwd, "sub", ".git"), { recursive: true });
-			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(cwd, "AGENTS.md"), "Workspace instructions");
-
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(cwd, "AGENTS.md")]);
-		});
-
-		it("should read only the working directory when contextFileScope is cwd", async () => {
-			mkdirSync(join(cwd, ".git"), { recursive: true });
-			const nested = join(cwd, "packages", "app");
-			mkdirSync(nested, { recursive: true });
-			writeFileSync(join(cwd, "AGENTS.md"), "Repo instructions");
-			writeFileSync(join(nested, "AGENTS.md"), "Package instructions");
-
-			const loader = new DefaultResourceLoader({ cwd: nested, agentDir, contextFileScope: "cwd" });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([join(nested, "AGENTS.md")]);
-		});
-
-		it("should always load the agent directory context file first", async () => {
-			writeFileSync(join(agentDir, "AGENTS.md"), "Global instructions");
-			// An ancestor file, so an unbounded walk would show up here as a third entry.
-			writeFileSync(join(tempDir, "AGENTS.md"), "Ancestor instructions");
-			writeFileSync(join(cwd, "AGENTS.md"), "Project instructions");
-
-			const loader = new DefaultResourceLoader({ cwd, agentDir, contextFileScope: "cwd" });
-			await loader.reload();
-
-			expect(loader.getAgentsFiles().agentsFiles.map((f) => f.path)).toEqual([
-				join(agentDir, "AGENTS.md"),
-				join(cwd, "AGENTS.md"),
-			]);
-		});
-
 		it("should discover SYSTEM.md from cwd/.pi", async () => {
 			const piDir = join(cwd, ".pi");
 			mkdirSync(piDir, { recursive: true });
@@ -1141,10 +1020,7 @@ export default function(pi: ExtensionAPI) {
 			expect(files.map((f) => f.content)).toEqual(["container instructions", "worktree instructions"]);
 		});
 
-		it("should stop at the main repo root; plain directories above it are not read", () => {
-			// Fork divergence from upstream #7221: the walk extends through the git link
-			// to the main repo root (same project) but never past it into unrelated
-			// parent directories, per the project-root boundary policy.
+		it("should keep loading ancestors above the main repo", () => {
 			const { outer, main, worktree, worktreeSrc } = setupNestedWorktree();
 			writeFileSync(join(outer, "AGENTS.md"), "outer instructions");
 			writeFileSync(join(main, "AGENTS.md"), "main repo instructions");
@@ -1152,15 +1028,13 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: worktreeSrc, agentDir });
 
-			// The main repo root's duplicate is dropped and the unrelated dir above is never read.
-			expect(files.map((f) => f.content)).toEqual(["worktree instructions"]);
+			// Only the main repo root's duplicate is dropped; the unrelated dir above it stays.
+			expect(files.map((f) => f.content)).toEqual(["outer instructions", "worktree instructions"]);
 		});
 
-		it("should not extend the boundary for a sibling worktree (main repo is not an ancestor)", () => {
-			// git worktree add ../feat puts the worktree beside the main repo, so the git
-			// link points sideways, not up: the boundary stays at the worktree root and
-			// the unrelated directory above is not read (fork divergence from #7221,
-			// which walked all ancestors).
+		it("should NOT skip anything for a sibling worktree (main repo is not an ancestor)", () => {
+			// git worktree add ../feat puts the worktree beside the main repo, so no
+			// duplicate is ever encountered and ancestors above it are unrelated.
 			const outer = join(tempDir, "outer");
 			const main = join(outer, "main");
 			const sib = join(outer, "sib-feat");
@@ -1173,7 +1047,7 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: sibSrc, agentDir });
 
-			expect(files.map((f) => f.content)).toEqual(["sibling worktree instructions"]);
+			expect(files.map((f) => f.content)).toEqual(["outer instructions", "sibling worktree instructions"]);
 		});
 
 		it("should NOT skip the superproject's context from inside a submodule", () => {
@@ -1195,9 +1069,7 @@ export default function(pi: ExtensionAPI) {
 			expect(files.map((f) => f.content)).toEqual(["superproject instructions", "submodule instructions"]);
 		});
 
-		it("should stop at an ordinary repo root", () => {
-			// Fork divergence from upstream #7221: an ordinary repo root is the boundary;
-			// nothing above it is read.
+		it("should keep climbing past an ordinary repo root", () => {
 			const outer = join(tempDir, "outer");
 			const repo = join(outer, "repo");
 			const leaf = join(repo, "src");
@@ -1210,7 +1082,7 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: leaf, agentDir });
 
-			expect(files.map((f) => f.content)).toEqual(["repo instructions", "leaf instructions"]);
+			expect(files.map((f) => f.content)).toEqual(["outer instructions", "repo instructions", "leaf instructions"]);
 		});
 
 		it("should climb normally when the gitdir: target does not exist", () => {

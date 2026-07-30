@@ -51,8 +51,7 @@ describe("applyToolOutputPolicy (unit)", () => {
 
 	it("leaves a self-truncated result (cap + own notice) alone - the slack", () => {
 		// A well-behaved tool returns cap-sized content plus its own marker line.
-		const selfCapped =
-			"z".repeat(DEFAULT_MAX_BYTES - 10) + "\n[Showing lines 1-2000 of 9999. Use offset=2001 to continue.]";
+		const selfCapped = `${"z".repeat(DEFAULT_MAX_BYTES - 10)}\n[Showing lines 1-2000 of 9999. Use offset=2001 to continue.]`;
 		expect(Buffer.byteLength(selfCapped, "utf-8")).toBeGreaterThan(DEFAULT_MAX_BYTES);
 		expect(Buffer.byteLength(selfCapped, "utf-8")).toBeLessThan(DEFAULT_MAX_BYTES + POLICY_SLACK_BYTES);
 		const r = applyToolOutputPolicy([{ type: "text", text: selfCapped }]);
@@ -66,7 +65,7 @@ describe("applyToolOutputPolicy (unit)", () => {
 		// whole, and the budget would survive for the tail - covered by the
 		// pathological-line test below.)
 		const content = [
-			{ type: "text", text: ("a".repeat(100) + "\n").repeat(600) },
+			{ type: "text", text: `${"a".repeat(100)}\n`.repeat(600) },
 			{ type: "image", data: "AAAA", mimeType: "image/png" },
 			{ type: "text", text: "tail that must be dropped" },
 		];
@@ -111,7 +110,7 @@ describe("applyToolOutputPolicy (unit)", () => {
 	it("stress: 1000 blocks of mixed size stay within cap and keep order", () => {
 		const blocks = Array.from({ length: 1000 }, (_, i) => ({
 			type: "text",
-			text: `block${i} ` + "p".repeat(i % 97) + "\n",
+			text: `block${i} ${"p".repeat(i % 97)}\n`,
 		}));
 		const t0 = performance.now();
 		const r = applyToolOutputPolicy(blocks);

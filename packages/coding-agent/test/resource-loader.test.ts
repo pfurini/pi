@@ -1141,7 +1141,10 @@ export default function(pi: ExtensionAPI) {
 			expect(files.map((f) => f.content)).toEqual(["container instructions", "worktree instructions"]);
 		});
 
-		it("should keep loading ancestors above the main repo", () => {
+		it("should stop at the main repo root; plain directories above it are not read", () => {
+			// Fork divergence from upstream #7221: the walk extends through the git link
+			// to the main repo root (same project) but never past it into unrelated
+			// parent directories, per the project-root boundary policy.
 			const { outer, main, worktree, worktreeSrc } = setupNestedWorktree();
 			writeFileSync(join(outer, "AGENTS.md"), "outer instructions");
 			writeFileSync(join(main, "AGENTS.md"), "main repo instructions");
@@ -1149,13 +1152,15 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: worktreeSrc, agentDir });
 
-			// Only the main repo root's duplicate is dropped; the unrelated dir above it stays.
-			expect(files.map((f) => f.content)).toEqual(["outer instructions", "worktree instructions"]);
+			// The main repo root's duplicate is dropped and the unrelated dir above is never read.
+			expect(files.map((f) => f.content)).toEqual(["worktree instructions"]);
 		});
 
-		it("should NOT skip anything for a sibling worktree (main repo is not an ancestor)", () => {
-			// git worktree add ../feat puts the worktree beside the main repo, so no
-			// duplicate is ever encountered and ancestors above it are unrelated.
+		it("should not extend the boundary for a sibling worktree (main repo is not an ancestor)", () => {
+			// git worktree add ../feat puts the worktree beside the main repo, so the git
+			// link points sideways, not up: the boundary stays at the worktree root and
+			// the unrelated directory above is not read (fork divergence from #7221,
+			// which walked all ancestors).
 			const outer = join(tempDir, "outer");
 			const main = join(outer, "main");
 			const sib = join(outer, "sib-feat");
@@ -1168,7 +1173,7 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: sibSrc, agentDir });
 
-			expect(files.map((f) => f.content)).toEqual(["outer instructions", "sibling worktree instructions"]);
+			expect(files.map((f) => f.content)).toEqual(["sibling worktree instructions"]);
 		});
 
 		it("should NOT skip the superproject's context from inside a submodule", () => {
@@ -1190,7 +1195,9 @@ export default function(pi: ExtensionAPI) {
 			expect(files.map((f) => f.content)).toEqual(["superproject instructions", "submodule instructions"]);
 		});
 
-		it("should keep climbing past an ordinary repo root", () => {
+		it("should stop at an ordinary repo root", () => {
+			// Fork divergence from upstream #7221: an ordinary repo root is the boundary;
+			// nothing above it is read.
 			const outer = join(tempDir, "outer");
 			const repo = join(outer, "repo");
 			const leaf = join(repo, "src");
@@ -1203,7 +1210,7 @@ export default function(pi: ExtensionAPI) {
 
 			const files = loadProjectContextFiles({ cwd: leaf, agentDir });
 
-			expect(files.map((f) => f.content)).toEqual(["outer instructions", "repo instructions", "leaf instructions"]);
+			expect(files.map((f) => f.content)).toEqual(["repo instructions", "leaf instructions"]);
 		});
 
 		it("should climb normally when the gitdir: target does not exist", () => {

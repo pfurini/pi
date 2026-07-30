@@ -131,6 +131,41 @@ function findShadowedContextFile(cwd: string): string | undefined {
 	return worktreeContextFile ? join(mainRepoRoot, basename(worktreeContextFile.path)) : undefined;
 }
 
+/**
+ * Directory that owns a repo's shared git state:
+ * `<repo>/.git` -> `<repo>`; `<super>/.git/modules/<path>` (submodule) -> `<super>`;
+ * `<proj>/.bare` (bare layout) -> `<proj>`.
+ */
+function gitStateContainer(commonGitDir: string): string {
+	const modulesMarker = `${sep}.git${sep}modules${sep}`;
+	const idx = commonGitDir.indexOf(modulesMarker);
+	if (idx !== -1) return commonGitDir.slice(0, idx);
+	return dirname(commonGitDir);
+}
+
+/**
+ * Extend the context-file boundary through git-linked parents: a linked worktree nested
+ * under its main repo, a bare-layout container (`proj/.bare` + `proj/main`), or a
+ * submodule inside its superproject are the same project, so their enclosing root is the
+ * real boundary. Plain unrelated ancestor directories still never extend it, which is the
+ * point of the boundary (a stray AGENTS.md in a parent workspace dir or $HOME must not
+ * leak into every project underneath).
+ */
+function extendBoundaryThroughGitLinks(boundary: string): string {
+	let current = boundary;
+	while (true) {
+		const gitPaths = findGitPaths(current);
+		if (!gitPaths) return current;
+		const canonicalCurrent = canonicalizePath(current);
+		// Only a boundary that is itself the repo root can extend; otherwise findGitPaths
+		// walked up to some unrelated ancestor repo, which must not pull the boundary up.
+		if (canonicalizePath(gitPaths.repoDir) !== canonicalCurrent) return current;
+		const container = canonicalizePath(gitStateContainer(canonicalizePath(gitPaths.commonGitDir)));
+		if (container === canonicalCurrent || !canonicalCurrent.startsWith(`${container}${sep}`)) return current;
+		current = container;
+	}
+}
+
 export function loadProjectContextFiles(options: {
 	cwd: string;
 	agentDir: string;
@@ -151,11 +186,16 @@ export function loadProjectContextFiles(options: {
 	// A cwd above the project roots it contains resolves to null here, the same
 	// as a cwd outside any checkout, and both correctly read cwd alone.
 	const boundary =
-		(options.scope ?? "project") === "cwd" ? resolvedCwd : (findProjectRoot(resolvedCwd) ?? resolvedCwd);
+		(options.scope ?? "project") === "cwd"
+			? resolvedCwd
+			: extendBoundaryThroughGitLinks(findProjectRoot(resolvedCwd) ?? resolvedCwd);
 
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
 	const shadowedContextFile = findShadowedContextFile(resolvedCwd);
+	// The extended boundary comes back canonicalized (realpath); compare in that
+	// form so a symlinked cwd (macOS /tmp -> /private/tmp) still terminates there.
+	const canonicalBoundary = canonicalizePath(boundary);
 	let currentDir = resolvedCwd;
 
 	while (true) {
@@ -168,7 +208,7 @@ export function loadProjectContextFiles(options: {
 		}
 
 		// Nearest file last, so the innermost instructions win on conflict.
-		if (currentDir === boundary) break;
+		if (canonicalizePath(currentDir) === canonicalBoundary) break;
 		const parentDir = dirname(currentDir);
 		if (parentDir === currentDir) break;
 		currentDir = parentDir;

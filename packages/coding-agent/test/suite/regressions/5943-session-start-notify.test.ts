@@ -85,6 +85,7 @@ type RebindContext = {
 	updateAvailableProviderCount: () => Promise<void>;
 	updateEditorBorderColor: () => void;
 	updateTerminalTitle: () => void;
+	schedulePromptHistoryRefresh: () => void;
 };
 
 type ReloadCommandContext = {
@@ -304,6 +305,7 @@ describe("regression #5943: session_start transient UI", () => {
 				updateAvailableProviderCount: async () => {},
 				updateEditorBorderColor: () => {},
 				updateTerminalTitle: () => {},
+				schedulePromptHistoryRefresh: () => {},
 			};
 
 			await interactiveModePrototype.rebindCurrentSession.call(context, { renderBeforeBind: true });
@@ -354,6 +356,7 @@ describe("regression #5943: session_start transient UI", () => {
 				updateAvailableProviderCount: async () => {},
 				updateEditorBorderColor: () => {},
 				updateTerminalTitle: () => {},
+				schedulePromptHistoryRefresh: () => {},
 			};
 
 			await interactiveModePrototype.rebindCurrentSession.call(context, { renderBeforeBind: true });
@@ -407,6 +410,7 @@ describe("regression #5943: session_start transient UI", () => {
 				updateAvailableProviderCount: async () => {},
 				updateEditorBorderColor: () => {},
 				updateTerminalTitle: () => {},
+				schedulePromptHistoryRefresh: () => {},
 			};
 
 			await interactiveModePrototype.rebindCurrentSession.call(context, { renderBeforeBind: true });

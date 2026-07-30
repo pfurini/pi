@@ -105,7 +105,10 @@ Pi loads `AGENTS.md` or `CLAUDE.md` at startup from:
 
 The nearest file is applied last, so a package-level file overrides the repository root. The walk stops at
 the nearest directory containing `.git`, `.hg`, `.svn`, or `.jj`; outside a checkout only the current
-directory is read. Instructions that should apply everywhere belong in `~/.pi/agent/AGENTS.md`, which is
+directory is read. Git-linked parents count as the same project and extend the walk: a linked worktree
+nested under its main repository, a bare-layout container (`proj/.bare` + `proj/main`), and a submodule's
+superproject are read too, with a context file shared between a nested worktree and its main repository
+loaded only once. Instructions that should apply everywhere belong in `~/.pi/agent/AGENTS.md`, which is
 always loaded, rather than in a file above your projects.
 
 Use context files for project conventions, commands, safety rules, and preferences. Disable loading with `--no-context-files` or `-nc`.

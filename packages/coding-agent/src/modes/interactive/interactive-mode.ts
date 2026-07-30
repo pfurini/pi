@@ -1793,7 +1793,6 @@ export class InteractiveMode {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.applyRuntimeSettings();
-		await this.refreshPromptHistory();
 
 		if (options.renderBeforeBind) {
 			this.renderCurrentSessionState();
@@ -1813,6 +1812,9 @@ export class InteractiveMode {
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
+		// After the stale-rebind guard, so only the winning rebind refreshes, and
+		// fire-and-forget, so no await lands before extension binding above.
+		this.schedulePromptHistoryRefresh();
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {

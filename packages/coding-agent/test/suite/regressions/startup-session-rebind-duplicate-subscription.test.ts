@@ -11,6 +11,7 @@ type RebindContext = {
 	updateAvailableProviderCount: () => Promise<void>;
 	updateEditorBorderColor: () => void;
 	updateTerminalTitle: () => void;
+	schedulePromptHistoryRefresh: () => void;
 };
 
 type InteractiveModePrototype = {
@@ -49,6 +50,7 @@ describe("overlapping startup and replacement session rebinds", () => {
 			updateAvailableProviderCount: async () => {},
 			updateEditorBorderColor: () => {},
 			updateTerminalTitle,
+			schedulePromptHistoryRefresh: () => {},
 		};
 
 		const startupRebind = interactiveModePrototype.rebindCurrentSession.call(context);

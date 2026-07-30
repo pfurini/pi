@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
@@ -34,6 +35,9 @@ export interface DefaultStreamTarget {
 const installations: WeakRef<DefaultStreamTarget>[] = [];
 const pinnedTargets = new WeakMap<StreamFn, DefaultStreamTarget>();
 
+/** Carries the calling session's target through its async call trees (see runWithDefaultStreamTarget). */
+const activeSessionTarget = new AsyncLocalStorage<DefaultStreamTarget>();
+
 /**
  * Whether routing `model` through `runtime` is safe and useful:
  *
@@ -58,15 +62,25 @@ function runtimeServesModel(runtime: ModelRuntime, model: Model<Api>): boolean {
 /**
  * Process-default stream function for Agent and low-level loop callers that omit streamFn.
  *
- * Dispatch: the most recently installed target whose runtime serves the model (see
- * runtimeServesModel) wins, and the call goes through that session's stream function, so
- * bare Agents get the full session pipeline: composed providers (extension overlay
- * middleware, configured auth incl. credential baseUrl overrides), retry settings,
- * timeouts, attribution headers, and the provider extension hooks. Models no installed
- * runtime serves, and all calls before a runtime exists, keep the pre-existing raw compat
- * behavior.
+ * Dispatch order:
+ * 1. The calling session's own target, when the call happens inside a session scope
+ *    (see runWithDefaultStreamTarget) and that session's runtime serves the model. This is
+ *    what keeps concurrent sessions in one process from routing each other's bare-Agent
+ *    traffic ("which session is calling", not "which session was created last").
+ * 2. The most recently installed target whose runtime serves the model.
+ * 3. Raw compat, for models no installed runtime serves and all calls before a runtime
+ *    exists.
+ *
+ * Routed calls go through the target session's stream function, so bare Agents get the
+ * full session pipeline: composed providers (extension overlay middleware, configured auth
+ * incl. credential baseUrl overrides), retry settings, timeouts, attribution headers, and
+ * the provider extension hooks.
  */
 export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
+	const scoped = activeSessionTarget.getStore();
+	if (scoped && runtimeServesModel(scoped.runtime, model)) {
+		return streamThroughTarget(scoped, model, context, options);
+	}
 	for (let i = installations.length - 1; i >= 0; i--) {
 		const target = installations[i].deref();
 		if (!target) {
@@ -74,15 +88,34 @@ export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
 			continue;
 		}
 		if (runtimeServesModel(target.runtime, model)) {
-			return target.streamFn(model, context, {
-				...options,
-				onPayload: options?.onPayload ?? target.onPayload,
-				onResponse: options?.onResponse ?? target.onResponse,
-			});
+			return streamThroughTarget(target, model, context, options);
 		}
 	}
 	return streamSimple(model, context, options);
 };
+
+/** Bare callers get the target session's extension provider hooks unless they carry their own. */
+function streamThroughTarget(
+	target: DefaultStreamTarget,
+	model: Model<Api>,
+	context: Parameters<StreamFn>[1],
+	options: Parameters<StreamFn>[2],
+): ReturnType<StreamFn> {
+	return target.streamFn(model, context, {
+		...options,
+		onPayload: options?.onPayload ?? target.onPayload,
+		onResponse: options?.onResponse ?? target.onResponse,
+	});
+}
+
+/**
+ * Run fn inside a session scope: bare Agents and low-level loops started (directly or
+ * transitively) within fn resolve the composed default to this session's target first.
+ * AsyncLocalStorage propagates through awaits, promise chains, and timers created inside.
+ */
+export function runWithDefaultStreamTarget<T>(target: DefaultStreamTarget, fn: () => T): T {
+	return activeSessionTarget.run(target, fn);
+}
 
 /**
  * True when streamFn is a process default (the composed default or raw compat streamSimple)

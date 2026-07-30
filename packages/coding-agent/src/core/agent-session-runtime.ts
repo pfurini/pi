@@ -186,7 +186,10 @@ export class AgentSessionRuntime {
 			await this.rebindSession(this.session);
 		}
 		if (withSession) {
-			await withSession(this.session.createReplacedSessionContext());
+			// The replacement is usually triggered from inside the OLD session's
+			// default-stream scope (an extension command); run the callback in the NEW
+			// session's scope so bare Agents it creates route to the live session.
+			await this.session.runInDefaultStreamScope(() => withSession(this.session.createReplacedSessionContext()));
 		}
 	}
 
@@ -249,7 +252,9 @@ export class AgentSessionRuntime {
 			}),
 		);
 		if (options?.setup) {
-			await options.setup(this.session.sessionManager);
+			// Same scope rationale as finishSessionReplacement: setup runs after the old
+			// session (and its scope's target) was disposed.
+			await this.session.runInDefaultStreamScope(() => options.setup?.(this.session.sessionManager));
 			this.session.agent.state.messages = this.session.sessionManager.buildSessionContext().messages;
 		}
 		await this.finishSessionReplacement(options?.withSession);

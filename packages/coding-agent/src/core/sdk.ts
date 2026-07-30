@@ -12,7 +12,7 @@ import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
-import { composedDefaultStreamFn, installDefaultStreamTarget } from "./default-stream-fn.ts";
+import { composedDefaultStreamFn, type DefaultStreamTarget, installDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -423,12 +423,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// (last-created session wins). The session releases the installation on dispose;
 	// if construction fails before the caller ever receives the session, release here
 	// so the failed session's runtime does not stay the process default.
-	const releaseDefaultStreamRuntime = installDefaultStreamTarget({
+	const defaultStreamTarget: DefaultStreamTarget = {
 		runtime: modelRuntime,
 		streamFn: sessionStreamFn,
 		onPayload: onProviderPayload,
 		onResponse: onProviderResponse,
-	});
+	};
+	const releaseDefaultStreamRuntime = installDefaultStreamTarget(defaultStreamTarget);
 	try {
 		const session = new AgentSession({
 			agent,
@@ -445,6 +446,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			excludedToolNames,
 			extensionRunnerRef,
 			sessionStartEvent: options.sessionStartEvent,
+			defaultStreamTarget,
 			releaseDefaultStreamRuntime,
 		});
 		const extensionsResult = resourceLoader.getExtensions();

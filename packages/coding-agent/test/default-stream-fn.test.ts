@@ -9,10 +9,13 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
+import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
+import { createAgentSession, type ExtensionFactory } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
@@ -91,7 +94,7 @@ describe("composed default stream function", () => {
 	async function createSessionWithOverlayProvider(
 		provider: string,
 		marker: { calls: number },
-		options: { modelRuntime?: ReturnType<typeof getModelRuntime> } = {},
+		options: { modelRuntime?: ReturnType<typeof getModelRuntime>; extensionFactory?: ExtensionFactory } = {},
 	) {
 		const model = createModel(provider, "openai-completions");
 		let modelRuntime = options.modelRuntime;
@@ -108,13 +111,28 @@ describe("composed default stream function", () => {
 			});
 			modelRuntime = getModelRuntime(modelRegistry);
 		}
+		const settingsManager = SettingsManager.inMemory({});
+		let resourceLoader: DefaultResourceLoader | undefined;
+		if (options.extensionFactory) {
+			resourceLoader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager,
+				extensionFactories: [options.extensionFactory],
+				noSkills: true,
+				noPromptTemplates: true,
+				noThemes: true,
+			});
+			await resourceLoader.reload();
+		}
 		const { session } = await createAgentSession({
 			cwd,
 			agentDir,
 			model,
 			modelRuntime,
-			settingsManager: SettingsManager.inMemory({}),
+			settingsManager,
 			sessionManager: SessionManager.inMemory(cwd),
+			resourceLoader,
 		});
 		sessions.push(session);
 		return { session, model, modelRuntime };
@@ -315,5 +333,142 @@ describe("composed default stream function", () => {
 
 		await (await agent.streamFunction(model, { messages: [] }, {})).result();
 		expect(marker.calls).toBe(1);
+	});
+
+	it("scopes extension-handler bare Agents to the emitting session, not the newest", async () => {
+		const markerA = { calls: 0 };
+		const markerB = { calls: 0 };
+		const agent = bareAgent();
+		let runInHandler: (() => Promise<void>) | undefined;
+		const { session: sessionA, model } = await createSessionWithOverlayProvider("capture-provider", markerA, {
+			extensionFactory: (pi) => {
+				pi.on("agent_settled", async () => {
+					await runInHandler?.();
+				});
+			},
+		});
+		await createSessionWithOverlayProvider("capture-provider", markerB);
+
+		runInHandler = async () => {
+			await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		};
+		await sessionA.extensionRunner.emit({ type: "agent_settled" });
+
+		expect(markerA.calls).toBe(1);
+		expect(markerB.calls).toBe(0);
+	});
+
+	it("falls through to the stack when the scoped session cannot serve the model", async () => {
+		const markerA = { calls: 0 };
+		const markerB = { calls: 0 };
+		const agent = bareAgent();
+		let runInHandler: (() => Promise<void>) | undefined;
+		const { session: sessionA } = await createSessionWithOverlayProvider("capture-provider", markerA, {
+			extensionFactory: (pi) => {
+				pi.on("agent_settled", async () => {
+					await runInHandler?.();
+				});
+			},
+		});
+		const { model: modelB } = await createSessionWithOverlayProvider("b-only-provider", markerB);
+
+		runInHandler = async () => {
+			await (await agent.streamFunction(modelB, { messages: [] }, {})).result();
+		};
+		await sessionA.extensionRunner.emit({ type: "agent_settled" });
+
+		expect(markerB.calls).toBe(1);
+		expect(markerA.calls).toBe(0);
+	});
+
+	it("scopes extension-tool bare Agents to the prompting session (full run tree)", async () => {
+		const markerA = { calls: 0 };
+		const markerB = { calls: 0 };
+		const agent = bareAgent();
+		const faux = registerFauxProvider();
+		try {
+			faux.setResponses([fauxAssistantMessage([fauxToolCall("spawn_bare", {})]), fauxAssistantMessage("done")]);
+			const fauxModel = faux.getModel();
+			const bareModel = createModel("capture-provider", "openai-completions");
+
+			const authStorage = AuthStorage.inMemory();
+			await authStorage.modify(fauxModel.provider, async () => ({ type: "api_key", key: "faux-key" }));
+			await authStorage.modify("capture-provider", async () => ({ type: "api_key", key: "test-api-key" }));
+			const modelRuntime = await ModelRuntime.create({
+				credentials: authStorage,
+				modelsPath: join(agentDir, "faux-models.json"),
+				allowModelNetwork: false,
+			});
+			modelRuntime.registerProvider(fauxModel.provider, {
+				baseUrl: fauxModel.baseUrl,
+				api: fauxModel.api,
+				models: [
+					{
+						id: fauxModel.id,
+						name: fauxModel.name,
+						api: fauxModel.api,
+						reasoning: fauxModel.reasoning,
+						input: fauxModel.input,
+						cost: fauxModel.cost,
+						contextWindow: fauxModel.contextWindow,
+						maxTokens: fauxModel.maxTokens,
+						baseUrl: fauxModel.baseUrl,
+					},
+				],
+			});
+			modelRuntime.registerProvider("capture-provider", {
+				api: "openai-completions",
+				streamSimple: () => {
+					markerA.calls++;
+					return createDoneStream("openai-completions", "capture-provider");
+				},
+			});
+
+			const settingsManager = SettingsManager.inMemory({});
+			const resourceLoader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager,
+				extensionFactories: [
+					(pi) => {
+						pi.registerTool({
+							name: "spawn_bare",
+							label: "spawn_bare",
+							description: "spawns a bare agent",
+							parameters: { type: "object", properties: {} },
+							execute: async () => {
+								await (await agent.streamFunction(bareModel, { messages: [] }, {})).result();
+								return { content: [{ type: "text", text: "spawned" }], details: {} };
+							},
+						} as never);
+					},
+				],
+				noSkills: true,
+				noPromptTemplates: true,
+				noThemes: true,
+			});
+			await resourceLoader.reload();
+
+			const { session: sessionA } = await createAgentSession({
+				cwd,
+				agentDir,
+				model: fauxModel,
+				modelRuntime,
+				settingsManager,
+				sessionManager: SessionManager.inMemory(cwd),
+				resourceLoader,
+			});
+			sessions.push(sessionA);
+			await sessionA.bindExtensions({});
+
+			await createSessionWithOverlayProvider("capture-provider", markerB);
+
+			await sessionA.prompt("run the spawn_bare tool");
+
+			expect(markerA.calls).toBe(1);
+			expect(markerB.calls).toBe(0);
+		} finally {
+			faux.unregister();
+		}
 	});
 });

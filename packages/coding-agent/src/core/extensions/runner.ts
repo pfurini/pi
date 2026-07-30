@@ -559,6 +559,17 @@ export class ExtensionRunner {
 		return () => this.errorListeners.delete(listener);
 	}
 
+	/**
+	 * Optional scope applied around every emit* dispatch. The owning AgentSession sets this
+	 * to its default-stream scope so extension handlers fired outside an agent run still
+	 * resolve bare Agent/loop callers to that session.
+	 */
+	scopeRunner?: <T>(fn: () => T) => T;
+
+	private runScoped<T>(fn: () => T): T {
+		return this.scopeRunner ? this.scopeRunner(fn) : fn();
+	}
+
 	emitError(error: ExtensionError): void {
 		for (const listener of this.errorListeners) {
 			listener(error);
@@ -798,283 +809,299 @@ export class ExtensionRunner {
 	}
 
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
-		const ctx = this.createContext();
-		let result: SessionBeforeEventResult | undefined;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let result: SessionBeforeEventResult | undefined;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get(event.type);
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get(event.type);
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const handlerResult = await handler(event, ctx);
+				for (const handler of handlers) {
+					try {
+						const handlerResult = await handler(event, ctx);
 
-					if (this.isSessionBeforeEvent(event) && handlerResult) {
-						result = handlerResult as SessionBeforeEventResult;
-						if (result.cancel) {
-							return result as RunnerEmitResult<TEvent>;
+						if (this.isSessionBeforeEvent(event) && handlerResult) {
+							result = handlerResult as SessionBeforeEventResult;
+							if (result.cancel) {
+								return result as RunnerEmitResult<TEvent>;
+							}
 						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: event.type,
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: event.type,
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return result as RunnerEmitResult<TEvent>;
+			return result as RunnerEmitResult<TEvent>;
+		});
 	}
 
 	async emitMessageEnd(event: MessageEndEvent): Promise<AgentMessage | undefined> {
-		const ctx = this.createContext();
-		let currentMessage = event.message;
-		let modified = false;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let currentMessage = event.message;
+			let modified = false;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("message_end");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("message_end");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const currentEvent: MessageEndEvent = { ...event, message: currentMessage };
-					const handlerResult = (await handler(currentEvent, ctx)) as MessageEndEventResult | undefined;
-					if (!handlerResult?.message) continue;
+				for (const handler of handlers) {
+					try {
+						const currentEvent: MessageEndEvent = { ...event, message: currentMessage };
+						const handlerResult = (await handler(currentEvent, ctx)) as MessageEndEventResult | undefined;
+						if (!handlerResult?.message) continue;
 
-					if (handlerResult.message.role !== currentMessage.role) {
+						if (handlerResult.message.role !== currentMessage.role) {
+							this.emitError({
+								extensionPath: ext.path,
+								event: "message_end",
+								error: "message_end handlers must return a message with the same role",
+							});
+							continue;
+						}
+
+						currentMessage = handlerResult.message;
+						modified = true;
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
 						this.emitError({
 							extensionPath: ext.path,
 							event: "message_end",
-							error: "message_end handlers must return a message with the same role",
+							error: message,
+							stack,
 						});
-						continue;
 					}
-
-					currentMessage = handlerResult.message;
-					modified = true;
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "message_end",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return modified ? currentMessage : undefined;
+			return modified ? currentMessage : undefined;
+		});
 	}
 
 	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
-		const ctx = this.createContext();
-		const currentEvent: ToolResultEvent = { ...event };
-		let modified = false;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			const currentEvent: ToolResultEvent = { ...event };
+			let modified = false;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("tool_result");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("tool_result");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const handlerResult = (await handler(currentEvent, ctx)) as ToolResultEventResult | undefined;
-					if (!handlerResult) continue;
+				for (const handler of handlers) {
+					try {
+						const handlerResult = (await handler(currentEvent, ctx)) as ToolResultEventResult | undefined;
+						if (!handlerResult) continue;
 
-					if (handlerResult.content !== undefined) {
-						currentEvent.content = handlerResult.content;
-						modified = true;
+						if (handlerResult.content !== undefined) {
+							currentEvent.content = handlerResult.content;
+							modified = true;
+						}
+						if (handlerResult.details !== undefined) {
+							currentEvent.details = handlerResult.details;
+							modified = true;
+						}
+						if (handlerResult.isError !== undefined) {
+							currentEvent.isError = handlerResult.isError;
+							modified = true;
+						}
+						if (handlerResult.usage !== undefined) {
+							currentEvent.usage = handlerResult.usage;
+							modified = true;
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "tool_result",
+							error: message,
+							stack,
+						});
 					}
-					if (handlerResult.details !== undefined) {
-						currentEvent.details = handlerResult.details;
-						modified = true;
-					}
-					if (handlerResult.isError !== undefined) {
-						currentEvent.isError = handlerResult.isError;
-						modified = true;
-					}
-					if (handlerResult.usage !== undefined) {
-						currentEvent.usage = handlerResult.usage;
-						modified = true;
-					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "tool_result",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		if (!modified) {
-			return undefined;
-		}
+			if (!modified) {
+				return undefined;
+			}
 
-		return {
-			content: currentEvent.content,
-			details: currentEvent.details,
-			isError: currentEvent.isError,
-			usage: currentEvent.usage,
-		};
+			return {
+				content: currentEvent.content,
+				details: currentEvent.details,
+				isError: currentEvent.isError,
+				usage: currentEvent.usage,
+			};
+		});
 	}
 
 	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
-		const ctx = this.createContext();
-		let result: ToolCallEventResult | undefined;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let result: ToolCallEventResult | undefined;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("tool_call");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("tool_call");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				const handlerResult = await handler(event, ctx);
+				for (const handler of handlers) {
+					const handlerResult = await handler(event, ctx);
 
-				if (handlerResult) {
-					result = handlerResult as ToolCallEventResult;
-					if (result.block) {
-						return result;
+					if (handlerResult) {
+						result = handlerResult as ToolCallEventResult;
+						if (result.block) {
+							return result;
+						}
 					}
 				}
 			}
-		}
 
-		return result;
+			return result;
+		});
 	}
 
 	async emitUserBash(event: UserBashEvent): Promise<UserBashEventResult | undefined> {
-		const ctx = this.createContext();
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("user_bash");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("user_bash");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const handlerResult = await handler(event, ctx);
-					if (handlerResult) {
-						return handlerResult as UserBashEventResult;
+				for (const handler of handlers) {
+					try {
+						const handlerResult = await handler(event, ctx);
+						if (handlerResult) {
+							return handlerResult as UserBashEventResult;
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "user_bash",
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "user_bash",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return undefined;
+			return undefined;
+		});
 	}
 
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
-		const ctx = this.createContext();
-		let currentMessages = structuredClone(messages);
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let currentMessages = structuredClone(messages);
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("context");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("context");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const event: ContextEvent = { type: "context", messages: currentMessages };
-					const handlerResult = await handler(event, ctx);
+				for (const handler of handlers) {
+					try {
+						const event: ContextEvent = { type: "context", messages: currentMessages };
+						const handlerResult = await handler(event, ctx);
 
-					if (handlerResult && (handlerResult as ContextEventResult).messages) {
-						currentMessages = (handlerResult as ContextEventResult).messages!;
+						if (handlerResult && (handlerResult as ContextEventResult).messages) {
+							currentMessages = (handlerResult as ContextEventResult).messages!;
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "context",
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "context",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return currentMessages;
+			return currentMessages;
+		});
 	}
 
 	async emitBeforeProviderRequest(payload: unknown): Promise<unknown> {
-		const ctx = this.createContext();
-		let currentPayload = payload;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let currentPayload = payload;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("before_provider_request");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("before_provider_request");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const event: BeforeProviderRequestEvent = {
-						type: "before_provider_request",
-						payload: currentPayload,
-					};
-					const handlerResult = await handler(event, ctx);
-					if (handlerResult !== undefined) {
-						currentPayload = handlerResult;
+				for (const handler of handlers) {
+					try {
+						const event: BeforeProviderRequestEvent = {
+							type: "before_provider_request",
+							payload: currentPayload,
+						};
+						const handlerResult = await handler(event, ctx);
+						if (handlerResult !== undefined) {
+							currentPayload = handlerResult;
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "before_provider_request",
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_request",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return currentPayload;
+			return currentPayload;
+		});
 	}
 
 	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
-		const ctx = this.createContext();
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("before_provider_headers");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("before_provider_headers");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					// Handlers mutate `headers` in place; the return value is ignored.
-					const event: BeforeProviderHeadersEvent = {
-						type: "before_provider_headers",
-						headers,
-					};
-					await handler(event, ctx);
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_headers",
-						error: message,
-						stack,
-					});
+				for (const handler of handlers) {
+					try {
+						// Handlers mutate `headers` in place; the return value is ignored.
+						const event: BeforeProviderHeadersEvent = {
+							type: "before_provider_headers",
+							headers,
+						};
+						await handler(event, ctx);
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "before_provider_headers",
+							error: message,
+							stack,
+						});
+					}
 				}
 			}
-		}
 
-		return headers;
+			return headers;
+		});
 	}
 
 	async emitBeforeAgentStart(
@@ -1083,64 +1110,66 @@ export class ExtensionRunner {
 		systemPrompt: string,
 		systemPromptOptions: BuildSystemPromptOptions,
 	): Promise<BeforeAgentStartCombinedResult | undefined> {
-		let currentSystemPrompt = systemPrompt;
-		const ctx = Object.defineProperties(
-			{},
-			Object.getOwnPropertyDescriptors(this.createContext()),
-		) as ExtensionContext;
-		ctx.getSystemPrompt = () => {
-			this.assertActive();
-			return currentSystemPrompt;
-		};
-		const messages: NonNullable<BeforeAgentStartEventResult["message"]>[] = [];
-		let systemPromptModified = false;
+		return this.runScoped(async () => {
+			let currentSystemPrompt = systemPrompt;
+			const ctx = Object.defineProperties(
+				{},
+				Object.getOwnPropertyDescriptors(this.createContext()),
+			) as ExtensionContext;
+			ctx.getSystemPrompt = () => {
+				this.assertActive();
+				return currentSystemPrompt;
+			};
+			const messages: NonNullable<BeforeAgentStartEventResult["message"]>[] = [];
+			let systemPromptModified = false;
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("before_agent_start");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("before_agent_start");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const event: BeforeAgentStartEvent = {
-						type: "before_agent_start",
-						prompt,
-						images,
-						systemPrompt: currentSystemPrompt,
-						systemPromptOptions,
-					};
-					const handlerResult = await handler(event, ctx);
+				for (const handler of handlers) {
+					try {
+						const event: BeforeAgentStartEvent = {
+							type: "before_agent_start",
+							prompt,
+							images,
+							systemPrompt: currentSystemPrompt,
+							systemPromptOptions,
+						};
+						const handlerResult = await handler(event, ctx);
 
-					if (handlerResult) {
-						const result = handlerResult as BeforeAgentStartEventResult;
-						if (result.message) {
-							messages.push(result.message);
+						if (handlerResult) {
+							const result = handlerResult as BeforeAgentStartEventResult;
+							if (result.message) {
+								messages.push(result.message);
+							}
+							if (result.systemPrompt !== undefined) {
+								currentSystemPrompt = result.systemPrompt;
+								systemPromptModified = true;
+							}
 						}
-						if (result.systemPrompt !== undefined) {
-							currentSystemPrompt = result.systemPrompt;
-							systemPromptModified = true;
-						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "before_agent_start",
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_agent_start",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		if (messages.length > 0 || systemPromptModified) {
-			return {
-				messages: messages.length > 0 ? messages : undefined,
-				systemPrompt: systemPromptModified ? currentSystemPrompt : undefined,
-			};
-		}
+			if (messages.length > 0 || systemPromptModified) {
+				return {
+					messages: messages.length > 0 ? messages : undefined,
+					systemPrompt: systemPromptModified ? currentSystemPrompt : undefined,
+				};
+			}
 
-		return undefined;
+			return undefined;
+		});
 	}
 
 	async emitResourcesDiscover(
@@ -1151,44 +1180,46 @@ export class ExtensionRunner {
 		promptPaths: Array<{ path: string; extensionPath: string }>;
 		themePaths: Array<{ path: string; extensionPath: string }>;
 	}> {
-		const ctx = this.createContext();
-		const skillPaths: Array<{ path: string; extensionPath: string }> = [];
-		const promptPaths: Array<{ path: string; extensionPath: string }> = [];
-		const themePaths: Array<{ path: string; extensionPath: string }> = [];
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			const skillPaths: Array<{ path: string; extensionPath: string }> = [];
+			const promptPaths: Array<{ path: string; extensionPath: string }> = [];
+			const themePaths: Array<{ path: string; extensionPath: string }> = [];
 
-		for (const ext of this.extensions) {
-			const handlers = ext.handlers.get("resources_discover");
-			if (!handlers || handlers.length === 0) continue;
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("resources_discover");
+				if (!handlers || handlers.length === 0) continue;
 
-			for (const handler of handlers) {
-				try {
-					const event: ResourcesDiscoverEvent = { type: "resources_discover", cwd, reason };
-					const handlerResult = await handler(event, ctx);
-					const result = handlerResult as ResourcesDiscoverResult | undefined;
+				for (const handler of handlers) {
+					try {
+						const event: ResourcesDiscoverEvent = { type: "resources_discover", cwd, reason };
+						const handlerResult = await handler(event, ctx);
+						const result = handlerResult as ResourcesDiscoverResult | undefined;
 
-					if (result?.skillPaths?.length) {
-						skillPaths.push(...result.skillPaths.map((path) => ({ path, extensionPath: ext.path })));
+						if (result?.skillPaths?.length) {
+							skillPaths.push(...result.skillPaths.map((path) => ({ path, extensionPath: ext.path })));
+						}
+						if (result?.promptPaths?.length) {
+							promptPaths.push(...result.promptPaths.map((path) => ({ path, extensionPath: ext.path })));
+						}
+						if (result?.themePaths?.length) {
+							themePaths.push(...result.themePaths.map((path) => ({ path, extensionPath: ext.path })));
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "resources_discover",
+							error: message,
+							stack,
+						});
 					}
-					if (result?.promptPaths?.length) {
-						promptPaths.push(...result.promptPaths.map((path) => ({ path, extensionPath: ext.path })));
-					}
-					if (result?.themePaths?.length) {
-						themePaths.push(...result.themePaths.map((path) => ({ path, extensionPath: ext.path })));
-					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "resources_discover",
-						error: message,
-						stack,
-					});
 				}
 			}
-		}
 
-		return { skillPaths, promptPaths, themePaths };
+			return { skillPaths, promptPaths, themePaths };
+		});
 	}
 
 	/** Emit input event. Transforms chain, "handled" short-circuits. */
@@ -1198,38 +1229,40 @@ export class ExtensionRunner {
 		source: InputSource,
 		streamingBehavior?: "steer" | "followUp",
 	): Promise<InputEventResult> {
-		const ctx = this.createContext();
-		let currentText = text;
-		let currentImages = images;
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			let currentText = text;
+			let currentImages = images;
 
-		for (const ext of this.extensions) {
-			for (const handler of ext.handlers.get("input") ?? []) {
-				try {
-					const event: InputEvent = {
-						type: "input",
-						text: currentText,
-						images: currentImages,
-						source,
-						streamingBehavior,
-					};
-					const result = (await handler(event, ctx)) as InputEventResult | undefined;
-					if (result?.action === "handled") return result;
-					if (result?.action === "transform") {
-						currentText = result.text;
-						currentImages = result.images ?? currentImages;
+			for (const ext of this.extensions) {
+				for (const handler of ext.handlers.get("input") ?? []) {
+					try {
+						const event: InputEvent = {
+							type: "input",
+							text: currentText,
+							images: currentImages,
+							source,
+							streamingBehavior,
+						};
+						const result = (await handler(event, ctx)) as InputEventResult | undefined;
+						if (result?.action === "handled") return result;
+						if (result?.action === "transform") {
+							currentText = result.text;
+							currentImages = result.images ?? currentImages;
+						}
+					} catch (err) {
+						this.emitError({
+							extensionPath: ext.path,
+							event: "input",
+							error: err instanceof Error ? err.message : String(err),
+							stack: err instanceof Error ? err.stack : undefined,
+						});
 					}
-				} catch (err) {
-					this.emitError({
-						extensionPath: ext.path,
-						event: "input",
-						error: err instanceof Error ? err.message : String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
 				}
 			}
-		}
-		return currentText !== text || currentImages !== images
-			? { action: "transform", text: currentText, images: currentImages }
-			: { action: "continue" };
+			return currentText !== text || currentImages !== images
+				? { action: "transform", text: currentText, images: currentImages }
+				: { action: "continue" };
+		});
 	}
 }

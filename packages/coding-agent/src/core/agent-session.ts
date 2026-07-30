@@ -61,7 +61,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
-import { isDefaultStreamFn } from "./default-stream-fn.ts";
+import { type DefaultStreamTarget, isDefaultStreamFn, runWithDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
@@ -232,6 +232,13 @@ export interface AgentSessionConfig {
 	 * stream target for bare Agent/loop callers.
 	 */
 	releaseDefaultStreamRuntime?: () => void;
+	/**
+	 * This session's default-stream target. When present, session-owned async work (prompts,
+	 * extension handler dispatch) runs inside a scope that resolves bare Agent/loop callers
+	 * to this target first, so concurrent sessions in one process cannot route each other's
+	 * bare-Agent traffic.
+	 */
+	defaultStreamTarget?: DefaultStreamTarget;
 }
 
 export interface ExtensionBindings {
@@ -371,6 +378,7 @@ export class AgentSession {
 
 	private _modelRuntime: ModelRuntime;
 	private _releaseDefaultStreamRuntime?: () => void;
+	private _defaultStreamTarget?: DefaultStreamTarget;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -394,6 +402,7 @@ export class AgentSession {
 		this._agentDir = config.agentDir;
 		this._modelRuntime = config.modelRuntime;
 		this._releaseDefaultStreamRuntime = config.releaseDefaultStreamRuntime;
+		this._defaultStreamTarget = config.defaultStreamTarget;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -1083,18 +1092,33 @@ export class AgentSession {
 	// Prompting
 	// =========================================================================
 
+	/**
+	 * Run fn inside this session's default-stream scope: bare Agents and low-level loops
+	 * started within fn (extension tools, event handlers) resolve the process-default
+	 * stream function to this session's target first. Passthrough when the session was
+	 * constructed without a target (direct construction in tests).
+	 */
+	runInDefaultStreamScope<T>(fn: () => T): T {
+		const target = this._defaultStreamTarget;
+		return target ? runWithDefaultStreamTarget(target, fn) : fn();
+	}
+
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
-		this._isAgentRunActive = true;
-		try {
-			await this.agent.prompt(messages);
-			while (await this._handlePostAgentRun()) {
-				await this.agent.continue();
+		// Scoped so every agent run (prompt, sendCustomMessage triggerTurn, continue,
+		// retries, settled emission) resolves bare Agents to this session.
+		return this.runInDefaultStreamScope(async () => {
+			this._isAgentRunActive = true;
+			try {
+				await this.agent.prompt(messages);
+				while (await this._handlePostAgentRun()) {
+					await this.agent.continue();
+				}
+			} finally {
+				this._systemPromptOverride = undefined;
+				this._flushPendingBashMessages();
+				await this._emitAgentSettled();
 			}
-		} finally {
-			this._systemPromptOverride = undefined;
-			this._flushPendingBashMessages();
-			await this._emitAgentSettled();
-		}
+		});
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
@@ -1137,6 +1161,12 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		// Scoped for the pre-run segment (extension commands, input event, before_agent_start);
+		// the run itself is scoped again in _runAgentPrompt.
+		return this.runInDefaultStreamScope(() => this._promptInScope(text, options));
+	}
+
+	private async _promptInScope(text: string, options?: PromptOptions): Promise<void> {
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
@@ -2611,6 +2641,9 @@ export class AgentSession {
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
 		}
+		// Extension handlers dispatched outside an agent run (session_start, shutdown,
+		// switch/fork, settled) still resolve bare Agents to this session.
+		this._extensionRunner.scopeRunner = (fn) => this.runInDefaultStreamScope(fn);
 		this._bindExtensionCore(this._extensionRunner);
 		this._applyExtensionBindings(this._extensionRunner);
 

@@ -347,7 +347,7 @@ const { session } = await createAgentSession({
   - `.pi/skills/`
   - `.agents/skills/` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo)
 - Project prompts (`.pi/prompts/`)
-- Context files (`AGENTS.md` walking up from cwd)
+- Context files (`AGENTS.md` / `CLAUDE.md` walking up from cwd to the project root; `contextFileScope: "cwd"` limits it to cwd, `noContextFiles: true` disables it)
 - Session directory naming
 
 `agentDir` is used by `DefaultResourceLoader` for:
@@ -362,7 +362,7 @@ const { session } = await createAgentSession({
 - Credentials (`auth.json`)
 - Sessions (`sessions/`)
 
-When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control resource discovery. They still influence session naming and tool path resolution.
+When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control resource discovery. They still influence session naming and tool path resolution. `noContextFiles` and `contextFileScope` are applied to the default loader only, so they have no effect at all when you supply your own - set them on the loader you construct instead.
 
 ### Model
 

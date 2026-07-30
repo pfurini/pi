@@ -100,8 +100,13 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 Pi loads `AGENTS.md` or `CLAUDE.md` at startup from:
 
 - `~/.pi/agent/AGENTS.md` for global instructions
-- parent directories, walking up from the current working directory
+- parent directories, walking up from the current working directory **as far as the project root**
 - the current directory
+
+The nearest file is applied last, so a package-level file overrides the repository root. The walk stops at
+the nearest directory containing `.git`, `.hg`, `.svn`, or `.jj`; outside a checkout only the current
+directory is read. Instructions that should apply everywhere belong in `~/.pi/agent/AGENTS.md`, which is
+always loaded, rather than in a file above your projects.
 
 Use context files for project conventions, commands, safety rules, and preferences. Disable loading with `--no-context-files` or `-nc`.
 

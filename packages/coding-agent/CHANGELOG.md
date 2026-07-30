@@ -9,8 +9,14 @@
 
 ### Added
 
+- `createAgentSession` accepts `noContextFiles` and `contextFileScope`, applied to the default resource loader. Both were already reachable by constructing a `DefaultResourceLoader` and passing it in; this is a convenience for callers that do not need a custom loader. Neither has an effect when a `resourceLoader` is supplied, since that loader carries its own settings. See [SDK](docs/sdk.md#directories).
+
 - Configurable project-wide prompt history: `promptHistory.scope: "project"` recalls Up/Down prompts from every saved session in the same working directory, not just the current one, and `promptHistory.maxEntries: 0` removes the recall cap. Defaults to the existing session-local, 100-entry behavior. See [Sessions](docs/sessions.md#prompt-history) and [Settings](docs/settings.md).
 - Added `ctx.agentDir` to the extension context, plus `pi.cwd` and `pi.agentDir` on the extension API, so extensions can resolve global config from the session's own directories instead of the process-wide ones. The `pi.*` values are available in the factory, before the registrations pi flushes at load (providers, models, tools) are made. See [Extensions](docs/extensions.md#picwd--piagentdir).
+
+### Changed
+
+- Project context file discovery stops at the project root. `AGENTS.md` and `CLAUDE.md` were previously collected from every ancestor directory up to the filesystem root, so a file in a parent workspace directory or in `$HOME` silently added instructions to every project underneath it. The walk now stops at the nearest directory containing `.git`, `.hg`, `.svn`, or `.jj`, and reads only the working directory outside a checkout. Instructions that should apply everywhere belong in `agentDir` (`~/.pi/agent/AGENTS.md`), which is still always loaded. `DefaultResourceLoader` and `createAgentSession` take `contextFileScope: "project" | "cwd"` to override. Project skills are unchanged and still resolve differently: they recognize only `.git` as a root and fall back to walking to the filesystem root when there is no repository. See [Usage](docs/usage.md#context-files) and [SDK](docs/sdk.md#directories).
 
 ## [0.82.1] - 2026-07-25
 

@@ -6,7 +6,7 @@ import {
 	setDefaultStreamFn,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { ModelsStreamTransforms, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -341,9 +341,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// The single definition of how this session streams: used by the session's Agent below
 	// and installed as the process-default stream target for bare Agent/loop callers, so
-	// both get retry settings, timeouts, attribution headers, and the provider extension
-	// hooks. The session's Agent carries onPayload/onResponse itself (they arrive via
-	// options); the fallbacks wire them for bare callers that never configured them.
+	// both get retry settings, timeouts, attribution headers, and the before_provider_headers
+	// hook. Extension payload/response hooks are NOT injected here: the session's Agent
+	// carries them itself (they arrive via options), direct callers like compaction and
+	// branch summarization must stay hook-free, and bare callers get them from the
+	// default-stream target's dispatch.
 	const sessionStreamFn: StreamFn = async (model, context, options) => {
 		const providerRetrySettings = settingsManager.getProviderRetrySettings();
 		const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
@@ -354,20 +356,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const websocketConnectTimeoutMs =
 			options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
 		const headerRunner = extensionRunnerRef.current;
+		// Callers that pass their own transformHeaders (only possible untyped; the runtime
+		// honors it) keep it, matching the pre-wrapper composed-default behavior.
+		const callerTransformHeaders = (options as ModelsStreamTransforms | undefined)?.transformHeaders;
 		return modelRuntime.streamSimple(model, context, {
 			...options,
 			timeoutMs,
 			websocketConnectTimeoutMs,
 			maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 			maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-			onPayload: options?.onPayload ?? onProviderPayload,
-			onResponse: options?.onResponse ?? onProviderResponse,
-			transformHeaders: async (requestHeaders) => {
-				const headers = mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, requestHeaders);
-				return headerRunner?.hasHandlers("before_provider_headers")
-					? headerRunner.emitBeforeProviderHeaders(headers ?? {})
-					: (headers ?? {});
-			},
+			transformHeaders:
+				callerTransformHeaders ??
+				(async (requestHeaders) => {
+					const headers = mergeProviderAttributionHeaders(
+						model,
+						settingsManager,
+						options?.sessionId,
+						requestHeaders,
+					);
+					return headerRunner?.hasHandlers("before_provider_headers")
+						? headerRunner.emitBeforeProviderHeaders(headers ?? {})
+						: (headers ?? {});
+				}),
 		});
 	};
 
@@ -413,7 +423,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// (last-created session wins). The session releases the installation on dispose;
 	// if construction fails before the caller ever receives the session, release here
 	// so the failed session's runtime does not stay the process default.
-	const releaseDefaultStreamRuntime = installDefaultStreamTarget({ runtime: modelRuntime, streamFn: sessionStreamFn });
+	const releaseDefaultStreamRuntime = installDefaultStreamTarget({
+		runtime: modelRuntime,
+		streamFn: sessionStreamFn,
+		onPayload: onProviderPayload,
+		onResponse: onProviderResponse,
+	});
 	try {
 		const session = new AgentSession({
 			agent,

@@ -228,6 +228,21 @@ describe("composed default stream function", () => {
 			base: true,
 			hooked: true,
 		});
+
+		// Direct calls to the session stream function (how compaction and branch
+		// summarization invoke it) must stay extension-hook-free.
+		await (await session.agent.streamFunction(model, { messages: [] }, {})).result();
+		expect(captured?.onPayload).toBeUndefined();
+
+		// An untyped caller-supplied transformHeaders wins over the session transform.
+		const customTransform = async () => ({ "x-custom": "1" });
+		await (
+			await agent.streamFunction(model, { messages: [] }, {
+				transformHeaders: customTransform,
+			} as SimpleStreamOptions)
+		).result();
+		expect(captured?.headers).toMatchObject({ "x-custom": "1" });
+		expect(captured?.headers?.["x-hook"]).toBeUndefined();
 	});
 
 	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {

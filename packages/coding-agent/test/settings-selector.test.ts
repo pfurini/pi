@@ -1,5 +1,6 @@
-import type { SettingItem } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { type SettingItem, setKeybindings } from "@earendil-works/pi-tui";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { KeybindingsManager } from "../src/core/keybindings.ts";
 import {
 	type SettingsCallbacks,
 	type SettingsConfig,
@@ -40,6 +41,8 @@ function createConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig {
 		defaultProjectTrust: "ask",
 		clearOnShrink: false,
 		showTerminalProgress: false,
+		uiMode: "regular",
+		fullscreenScrollbar: "auto",
 		warnings: {},
 		...overrides,
 	};
@@ -75,6 +78,8 @@ function createCallbacks(): SettingsCallbacks {
 		onDefaultProjectTrustChange: vi.fn(),
 		onClearOnShrinkChange: vi.fn(),
 		onShowTerminalProgressChange: vi.fn(),
+		onUiModeChange: vi.fn(),
+		onFullscreenScrollbarChange: vi.fn(),
 		onWarningsChange: vi.fn(),
 		onCancel: vi.fn(),
 	};
@@ -92,9 +97,35 @@ function getInternals(selector: SettingsSelectorComponent): {
 	return { items: settingsList.items, onChange: settingsList.onChange };
 }
 
-describe("SettingsSelectorComponent prompt history entries", () => {
-	initTheme("dark", false);
+beforeAll(() => {
+	initTheme("dark");
+	setKeybindings(new KeybindingsManager());
+});
 
+describe("SettingsSelectorComponent", () => {
+	it("cycles through fullscreen scrollbar modes", () => {
+		const onChange = vi.fn();
+		const selector = new SettingsSelectorComponent(
+			{
+				fullscreenScrollbar: "auto",
+				warnings: {},
+				availableThinkingLevels: [],
+				availableThemes: [],
+			} as unknown as SettingsConfig,
+			{ onFullscreenScrollbarChange: onChange } as unknown as SettingsCallbacks,
+		);
+		const settingsList = selector.getSettingsList();
+
+		for (const character of "Fullscreen scrollbar") settingsList.handleInput(character);
+		settingsList.handleInput("\r");
+		settingsList.handleInput("\r");
+		settingsList.handleInput("\r");
+
+		expect(onChange.mock.calls.flat()).toEqual(["always", "hidden", "auto"]);
+	});
+});
+
+describe("SettingsSelectorComponent prompt history entries", () => {
 	it("includes a prompt history scope item with session/project values", () => {
 		const callbacks = createCallbacks();
 		const selector = new SettingsSelectorComponent(createConfig({ promptHistoryScope: "project" }), callbacks);

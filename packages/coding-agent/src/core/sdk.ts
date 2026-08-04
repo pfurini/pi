@@ -6,7 +6,7 @@ import {
 	setDefaultStreamFn,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { ModelsStreamTransforms, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { ModelsRequestTransforms, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -344,7 +344,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const headerRunner = extensionRunnerRef.current;
 		// Callers that pass their own transformHeaders (only possible untyped; the runtime
 		// honors it) keep it, matching the pre-wrapper composed-default behavior.
-		const callerTransformHeaders = (options as ModelsStreamTransforms | undefined)?.transformHeaders;
+		const callerTransformHeaders = (options as ModelsRequestTransforms | undefined)?.transformHeaders;
 		return modelRuntime.streamSimple(model, context, {
 			...options,
 			timeoutMs,

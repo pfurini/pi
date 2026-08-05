@@ -278,6 +278,7 @@ describe("Kimi Code OAuth", () => {
 			"SENTINEL_DEVICE_CODE",
 			"SENTINEL_USER_CODE",
 			"SENTINEL_BODY_SECRET",
+			"SENTINEL_DESCRIPTION",
 		];
 
 		function expectNoSentinel(error: unknown): asserts error is Error {
@@ -314,13 +315,18 @@ describe("Kimi Code OAuth", () => {
 			expect(error.message).not.toContain("access_token:");
 		});
 
-		it("refresh failure body is reduced to status and standard OAuth error fields", async () => {
+		it("refresh failure body is reduced to status and the standard OAuth error code", async () => {
 			vi.stubGlobal(
 				"fetch",
 				vi.fn(
 					async (): Promise<Response> =>
 						jsonResponse(
-							{ error: "server_error", detail: "SENTINEL_BODY_SECRET", access_token: "SENTINEL_ACCESS_TOKEN" },
+							{
+								error: "server_error",
+								error_description: "SENTINEL_DESCRIPTION",
+								detail: "SENTINEL_BODY_SECRET",
+								access_token: "SENTINEL_ACCESS_TOKEN",
+							},
 							400,
 						),
 				),
@@ -335,6 +341,44 @@ describe("Kimi Code OAuth", () => {
 			expectNoSentinel(error);
 			expect(error.message).toContain("status 400");
 			expect(error.message).toContain("server_error");
+		});
+
+		it("refresh unauthorized keeps the OAuth error code but never error_description", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async (): Promise<Response> =>
+						jsonResponse({ error: "invalid_grant", error_description: "SENTINEL_DESCRIPTION" }, 400),
+				),
+			);
+
+			const error = await kimiCodingOAuth
+				.refresh({ type: "oauth", access: "old", refresh: "old", expires: 0 }, new AbortController().signal)
+				.then(
+					() => undefined,
+					(err) => err,
+				);
+			expectNoSentinel(error);
+			expect(error.message).toContain("unauthorized");
+			expect(error.message).toContain("invalid_grant");
+		});
+
+		it("device authorization non-OK responses report status only", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async (): Promise<Response> =>
+						new Response("device_code=SENTINEL_DEVICE_CODE detail=SENTINEL_BODY_SECRET", { status: 403 }),
+				),
+			);
+
+			const events: Array<Record<string, unknown>> = [];
+			const error = await kimiCodingOAuth.login?.(createInteraction(events)).then(
+				() => undefined,
+				(err) => err,
+			);
+			expectNoSentinel(error);
+			expect(error.message).toContain("status 403");
 		});
 
 		it("partial device authorization response reports field names and no device codes", async () => {

@@ -55,10 +55,12 @@ async function readJson(response: Response): Promise<Record<string, unknown> | n
 }
 
 /**
- * Malformed responses are reported by field NAME and HTTP status only — never by
- * echoing the body. Partial device/token responses can contain live secrets
- * (access tokens, refresh tokens, device codes), and these messages surface in
- * UI, logs, and wrapped ModelsError chains.
+ * Error policy for this file: surfaced messages carry field NAMES, HTTP status,
+ * and the standard OAuth `error` code only — never response bodies and never
+ * `error_description`. Partial device/token responses can contain live secrets
+ * (access tokens, refresh tokens, device codes), `error_description` is
+ * server-controlled free text, and these messages surface in UI, logs, and
+ * wrapped ModelsError chains.
  */
 function invalidFieldNames(fields: Record<string, boolean>): string {
 	return Object.entries(fields)
@@ -91,8 +93,9 @@ async function startDeviceAuthorization(oauthHost: string, signal: AbortSignal):
 	});
 
 	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		throw new Error(`Kimi Code device authorization failed with status ${response.status}${text ? `: ${text}` : ""}`);
+		// Status only, matching every other error path in this file: response bodies are
+		// never echoed into surfaced errors (see invalidFieldNames).
+		throw new Error(`Kimi Code device authorization failed with status ${response.status}`);
 	}
 
 	const json = await readJson(response);
@@ -207,7 +210,6 @@ async function pollForToken(
 			}
 
 			const error = json?.error;
-			const description = typeof json?.error_description === "string" ? `: ${json.error_description}` : "";
 			if (error === "authorization_pending") {
 				return { status: "pending" };
 			}
@@ -226,7 +228,7 @@ async function pollForToken(
 			}
 			return {
 				status: "failed",
-				message: `Kimi Code device token request failed (status ${response.status})${typeof error === "string" ? `: ${error}${description}` : ""}`,
+				message: `Kimi Code device token request failed (status ${response.status})${typeof error === "string" ? `: ${error}` : ""}`,
 			};
 		},
 	});
@@ -288,8 +290,8 @@ async function refreshToken(oauthHost: string, refreshTokenValue: string, signal
 
 		// Unauthorized: the stored credential is dead; Models clears it and prompts re-login.
 		if (response.status === 401 || response.status === 403 || json?.error === "invalid_grant") {
-			const description = typeof json?.error_description === "string" ? `: ${json.error_description}` : "";
-			throw new Error(`Kimi Code token refresh unauthorized (status ${response.status})${description}`);
+			const errorCode = typeof json?.error === "string" ? ` (${json.error})` : "";
+			throw new Error(`Kimi Code token refresh unauthorized (status ${response.status})${errorCode}`);
 		}
 
 		if (isRetryableRefreshFailure(response) && attempt < REFRESH_MAX_RETRIES) {
@@ -297,13 +299,11 @@ async function refreshToken(oauthHost: string, refreshTokenValue: string, signal
 			continue;
 		}
 
-		// Report only the standard OAuth error fields — a token-endpoint body must
-		// never be echoed wholesale (it can carry live token material).
-		const errorCode = typeof json?.error === "string" ? json.error : undefined;
-		const errorDescription = typeof json?.error_description === "string" ? `: ${json.error_description}` : "";
-		throw new Error(
-			`Kimi Code token refresh failed with status ${response.status}${errorCode ? ` (${errorCode}${errorDescription})` : ""}`,
-		);
+		// Report only the standard OAuth error code — a token-endpoint body must
+		// never be echoed wholesale (it can carry live token material), and
+		// error_description is server-controlled free text (see the policy above).
+		const errorCode = typeof json?.error === "string" ? ` (${json.error})` : "";
+		throw new Error(`Kimi Code token refresh failed with status ${response.status}${errorCode}`);
 	}
 
 	throw lastError ?? new Error("Kimi Code token refresh failed");

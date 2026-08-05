@@ -241,6 +241,14 @@ export interface AgentSessionConfig {
 	 * bare-Agent traffic.
 	 */
 	defaultStreamTarget?: DefaultStreamTarget;
+	/**
+	 * Optional session-scoped abort controller (created in createAgentSession). Its
+	 * signal is combined into every model stream this session issues, so dispose() can
+	 * abort an in-flight stream even after the run that started it has settled —
+	 * agent.abort() only reaches the active run. Optional so external constructors of
+	 * this public interface are not forced to supply one.
+	 */
+	sessionAbortController?: AbortController;
 }
 
 export interface ExtensionBindings {
@@ -381,6 +389,7 @@ export class AgentSession {
 	private _modelRuntime: ModelRuntime;
 	private _releaseDefaultStreamRuntime?: () => void;
 	private _defaultStreamTarget?: DefaultStreamTarget;
+	private _sessionAbortController?: AbortController;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -405,6 +414,7 @@ export class AgentSession {
 		this._modelRuntime = config.modelRuntime;
 		this._releaseDefaultStreamRuntime = config.releaseDefaultStreamRuntime;
 		this._defaultStreamTarget = config.defaultStreamTarget;
+		this._sessionAbortController = config.sessionAbortController;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -881,6 +891,15 @@ export class AgentSession {
 
 		// Stop routing bare Agent/loop callers through this session's ModelRuntime.
 		this._releaseDefaultStreamRuntime?.();
+
+		// Abort any in-flight model stream still bound to this session's signal, even when
+		// the run that started it has already settled (agent.abort() above only fires the
+		// active run's controller). Release runs first so no NEW bare caller can route
+		// here after this point; in-flight combined-signal streams are aborted as the
+		// session ends, which is what kills a subagent's provider child parked under a
+		// settled run. Ordered after agent.abort(); double-abort/abort-after-settle is
+		// harmless.
+		this._sessionAbortController?.abort();
 
 		this._extensionRunner.invalidate(
 			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",

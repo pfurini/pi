@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- Fixed `AgentSession.dispose()` not aborting in-flight model streams when the run that started them had already settled. `agent.abort()` only fires the active run's controller, so a stream still parked at a tool boundary under a settled run (e.g. an SDK subagent's provider child) never saw an abort and could leak. A session-scoped `AbortController`, combined into every session stream via `AbortSignal.any`, is now aborted on dispose after the default-stream target is released.
 - Fixed project-level nested provider retry settings replacing unmodified global provider retry settings ([#7572](https://github.com/earendil-works/pi/issues/7572)).
 - Fixed inherited GitHub Copilot Grok 4.5 requests to use the supported Responses API ([#7560](https://github.com/earendil-works/pi/issues/7560)).
 - Fixed fullscreen shutdown leaking terminal capability-query replies into the parent shell prompt.

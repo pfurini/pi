@@ -325,6 +325,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		});
 	};
 
+	// Session-scoped abort controller. Its signal is combined into every stream this
+	// session issues (below), so AgentSession.dispose() can abort an in-flight model
+	// stream even after the run that started it has settled — agent.abort() only fires
+	// the active run's controller, so a subagent parked at a tool boundary under a
+	// settled run would otherwise never see an abort and its provider child would leak.
+	const sessionAbortController = new AbortController();
+
 	// The single definition of how this session streams: used by the session's Agent below
 	// and installed as the process-default stream target for bare Agent/loop callers, so
 	// both get retry settings, timeouts, attribution headers, and the before_provider_headers
@@ -345,8 +352,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// Callers that pass their own transformHeaders (only possible untyped; the runtime
 		// honors it) keep it, matching the pre-wrapper composed-default behavior.
 		const callerTransformHeaders = (options as ModelsRequestTransforms | undefined)?.transformHeaders;
+		// Combine the caller's signal with the session signal so dispose() aborts this
+		// stream regardless of the run's state. AbortSignal.any retains references to its
+		// sources, but the combined signal is per-call and GC'd when the call ends, so it
+		// does not accumulate. (Node engine is >=22.19, so AbortSignal.any is available.)
+		const signal = options?.signal
+			? AbortSignal.any([options.signal, sessionAbortController.signal])
+			: sessionAbortController.signal;
 		return modelRuntime.streamSimple(model, context, {
 			...options,
+			signal,
 			timeoutMs,
 			websocketConnectTimeoutMs,
 			maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
@@ -434,6 +449,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			sessionStartEvent: options.sessionStartEvent,
 			defaultStreamTarget,
 			releaseDefaultStreamRuntime,
+			sessionAbortController,
 		});
 		const extensionsResult = resourceLoader.getExtensions();
 

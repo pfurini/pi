@@ -1255,4 +1255,36 @@ describe("ExtensionRunner", () => {
 			expect(errors[0].error).toContain("header handler boom");
 		});
 	});
+
+	describe("after_provider_response", () => {
+		it("hands handlers the response's model alongside status and headers", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.on("after_provider_response", (event) => {
+						event.headers["x-seen"] = event.model.provider + "/" + event.model.id + ":" + event.status;
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "response.ts"), extCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+			);
+
+			const responseHeaders: Record<string, string> = {};
+			await runner.emit({
+				type: "after_provider_response",
+				model: stubEventModel,
+				status: 200,
+				headers: responseHeaders,
+			});
+			expect(responseHeaders["x-seen"]).toBe("stub-provider/stub-model:200");
+		});
+	});
 });

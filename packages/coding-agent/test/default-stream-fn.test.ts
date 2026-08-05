@@ -326,6 +326,80 @@ describe("composed default stream function", () => {
 		});
 	});
 
+	it("a handler gated on event.model.provider scopes Kimi mutations correctly in both bare-Agent directions", async () => {
+		// The B3 contract: provider middleware scoped on event.model (never ctx.model, the
+		// session's selected model) must skip a non-Kimi request from a Kimi session and
+		// apply to a Kimi request from a non-Kimi session.
+		const kimiProvider = "kimi-coding";
+		const otherProvider = "other-provider";
+		const extensionsDir = join(agentDir, "extensions");
+		mkdirSync(extensionsDir, { recursive: true });
+		writeFileSync(
+			join(extensionsDir, "kimi-gate.ts"),
+			`export default function (pi) {
+				pi.on("before_provider_request", (event) => {
+					if (event.model.provider !== "kimi-coding") return undefined;
+					return { ...event.payload, kimiMutated: true };
+				});
+			}`,
+		);
+
+		let capturedKimi: SimpleStreamOptions | undefined;
+		let capturedOther: SimpleStreamOptions | undefined;
+		const authStorage = AuthStorage.create(join(agentDir, "kimi-gate-auth.json"));
+		await authStorage.modify(kimiProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		await authStorage.modify(otherProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "kimi-gate-models.json"));
+		modelRegistry.registerProvider(kimiProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				capturedKimi = providerOptions;
+				return createDoneStream("openai-completions", kimiProvider);
+			},
+		});
+		modelRegistry.registerProvider(otherProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				capturedOther = providerOptions;
+				return createDoneStream("openai-completions", otherProvider);
+			},
+		});
+		const kimiModel = createModel(kimiProvider, "openai-completions");
+		const otherModel = createModel(otherProvider, "openai-completions");
+		const modelRuntime = getModelRuntime(modelRegistry);
+
+		// Direction 1: Kimi session, bare Agent streams a non-Kimi model → no Kimi mutation.
+		const { session: kimiSession } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: kimiModel,
+			modelRuntime,
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(kimiSession);
+		const agent = bareAgent();
+		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+		await expect(capturedOther?.onPayload?.({ base: true }, otherModel)).resolves.toEqual({ base: true });
+
+		// Direction 2: non-Kimi session, bare Agent streams the Kimi model → mutation applies.
+		kimiSession.dispose();
+		const { session: otherSession } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: otherModel,
+			modelRuntime,
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(otherSession);
+		await (await agent.streamFunction(kimiModel, { messages: [] }, {})).result();
+		await expect(capturedKimi?.onPayload?.({ base: true }, kimiModel)).resolves.toMatchObject({
+			base: true,
+			kimiMutated: true,
+		});
+	});
+
 	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {
 		const marker = { calls: 0 };
 		const authStorage = AuthStorage.create(join(agentDir, "builtin-auth.json"));

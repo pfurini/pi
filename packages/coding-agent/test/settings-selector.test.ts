@@ -43,6 +43,7 @@ function createConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig {
 		showTerminalProgress: false,
 		uiMode: "regular",
 		fullscreenScrollbar: "auto",
+		mermaidRenderingMode: "streaming",
 		warnings: {},
 		...overrides,
 	};
@@ -80,6 +81,7 @@ function createCallbacks(): SettingsCallbacks {
 		onShowTerminalProgressChange: vi.fn(),
 		onUiModeChange: vi.fn(),
 		onFullscreenScrollbarChange: vi.fn(),
+		onMermaidRenderingModeChange: vi.fn(),
 		onWarningsChange: vi.fn(),
 		onCancel: vi.fn(),
 	};

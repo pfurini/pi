@@ -16,6 +16,7 @@ import type {
 	ExtensionUIContext,
 	ProviderConfig,
 } from "../src/core/extensions/types.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { KeybindingsManager, type KeyId } from "../src/core/keybindings.ts";
 import type { ModelRegistry } from "../src/core/model-registry.ts";
 import type { ScopedModel } from "../src/core/model-resolver.ts";
@@ -39,6 +40,19 @@ describe("ExtensionRunner", () => {
 	afterEach(() => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
+
+	const stubEventModel: Model<Api> = {
+		id: "stub-model",
+		name: "Stub Model",
+		api: "openai-completions",
+		provider: "stub-provider",
+		baseUrl: "https://stub.invalid/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 4096,
+	};
 
 	const providerModelConfig: ProviderConfig = {
 		baseUrl: "https://provider.test/v1",
@@ -1178,6 +1192,7 @@ describe("ExtensionRunner", () => {
 				export default function(pi) {
 					pi.on("before_provider_headers", (event) => {
 						event.headers["X-Turn-Index"] = "3";
+						event.headers["X-Event-Model"] = event.model.provider + "/" + event.model.id;
 					});
 				}
 			`;
@@ -1195,9 +1210,10 @@ describe("ExtensionRunner", () => {
 
 			expect(runner.hasHandlers("before_provider_headers")).toBe(true);
 
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "kimchi/1.0" });
+			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "kimchi/1.0" }, stubEventModel);
 			expect(headers["X-Turn-Index"]).toBe("3");
 			expect(headers["User-Agent"]).toBe("kimchi/1.0");
+			expect(headers["X-Event-Model"]).toBe("stub-provider/stub-model");
 		});
 
 		it("isolates a throwing handler and still applies the others", async () => {
@@ -1230,7 +1246,7 @@ describe("ExtensionRunner", () => {
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((err) => errors.push(err));
 
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "x" });
+			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "x" }, stubEventModel);
 
 			expect(headers["X-Good"]).toBe("yes");
 			expect(headers["User-Agent"]).toBe("x");

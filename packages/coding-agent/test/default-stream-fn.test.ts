@@ -263,6 +263,65 @@ describe("composed default stream function", () => {
 		expect(captured?.headers?.["x-hook"]).toBeUndefined();
 	});
 
+	it("provider events carry the request's model, not the session's selected model", async () => {
+		const sessionProvider = "session-provider";
+		const otherProvider = "other-provider";
+		const extensionsDir = join(agentDir, "extensions");
+		mkdirSync(extensionsDir, { recursive: true });
+		writeFileSync(
+			join(extensionsDir, "record-model.ts"),
+			`export default function (pi) {
+				pi.on("before_provider_headers", (event) => {
+					event.headers["x-event-model"] = event.model.provider + "/" + event.model.id;
+				});
+				pi.on("before_provider_request", (event) => ({
+					...event.payload,
+					eventModel: event.model.provider + "/" + event.model.id,
+				}));
+			}`,
+		);
+
+		let captured: SimpleStreamOptions | undefined;
+		const authStorage = AuthStorage.create(join(agentDir, "model-events-auth.json"));
+		await authStorage.modify(sessionProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		await authStorage.modify(otherProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "model-events-models.json"));
+		modelRegistry.registerProvider(sessionProvider, {
+			api: "openai-completions",
+			streamSimple: () => createDoneStream("openai-completions", sessionProvider),
+		});
+		modelRegistry.registerProvider(otherProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				captured = providerOptions;
+				return createDoneStream("openai-completions", otherProvider);
+			},
+		});
+		const sessionModel = createModel(sessionProvider, "openai-completions");
+		const otherModel: Model<Api> = { ...createModel(otherProvider, "openai-completions"), id: "other-model" };
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: sessionModel,
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(session);
+
+		// A bare Agent streams a different provider's model through this session's pipeline:
+		// the events must scope to the request's model, never the session's selected one.
+		const agent = bareAgent();
+		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+
+		expect(captured?.headers).toMatchObject({ "x-event-model": "other-provider/other-model" });
+		expect(captured?.headers?.["x-event-model"]).not.toContain(sessionProvider);
+		await expect(captured?.onPayload?.({ base: true }, otherModel)).resolves.toMatchObject({
+			base: true,
+			eventModel: "other-provider/other-model",
+		});
+	});
+
 	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {
 		const marker = { calls: 0 };
 		const authStorage = AuthStorage.create(join(agentDir, "builtin-auth.json"));

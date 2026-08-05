@@ -18,4 +18,7 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// (or newest eligible) session's composed pipeline instead of raw compat streamSimple
 	// (see default-stream-fn.ts).
 	"composed-default-stream-fn",
+	// WS-Q: before_provider_request / before_provider_headers / after_provider_response
+	// carry the request's model as `event.model` (never the session's selected model).
+	"provider-event-model",
 ]);

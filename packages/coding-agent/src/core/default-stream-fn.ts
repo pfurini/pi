@@ -73,7 +73,11 @@ function runtimeServesModel(runtime: ModelRuntime, model: Model<Api>): boolean {
  *    (see runWithDefaultStreamTarget) and that session's runtime serves the model. This is
  *    what keeps concurrent sessions in one process from routing each other's bare-Agent
  *    traffic ("which session is calling", not "which session was created last").
- * 2. The most recently installed target whose runtime serves the model.
+ * 2. The single installed target whose runtime serves the model. When MORE than one live
+ *    target could serve it, dispatch fails with an actionable error instead of silently
+ *    picking the newest session: which session's settings, auth, hooks, and abort signal
+ *    apply is genuinely ambiguous, and a guess routes traffic through a session the caller
+ *    never chose.
  * 3. Raw compat, for models no installed runtime serves and all calls before a runtime
  *    exists.
  *
@@ -87,6 +91,7 @@ export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
 	if (scoped && !scoped.released && runtimeServesModel(scoped.runtime, model)) {
 		return streamThroughTarget(scoped, model, context, options);
 	}
+	const eligible: DefaultStreamTarget[] = [];
 	for (let i = installations.length - 1; i >= 0; i--) {
 		const target = installations[i].deref();
 		if (!target) {
@@ -94,8 +99,20 @@ export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
 			continue;
 		}
 		if (runtimeServesModel(target.runtime, model)) {
-			return streamThroughTarget(target, model, context, options);
+			eligible.push(target);
 		}
+	}
+	if (eligible.length > 1) {
+		throw new Error(
+			`Ambiguous default-stream dispatch: ${eligible.length} live sessions can serve ` +
+				`${model.provider}/${model.id} and no session scope applies. Run the bare Agent ` +
+				`inside the owning session's call tree (extension handlers and tools are scoped ` +
+				`automatically), pass an explicit streamFn to the Agent/loop, or dispose the ` +
+				`sessions that should not receive this traffic.`,
+		);
+	}
+	if (eligible.length === 1) {
+		return streamThroughTarget(eligible[0], model, context, options);
 	}
 	return streamSimple(model, context, options);
 };
@@ -133,12 +150,14 @@ export function isDefaultStreamFn(streamFn: unknown): boolean {
 }
 
 /**
- * Register a default-stream target. The most recent installation wins.
+ * Register a default-stream target. Unscoped dispatch routes through the single live
+ * target that serves a model; several eligible targets are an ambiguity error (see
+ * composedDefaultStreamFn).
  *
  * Returns an idempotent release function bound to this installation only: releasing removes
- * exactly this entry (repeated installations of the same runtime are unaffected), and the
- * previously installed target (or the raw compat fallback when none remain) becomes the
- * default again, so a disposed session's runtime never stays the default. The target is
+ * exactly this entry (repeated installations of the same runtime are unaffected), so the
+ * remaining targets (or the raw compat fallback when none remain) serve subsequent calls
+ * and a disposed session's runtime never stays dispatchable. The target is
  * pinned via its stream function (see pinnedTargets), so the entry collects only when the
  * session and its Agent are both unreachable.
  */

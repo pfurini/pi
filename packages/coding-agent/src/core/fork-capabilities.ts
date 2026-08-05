@@ -28,4 +28,7 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// WS-Q: Kimi OAuth error paths report field names + HTTP status only; device/token
 	// response bodies (which can carry live token material) are never echoed into errors.
 	"kimi-oauth-error-hardening",
+	// WS-Q: unscoped bare-Agent dispatch with more than one eligible live session fails
+	// with an actionable error instead of silently routing through the newest session.
+	"unscoped-bare-agent-ambiguity",
 ]);

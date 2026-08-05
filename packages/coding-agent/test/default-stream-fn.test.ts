@@ -176,21 +176,25 @@ describe("composed default stream function", () => {
 		expect(marker.calls).toBe(0);
 	});
 
-	it("last-created session wins; disposal restores the previous runtime, then the compat fallback", async () => {
+	it("ambiguous unscoped dispatch fails; disposal resolves it to the remaining session, then compat", async () => {
 		const agent = bareAgent();
 		const markerA = { calls: 0 };
 		const markerB = { calls: 0 };
 		const { session: sessionA, model } = await createSessionWithOverlayProvider("capture-provider", markerA);
 		const { session: sessionB } = await createSessionWithOverlayProvider("capture-provider", markerB);
 
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
-		expect(markerB.calls).toBe(1);
+		// Two live sessions can serve the model and no scope applies: never guess which
+		// session's settings, auth, hooks, and abort signal the caller meant.
+		await expect(async () => {
+			await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		}).rejects.toThrow(/Ambiguous default-stream dispatch/);
 		expect(markerA.calls).toBe(0);
+		expect(markerB.calls).toBe(0);
 
 		sessionB.dispose();
 		await (await agent.streamFunction(model, { messages: [] }, {})).result();
 		expect(markerA.calls).toBe(1);
-		expect(markerB.calls).toBe(1);
+		expect(markerB.calls).toBe(0);
 
 		sessionA.dispose();
 		const unknownModel = createModel("capture-provider", "test-unregistered-api");
@@ -365,12 +369,15 @@ describe("composed default stream function", () => {
 			model,
 			modelRuntime: runtime1,
 		} = await createSessionWithOverlayProvider("capture-provider", markerR1);
-		await createSessionWithOverlayProvider("capture-provider", markerR2);
+		const { session: session2 } = await createSessionWithOverlayProvider("capture-provider", markerR2);
 		await createSessionWithOverlayProvider("capture-provider", markerR1, { modelRuntime: runtime1 });
 
 		// Stack is [runtime1, runtime2, runtime1]; disposing the first session must remove
-		// its own entry, leaving the third session's runtime1 entry on top.
+		// only its own entry. Disposing session2 as well leaves exactly the third session's
+		// runtime1 entry: if sessionA's release had wrongly dropped that entry too, nothing
+		// would remain and dispatch would fall back to compat instead of routing.
 		sessionA.dispose();
+		session2.dispose();
 
 		await (await agent.streamFunction(model, { messages: [] }, {})).result();
 		expect(markerR1.calls).toBe(1);

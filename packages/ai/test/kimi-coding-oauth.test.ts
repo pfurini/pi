@@ -351,12 +351,10 @@ describe("Kimi Code OAuth", () => {
 			);
 
 			const events: Array<Record<string, unknown>> = [];
-			const error = await kimiCodingOAuth
-				.login?.(createInteraction(events))
-				.then(
-					() => undefined,
-					(err) => err,
-				);
+			const error = await kimiCodingOAuth.login?.(createInteraction(events)).then(
+				() => undefined,
+				(err) => err,
+			);
 			expectNoSentinel(error);
 			expect(error.message).toContain("verification_uri");
 			expect(error.message).toContain("verification_uri_complete");

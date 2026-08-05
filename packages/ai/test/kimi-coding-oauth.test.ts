@@ -267,4 +267,123 @@ describe("Kimi Code OAuth", () => {
 			),
 		).rejects.toThrow("unauthorized");
 	});
+
+	describe("never leaks credential material into error messages", () => {
+		// Sentinel secrets: if any of these appear in a surfaced message, the error
+		// path is echoing response bodies again. Regression guard for the hardening
+		// that replaced JSON.stringify(json) with field-name reporting.
+		const SENTINELS = [
+			"SENTINEL_ACCESS_TOKEN",
+			"SENTINEL_REFRESH_TOKEN",
+			"SENTINEL_DEVICE_CODE",
+			"SENTINEL_USER_CODE",
+			"SENTINEL_BODY_SECRET",
+		];
+
+		function expectNoSentinel(error: unknown): asserts error is Error {
+			expect(error).toBeInstanceOf(Error);
+			const seen = new Set<unknown>();
+			let current: unknown = error;
+			while (current instanceof Error && !seen.has(current)) {
+				seen.add(current);
+				for (const sentinel of SENTINELS) {
+					expect(current.message).not.toContain(sentinel);
+				}
+				current = current.cause;
+			}
+		}
+
+		it("partial token refresh response reports field names and no token material", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async (): Promise<Response> =>
+						// access/refresh tokens present, expires_in missing: the classic partial response.
+						jsonResponse({ access_token: "SENTINEL_ACCESS_TOKEN", refresh_token: "SENTINEL_REFRESH_TOKEN" }),
+				),
+			);
+
+			const error = await kimiCodingOAuth
+				.refresh({ type: "oauth", access: "old", refresh: "old", expires: 0 }, new AbortController().signal)
+				.then(
+					() => undefined,
+					(err) => err,
+				);
+			expectNoSentinel(error);
+			expect(error.message).toContain("expires_in");
+			expect(error.message).not.toContain("access_token:");
+		});
+
+		it("refresh failure body is reduced to status and standard OAuth error fields", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async (): Promise<Response> =>
+						jsonResponse(
+							{ error: "server_error", detail: "SENTINEL_BODY_SECRET", access_token: "SENTINEL_ACCESS_TOKEN" },
+							400,
+						),
+				),
+			);
+
+			const error = await kimiCodingOAuth
+				.refresh({ type: "oauth", access: "old", refresh: "old", expires: 0 }, new AbortController().signal)
+				.then(
+					() => undefined,
+					(err) => err,
+				);
+			expectNoSentinel(error);
+			expect(error.message).toContain("status 400");
+			expect(error.message).toContain("server_error");
+		});
+
+		it("partial device authorization response reports field names and no device codes", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async (): Promise<Response> =>
+						jsonResponse({
+							device_code: "SENTINEL_DEVICE_CODE",
+							user_code: "SENTINEL_USER_CODE",
+							verification_uri: "not-a-trusted-url",
+						}),
+				),
+			);
+
+			const events: Array<Record<string, unknown>> = [];
+			const error = await kimiCodingOAuth
+				.login?.(createInteraction(events))
+				.then(
+					() => undefined,
+					(err) => err,
+				);
+			expectNoSentinel(error);
+			expect(error.message).toContain("verification_uri");
+			expect(error.message).toContain("verification_uri_complete");
+		});
+
+		it("device token 5xx failures report status only", async () => {
+			vi.useFakeTimers();
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async (input: unknown): Promise<Response> => {
+					const url = getUrl(input);
+					if (url === `${OAUTH_HOST}/api/oauth/device_authorization`) {
+						return deviceAuthorizationResponse();
+					}
+					return new Response("device_code=SENTINEL_DEVICE_CODE", { status: 500 });
+				}),
+			);
+
+			const events: Array<Record<string, unknown>> = [];
+			const pending = kimiCodingOAuth.login?.(createInteraction(events)).then(
+				() => undefined,
+				(err) => err,
+			);
+			await vi.advanceTimersByTimeAsync(10_000);
+			const error = await pending;
+			expectNoSentinel(error);
+			expect(error.message).toContain("status 500");
+		});
+	});
 });

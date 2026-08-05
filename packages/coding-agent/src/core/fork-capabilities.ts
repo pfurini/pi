@@ -25,4 +25,7 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// for 401 recovery on unexpired tokens (refresh under the store lock, skipped when the
 	// stored token already rotated past the rejected one).
 	"force-oauth-refresh",
+	// WS-Q: Kimi OAuth error paths report field names + HTTP status only; device/token
+	// response bodies (which can carry live token material) are never echoed into errors.
+	"kimi-oauth-error-hardening",
 ]);

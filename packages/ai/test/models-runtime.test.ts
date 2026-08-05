@@ -1059,6 +1059,46 @@ describe("Models runtime", () => {
 		expect(((await credentials.read("p1")) as { access: string }).access).toBe("server-rejected");
 	});
 
+	it("rejectedAccessToken without forceOAuthRefresh rejects instead of silently no-opping", async () => {
+		const credentials = new InMemoryCredentialStore();
+		const refresh = vi.fn();
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth: testOAuth({ refresh }) } }));
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "server-rejected",
+			refresh: "r",
+			expires: Date.now() + 60 * 60_000,
+		}));
+
+		await expect(models.getAuth("p1", { rejectedAccessToken: "server-rejected" })).rejects.toMatchObject({
+			code: "auth",
+		});
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("a failing forced refresh rejects with code oauth and preserves the stored credential", async () => {
+		const credentials = new InMemoryCredentialStore();
+		const oauth = testOAuth({
+			refresh: async () => {
+				throw new Error("invalid_grant");
+			},
+		});
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth } }));
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "server-rejected",
+			refresh: "r",
+			expires: Date.now() + 60 * 60_000,
+		}));
+
+		await expect(
+			models.getAuth("p1", { forceOAuthRefresh: true, rejectedAccessToken: "server-rejected" }),
+		).rejects.toMatchObject({ code: "oauth" });
+		expect(((await credentials.read("p1")) as { access: string }).access).toBe("server-rejected");
+	});
+
 	it("valid oauth tokens resolve without touching modify", async () => {
 		let modifies = 0;
 		const base = new InMemoryCredentialStore();

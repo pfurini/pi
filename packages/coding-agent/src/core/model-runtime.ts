@@ -87,8 +87,9 @@ export interface ModelRuntimeAuthOverrides extends AuthOperationOptions {
 	/**
 	 * Force one OAuth refresh even when the stored token is not near expiry
 	 * (401 recovery on an apparently valid token). Pass `rejectedAccessToken`
-	 * so the refresh is skipped when another caller already rotated the token.
-	 * See AuthResolutionOverrides in pi-ai for the full contract.
+	 * so the refresh is skipped when another caller already rotated the token;
+	 * `rejectedAccessToken` without `forceOAuthRefresh: true` rejects with code
+	 * "auth". See AuthResolutionOverrides in pi-ai for the full contract.
 	 */
 	forceOAuthRefresh?: boolean;
 	rejectedAccessToken?: string;

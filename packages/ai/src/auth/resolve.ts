@@ -28,11 +28,13 @@ export interface AuthResolutionOverrides {
 	 */
 	forceOAuthRefresh?: boolean;
 	/**
-	 * The access token the server rejected. With `forceOAuthRefresh`, the refresh
-	 * is skipped when the stored token no longer matches this value (another
-	 * caller or process already rotated it) and the newer credential is returned
-	 * as-is. Callers should always pass it: without it, every concurrent forced
-	 * caller refreshes in turn.
+	 * The access token the server rejected. Only meaningful with
+	 * `forceOAuthRefresh: true` — passing it alone rejects with code "auth"
+	 * (it would otherwise be a silent no-op on a 401-recovery path). The forced
+	 * refresh is skipped when the stored token no longer matches this value
+	 * (another caller or process already rotated it) and the newer credential is
+	 * returned as-is. Forced callers should always pass it: without it, every
+	 * concurrent forced caller refreshes in turn.
 	 */
 	rejectedAccessToken?: string;
 	signal?: AbortSignal;
@@ -83,6 +85,12 @@ async function resolveProviderAuthWithSignal(
 	signal: AbortSignal,
 ): Promise<AuthResult | undefined> {
 	signal.throwIfAborted();
+	if (overrides?.rejectedAccessToken !== undefined && overrides.forceOAuthRefresh !== true) {
+		throw new ModelsError(
+			"auth",
+			`Invalid auth overrides for ${provider.id}: rejectedAccessToken requires forceOAuthRefresh: true`,
+		);
+	}
 	const requestAuthContext = overrides?.env ? overlayEnvAuthContext(authContext, overrides.env) : authContext;
 
 	if (overrides?.apiKey !== undefined && provider.auth.apiKey) {

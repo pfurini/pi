@@ -77,6 +77,7 @@
 
 ### Fixed
 
+- Fixed OpenAI Codex GPT-5.6 Sol, Terra, and Luna context windows to 372K, matching observed subscription backend behavior while leaving direct OpenAI API defaults at 272K.
 - Fixed GitHub Copilot Grok 4.5 requests to use the supported Responses API ([#7560](https://github.com/earendil-works/pi/issues/7560)).
 - Bounded OAuth token refreshes so stalled requests release the credential-store lock ([#7508](https://github.com/earendil-works/pi/issues/7508)).
 - Fixed tool argument validation to preserve values that already match an `anyOf`/`oneOf` union arm before attempting coercion, avoiding nullable unions converting `null` to another primitive value ([#7328](https://github.com/earendil-works/pi/issues/7328)).

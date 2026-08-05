@@ -106,10 +106,15 @@ interface AgentSession {
   // Abort current operation
   abort(): Promise<void>;
 
-  // Cleanup
+  // Graceful terminal shutdown: settle the active turn, emit session_shutdown once, dispose
+  shutdown(reason?: "quit" | "reload" | "new" | "resume" | "fork"): Promise<void>;
+
+  // Cleanup (synchronous, emits no session_shutdown)
   dispose(): void;
 }
 ```
+
+To end a session you own directly (created via `createAgentSession`), prefer `await session.shutdown()`. It settles any active turn, emits `session_shutdown` to extensions exactly once (so they run their documented cleanup hook), then disposes. `dispose()` remains **synchronous and eventless** by design — a sync method cannot await async shutdown handlers, and it invalidates the extension context immediately — so calling `dispose()` alone skips the `session_shutdown` hook. `shutdown()` is single-flight: concurrent or repeated calls await the same emission and never double-fire. When you use `AgentSessionRuntime`, its `dispose()` and session-replacement paths already emit `session_shutdown` for you.
 
 Session replacement APIs such as new-session, resume, fork, and import live on `AgentSessionRuntime`, not on `AgentSession`.
 

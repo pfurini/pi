@@ -81,6 +81,7 @@ import {
 	type ReplacedSessionContext,
 	type SessionBeforeCompactResult,
 	type SessionBeforeTreeResult,
+	type SessionShutdownEvent,
 	type SessionStartEvent,
 	type ShutdownHandler,
 	type ToolDefinition,
@@ -390,6 +391,11 @@ export class AgentSession {
 	private _releaseDefaultStreamRuntime?: () => void;
 	private _defaultStreamTarget?: DefaultStreamTarget;
 	private _sessionAbortController?: AbortController;
+	/** Cached single-flight session_shutdown emission. A cached promise (not a bool) so
+	 *  concurrent terminal callers await the SAME handler completion instead of racing
+	 *  into teardown while handlers still run. reload() bypasses this seam so a
+	 *  post-reload quit is not swallowed. */
+	private _shutdownEmit?: Promise<void>;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -875,8 +881,40 @@ export class AgentSession {
 	}
 
 	/**
+	 * Emit `session_shutdown` at most once for this session, returning the shared
+	 * emission promise so concurrent terminal callers await the same handler
+	 * completion. Package-internal seam used by the terminal paths
+	 * (AgentSession.shutdown, AgentSessionRuntime.teardownCurrent/dispose). reload()
+	 * deliberately does NOT route through here: it keeps the same session alive, so a
+	 * later terminal quit must still be able to fire.
+	 */
+	emitShutdownOnce(event: SessionShutdownEvent): Promise<void> {
+		if (!this._shutdownEmit) {
+			this._shutdownEmit = emitSessionShutdownEvent(this._extensionRunner, event).then(() => undefined);
+		}
+		return this._shutdownEmit;
+	}
+
+	/**
+	 * Graceful terminal shutdown for SDK embedders: settle any active turn, emit
+	 * `session_shutdown` once (so extensions get their documented cleanup hook), then
+	 * dispose. Prefer this over calling `dispose()` directly, which stays synchronous
+	 * and eventless by design (a sync method cannot await async shutdown handlers).
+	 */
+	async shutdown(reason: SessionShutdownEvent["reason"] = "quit"): Promise<void> {
+		await this.abort();
+		await this.emitShutdownOnce({ type: "session_shutdown", reason });
+		this.dispose();
+	}
+
+	/**
 	 * Remove all listeners and disconnect from agent.
 	 * Call this when completely done with the session.
+	 *
+	 * Stays synchronous and emits no `session_shutdown` event: a sync method cannot
+	 * await async shutdown handlers, and it invalidates the extension ctx immediately
+	 * below, which a floating emit would race. Embedders that need the shutdown hook
+	 * must call `await shutdown()` instead.
 	 */
 	dispose(): void {
 		try {

@@ -21,4 +21,8 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// WS-Q: before_provider_request / before_provider_headers / after_provider_response
 	// carry the request's model as `event.model` (never the session's selected model).
 	"provider-event-model",
+	// WS-Q: getProviderAuth/getAuth accept {forceOAuthRefresh, rejectedAccessToken, signal}
+	// for 401 recovery on unexpired tokens (refresh under the store lock, skipped when the
+	// stored token already rotated past the rejected one).
+	"force-oauth-refresh",
 ]);

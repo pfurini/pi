@@ -962,6 +962,103 @@ describe("Models runtime", () => {
 		expect(b?.auth.apiKey).toBe("new-1");
 	});
 
+	it("forceOAuthRefresh rotates an unexpired token the server rejected", async () => {
+		const credentials = new InMemoryCredentialStore();
+		const refresh = vi.fn(async (credential) => ({
+			...credential,
+			access: "rotated",
+			expires: Date.now() + 60 * 60_000,
+		}));
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth: testOAuth({ refresh }) } }));
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "server-rejected",
+			refresh: "r",
+			expires: Date.now() + 60 * 60_000, // far from expiry: plain resolution would not refresh
+		}));
+
+		const result = await models.getAuth("p1", {
+			forceOAuthRefresh: true,
+			rejectedAccessToken: "server-rejected",
+		});
+		expect(result?.auth.apiKey).toBe("rotated");
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(((await credentials.read("p1")) as { access: string }).access).toBe("rotated");
+	});
+
+	it("forceOAuthRefresh skips the refresh when the stored token already rotated past the rejected one", async () => {
+		const credentials = new InMemoryCredentialStore();
+		const refresh = vi.fn();
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth: testOAuth({ refresh }) } }));
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "already-newer",
+			refresh: "r",
+			expires: Date.now() + 60 * 60_000,
+		}));
+
+		const result = await models.getAuth("p1", {
+			forceOAuthRefresh: true,
+			rejectedAccessToken: "server-rejected",
+		});
+		expect(result?.auth.apiKey).toBe("already-newer");
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("concurrent forced refreshes for the same rejected token refresh exactly once", async () => {
+		const credentials = new InMemoryCredentialStore();
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "server-rejected",
+			refresh: "r1",
+			expires: Date.now() + 60 * 60_000,
+		}));
+
+		let refreshes = 0;
+		const oauth = testOAuth({
+			refresh: async () => {
+				refreshes++;
+				await new Promise((resolve) => setTimeout(resolve, 10));
+				return { type: "oauth", access: `new-${refreshes}`, refresh: "r2", expires: Date.now() + 60 * 60_000 };
+			},
+		});
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth } }));
+
+		const overrides = { forceOAuthRefresh: true, rejectedAccessToken: "server-rejected" };
+		const [a, b] = await Promise.all([models.getAuth("p1", overrides), models.getAuth("p1", overrides)]);
+		expect(refreshes).toBe(1);
+		expect(a?.auth.apiKey).toBe("new-1");
+		expect(b?.auth.apiKey).toBe("new-1");
+	});
+
+	it("cancellation while waiting on a forced refresh rejects and preserves the stored credential", async () => {
+		const credentials = new InMemoryCredentialStore();
+		await credentials.modify("p1", async () => ({
+			type: "oauth",
+			access: "server-rejected",
+			refresh: "r",
+			expires: Date.now() + 60 * 60_000,
+		}));
+		const oauth = testOAuth({
+			refresh: () => new Promise(() => {}), // hangs until aborted
+		});
+		const models = createModels({ credentials });
+		models.setProvider(testProvider({ id: "p1", auth: { oauth } }));
+
+		const controller = new AbortController();
+		const pending = models.getAuth("p1", {
+			forceOAuthRefresh: true,
+			rejectedAccessToken: "server-rejected",
+			signal: controller.signal,
+		});
+		setTimeout(() => controller.abort(), 5);
+		await expect(pending).rejects.toThrow(/abort/i);
+		expect(((await credentials.read("p1")) as { access: string }).access).toBe("server-rejected");
+	});
+
 	it("valid oauth tokens resolve without touching modify", async () => {
 		let modifies = 0;
 		const base = new InMemoryCredentialStore();

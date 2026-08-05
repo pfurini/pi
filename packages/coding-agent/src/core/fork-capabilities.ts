@@ -1,0 +1,35 @@
+/**
+ * Machine-readable marker for fork-only behavior.
+ *
+ * This fork is semver-indistinguishable from published pi (it reports the merged upstream
+ * version), so extensions that depend on fork-only guarantees must feature-detect them
+ * structurally instead of version-checking. Probe via the aliased extension import:
+ *
+ *   const pi = await import("@earendil-works/pi-coding-agent");
+ *   pi.piForkCapabilities?.has("composed-default-stream-fn");
+ *
+ * `piForkCapabilities` is `undefined` on published pi builds — treat that as "no fork
+ * guarantees" and fail (or degrade) with an actionable message.
+ *
+ * Entries are append-only: removing one is a breaking change for extensions gating on it.
+ */
+export const piForkCapabilities: ReadonlySet<string> = new Set([
+	// WS-P: bare Agent/loop callers without an explicit streamFn route through the calling
+	// (or newest eligible) session's composed pipeline instead of raw compat streamSimple
+	// (see default-stream-fn.ts).
+	"composed-default-stream-fn",
+	// WS-Q: before_provider_request / before_provider_headers / after_provider_response
+	// carry the request's model as `event.model` (never the session's selected model).
+	"provider-event-model",
+	// WS-Q: getProviderAuth/getAuth accept {forceOAuthRefresh, rejectedAccessToken, signal}
+	// for 401 recovery on unexpired tokens (refresh under the store lock, skipped when the
+	// stored token already rotated past the rejected one).
+	"force-oauth-refresh",
+	// WS-Q: Kimi OAuth error paths report field names, HTTP status, and standard OAuth
+	// error codes only; response bodies (which can carry live token material) and
+	// error_description free text are never echoed into errors.
+	"kimi-oauth-error-hardening",
+	// WS-Q: unscoped bare-Agent dispatch with more than one eligible live session fails
+	// with an actionable error instead of silently routing through the newest session.
+	"unscoped-bare-agent-ambiguity",
+]);

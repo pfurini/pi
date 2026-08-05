@@ -176,21 +176,25 @@ describe("composed default stream function", () => {
 		expect(marker.calls).toBe(0);
 	});
 
-	it("last-created session wins; disposal restores the previous runtime, then the compat fallback", async () => {
+	it("ambiguous unscoped dispatch fails; disposal resolves it to the remaining session, then compat", async () => {
 		const agent = bareAgent();
 		const markerA = { calls: 0 };
 		const markerB = { calls: 0 };
 		const { session: sessionA, model } = await createSessionWithOverlayProvider("capture-provider", markerA);
 		const { session: sessionB } = await createSessionWithOverlayProvider("capture-provider", markerB);
 
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
-		expect(markerB.calls).toBe(1);
+		// Two live sessions can serve the model and no scope applies: never guess which
+		// session's settings, auth, hooks, and abort signal the caller meant.
+		await expect(async () => {
+			await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		}).rejects.toThrow(/Ambiguous default-stream dispatch/);
 		expect(markerA.calls).toBe(0);
+		expect(markerB.calls).toBe(0);
 
 		sessionB.dispose();
 		await (await agent.streamFunction(model, { messages: [] }, {})).result();
 		expect(markerA.calls).toBe(1);
-		expect(markerB.calls).toBe(1);
+		expect(markerB.calls).toBe(0);
 
 		sessionA.dispose();
 		const unknownModel = createModel("capture-provider", "test-unregistered-api");
@@ -263,6 +267,139 @@ describe("composed default stream function", () => {
 		expect(captured?.headers?.["x-hook"]).toBeUndefined();
 	});
 
+	it("provider events carry the request's model, not the session's selected model", async () => {
+		const sessionProvider = "session-provider";
+		const otherProvider = "other-provider";
+		const extensionsDir = join(agentDir, "extensions");
+		mkdirSync(extensionsDir, { recursive: true });
+		writeFileSync(
+			join(extensionsDir, "record-model.ts"),
+			`export default function (pi) {
+				pi.on("before_provider_headers", (event) => {
+					event.headers["x-event-model"] = event.model.provider + "/" + event.model.id;
+				});
+				pi.on("before_provider_request", (event) => ({
+					...event.payload,
+					eventModel: event.model.provider + "/" + event.model.id,
+				}));
+			}`,
+		);
+
+		let captured: SimpleStreamOptions | undefined;
+		const authStorage = AuthStorage.create(join(agentDir, "model-events-auth.json"));
+		await authStorage.modify(sessionProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		await authStorage.modify(otherProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "model-events-models.json"));
+		modelRegistry.registerProvider(sessionProvider, {
+			api: "openai-completions",
+			streamSimple: () => createDoneStream("openai-completions", sessionProvider),
+		});
+		modelRegistry.registerProvider(otherProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				captured = providerOptions;
+				return createDoneStream("openai-completions", otherProvider);
+			},
+		});
+		const sessionModel = createModel(sessionProvider, "openai-completions");
+		const otherModel: Model<Api> = { ...createModel(otherProvider, "openai-completions"), id: "other-model" };
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: sessionModel,
+			modelRuntime: getModelRuntime(modelRegistry),
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(session);
+
+		// A bare Agent streams a different provider's model through this session's pipeline:
+		// the events must scope to the request's model, never the session's selected one.
+		const agent = bareAgent();
+		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+
+		expect(captured?.headers).toMatchObject({ "x-event-model": "other-provider/other-model" });
+		expect(captured?.headers?.["x-event-model"]).not.toContain(sessionProvider);
+		await expect(captured?.onPayload?.({ base: true }, otherModel)).resolves.toMatchObject({
+			base: true,
+			eventModel: "other-provider/other-model",
+		});
+	});
+
+	it("a handler gated on event.model.provider scopes Kimi mutations correctly in both bare-Agent directions", async () => {
+		// The B3 contract: provider middleware scoped on event.model (never ctx.model, the
+		// session's selected model) must skip a non-Kimi request from a Kimi session and
+		// apply to a Kimi request from a non-Kimi session.
+		const kimiProvider = "kimi-coding";
+		const otherProvider = "other-provider";
+		const extensionsDir = join(agentDir, "extensions");
+		mkdirSync(extensionsDir, { recursive: true });
+		writeFileSync(
+			join(extensionsDir, "kimi-gate.ts"),
+			`export default function (pi) {
+				pi.on("before_provider_request", (event) => {
+					if (event.model.provider !== "kimi-coding") return undefined;
+					return { ...event.payload, kimiMutated: true };
+				});
+			}`,
+		);
+
+		let capturedKimi: SimpleStreamOptions | undefined;
+		let capturedOther: SimpleStreamOptions | undefined;
+		const authStorage = AuthStorage.create(join(agentDir, "kimi-gate-auth.json"));
+		await authStorage.modify(kimiProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		await authStorage.modify(otherProvider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "kimi-gate-models.json"));
+		modelRegistry.registerProvider(kimiProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				capturedKimi = providerOptions;
+				return createDoneStream("openai-completions", kimiProvider);
+			},
+		});
+		modelRegistry.registerProvider(otherProvider, {
+			api: "openai-completions",
+			streamSimple: (_model, _context, providerOptions) => {
+				capturedOther = providerOptions;
+				return createDoneStream("openai-completions", otherProvider);
+			},
+		});
+		const kimiModel = createModel(kimiProvider, "openai-completions");
+		const otherModel = createModel(otherProvider, "openai-completions");
+		const modelRuntime = getModelRuntime(modelRegistry);
+
+		// Direction 1: Kimi session, bare Agent streams a non-Kimi model → no Kimi mutation.
+		const { session: kimiSession } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: kimiModel,
+			modelRuntime,
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(kimiSession);
+		const agent = bareAgent();
+		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+		await expect(capturedOther?.onPayload?.({ base: true }, otherModel)).resolves.toEqual({ base: true });
+
+		// Direction 2: non-Kimi session, bare Agent streams the Kimi model → mutation applies.
+		kimiSession.dispose();
+		const { session: otherSession } = await createAgentSession({
+			cwd,
+			agentDir,
+			model: otherModel,
+			modelRuntime,
+			settingsManager: SettingsManager.inMemory({}),
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+		sessions.push(otherSession);
+		await (await agent.streamFunction(kimiModel, { messages: [] }, {})).result();
+		await expect(capturedKimi?.onPayload?.({ base: true }, kimiModel)).resolves.toMatchObject({
+			base: true,
+			kimiMutated: true,
+		});
+	});
+
 	it("keeps raw compat for ad-hoc models a builtin provider's catalog cannot serve", async () => {
 		const marker = { calls: 0 };
 		const authStorage = AuthStorage.create(join(agentDir, "builtin-auth.json"));
@@ -306,12 +443,15 @@ describe("composed default stream function", () => {
 			model,
 			modelRuntime: runtime1,
 		} = await createSessionWithOverlayProvider("capture-provider", markerR1);
-		await createSessionWithOverlayProvider("capture-provider", markerR2);
+		const { session: session2 } = await createSessionWithOverlayProvider("capture-provider", markerR2);
 		await createSessionWithOverlayProvider("capture-provider", markerR1, { modelRuntime: runtime1 });
 
 		// Stack is [runtime1, runtime2, runtime1]; disposing the first session must remove
-		// its own entry, leaving the third session's runtime1 entry on top.
+		// only its own entry. Disposing session2 as well leaves exactly the third session's
+		// runtime1 entry: if sessionA's release had wrongly dropped that entry too, nothing
+		// would remain and dispatch would fall back to compat instead of routing.
 		sessionA.dispose();
+		session2.dispose();
 
 		await (await agent.streamFunction(model, { messages: [] }, {})).result();
 		expect(markerR1.calls).toBe(1);

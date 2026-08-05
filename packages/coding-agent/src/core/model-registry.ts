@@ -10,7 +10,7 @@ import type {
 	Provider,
 	ProviderHeaders,
 } from "@earendil-works/pi-ai";
-import type { ModelRuntime } from "./model-runtime.ts";
+import type { ModelRuntime, ModelRuntimeAuthOverrides } from "./model-runtime.ts";
 import type { AuthStatus, ProviderConfigInput } from "./provider-composer.ts";
 
 export type { ProviderConfigInput } from "./provider-composer.ts";
@@ -112,8 +112,8 @@ export class ModelRegistry {
 		return this.runtime.getProvider(provider)?.name ?? provider;
 	}
 
-	getProviderAuth(provider: string): Promise<AuthResult | undefined> {
-		return this.runtime.getAuth(provider);
+	getProviderAuth(provider: string, options?: ModelRuntimeAuthOverrides): Promise<AuthResult | undefined> {
+		return this.runtime.getAuth(provider, options);
 	}
 
 	async getApiKeyForProvider(provider: string): Promise<string | undefined> {

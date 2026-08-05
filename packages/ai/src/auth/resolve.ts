@@ -20,6 +20,23 @@ export interface AuthResolutionOverrides {
 	env?: ProviderEnv;
 	/** Require this much remaining OAuth-token validity; defaults to five minutes. */
 	minOAuthValidityMs?: number;
+	/**
+	 * Force one OAuth refresh even when the stored token is not near expiry.
+	 * 401-recovery path: the server has invalidated an apparently valid token, so
+	 * plain re-resolution would return the same token. Runs under the store's
+	 * `modify` lock like every refresh.
+	 */
+	forceOAuthRefresh?: boolean;
+	/**
+	 * The access token the server rejected. Only meaningful with
+	 * `forceOAuthRefresh: true` — passing it alone rejects with code "auth"
+	 * (it would otherwise be a silent no-op on a 401-recovery path). The forced
+	 * refresh is skipped when the stored token no longer matches this value
+	 * (another caller or process already rotated it) and the newer credential is
+	 * returned as-is. Forced callers should always pass it: without it, every
+	 * concurrent forced caller refreshes in turn.
+	 */
+	rejectedAccessToken?: string;
 	signal?: AbortSignal;
 }
 
@@ -68,6 +85,12 @@ async function resolveProviderAuthWithSignal(
 	signal: AbortSignal,
 ): Promise<AuthResult | undefined> {
 	signal.throwIfAborted();
+	if (overrides?.rejectedAccessToken !== undefined && overrides.forceOAuthRefresh !== true) {
+		throw new ModelsError(
+			"auth",
+			`Invalid auth overrides for ${provider.id}: rejectedAccessToken requires forceOAuthRefresh: true`,
+		);
+	}
 	const requestAuthContext = overrides?.env ? overlayEnvAuthContext(authContext, overrides.env) : authContext;
 
 	if (overrides?.apiKey !== undefined && provider.auth.apiKey) {
@@ -87,14 +110,7 @@ async function resolveProviderAuthWithSignal(
 	const stored = await readCredential(credentials, provider.id, signal);
 	if (stored) {
 		if (stored.type === "oauth" && provider.auth.oauth) {
-			return resolveStoredOAuth(
-				credentials,
-				provider.id,
-				provider.auth.oauth,
-				stored,
-				signal,
-				overrides?.minOAuthValidityMs,
-			);
+			return resolveStoredOAuth(credentials, provider.id, provider.auth.oauth, stored, signal, overrides);
 		}
 		if (stored.type === "api_key" && provider.auth.apiKey) {
 			const credential = overrides?.env ? { ...stored, env: { ...stored.env, ...overrides.env } } : stored;
@@ -122,7 +138,9 @@ const DEFAULT_OAUTH_REFRESH_TIMEOUT_MS = 15_000;
 /**
  * OAuth resolution with double-checked locking: tokens with less than five
  * minutes remaining lock, re-check expiry under the lock, refresh once
- * globally, and persist the rotated credential before release.
+ * globally, and persist the rotated credential before release. A forced
+ * refresh (server-side 401 on an unexpired token) takes the same lock and is
+ * skipped under it when the stored token already moved past the rejected one.
  */
 async function resolveStoredOAuth(
 	credentials: CredentialStore,
@@ -130,21 +148,27 @@ async function resolveStoredOAuth(
 	oauth: OAuthAuth,
 	stored: OAuthCredential,
 	signal: AbortSignal,
-	minOAuthValidityMs?: number,
+	overrides?: AuthResolutionOverrides,
 ): Promise<AuthResult | undefined> {
+	const minOAuthValidityMs = overrides?.minOAuthValidityMs;
 	const minimumValidityMs = Math.max(DEFAULT_OAUTH_MINIMUM_VALIDITY_MS, minOAuthValidityMs ?? 0);
 	const expiresSoon = (credential: OAuthCredential) => Date.now() + minimumValidityMs >= credential.expires;
+	const rejectedAccessToken = overrides?.rejectedAccessToken;
+	const needsRefresh = (credential: OAuthCredential) =>
+		expiresSoon(credential) ||
+		(overrides?.forceOAuthRefresh === true &&
+			(rejectedAccessToken === undefined || credential.access === rejectedAccessToken));
 	let credential = stored;
 
-	if (expiresSoon(credential)) {
-		// Optimistic check said expired; the authoritative check runs under the lock.
+	if (needsRefresh(credential)) {
+		// Optimistic check said refresh; the authoritative check runs under the lock.
 		let post: Credential | undefined;
 		try {
 			post = await credentials.modify(
 				providerId,
 				async (current) => {
 					if (current?.type !== "oauth") return undefined; // logged out meanwhile
-					if (!expiresSoon(current)) return undefined; // another process/request refreshed
+					if (!needsRefresh(current)) return undefined; // another process/request refreshed
 					try {
 						const refreshSignal = AbortSignal.any([
 							signal,

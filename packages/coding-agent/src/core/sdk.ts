@@ -306,20 +306,24 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const onProviderPayload: SimpleStreamOptions["onPayload"] = async (payload, _model) => {
+	// The model pi-ai hands these hooks is the request's model — for bare Agents and
+	// subagents it can differ from the session's selected model, so it (and never
+	// ctx.model) is what reaches the provider events for handler scoping.
+	const onProviderPayload: SimpleStreamOptions["onPayload"] = async (payload, model) => {
 		const runner = extensionRunnerRef.current;
 		if (!runner?.hasHandlers("before_provider_request")) {
 			return payload;
 		}
-		return runner.emitBeforeProviderRequest(payload);
+		return runner.emitBeforeProviderRequest(payload, model);
 	};
-	const onProviderResponse: SimpleStreamOptions["onResponse"] = async (response, _model) => {
+	const onProviderResponse: SimpleStreamOptions["onResponse"] = async (response, model) => {
 		const runner = extensionRunnerRef.current;
 		if (!runner?.hasHandlers("after_provider_response")) {
 			return;
 		}
 		await runner.emit({
 			type: "after_provider_response",
+			model,
 			status: response.status,
 			headers: response.headers,
 		});
@@ -378,7 +382,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						requestHeaders,
 					);
 					return headerRunner?.hasHandlers("before_provider_headers")
-						? headerRunner.emitBeforeProviderHeaders(headers ?? {})
+						? headerRunner.emitBeforeProviderHeaders(headers ?? {}, model)
 						: (headers ?? {});
 				}),
 		});

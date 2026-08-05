@@ -681,6 +681,13 @@ export interface ContextEvent {
 /** Fired before a provider request is sent. Can replace the payload. */
 export interface BeforeProviderRequestEvent {
 	type: "before_provider_request";
+	/**
+	 * The model this request streams against. Scope provider middleware on
+	 * `event.model`, not `ctx.model`: `ctx.model` is the owning session's selected
+	 * model, which differs from the request's model when a bare Agent or subagent
+	 * streams a different model through this session's pipeline.
+	 */
+	model: Model<Api>;
 	payload: unknown;
 }
 
@@ -691,12 +698,16 @@ export interface BeforeProviderRequestEvent {
  */
 export interface BeforeProviderHeadersEvent {
 	type: "before_provider_headers";
+	/** The model this request streams against (see BeforeProviderRequestEvent.model). */
+	model: Model<Api>;
 	headers: ProviderHeaders;
 }
 
 /** Fired after a provider response is received and before the response stream is consumed. */
 export interface AfterProviderResponseEvent {
 	type: "after_provider_response";
+	/** The model this response belongs to (see BeforeProviderRequestEvent.model). */
+	model: Model<Api>;
 	status: number;
 	headers: Record<string, string>;
 }

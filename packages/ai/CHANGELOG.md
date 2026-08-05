@@ -68,6 +68,7 @@
 
 ### Added
 
+- Added `forceOAuthRefresh` and `rejectedAccessToken` to `AuthResolutionOverrides`: force one OAuth refresh under the credential-store lock after a server-side 401 on an apparently unexpired token. The refresh is skipped when the stored access token no longer matches `rejectedAccessToken` (another caller or process already rotated it) and the newer credential is returned instead; `rejectedAccessToken` without `forceOAuthRefresh: true` rejects with code "auth".
 - Added deferred provider request contracts, durable response handles, authenticated fetch/cancel dispatch, and faux-provider support for pending, ready, failed, and cancelled responses ([#7339](https://github.com/earendil-works/pi/pull/7339) by [@davidbrai](https://github.com/davidbrai)).
 - Added Baseten as a built-in OpenAI-compatible provider with models.dev catalog generation and native `chat_template_args` reasoning controls.
 
@@ -77,6 +78,7 @@
 
 ### Fixed
 
+- Stopped Kimi Code OAuth errors from echoing response bodies: partial device/token responses can carry live access tokens, refresh tokens, and device codes, and were serialized wholesale into surfaced messages. Errors now report missing/invalid field names, HTTP status, and the standard OAuth `error` code only; `error_description` free text and token-endpoint 5xx bodies are never echoed.
 - Fixed OpenAI Codex GPT-5.6 Sol, Terra, and Luna context windows to 372K, matching observed subscription backend behavior while leaving direct OpenAI API defaults at 272K.
 - Fixed GitHub Copilot Grok 4.5 requests to use the supported Responses API ([#7560](https://github.com/earendil-works/pi/issues/7560)).
 - Bounded OAuth token refreshes so stalled requests release the credential-store lock ([#7508](https://github.com/earendil-works/pi/issues/7508)).

@@ -84,6 +84,15 @@ export interface ModelRuntimeAuthOverrides extends AuthOperationOptions {
 	env?: Record<string, string>;
 	/** Require this much remaining OAuth-token validity; defaults to five minutes. */
 	minOAuthValidityMs?: number;
+	/**
+	 * Force one OAuth refresh even when the stored token is not near expiry
+	 * (401 recovery on an apparently valid token). Pass `rejectedAccessToken`
+	 * so the refresh is skipped when another caller already rotated the token;
+	 * `rejectedAccessToken` without `forceOAuthRefresh: true` rejects with code
+	 * "auth". See AuthResolutionOverrides in pi-ai for the full contract.
+	 */
+	forceOAuthRefresh?: boolean;
+	rejectedAccessToken?: string;
 }
 
 export type CredentialSynchronizationOperation = "login" | "logout" | "setRuntimeApiKey" | "removeRuntimeApiKey";

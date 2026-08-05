@@ -3,7 +3,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Model, Provider, ProviderHeaders } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, Provider, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
@@ -1048,7 +1048,7 @@ export class ExtensionRunner {
 		});
 	}
 
-	async emitBeforeProviderRequest(payload: unknown): Promise<unknown> {
+	async emitBeforeProviderRequest(payload: unknown, model: Model<Api>): Promise<unknown> {
 		return this.runScoped(async () => {
 			const ctx = this.createContext();
 			let currentPayload = payload;
@@ -1061,6 +1061,7 @@ export class ExtensionRunner {
 					try {
 						const event: BeforeProviderRequestEvent = {
 							type: "before_provider_request",
+							model,
 							payload: currentPayload,
 						};
 						const handlerResult = await handler(event, ctx);
@@ -1084,7 +1085,7 @@ export class ExtensionRunner {
 		});
 	}
 
-	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
+	async emitBeforeProviderHeaders(headers: ProviderHeaders, model: Model<Api>): Promise<ProviderHeaders> {
 		return this.runScoped(async () => {
 			const ctx = this.createContext();
 
@@ -1097,6 +1098,7 @@ export class ExtensionRunner {
 						// Handlers mutate `headers` in place; the return value is ignored.
 						const event: BeforeProviderHeadersEvent = {
 							type: "before_provider_headers",
+							model,
 							headers,
 						};
 						await handler(event, ctx);

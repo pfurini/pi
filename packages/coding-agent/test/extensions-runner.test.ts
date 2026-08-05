@@ -6,6 +6,7 @@ import { createInMemoryModelRegistry } from "./model-runtime-test-utils.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createExtensionRuntime, discoverAndLoadExtensions, loadExtensions } from "../src/core/extensions/loader.ts";
@@ -39,6 +40,19 @@ describe("ExtensionRunner", () => {
 	afterEach(() => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
+
+	const stubEventModel: Model<Api> = {
+		id: "stub-model",
+		name: "Stub Model",
+		api: "openai-completions",
+		provider: "stub-provider",
+		baseUrl: "https://stub.invalid/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 4096,
+	};
 
 	const providerModelConfig: ProviderConfig = {
 		baseUrl: "https://provider.test/v1",
@@ -1178,6 +1192,7 @@ describe("ExtensionRunner", () => {
 				export default function(pi) {
 					pi.on("before_provider_headers", (event) => {
 						event.headers["X-Turn-Index"] = "3";
+						event.headers["X-Event-Model"] = event.model.provider + "/" + event.model.id;
 					});
 				}
 			`;
@@ -1195,9 +1210,10 @@ describe("ExtensionRunner", () => {
 
 			expect(runner.hasHandlers("before_provider_headers")).toBe(true);
 
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "kimchi/1.0" });
+			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "kimchi/1.0" }, stubEventModel);
 			expect(headers["X-Turn-Index"]).toBe("3");
 			expect(headers["User-Agent"]).toBe("kimchi/1.0");
+			expect(headers["X-Event-Model"]).toBe("stub-provider/stub-model");
 		});
 
 		it("isolates a throwing handler and still applies the others", async () => {
@@ -1230,13 +1246,45 @@ describe("ExtensionRunner", () => {
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((err) => errors.push(err));
 
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "x" });
+			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "x" }, stubEventModel);
 
 			expect(headers["X-Good"]).toBe("yes");
 			expect(headers["User-Agent"]).toBe("x");
 			expect(errors).toHaveLength(1);
 			expect(errors[0].event).toBe("before_provider_headers");
 			expect(errors[0].error).toContain("header handler boom");
+		});
+	});
+
+	describe("after_provider_response", () => {
+		it("hands handlers the response's model alongside status and headers", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.on("after_provider_response", (event) => {
+						event.headers["x-seen"] = event.model.provider + "/" + event.model.id + ":" + event.status;
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "response.ts"), extCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+			);
+
+			const responseHeaders: Record<string, string> = {};
+			await runner.emit({
+				type: "after_provider_response",
+				model: stubEventModel,
+				status: 200,
+				headers: responseHeaders,
+			});
+			expect(responseHeaders["x-seen"]).toBe("stub-provider/stub-model:200");
 		});
 	});
 });

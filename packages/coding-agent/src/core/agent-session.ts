@@ -396,6 +396,15 @@ export class AgentSession {
 	 *  into teardown while handlers still run. reload() bypasses this seam so a
 	 *  post-reload quit is not swallowed. */
 	private _shutdownEmit?: Promise<void>;
+	/** Cached whole shutdown() operation (abort + emit + dispose), so repeated or
+	 *  concurrent shutdown() calls share ONE execution instead of each re-running
+	 *  dispose(). Separate from _shutdownEmit, which the runtime paths use for the
+	 *  emission alone (their dispose ordering interleaves beforeSessionInvalidate). */
+	private _shutdownOp?: Promise<void>;
+	/** Idempotency guard for dispose(): registered session-resource cleanups have no
+	 *  idempotency contract, so a second dispose() (repeated shutdown(), runtime
+	 *  teardown after an embedder shutdown, test afterEach) must be a no-op. */
+	private _disposed = false;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -900,11 +909,24 @@ export class AgentSession {
 	 * `session_shutdown` once (so extensions get their documented cleanup hook), then
 	 * dispose. Prefer this over calling `dispose()` directly, which stays synchronous
 	 * and eventless by design (a sync method cannot await async shutdown handlers).
+	 *
+	 * The WHOLE operation is single-flight: repeated or concurrent calls share one
+	 * execution (first caller's `reason` wins). Disposal is guaranteed even when an
+	 * extension shutdown handler rejects — the rejection still propagates to every
+	 * caller, but the session's resources and in-flight streams are torn down.
 	 */
-	async shutdown(reason: SessionShutdownEvent["reason"] = "quit"): Promise<void> {
-		await this.abort();
-		await this.emitShutdownOnce({ type: "session_shutdown", reason });
-		this.dispose();
+	shutdown(reason: SessionShutdownEvent["reason"] = "quit"): Promise<void> {
+		if (!this._shutdownOp) {
+			this._shutdownOp = (async () => {
+				await this.abort();
+				try {
+					await this.emitShutdownOnce({ type: "session_shutdown", reason });
+				} finally {
+					this.dispose();
+				}
+			})();
+		}
+		return this._shutdownOp;
 	}
 
 	/**
@@ -915,8 +937,15 @@ export class AgentSession {
 	 * await async shutdown handlers, and it invalidates the extension ctx immediately
 	 * below, which a floating emit would race. Embedders that need the shutdown hook
 	 * must call `await shutdown()` instead.
+	 *
+	 * Idempotent: registered session-resource cleanups carry no idempotency contract
+	 * (a second invocation may throw or repeat destructive side effects), so every
+	 * path that can reach dispose() twice — repeated shutdown(), runtime teardown
+	 * after an embedder shutdown() — must land on this early return.
 	 */
 	dispose(): void {
+		if (this._disposed) return;
+		this._disposed = true;
 		try {
 			this.abortRetry();
 			this.abortCompaction();

@@ -19,6 +19,12 @@ export interface DefaultStreamTarget {
 	streamFn: StreamFn;
 	onPayload?: SimpleStreamOptions["onPayload"];
 	onResponse?: SimpleStreamOptions["onResponse"];
+	/** Set by the release function when the owning session is torn down. The scoped
+	 *  (AsyncLocalStorage) dispatch path must honor this: a detached promise or timer
+	 *  created inside a session scope outlives the scope's session, and without this
+	 *  check a bare Agent it starts after disposal would still route through the
+	 *  disposed session and stream against its already-aborted signal. */
+	released?: boolean;
 }
 
 /**
@@ -78,7 +84,7 @@ function runtimeServesModel(runtime: ModelRuntime, model: Model<Api>): boolean {
  */
 export const composedDefaultStreamFn: StreamFn = (model, context, options) => {
 	const scoped = activeSessionTarget.getStore();
-	if (scoped && runtimeServesModel(scoped.runtime, model)) {
+	if (scoped && !scoped.released && runtimeServesModel(scoped.runtime, model)) {
 		return streamThroughTarget(scoped, model, context, options);
 	}
 	for (let i = installations.length - 1; i >= 0; i--) {
@@ -143,5 +149,11 @@ export function installDefaultStreamTarget(target: DefaultStreamTarget): () => v
 	return () => {
 		const index = installations.indexOf(ref);
 		if (index !== -1) installations.splice(index, 1);
+		// Mark released for the scoped dispatch path too: removal from installations
+		// only stops UN-scoped routing, but AsyncLocalStorage contexts created while
+		// the session was alive still carry this target. Via the ref (not a strong
+		// capture) so the WeakRef GC design is unchanged.
+		const released = ref.deref();
+		if (released) released.released = true;
 	};
 }

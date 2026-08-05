@@ -354,8 +354,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const callerTransformHeaders = (options as ModelsRequestTransforms | undefined)?.transformHeaders;
 		// Combine the caller's signal with the session signal so dispose() aborts this
 		// stream regardless of the run's state. AbortSignal.any retains references to its
-		// sources, but the combined signal is per-call and GC'd when the call ends, so it
-		// does not accumulate. (Node engine is >=22.19, so AbortSignal.any is available.)
+		// sources; the combined signal is per-call, so nothing here accumulates it — but a
+		// provider may retain the signal it was handed beyond stream completion, so its
+		// lifetime is bounded by the provider, not guaranteed by this wrapper.
+		// (Node engine is >=22.19, so AbortSignal.any is available.)
 		const signal = options?.signal
 			? AbortSignal.any([options.signal, sessionAbortController.signal])
 			: sessionAbortController.signal;

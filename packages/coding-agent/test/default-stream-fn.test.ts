@@ -358,6 +358,41 @@ describe("composed default stream function", () => {
 		expect(markerB.calls).toBe(0);
 	});
 
+	it("falls through to the stack when the scoped session was disposed (released target)", async () => {
+		// A detached promise chain created inside a session scope keeps that scope's
+		// AsyncLocalStorage context after the session is gone. Removal from the
+		// installation stack only stops UN-scoped routing; without the released flag
+		// the late bare call would still route through the disposed session and
+		// stream against its already-aborted session signal.
+		const markerA = { calls: 0 };
+		const markerB = { calls: 0 };
+		const agent = bareAgent();
+		let detached: Promise<unknown> | undefined;
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const { session: sessionA, model } = await createSessionWithOverlayProvider("capture-provider", markerA, {
+			extensionFactory: (pi) => {
+				pi.on("agent_settled", () => {
+					// Started inside the scope, resumed after disposal.
+					detached = gate
+						.then(() => agent.streamFunction(model, { messages: [] }, {}))
+						.then((stream) => stream.result());
+				});
+			},
+		});
+		await createSessionWithOverlayProvider("capture-provider", markerB);
+
+		await sessionA.extensionRunner.emit({ type: "agent_settled" });
+		sessionA.dispose();
+		release?.();
+		await detached;
+
+		expect(markerA.calls).toBe(0);
+		expect(markerB.calls).toBe(1);
+	});
+
 	it("falls through to the stack when the scoped session cannot serve the model", async () => {
 		const markerA = { calls: 0 };
 		const markerB = { calls: 0 };

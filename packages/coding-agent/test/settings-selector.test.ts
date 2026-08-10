@@ -41,7 +41,8 @@ function createConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig {
 		defaultProjectTrust: "ask",
 		clearOnShrink: false,
 		showTerminalProgress: false,
-		uiMode: "regular",
+		tuiMode: "regular",
+		fullscreenExitOutput: "transcript",
 		fullscreenScrollbar: "auto",
 		mermaidRenderingMode: "streaming",
 		warnings: {},
@@ -79,7 +80,8 @@ function createCallbacks(): SettingsCallbacks {
 		onDefaultProjectTrustChange: vi.fn(),
 		onClearOnShrinkChange: vi.fn(),
 		onShowTerminalProgressChange: vi.fn(),
-		onUiModeChange: vi.fn(),
+		onTuiModeChange: vi.fn(),
+		onFullscreenExitOutputChange: vi.fn(),
 		onFullscreenScrollbarChange: vi.fn(),
 		onMermaidRenderingModeChange: vi.fn(),
 		onWarningsChange: vi.fn(),
@@ -105,25 +107,31 @@ beforeAll(() => {
 });
 
 describe("SettingsSelectorComponent", () => {
-	it("cycles through fullscreen scrollbar modes", () => {
-		const onChange = vi.fn();
-		const selector = new SettingsSelectorComponent(
-			{
-				fullscreenScrollbar: "auto",
-				warnings: {},
-				availableThinkingLevels: [],
-				availableThemes: [],
-			} as unknown as SettingsConfig,
-			{ onFullscreenScrollbarChange: onChange } as unknown as SettingsCallbacks,
-		);
-		const settingsList = selector.getSettingsList();
+	it("cycles through fullscreen settings", () => {
+		const onExitOutputChange = vi.fn();
+		const onScrollbarChange = vi.fn();
+		const config = {
+			fullscreenExitOutput: "transcript",
+			fullscreenScrollbar: "auto",
+			warnings: {},
+			availableThinkingLevels: [],
+			availableThemes: [],
+		} as unknown as SettingsConfig;
+		const callbacks = {
+			onFullscreenExitOutputChange: onExitOutputChange,
+			onFullscreenScrollbarChange: onScrollbarChange,
+		} as unknown as SettingsCallbacks;
 
-		for (const character of "Fullscreen scrollbar") settingsList.handleInput(character);
-		settingsList.handleInput("\r");
-		settingsList.handleInput("\r");
-		settingsList.handleInput("\r");
+		const cycle = (label: string, count: number) => {
+			const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();
+			for (const character of label) list.handleInput(character);
+			for (let i = 0; i < count; i++) list.handleInput("\r");
+		};
 
-		expect(onChange.mock.calls.flat()).toEqual(["always", "hidden", "auto"]);
+		cycle("Fullscreen exit output", 2);
+		expect(onExitOutputChange.mock.calls.flat()).toEqual(["resume-hint", "transcript"]);
+		cycle("Fullscreen scrollbar", 3);
+		expect(onScrollbarChange.mock.calls.flat()).toEqual(["always", "hidden", "auto"]);
 	});
 });
 

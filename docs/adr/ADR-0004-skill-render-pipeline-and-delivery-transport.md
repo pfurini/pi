@@ -9,10 +9,11 @@ Pi's naive skill expansion (`_expandSkillCommand` raw-append) and the model-read
 ("the model should `read` the SKILL.md") are both retired. Every invocation path — user
 command, model `skill` tool call, fork — goes through one deterministic render pipeline
 (base-dir preamble → argument substitution → variable substitution → shell injection), and the
-rendered content is delivered via a provider-aware transport: a **synthetic tool-use/result
-pair** fabricated by the harness for direct API providers, and a **message block** (Claude
-Code's own native delivery format) for the claude-bridge provider, where the CC SDK owns its
-side of the session and cannot accept injected assistant tool_use blocks.
+rendered content is delivered via a provider-aware transport: a **message block** (Claude
+Code's own native delivery format) as the universal default, upgraded per provider to a
+harness-fabricated **synthetic tool-use/result pair** once transcript-replay verification
+passes for that provider. The claude-bridge provider always uses the message block — the CC SDK
+owns its side of the session and cannot accept injected assistant tool_use blocks.
 
 ## Considered options
 

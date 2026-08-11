@@ -42,3 +42,6 @@ todo.md
 .pi/hf-sessions-backup/
 collect.sh
 .pi/tasks/
+.pi/agents/
+.pi/skills/prp-*
+.pi/plans/

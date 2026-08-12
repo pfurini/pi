@@ -132,6 +132,11 @@ export interface Settings {
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
+	disableSkillShellExecution?: boolean; // default: false - kill switch for skill shell injection (A.3.5)
+	skillShellTimeoutMs?: number; // default: 30000 - per-command skill shell injection timeout in milliseconds
+	skillShellOutputLimitBytes?: number; // default: 16384 - per-command skill shell injection output cap in bytes
+	skillInterop?: boolean; // default: true - accept CLAUDE_* aliases alongside PI_* skill variables (A.8)
+	disableSkillEnvInjection?: boolean; // default: false - bypass ALL skill PI_/CLAUDE_ env composition in the bash spawn seam (independent of skillInterop)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -191,6 +196,17 @@ function parseTimeoutSetting(value: unknown, settingName: string): number | unde
 		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
 	}
 	return undefined;
+}
+
+/** Positive-integer settings (skill shell timeout/cap); invalid values throw, matching parseTimeoutSetting. */
+function parsePositiveIntSetting(value: unknown, settingName: string): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
+	}
+	return value;
 }
 
 export type SettingsScope = "global" | "project";
@@ -1077,6 +1093,26 @@ export class SettingsManager {
 		this.globalSettings.enableSkillCommands = enabled;
 		this.markModified("enableSkillCommands");
 		this.save();
+	}
+
+	getDisableSkillShellExecution(): boolean {
+		return this.settings.disableSkillShellExecution ?? false;
+	}
+
+	getSkillShellTimeoutMs(): number {
+		return parsePositiveIntSetting(this.settings.skillShellTimeoutMs, "skillShellTimeoutMs") ?? 30000;
+	}
+
+	getSkillShellOutputLimitBytes(): number {
+		return parsePositiveIntSetting(this.settings.skillShellOutputLimitBytes, "skillShellOutputLimitBytes") ?? 16384;
+	}
+
+	getSkillInterop(): boolean {
+		return this.settings.skillInterop ?? true;
+	}
+
+	getDisableSkillEnvInjection(): boolean {
+		return this.settings.disableSkillEnvInjection ?? false;
 	}
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {

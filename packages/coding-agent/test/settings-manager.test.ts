@@ -668,4 +668,42 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("dark");
 		});
 	});
+
+	describe("skill render pipeline settings (C1b)", () => {
+		it("returns the exact defaults when unset", () => {
+			const manager = SettingsManager.inMemory({});
+			expect(manager.getDisableSkillShellExecution()).toBe(false);
+			expect(manager.getSkillShellTimeoutMs()).toBe(30000);
+			expect(manager.getSkillShellOutputLimitBytes()).toBe(16384);
+			expect(manager.getSkillInterop()).toBe(true);
+			expect(manager.getDisableSkillEnvInjection()).toBe(false);
+		});
+
+		it("returns configured values", () => {
+			const manager = SettingsManager.inMemory({
+				disableSkillShellExecution: true,
+				skillShellTimeoutMs: 5000,
+				skillShellOutputLimitBytes: 4096,
+				skillInterop: false,
+				disableSkillEnvInjection: true,
+			});
+			expect(manager.getDisableSkillShellExecution()).toBe(true);
+			expect(manager.getSkillShellTimeoutMs()).toBe(5000);
+			expect(manager.getSkillShellOutputLimitBytes()).toBe(4096);
+			expect(manager.getSkillInterop()).toBe(false);
+			expect(manager.getDisableSkillEnvInjection()).toBe(true);
+		});
+
+		it("rejects non-positive-integer timeout and cap", () => {
+			expect(() => SettingsManager.inMemory({ skillShellTimeoutMs: 0 }).getSkillShellTimeoutMs()).toThrow(
+				/Invalid skillShellTimeoutMs/,
+			);
+			expect(() => SettingsManager.inMemory({ skillShellTimeoutMs: 1.5 }).getSkillShellTimeoutMs()).toThrow(
+				/Invalid skillShellTimeoutMs/,
+			);
+			expect(() =>
+				SettingsManager.inMemory({ skillShellOutputLimitBytes: -1 }).getSkillShellOutputLimitBytes(),
+			).toThrow(/Invalid skillShellOutputLimitBytes/);
+		});
+	});
 });

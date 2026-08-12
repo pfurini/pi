@@ -104,11 +104,12 @@ import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager 
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import { normalizeSkillInput } from "./skills/frontmatter.ts";
+import { SkillRuntime } from "./skills/runtime.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { applyToolOutputPolicy } from "./tool-output-policy.ts";
-import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
+import { type BashOperations, createLocalBashOperations, registerBashSpawnContextComposer } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { addUsageToTotals, createUsageTotals } from "./usage-totals.ts";
@@ -407,6 +408,10 @@ export class AgentSession {
 	 *  teardown after an embedder shutdown, test afterEach) must be a no-op. */
 	private _disposed = false;
 
+	/** Session-owned skill invocation runtime (C1b): activation-on-consumption, turn-scoped A.8 env. */
+	private readonly _skillRuntime: SkillRuntime;
+	/** Unregister for the bash spawn-context composer that injects turn-scoped skill env. */
+	private readonly _unregisterSkillSpawnComposer: () => void;
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
@@ -444,6 +449,27 @@ export class AgentSession {
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
 
+		// Skill runtime (C1b): records activate on consumption and expire at the
+		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
+		// composer reaches EVERY active bash execution — built-in or extension/SDK
+		// replacement with its own spawnHook — because createBashToolDefinition
+		// applies registered composers before the tool's own hook. Scoped to this
+		// session by ExtensionContext identity; env is copied per execution and
+		// process.env / getShellEnv() are never mutated.
+		this._skillRuntime = new SkillRuntime({
+			cwd: this._cwd,
+			sessionId: this.sessionManager.getSessionId(),
+			getThinkingLevel: () => this.agent.state.thinkingLevel,
+			getSkillInterop: () => this.settingsManager.getSkillInterop(),
+			eventBus: this._resourceLoader.getEventBus?.(),
+		});
+		this._unregisterSkillSpawnComposer = registerBashSpawnContextComposer((context, ctx) => {
+			if (this.settingsManager.getDisableSkillEnvInjection()) return context;
+			if (!ctx || ctx.sessionManager !== this.sessionManager) return context;
+			const skillEnv = this._skillRuntime.getActiveExecutionEnv();
+			if (!skillEnv) return context;
+			return { ...context, env: { ...context.env, ...skillEnv } };
+		});
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
@@ -452,6 +478,11 @@ export class AgentSession {
 
 	get modelRuntime(): ModelRuntime {
 		return this._modelRuntime;
+	}
+
+	/** Session-owned skill invocation runtime — the C1b renderer/runtime contract C1c consumes. */
+	get skillRuntime(): SkillRuntime {
+		return this._skillRuntime;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -973,6 +1004,8 @@ export class AgentSession {
 			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
+		this._unregisterSkillSpawnComposer();
+		this._skillRuntime.dispose();
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
 	}
@@ -1232,6 +1265,10 @@ export class AgentSession {
 				}
 			} finally {
 				this._systemPromptOverride = undefined;
+				// Logical-turn boundary (agent_settled): turn-scoped skill env and
+				// overrides expire here — after the full retry+continuation loop,
+				// never on the per-run agent_end or the turn_end event.
+				this._skillRuntime.expireTurn();
 				this._flushPendingBashMessages();
 				await this._emitAgentSettled();
 			}

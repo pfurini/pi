@@ -263,6 +263,64 @@ export {
 	type SettingsManagerCreateOptions,
 	type TuiMode,
 } from "./core/settings-manager.ts";
+// Skill render pipeline (C1b): renderer/runtime contract consumed by C1c delivery
+export {
+	parseDeclaredArgumentNames,
+	type SkillArgumentSubstitution,
+	type SkillArgumentsDeclaration,
+	substituteSkillArguments,
+	tokenizeSkillArgs,
+} from "./core/skills/arguments.ts";
+export {
+	buildCcToolNote,
+	buildSkillEnvironment,
+	buildSkillExecutionEnv,
+	buildSkillSubstitutionMap,
+	buildSkillVariableValues,
+	detectCcToolNames,
+	resolveEffectiveEffort,
+	resolveProjectRoot,
+	SKILL_VARIABLES,
+	type SkillInteropContext,
+	substituteSkillVariables,
+} from "./core/skills/interop.ts";
+export {
+	absolutizeSkillPaths,
+	type RenderedSkillInvocation,
+	type RenderSkillContext,
+	renderSkillInvocation,
+	rewriteAgentNames,
+} from "./core/skills/render.ts";
+export {
+	SKILL_AGENTS_QUERY_CHANNEL,
+	SKILL_AGENTS_REWRITE_MAPS_CHANNEL,
+	type SkillAgentRewriteEntry,
+	type SkillAgentRewriteMap,
+	type SkillAgentRewriteMaps,
+	type SkillAgentRewriteMapsEvent,
+	type SkillInvocation,
+	type SkillInvocationMetadata,
+	SkillRuntime,
+	type SkillRuntimeContext,
+	skillAgentsQueryReplyChannel,
+	toInvocationMetadata,
+} from "./core/skills/runtime.ts";
+export {
+	commandTimedOutMarker,
+	DEFAULT_SKILL_SHELL_SETTINGS,
+	evaluateShellGate,
+	exitCodeMarker,
+	injectShellCommands,
+	MAX_SHELL_INJECTIONS_PER_RENDER,
+	normalizeDisallowedTools,
+	outputTruncatedMarker,
+	SHELL_MARKERS,
+	type ShellInjectionOptions,
+	type SkillShellSettings,
+	shellExecutionFailedMarker,
+	shellUnavailableMarker,
+	splitInjectionSegments,
+} from "./core/skills/shell-injection.ts";
 export {
 	canonicalSkillSetJson,
 	getSkillSetController,
@@ -278,7 +336,9 @@ export {
 	type SkillsQueryRequest,
 	skillsQueryReplyChannel,
 } from "./core/skills/skill-set-events.ts";
+export { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS } from "./core/skills/tool-redirects.ts";
 // Skills
+
 export {
 	extractSkillListingBlock,
 	formatSkillsForPrompt,

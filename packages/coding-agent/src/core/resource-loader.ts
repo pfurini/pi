@@ -48,6 +48,8 @@ export interface ResourceLoader {
 	getAppendSystemPrompt(): string[];
 	getAppendSystemPromptSources(): Array<{ path: string }>;
 	extendResources(paths: ResourceExtensionPaths): void;
+	/** Shared event bus backing the A.9 extension seams (skill-set, rewrite maps). Optional so lightweight test doubles can omit it. */
+	getEventBus?(): EventBus;
 	reload(options?: ResourceLoaderReloadOptions): Promise<void>;
 }
 
@@ -309,6 +311,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getSkills(): { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
+	}
+
+	getEventBus(): EventBus {
+		return this.eventBus;
 	}
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {

@@ -134,6 +134,27 @@ export function getShellEnv(): NodeJS.ProcessEnv {
 }
 
 /**
+ * Session-owned PI_* variables stripped from spawned shell environments
+ * (Appendix B.6): child processes must not inherit the host session's
+ * identity. Skill execution re-adds its own scoped values on top.
+ */
+export const SESSION_ENV_VARS = [
+	"PI_SESSION_ID",
+	"PI_SESSION_FILE",
+	"PI_PROVIDER",
+	"PI_MODEL",
+	"PI_REASONING_LEVEL",
+] as const;
+
+/** Per-execution shell env snapshot with the session-owned PI_* variables stripped. Fresh object per call. */
+export function buildSpawnShellEnv(): NodeJS.ProcessEnv {
+	const env = getShellEnv();
+	for (const name of SESSION_ENV_VARS) {
+		delete env[name];
+	}
+	return env;
+}
+/**
  * Sanitize binary output for display/storage.
  * Removes characters that crash string-width or cause display issues:
  * - Control characters (except tab, newline, carriage return)

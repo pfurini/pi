@@ -98,7 +98,7 @@ export async function renderSkillInvocation(
 	// skill's OWN values (A.8), independent of any turn-scoped bash env.
 	body = await injectShellCommands(body, {
 		cwd: context.cwd,
-		env: buildSkillExecutionEnv(invocation, context),
+		env: () => buildSkillExecutionEnv(invocation, context),
 		shell: invocation.shell,
 		activeToolNames: context.activeToolNames,
 		disallowedTools: invocation.disallowedTools,

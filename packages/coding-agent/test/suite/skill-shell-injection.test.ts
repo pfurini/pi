@@ -62,7 +62,7 @@ function fakeOperations(script: Array<{ output?: string; exitCode?: number | nul
 function injectionOptions(overrides: Partial<ShellInjectionOptions> = {}): ShellInjectionOptions {
 	return {
 		cwd: "/tmp/work",
-		env: { FOO: "bar" },
+		env: () => ({ FOO: "bar" }),
 		activeToolNames: ["read", "bash", "edit"],
 		settings: SETTINGS,
 		...overrides,

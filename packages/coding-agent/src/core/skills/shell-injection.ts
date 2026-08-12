@@ -75,8 +75,8 @@ export const DEFAULT_SKILL_SHELL_SETTINGS: SkillShellSettings = {
 export interface ShellInjectionOptions {
 	/** Session cwd; commands run with this cwd. */
 	cwd: string;
-	/** Per-execution environment: the bash tool's per-execution env plus the A.8 skill variables. */
-	env: NodeJS.ProcessEnv;
+	/** Per-execution environment factory: the bash tool's per-execution env plus the A.8 skill variables. Resolved lazily on the first executed command, so renders without injections never build it. */
+	env: () => NodeJS.ProcessEnv;
 	/** Skill frontmatter `shell` field: `bash` (default) or `powershell`. */
 	shell?: string;
 	/** The session's effective active tool set (not CLI flags). */
@@ -285,14 +285,14 @@ function resolveSkillShellConfig(
 	return undefined;
 }
 
-interface CommandResult {
-	text: string;
-}
-
-async function executeCommand(command: string, options: ShellInjectionOptions): Promise<CommandResult> {
+async function executeCommand(
+	command: string,
+	env: NodeJS.ProcessEnv,
+	options: ShellInjectionOptions,
+): Promise<string> {
 	const { settings, signal } = options;
 	if (signal?.aborted) {
-		return { text: SHELL_MARKERS.aborted };
+		return SHELL_MARKERS.aborted;
 	}
 	const shellName = options.shell ?? "bash";
 	const operations =
@@ -334,30 +334,28 @@ async function executeCommand(command: string, options: ShellInjectionOptions): 
 			onData,
 			signal,
 			timeout: timeoutSeconds,
-			env: options.env,
+			env,
 		});
 		exitCode = result.exitCode;
 	} catch (error) {
 		const err = error as NodeJS.ErrnoException;
 		if (err instanceof Error && err.message === "aborted") {
-			return { text: SHELL_MARKERS.aborted };
+			return SHELL_MARKERS.aborted;
 		}
 		if (err instanceof Error && err.message.startsWith("timeout:")) {
-			return {
-				text: finishOutput(chunks, truncated, settings.outputLimitBytes, commandTimedOutMarker(settings.timeoutMs)),
-			};
+			return finishOutput(chunks, truncated, settings.outputLimitBytes, commandTimedOutMarker(settings.timeoutMs));
 		}
 		if (err.code === "ENOENT") {
-			return { text: shellUnavailableMarker(shellName) };
+			return shellUnavailableMarker(shellName);
 		}
 		const message = err instanceof Error ? err.message : String(err);
-		return { text: shellExecutionFailedMarker(message) };
+		return shellExecutionFailedMarker(message);
 	}
 
 	if (exitCode !== null && exitCode !== 0) {
-		return { text: finishOutput(chunks, truncated, settings.outputLimitBytes, exitCodeMarker(exitCode)) };
+		return finishOutput(chunks, truncated, settings.outputLimitBytes, exitCodeMarker(exitCode));
 	}
-	return { text: finishOutput(chunks, truncated, settings.outputLimitBytes, undefined) };
+	return finishOutput(chunks, truncated, settings.outputLimitBytes, undefined);
 }
 
 function finishOutput(chunks: Buffer[], truncated: boolean, limitBytes: number, marker: string | undefined): string {
@@ -385,6 +383,7 @@ export async function injectShellCommands(body: string, options: ShellInjectionO
 	const gate = evaluateShellGate(options);
 	const out: string[] = [];
 	let executed = 0;
+	let env: NodeJS.ProcessEnv | undefined;
 	for (const segment of segments) {
 		if (segment.kind === "text") {
 			out.push(segment.text);
@@ -399,8 +398,8 @@ export async function injectShellCommands(body: string, options: ShellInjectionO
 			continue;
 		}
 		executed++;
-		const result = await executeCommand(segment.command, options);
-		out.push(result.text);
+		env ??= options.env();
+		out.push(await executeCommand(segment.command, env, options));
 	}
 	return out.join("");
 }

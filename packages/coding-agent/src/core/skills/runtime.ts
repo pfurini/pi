@@ -134,6 +134,9 @@ export class SkillRuntime {
 	/** Build an invocation record from a loaded skill and its raw args. Not yet active. */
 	createInvocation(skill: LoadedSkill, rawArgs: string): SkillInvocation {
 		const frontmatter = skill.frontmatter;
+		// Kebab-case frontmatter key wins over the camelCase alias.
+		const disallowedTools =
+			frontmatter["disallowed-tools"] !== undefined ? frontmatter["disallowed-tools"] : frontmatter.disallowedTools;
 		return {
 			invocationId: randomUUID(),
 			skillId: skill.id,
@@ -145,11 +148,7 @@ export class SkillRuntime {
 			...((typeof frontmatter.effort === "string" || typeof frontmatter.effort === "number") && {
 				effort: frontmatter.effort,
 			}),
-			...(frontmatter["disallowed-tools"] !== undefined && {
-				disallowedTools: frontmatter["disallowed-tools"],
-			}),
-			...(frontmatter["disallowed-tools"] === undefined &&
-				frontmatter.disallowedTools !== undefined && { disallowedTools: frontmatter.disallowedTools }),
+			...(disallowedTools !== undefined && { disallowedTools }),
 			...(typeof frontmatter.shell === "string" && { shell: frontmatter.shell }),
 		};
 	}

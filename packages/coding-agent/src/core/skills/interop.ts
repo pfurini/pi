@@ -11,7 +11,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { getShellEnv } from "../../utils/shell.ts";
+import { buildSpawnShellEnv } from "../../utils/shell.ts";
 import type { SkillInvocation } from "./runtime.ts";
 import { DEFAULT_TOOL_REDIRECTS } from "./tool-redirects.ts";
 
@@ -118,7 +118,7 @@ export function buildSkillSubstitutionMap(
  * never mutate `process.env` or retain a shared env object.
  */
 export function buildSkillEnvironment(invocation: SkillInvocation, context: SkillInteropContext): NodeJS.ProcessEnv {
-	return { ...buildSkillVariableValues(invocation, context) };
+	return buildSkillVariableValues(invocation, context);
 }
 
 /**
@@ -128,13 +128,7 @@ export function buildSkillEnvironment(invocation: SkillInvocation, context: Skil
  * re-add PI_SESSION_ID etc. scoped to the skill). Fresh object per call.
  */
 export function buildSkillExecutionEnv(invocation: SkillInvocation, context: SkillInteropContext): NodeJS.ProcessEnv {
-	const env = { ...getShellEnv() };
-	delete env.PI_SESSION_ID;
-	delete env.PI_SESSION_FILE;
-	delete env.PI_PROVIDER;
-	delete env.PI_MODEL;
-	delete env.PI_REASONING_LEVEL;
-	return { ...env, ...buildSkillEnvironment(invocation, context) };
+	return { ...buildSpawnShellEnv(), ...buildSkillEnvironment(invocation, context) };
 }
 
 /**

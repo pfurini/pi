@@ -5,6 +5,7 @@
 ### Added
 
 - Added a fullscreen exit output setting to choose between printing the final transcript and only a session resume hint.
+- Added the full Claude Code-class skill frontmatter contract (`when_to_use`, `argument-hint`, `arguments`, `allowed-tools`, `disallowed-tools`/`disallowedTools`, `model`, `effort`, `context`, `agent`, `background`, `paths`, `shell`, `hooks`, lenient booleans, unknown-field preservation, and JSON-safety substitution for non-serializable YAML), the versioned `<available_skills version="2">` listing with the exported `extractSkillListingBlock()` helper, and the `skills:changed`/`skills:query` extension event seam (canonical skill IDs, full parsed frontmatter, `canonicalSkillSetJson`). The existing `Skill` SDK/`skillsOverride` construction shape (aliased `SkillInput`) remains accepted unchanged; `LoadedSkill` is the new complete normalized output type. Pinned, provenance-verified conformance fixtures from the ASE and gstack skill frameworks, a committed per-field fixture pack, and a table-driven inertness matrix pin this contract. See [Skills](docs/skills.md) and [SDK: Skills](docs/sdk.md#skills).
 
 ### Changed
 

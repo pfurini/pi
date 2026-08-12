@@ -1,0 +1,1663 @@
+{
+  "repository": "https://github.com/pfurini/gstack",
+  "revision": "8d6f0a0797ba03de4c5b3c73d702a7b7c9132a16",
+  "tree": "6f95f4fec81b638c6e2a9999eaf08dce25f97487",
+  "skills": [
+    {
+      "path": "SKILL.md",
+      "blob": "aaa5612dd4c34f4b6f660610351683cfa66ae59c",
+      "yaml": "name: gstack\npreamble-tier: 1\nversion: 1.2.0\ndescription: Router for the gstack skill suite. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\ntriggers:\n  - gstack\n  - which gstack skill\n  - route this with gstack\n",
+      "expected": {
+        "name": "gstack",
+        "preamble-tier": 1,
+        "version": "1.2.0",
+        "description": "Router for the gstack skill suite. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "gstack",
+          "which gstack skill",
+          "route this with gstack"
+        ]
+      }
+    },
+    {
+      "path": "autoplan/SKILL.md",
+      "blob": "5346f1d4379e5e2b97b41abd4f442a90090706a3",
+      "yaml": "name: autoplan\npreamble-tier: 3\nversion: 1.0.0\ndescription: Auto-review pipeline — reads the full CEO, design, eng, and DX review skills from disk and runs them sequentially with auto-decisions using 6 decision principles. (gstack)\nbenefits-from: [office-hours]\ntriggers:\n  - run all reviews\n  - automatic review pipeline\n  - auto plan review\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - WebSearch\n  - AskUserQuestion",
+      "expected": {
+        "name": "autoplan",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Auto-review pipeline — reads the full CEO, design, eng, and DX review skills from disk and runs them sequentially with auto-decisions using 6 decision principles. (gstack)",
+        "benefits-from": [
+          "office-hours"
+        ],
+        "triggers": [
+          "run all reviews",
+          "automatic review pipeline",
+          "auto plan review"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "WebSearch",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "benchmark-models/SKILL.md",
+      "blob": "6a9d62616d33a51009aa59e3370204363f6db295",
+      "yaml": "name: benchmark-models\npreamble-tier: 1\nversion: 1.0.0\ndescription: Cross-model benchmark for gstack skills. (gstack)\ntriggers:\n  - cross model benchmark\n  - compare claude gpt gemini\n  - benchmark skill across models\n  - which model should I use\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion",
+      "expected": {
+        "name": "benchmark-models",
+        "preamble-tier": 1,
+        "version": "1.0.0",
+        "description": "Cross-model benchmark for gstack skills. (gstack)",
+        "triggers": [
+          "cross model benchmark",
+          "compare claude gpt gemini",
+          "benchmark skill across models",
+          "which model should I use"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "benchmark/SKILL.md",
+      "blob": "9451d2d4f9bf11fd240380a2c27424a0c5b84649",
+      "yaml": "name: benchmark\npreamble-tier: 1\nversion: 1.0.0\ndescription: Performance regression detection using the browse daemon. (gstack)\ntriggers:\n  - performance benchmark\n  - check page speed\n  - detect performance regression\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - AskUserQuestion",
+      "expected": {
+        "name": "benchmark",
+        "preamble-tier": 1,
+        "version": "1.0.0",
+        "description": "Performance regression detection using the browse daemon. (gstack)",
+        "triggers": [
+          "performance benchmark",
+          "check page speed",
+          "detect performance regression"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "browse/SKILL.md",
+      "blob": "a8138dbbc3a8e9d5df8c644dfe0f28d1acbe1cd1",
+      "yaml": "name: browse\npreamble-tier: 1\nversion: 1.1.0\ndescription: Fast headless browser for QA testing and site dogfooding. (gstack)\ntriggers:\n  - browse a page\n  - headless browser\n  - take page screenshot\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\n",
+      "expected": {
+        "name": "browse",
+        "preamble-tier": 1,
+        "version": "1.1.0",
+        "description": "Fast headless browser for QA testing and site dogfooding. (gstack)",
+        "triggers": [
+          "browse a page",
+          "headless browser",
+          "take page screenshot"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "browser-skills/hackernews-frontpage/SKILL.md",
+      "blob": "aa90258f6b9332fff82ed1903f9268181d9d7873",
+      "yaml": "name: hackernews-frontpage\ndescription: Scrape the Hacker News front page (titles, points, comment counts).\nhost: news.ycombinator.com\ntrusted: true\nsource: human\nversion: 1.0.0\nargs: []\ntriggers:\n  - scrape hacker news frontpage\n  - scrape hn frontpage\n  - get hn top stories\n  - latest hacker news stories",
+      "expected": {
+        "name": "hackernews-frontpage",
+        "description": "Scrape the Hacker News front page (titles, points, comment counts).",
+        "host": "news.ycombinator.com",
+        "trusted": true,
+        "source": "human",
+        "version": "1.0.0",
+        "args": [],
+        "triggers": [
+          "scrape hacker news frontpage",
+          "scrape hn frontpage",
+          "get hn top stories",
+          "latest hacker news stories"
+        ]
+      }
+    },
+    {
+      "path": "canary/SKILL.md",
+      "blob": "08d4d7369e199435f30cd1dd8a001711fe09355a",
+      "yaml": "name: canary\npreamble-tier: 2\nversion: 1.0.0\ndescription: Post-deploy canary monitoring. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - monitor after deploy\n  - canary check\n  - watch for errors post-deploy",
+      "expected": {
+        "name": "canary",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Post-deploy canary monitoring. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "monitor after deploy",
+          "canary check",
+          "watch for errors post-deploy"
+        ]
+      }
+    },
+    {
+      "path": "careful/SKILL.md",
+      "blob": "c646c8b6091539e4cba0de72ddfa6afa2c7fb982",
+      "yaml": "name: careful\nversion: 0.1.0\ndescription: Safety guardrails for destructive commands. (gstack)\ntriggers:\n  - be careful\n  - warn before destructive\n  - safety mode\nallowed-tools:\n  - Bash\n  - Read\nhooks:\n  PreToolUse:\n    - matcher: \"Bash\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/careful/bin/check-careful.sh\"\n          statusMessage: \"Checking for destructive commands...\"",
+      "expected": {
+        "name": "careful",
+        "version": "0.1.0",
+        "description": "Safety guardrails for destructive commands. (gstack)",
+        "triggers": [
+          "be careful",
+          "warn before destructive",
+          "safety mode"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read"
+        ],
+        "hooks": {
+          "PreToolUse": [
+            {
+              "matcher": "Bash",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/careful/bin/check-careful.sh",
+                  "statusMessage": "Checking for destructive commands..."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "codex/SKILL.md",
+      "blob": "33228ff9b8c69a40dbbb850db0c2798971d5daf2",
+      "yaml": "name: codex\npreamble-tier: 3\nversion: 1.0.0\ndescription: OpenAI Codex CLI wrapper — three modes. (gstack)\ntriggers:\n  - codex review\n  - second opinion\n  - outside voice challenge\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - Grep\n  - AskUserQuestion",
+      "expected": {
+        "name": "codex",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "OpenAI Codex CLI wrapper — three modes. (gstack)",
+        "triggers": [
+          "codex review",
+          "second opinion",
+          "outside voice challenge"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "context-restore/SKILL.md",
+      "blob": "59b40e82c2458a7f09d1d121c55025f5fca00900",
+      "yaml": "name: context-restore\npreamble-tier: 2\nversion: 1.0.0\ndescription: Restore working context saved earlier by /context-save. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Glob\n  - Grep\n  - AskUserQuestion\ntriggers:\n  - resume where i left off\n  - restore context\n  - where was i\n  - pick up where i left off\n  - context restore",
+      "expected": {
+        "name": "context-restore",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Restore working context saved earlier by /context-save. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "resume where i left off",
+          "restore context",
+          "where was i",
+          "pick up where i left off",
+          "context restore"
+        ]
+      }
+    },
+    {
+      "path": "context-save/SKILL.md",
+      "blob": "a1eb2459500cac5593f70524a9d37ee813bfd3d8",
+      "yaml": "name: context-save\npreamble-tier: 2\nversion: 1.0.0\ndescription: Save working context. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - Grep\n  - AskUserQuestion\ntriggers:\n  - save progress\n  - save state\n  - save my work\n  - context save",
+      "expected": {
+        "name": "context-save",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Save working context. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "save progress",
+          "save state",
+          "save my work",
+          "context save"
+        ]
+      }
+    },
+    {
+      "path": "cso/SKILL.md",
+      "blob": "a08d7e9fe2bf1dc1685bcc558d933d251dbbef4e",
+      "yaml": "name: cso\npreamble-tier: 2\nversion: 2.0.0\ndescription: Chief Security Officer mode. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Grep\n  - Glob\n  - Write\n  - Agent\n  - WebSearch\n  - AskUserQuestion\ntriggers:\n  - security audit\n  - check for vulnerabilities\n  - owasp review",
+      "expected": {
+        "name": "cso",
+        "preamble-tier": 2,
+        "version": "2.0.0",
+        "description": "Chief Security Officer mode. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Grep",
+          "Glob",
+          "Write",
+          "Agent",
+          "WebSearch",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "security audit",
+          "check for vulnerabilities",
+          "owasp review"
+        ]
+      }
+    },
+    {
+      "path": "design-consultation/SKILL.md",
+      "blob": "83eed0a2d9ecae3be822651e8cea652547c6b329",
+      "yaml": "name: design-consultation\npreamble-tier: 3\nversion: 1.0.0\ndescription: \"Design consultation: understands your product, researches the landscape, proposes a complete design system (aesthetic, typography, color, layout, spacing, motion), and generates font+color preview... (gstack)\"\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - design system\n  - create a brand\n  - design from scratch\ngbrain:\n  schema: 1\n  context_queries:\n    - id: existing-design-md\n      kind: filesystem\n      glob: \"DESIGN.md\"\n      tail: 1\n      render_as: \"## Existing DESIGN.md (if any)\"\n    - id: prior-design-decisions\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/*-design-*.md\"\n      sort: mtime_desc\n      limit: 3\n      render_as: \"## Prior design decisions for this project\"\n    - id: brand-guidelines\n      kind: list\n      filter:\n        type: ceo-plan\n        tags_contains: \"repo:{repo_slug}\"\n        content_contains: \"brand\"\n      sort: updated_at_desc\n      limit: 3\n      render_as: \"## Brand-related notes from CEO plans\"",
+      "expected": {
+        "name": "design-consultation",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Design consultation: understands your product, researches the landscape, proposes a complete design system (aesthetic, typography, color, layout, spacing, motion), and generates font+color preview... (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "design system",
+          "create a brand",
+          "design from scratch"
+        ],
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "existing-design-md",
+              "kind": "filesystem",
+              "glob": "DESIGN.md",
+              "tail": 1,
+              "render_as": "## Existing DESIGN.md (if any)"
+            },
+            {
+              "id": "prior-design-decisions",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/*-design-*.md",
+              "sort": "mtime_desc",
+              "limit": 3,
+              "render_as": "## Prior design decisions for this project"
+            },
+            {
+              "id": "brand-guidelines",
+              "kind": "list",
+              "filter": {
+                "type": "ceo-plan",
+                "tags_contains": "repo:{repo_slug}",
+                "content_contains": "brand"
+              },
+              "sort": "updated_at_desc",
+              "limit": 3,
+              "render_as": "## Brand-related notes from CEO plans"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "design-html/SKILL.md",
+      "blob": "a480bd62c4637aeb7b953aef8ceeb0c43f6399ba",
+      "yaml": "name: design-html\npreamble-tier: 2\nversion: 1.0.0\ndescription: \"Design finalization: generates production-quality Pretext-native HTML/CSS. (gstack)\"\ntriggers:\n  - build the design\n  - code the mockup\n  - make design real\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - Agent\n  - AskUserQuestion",
+      "expected": {
+        "name": "design-html",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Design finalization: generates production-quality Pretext-native HTML/CSS. (gstack)",
+        "triggers": [
+          "build the design",
+          "code the mockup",
+          "make design real"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "Agent",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "design-review/SKILL.md",
+      "blob": "6454531625b461542b6a56729e18130a93c20e77",
+      "yaml": "name: design-review\npreamble-tier: 4\nversion: 2.0.0\ndescription: \"Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems, AI slop patterns, and slow interactions — then fixes them. (gstack)\"\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - visual design audit\n  - design qa\n  - fix design issues",
+      "expected": {
+        "name": "design-review",
+        "preamble-tier": 4,
+        "version": "2.0.0",
+        "description": "Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems, AI slop patterns, and slow interactions — then fixes them. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "visual design audit",
+          "design qa",
+          "fix design issues"
+        ]
+      }
+    },
+    {
+      "path": "design-shotgun/SKILL.md",
+      "blob": "3386d18fa5aeacd23f0c27040c765010356bea30",
+      "yaml": "name: design-shotgun\npreamble-tier: 2\nversion: 1.0.0\ndescription: \"Design shotgun: generate multiple AI design variants, open a comparison board, collect structured feedback, and iterate. (gstack)\"\ntriggers:\n  - explore design variants\n  - show me design options\n  - visual design brainstorm\nallowed-tools:\n  - Bash\n  - Read\n  - Glob\n  - Grep\n  - Agent\n  - AskUserQuestion\ngbrain:\n  schema: 1\n  context_queries:\n    - id: prior-approved-variants\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/designs/*/approved.json\"\n      sort: mtime_desc\n      limit: 5\n      render_as: \"## Prior approved design variants for this project\"\n    - id: design-md\n      kind: filesystem\n      glob: \"DESIGN.md\"\n      tail: 1\n      render_as: \"## DESIGN.md (project design system)\"\n    - id: recent-design-docs\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/*-design-*.md\"\n      sort: mtime_desc\n      limit: 3\n      render_as: \"## Recent design docs\"",
+      "expected": {
+        "name": "design-shotgun",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Design shotgun: generate multiple AI design variants, open a comparison board, collect structured feedback, and iterate. (gstack)",
+        "triggers": [
+          "explore design variants",
+          "show me design options",
+          "visual design brainstorm"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Glob",
+          "Grep",
+          "Agent",
+          "AskUserQuestion"
+        ],
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "prior-approved-variants",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/designs/*/approved.json",
+              "sort": "mtime_desc",
+              "limit": 5,
+              "render_as": "## Prior approved design variants for this project"
+            },
+            {
+              "id": "design-md",
+              "kind": "filesystem",
+              "glob": "DESIGN.md",
+              "tail": 1,
+              "render_as": "## DESIGN.md (project design system)"
+            },
+            {
+              "id": "recent-design-docs",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/*-design-*.md",
+              "sort": "mtime_desc",
+              "limit": 3,
+              "render_as": "## Recent design docs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "devex-review/SKILL.md",
+      "blob": "7ef324b3ecc7c52ba526e39963fdcd6a87d5b010",
+      "yaml": "name: devex-review\npreamble-tier: 3\nversion: 1.0.0\ndescription: Live developer experience audit. (gstack)\ntriggers:\n  - live dx audit\n  - test developer experience\n  - measure onboarding time\nallowed-tools:\n  - Read\n  - Edit\n  - Grep\n  - Glob\n  - Bash\n  - AskUserQuestion\n  - WebSearch",
+      "expected": {
+        "name": "devex-review",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Live developer experience audit. (gstack)",
+        "triggers": [
+          "live dx audit",
+          "test developer experience",
+          "measure onboarding time"
+        ],
+        "allowed-tools": [
+          "Read",
+          "Edit",
+          "Grep",
+          "Glob",
+          "Bash",
+          "AskUserQuestion",
+          "WebSearch"
+        ]
+      }
+    },
+    {
+      "path": "diagram/SKILL.md",
+      "blob": "9e5a41066c07b3bfaa1a2e8587675e628f8b2ced",
+      "yaml": "name: diagram\nversion: 1.0.0\ndescription: \"Turn an English description (or mermaid source) into a diagram triplet: the source, an editable .excalidraw file you can open (gstack)\"\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - AskUserQuestion\ntriggers:\n  - make a diagram\n  - draw a diagram\n  - create a flowchart\n  - diagram this\n  - visualize this flow\n  - architecture diagram",
+      "expected": {
+        "name": "diagram",
+        "version": "1.0.0",
+        "description": "Turn an English description (or mermaid source) into a diagram triplet: the source, an editable .excalidraw file you can open (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "make a diagram",
+          "draw a diagram",
+          "create a flowchart",
+          "diagram this",
+          "visualize this flow",
+          "architecture diagram"
+        ]
+      }
+    },
+    {
+      "path": "document-generate/SKILL.md",
+      "blob": "30846fc4dddd2750902ce4054e0c33a821972c75",
+      "yaml": "name: document-generate\npreamble-tier: 2\nversion: 1.0.0\ndescription: Generate missing documentation from scratch for a feature, module, or entire project. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - write docs for this\n  - generate documentation\n  - document this feature\n  - create a tutorial\n  - write a how-to\n  - explain this module\n  - docs for this project",
+      "expected": {
+        "name": "document-generate",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Generate missing documentation from scratch for a feature, module, or entire project. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "write docs for this",
+          "generate documentation",
+          "document this feature",
+          "create a tutorial",
+          "write a how-to",
+          "explain this module",
+          "docs for this project"
+        ]
+      }
+    },
+    {
+      "path": "document-release/SKILL.md",
+      "blob": "b95873625b9ad49a3ead9bc76378cd3b52beb031",
+      "yaml": "name: document-release\npreamble-tier: 2\nversion: 1.0.0\ndescription: Post-ship documentation update. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - update docs after ship\n  - document what changed\n  - post-ship docs",
+      "expected": {
+        "name": "document-release",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Post-ship documentation update. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "update docs after ship",
+          "document what changed",
+          "post-ship docs"
+        ]
+      }
+    },
+    {
+      "path": "freeze/SKILL.md",
+      "blob": "d6ba29b24f732f11c4b21a7211205e0044f44b36",
+      "yaml": "name: freeze\nversion: 0.1.0\ndescription: Restrict file edits to a specific directory for the session. (gstack)\ntriggers:\n  - freeze edits to directory\n  - lock editing scope\n  - restrict file changes\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\nhooks:\n  PreToolUse:\n    - matcher: \"Edit\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh\"\n          statusMessage: \"Checking freeze boundary...\"\n    - matcher: \"Write\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh\"\n          statusMessage: \"Checking freeze boundary...\"",
+      "expected": {
+        "name": "freeze",
+        "version": "0.1.0",
+        "description": "Restrict file edits to a specific directory for the session. (gstack)",
+        "triggers": [
+          "freeze edits to directory",
+          "lock editing scope",
+          "restrict file changes"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ],
+        "hooks": {
+          "PreToolUse": [
+            {
+              "matcher": "Edit",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh",
+                  "statusMessage": "Checking freeze boundary..."
+                }
+              ]
+            },
+            {
+              "matcher": "Write",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh",
+                  "statusMessage": "Checking freeze boundary..."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "gstack-upgrade/SKILL.md",
+      "blob": "9f0f2f7ea690dfce85c43bb7c6bc52360b050139",
+      "yaml": "name: gstack-upgrade\nversion: 1.1.0\ndescription: Upgrade gstack to the latest version.\ntriggers:\n  - upgrade gstack\n  - update gstack version\n  - get latest gstack\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - AskUserQuestion",
+      "expected": {
+        "name": "gstack-upgrade",
+        "version": "1.1.0",
+        "description": "Upgrade gstack to the latest version.",
+        "triggers": [
+          "upgrade gstack",
+          "update gstack version",
+          "get latest gstack"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "guard/SKILL.md",
+      "blob": "d9ae63de8fc95baed9698e539b14e3fd5e140ce7",
+      "yaml": "name: guard\nversion: 0.1.0\ndescription: \"Full safety mode: destructive command warnings + directory-scoped edits. (gstack)\"\ntriggers:\n  - full safety mode\n  - guard against mistakes\n  - maximum safety\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\nhooks:\n  PreToolUse:\n    - matcher: \"Bash\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/careful/bin/check-careful.sh\"\n          statusMessage: \"Checking for destructive commands...\"\n    - matcher: \"Edit\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh\"\n          statusMessage: \"Checking freeze boundary...\"\n    - matcher: \"Write\"\n      hooks:\n        - type: command\n          command: \"bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh\"\n          statusMessage: \"Checking freeze boundary...\"",
+      "expected": {
+        "name": "guard",
+        "version": "0.1.0",
+        "description": "Full safety mode: destructive command warnings + directory-scoped edits. (gstack)",
+        "triggers": [
+          "full safety mode",
+          "guard against mistakes",
+          "maximum safety"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ],
+        "hooks": {
+          "PreToolUse": [
+            {
+              "matcher": "Bash",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/careful/bin/check-careful.sh",
+                  "statusMessage": "Checking for destructive commands..."
+                }
+              ]
+            },
+            {
+              "matcher": "Edit",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh",
+                  "statusMessage": "Checking freeze boundary..."
+                }
+              ]
+            },
+            {
+              "matcher": "Write",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash $HOME/.claude/skills/gstack/freeze/bin/check-freeze.sh",
+                  "statusMessage": "Checking freeze boundary..."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "health/SKILL.md",
+      "blob": "e68199dec5e42286d4aae01c15bd49904cc65347",
+      "yaml": "name: health\npreamble-tier: 2\nversion: 1.0.0\ndescription: Code quality dashboard. (gstack)\ntriggers:\n  - code health check\n  - quality dashboard\n  - how healthy is codebase\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion",
+      "expected": {
+        "name": "health",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Code quality dashboard. (gstack)",
+        "triggers": [
+          "code health check",
+          "quality dashboard",
+          "how healthy is codebase"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "investigate/SKILL.md",
+      "blob": "5d54b425673aaaff938a56892031cea930d242b5",
+      "yaml": "name: investigate\npreamble-tier: 2\nversion: 1.0.0\ndescription: Systematic debugging with root cause investigation. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - debug this\n  - fix this bug\n  - why is this broken\n  - root cause analysis\n  - investigate this error\nhooks:\n  PreToolUse:\n    - matcher: \"Edit\"\n      hooks:\n        - type: command\n          command: 'bash -c ''S=\"${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] || S=\"${CLAUDE_SKILL_DIR}/../gstack-freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] && bash \"$S\" || exit 0'''\n          statusMessage: \"Checking debug scope boundary...\"\n    - matcher: \"Write\"\n      hooks:\n        - type: command\n          command: 'bash -c ''S=\"${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] || S=\"${CLAUDE_SKILL_DIR}/../gstack-freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] && bash \"$S\" || exit 0'''\n          statusMessage: \"Checking debug scope boundary...\"\ngbrain:\n  schema: 1\n  context_queries:\n    - id: prior-investigations\n      kind: list\n      filter:\n        type: timeline\n        tags_contains: \"repo:{repo_slug}\"\n        content_contains: \"investigate\"\n      sort: updated_at_desc\n      limit: 5\n      render_as: \"## Prior investigations in this repo\"\n    - id: project-learnings\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/learnings.jsonl\"\n      tail: 10\n      render_as: \"## Recent learnings (patterns + pitfalls)\"\n    - id: recent-eureka\n      kind: filesystem\n      glob: \"~/.gstack/analytics/eureka.jsonl\"\n      tail: 5\n      render_as: \"## Recent eureka moments (cross-project)\"",
+      "expected": {
+        "name": "investigate",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Systematic debugging with root cause investigation. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "debug this",
+          "fix this bug",
+          "why is this broken",
+          "root cause analysis",
+          "investigate this error"
+        ],
+        "hooks": {
+          "PreToolUse": [
+            {
+              "matcher": "Edit",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash -c 'S=\"${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] || S=\"${CLAUDE_SKILL_DIR}/../gstack-freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] && bash \"$S\" || exit 0'",
+                  "statusMessage": "Checking debug scope boundary..."
+                }
+              ]
+            },
+            {
+              "matcher": "Write",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "bash -c 'S=\"${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] || S=\"${CLAUDE_SKILL_DIR}/../gstack-freeze/bin/check-freeze.sh\"; [ -x \"$S\" ] && bash \"$S\" || exit 0'",
+                  "statusMessage": "Checking debug scope boundary..."
+                }
+              ]
+            }
+          ]
+        },
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "prior-investigations",
+              "kind": "list",
+              "filter": {
+                "type": "timeline",
+                "tags_contains": "repo:{repo_slug}",
+                "content_contains": "investigate"
+              },
+              "sort": "updated_at_desc",
+              "limit": 5,
+              "render_as": "## Prior investigations in this repo"
+            },
+            {
+              "id": "project-learnings",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/learnings.jsonl",
+              "tail": 10,
+              "render_as": "## Recent learnings (patterns + pitfalls)"
+            },
+            {
+              "id": "recent-eureka",
+              "kind": "filesystem",
+              "glob": "~/.gstack/analytics/eureka.jsonl",
+              "tail": 5,
+              "render_as": "## Recent eureka moments (cross-project)"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "ios-clean/SKILL.md",
+      "blob": "6c466896be08a387a27665b38ea175ec4ba81b70",
+      "yaml": "name: ios-clean\npreamble-tier: 3\nversion: 1.0.0\ndescription: \"Remove the DebugBridge SPM package and all #if DEBUG wiring from an iOS app. (gstack)\"\nallowed-tools:\n  - Bash\n  - Read\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion\ntriggers:\n  - clean the ios debug bridge\n  - remove debugbridge\n  - strip the gstack ios instrumentation",
+      "expected": {
+        "name": "ios-clean",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Remove the DebugBridge SPM package and all #if DEBUG wiring from an iOS app. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "clean the ios debug bridge",
+          "remove debugbridge",
+          "strip the gstack ios instrumentation"
+        ]
+      }
+    },
+    {
+      "path": "ios-design-review/SKILL.md",
+      "blob": "904da7589b56722b5ce4356d2dd1d7b39e65de27",
+      "yaml": "name: ios-design-review\npreamble-tier: 3\nversion: 1.0.0\ndescription: Visual design audit for iOS apps on real hardware. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Glob\n  - Grep\n  - AskUserQuestion\ntriggers:\n  - review the ios design\n  - audit the iphone app visuals\n  - design qa the ios app",
+      "expected": {
+        "name": "ios-design-review",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Visual design audit for iOS apps on real hardware. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "review the ios design",
+          "audit the iphone app visuals",
+          "design qa the ios app"
+        ]
+      }
+    },
+    {
+      "path": "ios-fix/SKILL.md",
+      "blob": "3ddae1ac0cd26f01f0abcd65784e1ca8446e13a6",
+      "yaml": "name: ios-fix\npreamble-tier: 3\nversion: 1.0.0\ndescription: Autonomous iOS bug fixer. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - fix this ios bug\n  - patch the iphone app\n  - auto-fix the ios issue",
+      "expected": {
+        "name": "ios-fix",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Autonomous iOS bug fixer. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "fix this ios bug",
+          "patch the iphone app",
+          "auto-fix the ios issue"
+        ]
+      }
+    },
+    {
+      "path": "ios-qa/SKILL.md",
+      "blob": "24624be5f29a8162fa7dd492a0ff8cabeca89517",
+      "yaml": "name: ios-qa\npreamble-tier: 3\nversion: 1.0.0\ndescription: Live-device iOS QA for SwiftUI apps. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - ios qa\n  - test the iphone app\n  - test my ios app\n  - find bugs on the device\n  - qa the ios app",
+      "expected": {
+        "name": "ios-qa",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Live-device iOS QA for SwiftUI apps. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "ios qa",
+          "test the iphone app",
+          "test my ios app",
+          "find bugs on the device",
+          "qa the ios app"
+        ]
+      }
+    },
+    {
+      "path": "ios-sync/SKILL.md",
+      "blob": "95e0bca0a4e1fa4e4f2408f75de77ef2ce94aeaf",
+      "yaml": "name: ios-sync\npreamble-tier: 3\nversion: 1.0.0\ndescription: Regenerate the iOS debug bridge against the latest upstream gstack templates. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion\ntriggers:\n  - resync the ios debug bridge\n  - regenerate ios accessors\n  - update the gstack ios instrumentation",
+      "expected": {
+        "name": "ios-sync",
+        "preamble-tier": 3,
+        "version": "1.0.0",
+        "description": "Regenerate the iOS debug bridge against the latest upstream gstack templates. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "resync the ios debug bridge",
+          "regenerate ios accessors",
+          "update the gstack ios instrumentation"
+        ]
+      }
+    },
+    {
+      "path": "land-and-deploy/SKILL.md",
+      "blob": "54ebf52c0f484393bdffd77f8c1b60942ffe5daf",
+      "yaml": "name: land-and-deploy\npreamble-tier: 4\nversion: 1.0.0\ndescription: Land and deploy workflow. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - merge and deploy\n  - land the pr\n  - ship to production",
+      "expected": {
+        "name": "land-and-deploy",
+        "preamble-tier": 4,
+        "version": "1.0.0",
+        "description": "Land and deploy workflow. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "merge and deploy",
+          "land the pr",
+          "ship to production"
+        ]
+      }
+    },
+    {
+      "path": "landing-report/SKILL.md",
+      "blob": "8f7e6e210361fbf90f4af9beee9ab1272827ff0c",
+      "yaml": "name: landing-report\nversion: 0.1.0\ndescription: Read-only queue dashboard for workspace-aware ship. (gstack)\ntriggers:\n  - landing report\n  - version queue\n  - ship queue\n  - what version comes next\n  - show open PR versions\nallowed-tools:\n  - Bash\n  - Read",
+      "expected": {
+        "name": "landing-report",
+        "version": "0.1.0",
+        "description": "Read-only queue dashboard for workspace-aware ship. (gstack)",
+        "triggers": [
+          "landing report",
+          "version queue",
+          "ship queue",
+          "what version comes next",
+          "show open PR versions"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read"
+        ]
+      }
+    },
+    {
+      "path": "learn/SKILL.md",
+      "blob": "a0c6ae053b71d327e1f7ad042217b0de17bdf049",
+      "yaml": "name: learn\npreamble-tier: 2\nversion: 1.0.0\ndescription: Manage project learnings.\ntriggers:\n  - show learnings\n  - what have we learned\n  - manage project learnings\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - AskUserQuestion\n  - Glob\n  - Grep",
+      "expected": {
+        "name": "learn",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Manage project learnings.",
+        "triggers": [
+          "show learnings",
+          "what have we learned",
+          "manage project learnings"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "AskUserQuestion",
+          "Glob",
+          "Grep"
+        ]
+      }
+    },
+    {
+      "path": "make-pdf/SKILL.md",
+      "blob": "600eb47ca4fda97ee3f523234fd3334bce94ba2d",
+      "yaml": "name: make-pdf\npreamble-tier: 1\nversion: 1.0.0\ndescription: Turn any markdown file into a publication-quality PDF. (gstack)\ntriggers:\n  - markdown to pdf\n  - generate pdf\n  - make pdf\n  - export pdf\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion",
+      "expected": {
+        "name": "make-pdf",
+        "preamble-tier": 1,
+        "version": "1.0.0",
+        "description": "Turn any markdown file into a publication-quality PDF. (gstack)",
+        "triggers": [
+          "markdown to pdf",
+          "generate pdf",
+          "make pdf",
+          "export pdf"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "office-hours/SKILL.md",
+      "blob": "83161b8ca9c9d52da286dc84cf17f6f73fb03cd2",
+      "yaml": "name: office-hours\npreamble-tier: 3\nversion: 2.0.0\ndescription: YC Office Hours — two modes. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Grep\n  - Glob\n  - Write\n  - Edit\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - brainstorm this\n  - is this worth building\n  - help me think through\n  - office hours\ngbrain:\n  schema: 1\n  context_queries:\n    - id: prior-sessions\n      kind: list\n      filter:\n        type: ceo-plan\n        tags_contains: \"repo:{repo_slug}\"\n      sort: updated_at_desc\n      limit: 5\n      render_as: \"## Prior office-hours sessions in this repo\"\n    - id: builder-profile\n      kind: filesystem\n      glob: \"~/.gstack/builder-profile.jsonl\"\n      tail: 1\n      render_as: \"## Your builder profile snapshot\"\n    - id: design-doc-history\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/*-design-*.md\"\n      sort: mtime_desc\n      limit: 3\n      render_as: \"## Recent design docs for this project\"\n    - id: prior-eureka\n      kind: filesystem\n      glob: \"~/.gstack/analytics/eureka.jsonl\"\n      tail: 5\n      render_as: \"## Recent eureka moments\"",
+      "expected": {
+        "name": "office-hours",
+        "preamble-tier": 3,
+        "version": "2.0.0",
+        "description": "YC Office Hours — two modes. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Grep",
+          "Glob",
+          "Write",
+          "Edit",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "brainstorm this",
+          "is this worth building",
+          "help me think through",
+          "office hours"
+        ],
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "prior-sessions",
+              "kind": "list",
+              "filter": {
+                "type": "ceo-plan",
+                "tags_contains": "repo:{repo_slug}"
+              },
+              "sort": "updated_at_desc",
+              "limit": 5,
+              "render_as": "## Prior office-hours sessions in this repo"
+            },
+            {
+              "id": "builder-profile",
+              "kind": "filesystem",
+              "glob": "~/.gstack/builder-profile.jsonl",
+              "tail": 1,
+              "render_as": "## Your builder profile snapshot"
+            },
+            {
+              "id": "design-doc-history",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/*-design-*.md",
+              "sort": "mtime_desc",
+              "limit": 3,
+              "render_as": "## Recent design docs for this project"
+            },
+            {
+              "id": "prior-eureka",
+              "kind": "filesystem",
+              "glob": "~/.gstack/analytics/eureka.jsonl",
+              "tail": 5,
+              "render_as": "## Recent eureka moments"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "open-gstack-browser/SKILL.md",
+      "blob": "28fb1ddb27246c92342c5a18c5777b87d8548f17",
+      "yaml": "name: open-gstack-browser\nversion: 0.2.0\ndescription: Launch GStack Browser — AI-controlled Chromium with the sidebar extension baked in.\ntriggers:\n  - open gstack browser\n  - launch chromium\n  - show me the browser\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\n",
+      "expected": {
+        "name": "open-gstack-browser",
+        "version": "0.2.0",
+        "description": "Launch GStack Browser — AI-controlled Chromium with the sidebar extension baked in.",
+        "triggers": [
+          "open gstack browser",
+          "launch chromium",
+          "show me the browser"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "openclaw/skills/gstack-openclaw-ceo-review/SKILL.md",
+      "blob": "c0b191cfb5a5d0e7ecd7318df70a2cc0328a1338",
+      "yaml": "name: gstack-openclaw-ceo-review\ndescription: Use when asked to review a plan, challenge a proposal, run a CEO review, poke holes in an approach, think bigger about scope, or decide whether to expand or reduce the plan.",
+      "expected": {
+        "name": "gstack-openclaw-ceo-review",
+        "description": "Use when asked to review a plan, challenge a proposal, run a CEO review, poke holes in an approach, think bigger about scope, or decide whether to expand or reduce the plan."
+      }
+    },
+    {
+      "path": "openclaw/skills/gstack-openclaw-investigate/SKILL.md",
+      "blob": "829476f9b3ebc73f0fa7e00e0ec3d7a2e2948264",
+      "yaml": "name: gstack-openclaw-investigate\ndescription: Use when asked to debug, fix a bug, investigate an error, or do root cause analysis, and when users report errors, stack traces, unexpected behavior, or say something stopped working.",
+      "expected": {
+        "name": "gstack-openclaw-investigate",
+        "description": "Use when asked to debug, fix a bug, investigate an error, or do root cause analysis, and when users report errors, stack traces, unexpected behavior, or say something stopped working."
+      }
+    },
+    {
+      "path": "openclaw/skills/gstack-openclaw-office-hours/SKILL.md",
+      "blob": "9d52b3134e65a40454d3ee4172910e32cb4aaef0",
+      "yaml": "name: gstack-openclaw-office-hours\ndescription: Use when asked to brainstorm, evaluate whether an idea is worth building, run office hours, or think through a new product idea or design direction before any code is written.",
+      "expected": {
+        "name": "gstack-openclaw-office-hours",
+        "description": "Use when asked to brainstorm, evaluate whether an idea is worth building, run office hours, or think through a new product idea or design direction before any code is written."
+      }
+    },
+    {
+      "path": "openclaw/skills/gstack-openclaw-retro/SKILL.md",
+      "blob": "eefc981810f10a1e7668ce1ed3b74b4bcf8ddef1",
+      "yaml": "name: gstack-openclaw-retro\ndescription: \"Weekly engineering retrospective. Analyzes commit history, work patterns, and code quality metrics with persistent history and trend tracking. Team-aware with per-person contributions, praise, and growth areas. Use when asked for weekly retro, what shipped this week, or engineering retrospective.\"",
+      "expected": {
+        "name": "gstack-openclaw-retro",
+        "description": "Weekly engineering retrospective. Analyzes commit history, work patterns, and code quality metrics with persistent history and trend tracking. Team-aware with per-person contributions, praise, and growth areas. Use when asked for weekly retro, what shipped this week, or engineering retrospective."
+      }
+    },
+    {
+      "path": "pair-agent/SKILL.md",
+      "blob": "eed9d171afc9be3a58d306869d3408ae894618b0",
+      "yaml": "name: pair-agent\nversion: 0.1.0\ndescription: Pair a remote AI agent with your browser. (gstack)\ntriggers:\n  - pair with agent\n  - connect remote agent\n  - share my browser\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\n",
+      "expected": {
+        "name": "pair-agent",
+        "version": "0.1.0",
+        "description": "Pair a remote AI agent with your browser. (gstack)",
+        "triggers": [
+          "pair with agent",
+          "connect remote agent",
+          "share my browser"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "plan-ceo-review/SKILL.md",
+      "blob": "3d3208bee688891e6b45f33088336f0e4566fadc",
+      "yaml": "name: plan-ceo-review\npreamble-tier: 3\ninteractive: true\nversion: 1.0.0\ndescription: CEO/founder-mode plan review. (gstack)\nbenefits-from: [office-hours]\nallowed-tools:\n  - Read\n  - Grep\n  - Glob\n  - Bash\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - think bigger\n  - expand scope\n  - strategy review\n  - rethink this plan\ngbrain:\n  schema: 1\n  context_queries:\n    - id: prior-ceo-plans\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/ceo-plans/*.md\"\n      sort: mtime_desc\n      limit: 5\n      render_as: \"## Prior CEO plans for this project\"\n    - id: recent-design-docs\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/*-design-*.md\"\n      sort: mtime_desc\n      limit: 3\n      render_as: \"## Recent design docs for this project\"\n    - id: recent-reviews\n      kind: list\n      filter:\n        type: timeline\n        tags_contains: \"repo:{repo_slug}\"\n        content_contains: \"plan-ceo-review\"\n      sort: updated_at_desc\n      limit: 5\n      render_as: \"## Recent CEO review activity\"",
+      "expected": {
+        "name": "plan-ceo-review",
+        "preamble-tier": 3,
+        "interactive": true,
+        "version": "1.0.0",
+        "description": "CEO/founder-mode plan review. (gstack)",
+        "benefits-from": [
+          "office-hours"
+        ],
+        "allowed-tools": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Bash",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "think bigger",
+          "expand scope",
+          "strategy review",
+          "rethink this plan"
+        ],
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "prior-ceo-plans",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/ceo-plans/*.md",
+              "sort": "mtime_desc",
+              "limit": 5,
+              "render_as": "## Prior CEO plans for this project"
+            },
+            {
+              "id": "recent-design-docs",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/*-design-*.md",
+              "sort": "mtime_desc",
+              "limit": 3,
+              "render_as": "## Recent design docs for this project"
+            },
+            {
+              "id": "recent-reviews",
+              "kind": "list",
+              "filter": {
+                "type": "timeline",
+                "tags_contains": "repo:{repo_slug}",
+                "content_contains": "plan-ceo-review"
+              },
+              "sort": "updated_at_desc",
+              "limit": 5,
+              "render_as": "## Recent CEO review activity"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "plan-design-review/SKILL.md",
+      "blob": "e81f7f12af2836add118df833ebc24daac266ccb",
+      "yaml": "name: plan-design-review\npreamble-tier: 3\ninteractive: true\nversion: 2.0.0\ndescription: Designer's eye plan review — interactive, like CEO and Eng review. (gstack)\nallowed-tools:\n  - Read\n  - Edit\n  - Grep\n  - Glob\n  - Bash\n  - AskUserQuestion\ntriggers:\n  - design plan review\n  - review ux plan\n  - check design decisions",
+      "expected": {
+        "name": "plan-design-review",
+        "preamble-tier": 3,
+        "interactive": true,
+        "version": "2.0.0",
+        "description": "Designer's eye plan review — interactive, like CEO and Eng review. (gstack)",
+        "allowed-tools": [
+          "Read",
+          "Edit",
+          "Grep",
+          "Glob",
+          "Bash",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "design plan review",
+          "review ux plan",
+          "check design decisions"
+        ]
+      }
+    },
+    {
+      "path": "plan-devex-review/SKILL.md",
+      "blob": "20a32da8bb2576fa8b7b3edef4acb776e112ebb1",
+      "yaml": "name: plan-devex-review\npreamble-tier: 3\ninteractive: true\nversion: 2.0.0\ndescription: Interactive developer experience plan review. (gstack)\nbenefits-from: [office-hours]\nallowed-tools:\n  - Read\n  - Edit\n  - Grep\n  - Glob\n  - Bash\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - developer experience review\n  - dx plan review\n  - check developer onboarding",
+      "expected": {
+        "name": "plan-devex-review",
+        "preamble-tier": 3,
+        "interactive": true,
+        "version": "2.0.0",
+        "description": "Interactive developer experience plan review. (gstack)",
+        "benefits-from": [
+          "office-hours"
+        ],
+        "allowed-tools": [
+          "Read",
+          "Edit",
+          "Grep",
+          "Glob",
+          "Bash",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "developer experience review",
+          "dx plan review",
+          "check developer onboarding"
+        ]
+      }
+    },
+    {
+      "path": "plan-eng-review/SKILL.md",
+      "blob": "5557a33fa0c0329deadf075843c3d2335ab71570",
+      "yaml": "name: plan-eng-review\npreamble-tier: 3\ninteractive: true\nversion: 1.0.0\ndescription: Eng manager-mode plan review. (gstack)\nbenefits-from: [office-hours]\nallowed-tools:\n  - Read\n  - Write\n  - Grep\n  - Glob\n  - AskUserQuestion\n  - Bash\n  - WebSearch\ntriggers:\n  - review architecture\n  - eng plan review\n  - check the implementation plan",
+      "expected": {
+        "name": "plan-eng-review",
+        "preamble-tier": 3,
+        "interactive": true,
+        "version": "1.0.0",
+        "description": "Eng manager-mode plan review. (gstack)",
+        "benefits-from": [
+          "office-hours"
+        ],
+        "allowed-tools": [
+          "Read",
+          "Write",
+          "Grep",
+          "Glob",
+          "AskUserQuestion",
+          "Bash",
+          "WebSearch"
+        ],
+        "triggers": [
+          "review architecture",
+          "eng plan review",
+          "check the implementation plan"
+        ]
+      }
+    },
+    {
+      "path": "plan-tune/SKILL.md",
+      "blob": "f49b66fac3b2235e7052621284564ae1f211d320",
+      "yaml": "name: plan-tune\npreamble-tier: 2\nversion: 1.0.0\ndescription: \"Self-tuning question sensitivity + developer psychographic for gstack (v1: observational). (gstack)\"\ntriggers:\n  - tune questions\n  - stop asking me that\n  - too many questions\n  - show my profile\n  - show my vibe\n  - developer profile\n  - turn off question tuning\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - AskUserQuestion\n  - Glob\n  - Grep",
+      "expected": {
+        "name": "plan-tune",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Self-tuning question sensitivity + developer psychographic for gstack (v1: observational). (gstack)",
+        "triggers": [
+          "tune questions",
+          "stop asking me that",
+          "too many questions",
+          "show my profile",
+          "show my vibe",
+          "developer profile",
+          "turn off question tuning"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "AskUserQuestion",
+          "Glob",
+          "Grep"
+        ]
+      }
+    },
+    {
+      "path": "qa-only/SKILL.md",
+      "blob": "801a935c0684e56536a368879f1799af70b4f485",
+      "yaml": "name: qa-only\npreamble-tier: 4\nversion: 1.0.0\ndescription: Report-only QA testing. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - qa report only\n  - just report bugs\n  - test but dont fix",
+      "expected": {
+        "name": "qa-only",
+        "preamble-tier": 4,
+        "version": "1.0.0",
+        "description": "Report-only QA testing. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "qa report only",
+          "just report bugs",
+          "test but dont fix"
+        ]
+      }
+    },
+    {
+      "path": "qa/SKILL.md",
+      "blob": "c1ac10253f51256f1059cfb46377f8bf8c3e8a0b",
+      "yaml": "name: qa\npreamble-tier: 4\nversion: 2.0.0\ndescription: Systematically QA test a web application and fix bugs found. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - qa test this\n  - find bugs on site\n  - test the site",
+      "expected": {
+        "name": "qa",
+        "preamble-tier": 4,
+        "version": "2.0.0",
+        "description": "Systematically QA test a web application and fix bugs found. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "qa test this",
+          "find bugs on site",
+          "test the site"
+        ]
+      }
+    },
+    {
+      "path": "retro/SKILL.md",
+      "blob": "3fbc44726100c56b0a6a543a764e411d0547f3af",
+      "yaml": "name: retro\npreamble-tier: 2\nversion: 2.0.0\ndescription: Weekly engineering retrospective. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - weekly retro\n  - what did we ship\n  - engineering retrospective\ngbrain:\n  schema: 1\n  context_queries:\n    - id: prior-retros\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/retros/*.md\"\n      sort: mtime_desc\n      limit: 5\n      render_as: \"## Prior retros for this project\"\n    - id: recent-timeline\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/timeline.jsonl\"\n      tail: 30\n      render_as: \"## Recent timeline events\"\n    - id: recent-learnings\n      kind: filesystem\n      glob: \"~/.gstack/projects/{repo_slug}/learnings.jsonl\"\n      tail: 10\n      render_as: \"## Recent learnings\"",
+      "expected": {
+        "name": "retro",
+        "preamble-tier": 2,
+        "version": "2.0.0",
+        "description": "Weekly engineering retrospective. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "weekly retro",
+          "what did we ship",
+          "engineering retrospective"
+        ],
+        "gbrain": {
+          "schema": 1,
+          "context_queries": [
+            {
+              "id": "prior-retros",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/retros/*.md",
+              "sort": "mtime_desc",
+              "limit": 5,
+              "render_as": "## Prior retros for this project"
+            },
+            {
+              "id": "recent-timeline",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/timeline.jsonl",
+              "tail": 30,
+              "render_as": "## Recent timeline events"
+            },
+            {
+              "id": "recent-learnings",
+              "kind": "filesystem",
+              "glob": "~/.gstack/projects/{repo_slug}/learnings.jsonl",
+              "tail": 10,
+              "render_as": "## Recent learnings"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "review/SKILL.md",
+      "blob": "5f26e2e426e8cc8feaedb2e0f8c5daa8fc5c205d",
+      "yaml": "name: review\npreamble-tier: 4\nversion: 1.0.0\ndescription: Pre-landing PR review. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Edit\n  - Write\n  - Grep\n  - Glob\n  - Agent\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - review this pr\n  - code review\n  - check my diff\n  - pre-landing review",
+      "expected": {
+        "name": "review",
+        "preamble-tier": 4,
+        "version": "1.0.0",
+        "description": "Pre-landing PR review. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Edit",
+          "Write",
+          "Grep",
+          "Glob",
+          "Agent",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "review this pr",
+          "code review",
+          "check my diff",
+          "pre-landing review"
+        ]
+      }
+    },
+    {
+      "path": "scrape/SKILL.md",
+      "blob": "dc965ec5f79ae974fa247c17d5f45072f563bfb5",
+      "yaml": "name: scrape\nversion: 1.0.0\ndescription: Pull data from a web page. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion\ntriggers:\n  - scrape this page\n  - get data from\n  - pull from\n  - extract from\n  - what is on",
+      "expected": {
+        "name": "scrape",
+        "version": "1.0.0",
+        "description": "Pull data from a web page. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "scrape this page",
+          "get data from",
+          "pull from",
+          "extract from",
+          "what is on"
+        ]
+      }
+    },
+    {
+      "path": "setup-browser-cookies/SKILL.md",
+      "blob": "77df27da2cdb3aa2a09c83f7d335f386fb998a75",
+      "yaml": "name: setup-browser-cookies\npreamble-tier: 1\nversion: 1.0.0\ndescription: Import cookies from your real Chromium browser into the headless browse session. (gstack)\ntriggers:\n  - import browser cookies\n  - login to test site\n  - setup authenticated session\nallowed-tools:\n  - Bash\n  - Read\n  - AskUserQuestion",
+      "expected": {
+        "name": "setup-browser-cookies",
+        "preamble-tier": 1,
+        "version": "1.0.0",
+        "description": "Import cookies from your real Chromium browser into the headless browse session. (gstack)",
+        "triggers": [
+          "import browser cookies",
+          "login to test site",
+          "setup authenticated session"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "setup-deploy/SKILL.md",
+      "blob": "3465dc564b57990a42cb4ccd45a2d2b28e027703",
+      "yaml": "name: setup-deploy\npreamble-tier: 2\nversion: 1.0.0\ndescription: Configure deployment settings for /land-and-deploy.\ntriggers:\n  - configure deploy\n  - setup deployment\n  - set deploy platform\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion",
+      "expected": {
+        "name": "setup-deploy",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Configure deployment settings for /land-and-deploy.",
+        "triggers": [
+          "configure deploy",
+          "setup deployment",
+          "set deploy platform"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "setup-gbrain/SKILL.md",
+      "blob": "a3892f1c905a0e5a2e73995f8759e383e8aeb4df",
+      "yaml": "name: setup-gbrain\npreamble-tier: 2\nversion: 1.0.0\ndescription: \"Set up gbrain for this coding agent: install the CLI, initialize a local PGLite or Supabase brain, register MCP, capture per-remote trust policy. (gstack)\"\ntriggers:\n  - setup gbrain\n  - install gbrain\n  - connect gbrain\n  - start gbrain\n  - configure gbrain\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion",
+      "expected": {
+        "name": "setup-gbrain",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Set up gbrain for this coding agent: install the CLI, initialize a local PGLite or Supabase brain, register MCP, capture per-remote trust policy. (gstack)",
+        "triggers": [
+          "setup gbrain",
+          "install gbrain",
+          "connect gbrain",
+          "start gbrain",
+          "configure gbrain"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "ship/SKILL.md",
+      "blob": "eadffaa8f6604f4748726319b7dc18627804196c",
+      "yaml": "name: ship\npreamble-tier: 4\nversion: 1.0.0\ndescription: \"Ship workflow: detect + merge base branch, run tests, review diff, bump VERSION, update CHANGELOG, commit, push, create PR. (gstack)\"\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - Agent\n  - AskUserQuestion\n  - WebSearch\ntriggers:\n  - ship it\n  - create a pr\n  - push to main\n  - deploy this",
+      "expected": {
+        "name": "ship",
+        "preamble-tier": 4,
+        "version": "1.0.0",
+        "description": "Ship workflow: detect + merge base branch, run tests, review diff, bump VERSION, update CHANGELOG, commit, push, create PR. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Grep",
+          "Glob",
+          "Agent",
+          "AskUserQuestion",
+          "WebSearch"
+        ],
+        "triggers": [
+          "ship it",
+          "create a pr",
+          "push to main",
+          "deploy this"
+        ]
+      }
+    },
+    {
+      "path": "skillify/SKILL.md",
+      "blob": "7cb434d0cac79929f87b98712824d985636e66af",
+      "yaml": "name: skillify\nversion: 1.0.0\ndescription: Codify the most recent successful /scrape flow into a permanent browser-skill on disk. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - AskUserQuestion\ntriggers:\n  - skillify\n  - codify this scrape\n  - save this scrape\n  - make this permanent",
+      "expected": {
+        "name": "skillify",
+        "version": "1.0.0",
+        "description": "Codify the most recent successful /scrape flow into a permanent browser-skill on disk. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "skillify",
+          "codify this scrape",
+          "save this scrape",
+          "make this permanent"
+        ]
+      }
+    },
+    {
+      "path": "spec/SKILL.md",
+      "blob": "0894e98d185076ecd391287309eed31874136828",
+      "yaml": "name: spec\nversion: 0.1.0\ndescription: Turn vague intent into a precise, executable spec in five phases. (gstack)\nallowed-tools:\n  - Bash\n  - Read\n  - Grep\n  - Glob\n  - AskUserQuestion\ntriggers:\n  - spec this out\n  - file an issue\n  - write up a ticket\n  - turn this into an issue\n  - make this a github issue\n  - turn this into a backlog item",
+      "expected": {
+        "name": "spec",
+        "version": "0.1.0",
+        "description": "Turn vague intent into a precise, executable spec in five phases. (gstack)",
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Grep",
+          "Glob",
+          "AskUserQuestion"
+        ],
+        "triggers": [
+          "spec this out",
+          "file an issue",
+          "write up a ticket",
+          "turn this into an issue",
+          "make this a github issue",
+          "turn this into a backlog item"
+        ]
+      }
+    },
+    {
+      "path": "sync-gbrain/SKILL.md",
+      "blob": "02055bb6f81845e7911cbea817b919dca7fd5ed7",
+      "yaml": "name: sync-gbrain\npreamble-tier: 2\nversion: 1.0.0\ndescription: Keep gbrain current with this repo's code and refresh agent search guidance in CLAUDE.md. Wraps the gstack-gbrain-sync orchestrator with state (gstack)\ntriggers:\n  - sync gbrain\n  - refresh gbrain\n  - reindex repo\n  - update gbrain\nallowed-tools:\n  - Bash\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - AskUserQuestion",
+      "expected": {
+        "name": "sync-gbrain",
+        "preamble-tier": 2,
+        "version": "1.0.0",
+        "description": "Keep gbrain current with this repo's code and refresh agent search guidance in CLAUDE.md. Wraps the gstack-gbrain-sync orchestrator with state (gstack)",
+        "triggers": [
+          "sync gbrain",
+          "refresh gbrain",
+          "reindex repo",
+          "update gbrain"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "AskUserQuestion"
+        ]
+      }
+    },
+    {
+      "path": "unfreeze/SKILL.md",
+      "blob": "a07f1cf5f7a8e1403714b0b4bbf8c2c1e6bc54a1",
+      "yaml": "name: unfreeze\nversion: 0.1.0\ndescription: Clear the freeze boundary set by /freeze, allowing edits to all directories again. (gstack)\ntriggers:\n  - unfreeze edits\n  - unlock all directories\n  - remove edit restrictions\nallowed-tools:\n  - Bash\n  - Read",
+      "expected": {
+        "name": "unfreeze",
+        "version": "0.1.0",
+        "description": "Clear the freeze boundary set by /freeze, allowing edits to all directories again. (gstack)",
+        "triggers": [
+          "unfreeze edits",
+          "unlock all directories",
+          "remove edit restrictions"
+        ],
+        "allowed-tools": [
+          "Bash",
+          "Read"
+        ]
+      }
+    }
+  ]
+}

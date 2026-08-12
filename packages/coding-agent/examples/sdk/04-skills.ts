@@ -9,12 +9,14 @@ import {
 	createAgentSession,
 	createSyntheticSourceInfo,
 	DefaultResourceLoader,
+	extractSkillListingBlock,
 	getAgentDir,
 	SessionManager,
 	type Skill,
 } from "@earendil-works/pi-coding-agent";
 
-// Or define custom skills inline
+// Or define custom skills inline. `frontmatter` is optional and folds into the listing
+// (when_to_use, argument-hint, etc.) and into the skill-set seam extensions read.
 const customSkill: Skill = {
 	name: "my-skill",
 	description: "Custom project instructions",
@@ -22,6 +24,7 @@ const customSkill: Skill = {
 	baseDir: "/virtual",
 	sourceInfo: createSyntheticSourceInfo("/virtual/SKILL.md", { source: "sdk" }),
 	disableModelInvocation: false,
+	frontmatter: { when_to_use: "Use when scaffolding project-specific instructions." },
 };
 
 const loader = new DefaultResourceLoader({
@@ -52,4 +55,11 @@ const { session } = await createAgentSession({
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Session created with filtered skills");
+
+// Round-trip the emitted listing block back out of the system prompt.
+const listingBlock = extractSkillListingBlock(session.systemPrompt);
+if (listingBlock) {
+	console.log("Skill listing block:", listingBlock);
+}
+
 session.dispose();

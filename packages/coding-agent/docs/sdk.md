@@ -664,9 +664,12 @@ eventBus.on("my-extension:status", (data) => console.log(data));
 
 ### Skills
 
+`Skill` (aliased as `SkillInput`) is the backward-compatible construction shape accepted from the SDK and `skillsOverride`. `LoadedSkill` is the complete normalized shape returned by `getSkills()`, adding `id` (canonical path), `listingName`, the full parsed `frontmatter`, and resolved `argumentHint`/`userInvocable`/`commandNameValid`. See [docs/skills.md](skills.md#frontmatter) for the full frontmatter field reference.
+
 ```typescript
 import {
   createAgentSession,
+  createSyntheticSourceInfo,
   DefaultResourceLoader,
   type Skill,
 } from "@earendil-works/pi-coding-agent";
@@ -676,7 +679,10 @@ const customSkill: Skill = {
   description: "Custom instructions",
   filePath: "/path/to/SKILL.md",
   baseDir: "/path/to",
-  source: "custom",
+  sourceInfo: createSyntheticSourceInfo("/path/to/SKILL.md", { source: "sdk" }),
+  disableModelInvocation: false,
+  // Optional: richer metadata folds into the listing and the skill-set seam below.
+  frontmatter: { when_to_use: "Use when doing X.", "argument-hint": "[path]" },
 };
 
 const loader = new DefaultResourceLoader({
@@ -691,6 +697,44 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 > See [examples/sdk/04-skills.ts](../examples/sdk/04-skills.ts)
+
+**Listing helper:** `extractSkillListingBlock(systemPrompt)` returns the first complete `<available_skills version="2">…</available_skills>` block from a system prompt string, byte-exact.
+
+```typescript
+import { extractSkillListingBlock } from "@earendil-works/pi-coding-agent";
+
+const listing = extractSkillListingBlock(session.systemPrompt);
+```
+
+**Skill-set seam:** there is no `getSkills()` extension API; extensions and outside consumers read the effective skill set from the shared event bus via `skills:changed` (emitted on load/`/reload`) and the `skills:query`/`skills:query:reply:<requestId>` request/reply pair. Pass the same `eventBus` to `DefaultResourceLoader` that your extensions/consumers use (see [Event Bus](#extensions) under Extensions above).
+
+```typescript
+import {
+  createEventBus,
+  DefaultResourceLoader,
+  SKILLS_CHANGED_CHANNEL,
+  SKILLS_QUERY_CHANNEL,
+  skillsQueryReplyChannel,
+  type SkillSetSnapshot,
+} from "@earendil-works/pi-coding-agent";
+
+const eventBus = createEventBus();
+const loader = new DefaultResourceLoader({ eventBus });
+await loader.reload();
+
+eventBus.on(SKILLS_CHANGED_CHANNEL, (snapshot: SkillSetSnapshot) => {
+  console.log(`revision ${snapshot.revision}: ${snapshot.skills.length} skills, removed ${snapshot.removed.length}`);
+});
+
+const requestId = crypto.randomUUID();
+eventBus.on(skillsQueryReplyChannel(requestId), (reply) => console.log(reply));
+eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId });
+```
+
+Each `SkillSetSnapshotEntry` carries `id` (the canonical, symlink-resolved `SKILL.md` path — the discovery dedupe key), `name`, `listingName`, `baseDir`, `source`, and the full parsed `frontmatter` (including preserved unknown fields). `source` is always the complete detached object `{path, source, scope, origin, baseDir?}` — never the bare source string — with `baseDir` omitted (not `null`) when absent. `revision` is a monotonic counter per event bus; ignore stale revisions. The snapshot before any publication is the defined `{revision: 0, skills: [], removed: []}`. One controller/listener exists per shared `EventBus`; when multiple loaders publish to the same bus, the latest publication is authoritative, and published payloads are deep-frozen so subscriber mutation can never affect other consumers or loader state.
+
+`canonicalSkillSetJson(snapshot)` (also exported) is the canonical serialization used for every byte comparison of this contract: object keys sorted lexicographically (recursively), absent optional fields omitted, `JSON.stringify` with 2-space indentation, and a single trailing LF. The committed conformance fixture at `test/suite/fixtures/skills-contract/skill-set-snapshot.json` is this canonical serialization of a fixed input; companion repositories (pi-subagents, pi-claude-bridge) copy the public wire types, the `canonicalSkillSetJson` rule, and that fixture byte-for-byte rather than redefining them.
+
 
 ### Context Files
 
@@ -1202,7 +1246,16 @@ type ExtensionFactory
 type InlineExtension
 type ExtensionAPI
 type ToolDefinition
-type Skill
+type Skill // alias: SkillInput
+type LoadedSkill
+type SkillFrontmatter
+extractSkillListingBlock
+formatSkillsForPrompt
+SKILL_LISTING_VERSION, SKILL_LISTING_START_DELIMITER, SKILL_LISTING_END_DELIMITER
+getSkillSetController
+canonicalSkillSetJson
+SKILLS_CHANGED_CHANNEL, SKILLS_QUERY_CHANNEL, skillsQueryReplyChannel
+type SkillSetController, type SkillSetSnapshot, type SkillSetSnapshotEntry, type SkillSetSnapshotSource, type RpcReply
 type PromptTemplate
 type Tool
 ```

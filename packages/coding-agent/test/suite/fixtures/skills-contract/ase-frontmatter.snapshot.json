@@ -1,0 +1,825 @@
+{
+  "repository": "https://github.com/pfurini/ase.git",
+  "revision": "bf86d97f90d3c2cddca8428b15de8bccd971cb0a",
+  "tree": "57c2f6b2a9a8ff18663d6ba8f485329a781e69ec",
+  "skills": [
+    {
+      "path": ".claude/skills/hello/SKILL.md",
+      "blob": "19e15c9fa9b5d7450dc9640eaad48bcddd04028c",
+      "yaml": "name: hello\nargument-hint: \"[--help|-h] [--lang|-l=(en|de|fr|it)] [<subject>]\"\ndescription: >\n    Show a nice greeting message with a timestamp.\n    Use this, when the user wants to greet or say hello,\n    optionally to a certain subject <subject> and in a certain language <language>.\nuser-invocable: true\ndisable-model-invocation: false\nallowed-tools:\n    - \"Bash(date)\"\n    - \"Bash(ase meta *)\"",
+      "expected": {
+        "name": "hello",
+        "argument-hint": "[--help|-h] [--lang|-l=(en|de|fr|it)] [<subject>]",
+        "description": "Show a nice greeting message with a timestamp. Use this, when the user wants to greet or say hello, optionally to a certain subject <subject> and in a certain language <language>.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "allowed-tools": [
+          "Bash(date)",
+          "Bash(ase meta *)"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-arch-analyze/SKILL.md",
+      "blob": "70173f46e9c4de0f60d61854b70d1634fbcb256e",
+      "yaml": "name: ase-arch-analyze\nargument-hint: \"[--help|-h] <source-reference>\"\ndescription: Review software architecture, including package cohesion and inter-package coupling\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(wc *)\"\n    - \"Bash(ls *)\"\n    - \"Bash(tree *)\"\n    - \"Bash(file *)\"\n    - \"Bash(du *)\"\n    - \"Bash(stat *)\"\n    - \"Bash(grep *)\"\n    - \"Bash(awk *)\"\n    - \"Bash(head *)\"\n    - \"Bash(tail *)\"\n    - \"Bash(sort *)\"\n    - \"Bash(uniq *)\"\n    - \"Bash(cat *)\"\n    - \"Bash(cut *)\"\n    - \"Bash(tr *)\"\n    - \"Bash(nl *)\"\n    - \"Bash(column *)\"\n    - \"Bash(diff *)\"\n    - \"Bash(cmp *)\"\n    - \"Bash(jq *)\"\n    - \"Bash(cloc *)\"\n    - \"Bash(tokei *)\"\n    - \"Bash(scc *)\"\n    - \"Bash(basename *)\"\n    - \"Bash(dirname *)\"\n    - \"Bash(realpath *)\"\n    - \"Bash(readlink *)\"\n    - \"Bash(pwd *)\"\n    - \"Bash(which *)\"\n    - \"Bash(whereis *)\"\n    - \"Bash(type *)\"\n    - \"Bash(namei *)\"\n    - \"Bash(git log *)\"\n    - \"Bash(git show *)\"\n    - \"Bash(git diff *)\"\n    - \"Bash(git blame *)\"\n    - \"Bash(git ls-files *)\"\n    - \"Bash(git ls-tree *)\"\n    - \"Bash(git grep *)\"\n    - \"Bash(git status *)\"\n    - \"Bash(git rev-list *)\"\n    - \"Bash(git rev-parse *)\"\n    - \"Bash(git for-each-ref *)\"\n    - \"Bash(git reflog *)\"\n    - \"Bash(git cat-file *)\"\n    - \"Bash(git config --get *)\"\n    - \"Bash(git config --list *)\"\n    - \"Bash(git remote *)\"\n    - \"Bash(git branch *)\"\n    - \"Bash(git tag --list *)\"\n    - \"Bash(git describe *)\"\n    - \"Bash(git shortlog *)\"\n    - \"Bash(find * -name *)\"\n    - \"Bash(find * -type *)\"\n    - \"Bash(find * -path *)\"\n    - \"Bash(find * -maxdepth *)\"\n    - \"Bash(find * -mindepth *)\"\n    - \"Bash(find * -size *)\"\n    - \"Bash(find * -mtime *)\"\n    - \"Bash(find * -newer *)\"\n    - \"Bash(git diff * | awk *)\"\n    - \"Bash(git diff * | grep *)\"\n    - \"Bash(git diff * | head *)\"\n    - \"Bash(git diff * | tail *)\"\n    - \"Bash(git diff * | wc *)\"\n    - \"Bash(git log * | head *)\"\n    - \"Bash(git log * | grep *)\"\n    - \"Bash(git log * | wc *)\"\n    - \"Bash(git show * | head *)\"\n    - \"Bash(git show * | grep *)\"\n    - \"Bash(git grep * | head *)\"\n    - \"Bash(git grep * | wc *)\"\n    - \"Bash(git ls-files * | grep *)\"\n    - \"Bash(git ls-files * | head *)\"\n    - \"Bash(git ls-files * | wc *)\"\n    - \"Bash(grep * | head *)\"\n    - \"Bash(grep * | sort *)\"\n    - \"Bash(grep * | wc *)\"\n    - \"Bash(grep * | sort * | uniq *)\"\n    - \"Bash(cat * | grep *)\"\n    - \"Bash(cat * | awk *)\"\n    - \"Bash(cat * | head *)\"\n    - \"Bash(cat * | wc *)\"\n    - \"Bash(find * | head *)\"\n    - \"Bash(find * | wc *)\"\n    - \"Bash(awk * | head *)\"\n    - \"Bash(sort * | uniq *)\"\n    - \"Bash(sort * | head *)\"\n    - \"Agent\"\n    - \"Skill\"",
+      "expected": {
+        "name": "ase-arch-analyze",
+        "argument-hint": "[--help|-h] <source-reference>",
+        "description": "Review software architecture, including package cohesion and inter-package coupling",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(wc *)",
+          "Bash(ls *)",
+          "Bash(tree *)",
+          "Bash(file *)",
+          "Bash(du *)",
+          "Bash(stat *)",
+          "Bash(grep *)",
+          "Bash(awk *)",
+          "Bash(head *)",
+          "Bash(tail *)",
+          "Bash(sort *)",
+          "Bash(uniq *)",
+          "Bash(cat *)",
+          "Bash(cut *)",
+          "Bash(tr *)",
+          "Bash(nl *)",
+          "Bash(column *)",
+          "Bash(diff *)",
+          "Bash(cmp *)",
+          "Bash(jq *)",
+          "Bash(cloc *)",
+          "Bash(tokei *)",
+          "Bash(scc *)",
+          "Bash(basename *)",
+          "Bash(dirname *)",
+          "Bash(realpath *)",
+          "Bash(readlink *)",
+          "Bash(pwd *)",
+          "Bash(which *)",
+          "Bash(whereis *)",
+          "Bash(type *)",
+          "Bash(namei *)",
+          "Bash(git log *)",
+          "Bash(git show *)",
+          "Bash(git diff *)",
+          "Bash(git blame *)",
+          "Bash(git ls-files *)",
+          "Bash(git ls-tree *)",
+          "Bash(git grep *)",
+          "Bash(git status *)",
+          "Bash(git rev-list *)",
+          "Bash(git rev-parse *)",
+          "Bash(git for-each-ref *)",
+          "Bash(git reflog *)",
+          "Bash(git cat-file *)",
+          "Bash(git config --get *)",
+          "Bash(git config --list *)",
+          "Bash(git remote *)",
+          "Bash(git branch *)",
+          "Bash(git tag --list *)",
+          "Bash(git describe *)",
+          "Bash(git shortlog *)",
+          "Bash(find * -name *)",
+          "Bash(find * -type *)",
+          "Bash(find * -path *)",
+          "Bash(find * -maxdepth *)",
+          "Bash(find * -mindepth *)",
+          "Bash(find * -size *)",
+          "Bash(find * -mtime *)",
+          "Bash(find * -newer *)",
+          "Bash(git diff * | awk *)",
+          "Bash(git diff * | grep *)",
+          "Bash(git diff * | head *)",
+          "Bash(git diff * | tail *)",
+          "Bash(git diff * | wc *)",
+          "Bash(git log * | head *)",
+          "Bash(git log * | grep *)",
+          "Bash(git log * | wc *)",
+          "Bash(git show * | head *)",
+          "Bash(git show * | grep *)",
+          "Bash(git grep * | head *)",
+          "Bash(git grep * | wc *)",
+          "Bash(git ls-files * | grep *)",
+          "Bash(git ls-files * | head *)",
+          "Bash(git ls-files * | wc *)",
+          "Bash(grep * | head *)",
+          "Bash(grep * | sort *)",
+          "Bash(grep * | wc *)",
+          "Bash(grep * | sort * | uniq *)",
+          "Bash(cat * | grep *)",
+          "Bash(cat * | awk *)",
+          "Bash(cat * | head *)",
+          "Bash(cat * | wc *)",
+          "Bash(find * | head *)",
+          "Bash(find * | wc *)",
+          "Bash(awk * | head *)",
+          "Bash(sort * | uniq *)",
+          "Bash(sort * | head *)",
+          "Agent",
+          "Skill"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-arch-discover/SKILL.md",
+      "blob": "07fbe6d9e88f0654b2ce7473326298934ec00f84",
+      "yaml": "name: ase-arch-discover\nargument-hint: \"[--help|-h] [--limit|-l=12] [--staleness|-s=18] [--small-scope|-S] <functionality>\"\ndescription: >\n    Discover additional, third-party components (libraries/frameworks) for\n    the technology stack to provide needed functionality.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(npm search --json *)\"\n    - \"Bash(curl -s https://search.maven.org/*)\"\n    - \"Skill\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-arch-discover",
+        "argument-hint": "[--help|-h] [--limit|-l=12] [--staleness|-s=18] [--small-scope|-S] <functionality>",
+        "description": "Discover additional, third-party components (libraries/frameworks) for the technology stack to provide needed functionality.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(npm search --json *)",
+          "Bash(curl -s https://search.maven.org/*)",
+          "Skill",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-analyze/SKILL.md",
+      "blob": "075a641b03700afa4d4f804ca186bb46d57de999",
+      "yaml": "name: ase-code-analyze\nargument-hint: \"[--help|-h] [--performance|-p] [--security|-s] [--severity|-S=(LOW|MEDIUM|HIGH)] <source-reference>\"\ndescription: >\n    Analyze the source code for problems in either the logic and\n    semantics and its related control flow, performance and efficiency,\n    or security.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"\n    - \"Glob\"",
+      "expected": {
+        "name": "ase-code-analyze",
+        "argument-hint": "[--help|-h] [--performance|-p] [--security|-s] [--severity|-S=(LOW|MEDIUM|HIGH)] <source-reference>",
+        "description": "Analyze the source code for problems in either the logic and semantics and its related control flow, performance and efficiency, or security.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent",
+          "Glob"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-craft/SKILL.md",
+      "blob": "35aeb9afd3d33638c993eb6573260701b96874c2",
+      "yaml": "name: ase-code-craft\nargument-hint: \"[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <feature>\"\ndescription: >\n    Craft Source Code:\n    Use when user wants to \"create\", \"add\", or \"craft\" a new feature from scratch.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - \"Skill\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-code-craft",
+        "argument-hint": "[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <feature>",
+        "description": "Craft Source Code: Use when user wants to \"create\", \"add\", or \"craft\" a new feature from scratch.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Skill",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-dissect/SKILL.md",
+      "blob": "61777968b6b7fe945938717e751d8502927f8917",
+      "yaml": "name: ase-code-dissect\nargument-hint: \"[--help|-h] [--max-parts|-m <count>] [--staged|-s] [--dry|-d] [--force|-f] [<dissect-hint>]\"\ndescription: >\n    Dissect the current Git change set, treated as an epic, domain-wise\n    and logically into cohesive parts and materialize each part in its\n    own dedicated Git WorkTree. Use when the user calls to \"dissect\",\n    \"split\", \"break up\", or \"decompose\" a large change set into atomic,\n    separately committable parts.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - \"Bash(git *)\"\n    - \"Bash(rm -f *)\"\n    - \"Write\"\n    - \"Read\"\n    - \"Edit\"",
+      "expected": {
+        "name": "ase-code-dissect",
+        "argument-hint": "[--help|-h] [--max-parts|-m <count>] [--staged|-s] [--dry|-d] [--force|-f] [<dissect-hint>]",
+        "description": "Dissect the current Git change set, treated as an epic, domain-wise and logically into cohesive parts and materialize each part in its own dedicated Git WorkTree. Use when the user calls to \"dissect\", \"split\", \"break up\", or \"decompose\" a large change set into atomic, separately committable parts.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Bash(git *)",
+          "Bash(rm -f *)",
+          "Write",
+          "Read",
+          "Edit"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-explain/SKILL.md",
+      "blob": "12dc0af384db3d29c0a17b7100a3004b89c2e72a",
+      "yaml": "name: ase-code-explain\nargument-hint: \"[--help|-h] <source-reference>\"\ndescription: >\n    Explains code with WHAT, WHY, ANALOGY, DIAGRAM, CRUXES, and GOTCHAS.\n    Use when you want to know how code works or when the user asks \"how does this work?\"\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-code-explain",
+        "argument-hint": "[--help|-h] <source-reference>",
+        "description": "Explains code with WHAT, WHY, ANALOGY, DIAGRAM, CRUXES, and GOTCHAS. Use when you want to know how code works or when the user asks \"how does this work?\"\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-insight/SKILL.md",
+      "blob": "1a8ea113b73bada81875e44c81ba07dadff6327c",
+      "yaml": "name: ase-code-insight\nargument-hint: \"[--help|-h] <code-references>\"\ndescription: >\n    Give insights into the source code.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(git *)\"\n    - \"Bash(grep *)\"\n    - \"Bash(sort *)\"\n    - \"Bash(uniq *)\"\n    - \"Bash(head *)\"\n    - \"Bash(git log * | grep * | sort * | uniq * | sort * | head *)\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-code-insight",
+        "argument-hint": "[--help|-h] <code-references>",
+        "description": "Give insights into the source code.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(git *)",
+          "Bash(grep *)",
+          "Bash(sort *)",
+          "Bash(uniq *)",
+          "Bash(head *)",
+          "Bash(git log * | grep * | sort * | uniq * | sort * | head *)",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-lint/SKILL.md",
+      "blob": "453e40fd91d6cf340ae1f9bd198345aa552334a6",
+      "yaml": "name: ase-code-lint\nargument-hint: \"[--help|-h] [--auto|-a] [--severity|-S=(LOW|MEDIUM|HIGH)] [--include|-i=<aspect>[,...]] [--exclude|-e=<aspect>[,...]] <source-reference>\"\ndescription: >\n    Lint source code for potential code quality problems.\n    Use when the user wants to \"lint\" or \"check\" source code.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-code-lint",
+        "argument-hint": "[--help|-h] [--auto|-a] [--severity|-S=(LOW|MEDIUM|HIGH)] [--include|-i=<aspect>[,...]] [--exclude|-e=<aspect>[,...]] <source-reference>",
+        "description": "Lint source code for potential code quality problems. Use when the user wants to \"lint\" or \"check\" source code.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-refactor/SKILL.md",
+      "blob": "66906a5e1f2b7273ede8d0ce0357eb60e54c25f8",
+      "yaml": "name: ase-code-refactor\nargument-hint: \"[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <request>\"\ndescription: >\n    Refactor Code:\n    Use when user wants to \"refactor\" or \"change\" the code base.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - \"Skill\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-code-refactor",
+        "argument-hint": "[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <request>",
+        "description": "Refactor Code: Use when user wants to \"refactor\" or \"change\" the code base.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Skill",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-code-resolve/SKILL.md",
+      "blob": "a0da1c334c2eb0884084c5ea79e3e9d9673ab6d8",
+      "yaml": "name: ase-code-resolve\nargument-hint: \"[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <problem>\"\ndescription: >\n    Resolve Problem:\n    Use when user wants to \"bugfix\" or \"fix\" code or \"resolve\" a problem.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - \"Skill\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-code-resolve",
+        "argument-hint": "[--help|-h] [--auto|-a] [--dry|-d] [--quick|-Q] [--next|-n <option>[,...]] [<task-id>:] <problem>",
+        "description": "Resolve Problem: Use when user wants to \"bugfix\" or \"fix\" code or \"resolve\" a problem.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Skill",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-docs-distill/SKILL.md",
+      "blob": "f47eb3eda34feeb742c9d6abd174099a59b3cf0c",
+      "yaml": "name: ase-docs-distill\nargument-hint: \"[--help|-h] [--top|-t <N>] <document-reference>\"\ndescription: >\n    Distill a provided document into a flat, importance-ranked list\n    of its key points, each with a salience rank, a rationale, and a\n    verbatim line-cited evidence snippet. Use when the user wants to\n    \"distill\", \"summarize the key points\", or \"extract the essence\" of a\n    document or pasted text.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-docs-distill",
+        "argument-hint": "[--help|-h] [--top|-t <N>] <document-reference>",
+        "description": "Distill a provided document into a flat, importance-ranked list of its key points, each with a salience rank, a rationale, and a verbatim line-cited evidence snippet. Use when the user wants to \"distill\", \"summarize the key points\", or \"extract the essence\" of a document or pasted text.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-docs-proofread/SKILL.md",
+      "blob": "1acd33f0d44cc9ba932cbef4fc9bd48bb04d29b3",
+      "yaml": "name: ase-docs-proofread\nargument-hint: \"[--help|-h] [--auto|-a] <docs-reference>\"\ndescription: >\n    Analyze the documents for spelling, punctuation, or grammar errors.\n    Use when the user wants to \"proofread\" or \"spellcheck\" a document.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-docs-proofread",
+        "argument-hint": "[--help|-h] [--auto|-a] <docs-reference>",
+        "description": "Analyze the documents for spelling, punctuation, or grammar errors. Use when the user wants to \"proofread\" or \"spellcheck\" a document.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-help-intent/SKILL.md",
+      "blob": "b34174349f2a3b5ca4b40be4c0959963fa7a11a1",
+      "yaml": "name: ase-help-intent\nargument-hint: \"[--help|-h] <intent>\"\ndescription: >\n    Match a free-text intent against the accumulated help of all ASE\n    skills, generate the single best-fitting `/ase:ase-xxx-xxx` command\n    with concrete options and arguments, and let the user execute it,\n    refine the intent, or cancel. Use when the user knows what they want\n    but not which skill or flags realize it, or mentions \"intent\" or\n    requests \"help\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Skill\"",
+      "expected": {
+        "name": "ase-help-intent",
+        "argument-hint": "[--help|-h] <intent>",
+        "description": "Match a free-text intent against the accumulated help of all ASE skills, generate the single best-fitting `/ase:ase-xxx-xxx` command with concrete options and arguments, and let the user execute it, refine the intent, or cancel. Use when the user knows what they want but not which skill or flags realize it, or mentions \"intent\" or requests \"help\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Skill"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-help-skill/SKILL.md",
+      "blob": "ab4a61f6661282172eaab9496c179665151567ff",
+      "yaml": "name: ase-help-skill\nargument-hint: \"[--help|-h] [<skill-name>]\"\ndescription: >\n    Show the manual page of an ASE skill, addressed by its full name, by\n    any abbreviation of it, or by a description of its purpose, and list\n    the entire skill catalog when no name is given. Use when the user\n    wants the \"manual\", \"man page\", \"manpage\", or \"help\" of a particular\n    ASE skill, or asks what a certain `ase-xxx-xxx` skill does.\nuser-invocable: true\ndisable-model-invocation: false\neffort: medium\nallowed-tools:\n    - \"Read\"",
+      "expected": {
+        "name": "ase-help-skill",
+        "argument-hint": "[--help|-h] [<skill-name>]",
+        "description": "Show the manual page of an ASE skill, addressed by its full name, by any abbreviation of it, or by a description of its purpose, and list the entire skill catalog when no name is given. Use when the user wants the \"manual\", \"man page\", \"manpage\", or \"help\" of a particular ASE skill, or asks what a certain `ase-xxx-xxx` skill does.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "medium",
+        "allowed-tools": [
+          "Read"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-brainstorm/SKILL.md",
+      "blob": "35d9a56062d3dd45f0d604d7c86e1f88c7431c4a",
+      "yaml": "name: ase-meta-brainstorm\nargument-hint: \"[--help|-h] [--max-clarify|-c <num>] [--min-ideas|-i <num>] [--min-rank|-r <num>] [--max-shortlist|-s <num>] <topic>\"\ndescription: >\n    Collaboratively brainstorm a topic by diverging on ideas, converging\n    through clustering and scoring, and distilling a shortlist with\n    a recommended direction. Use when the user wants to brainstorm,\n    explore ideas, ideate, or figure out *what* to build before *how* to\n    build it.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-meta-brainstorm",
+        "argument-hint": "[--help|-h] [--max-clarify|-c <num>] [--min-ideas|-i <num>] [--min-rank|-r <num>] [--max-shortlist|-s <num>] <topic>",
+        "description": "Collaboratively brainstorm a topic by diverging on ideas, converging through clustering and scoring, and distilling a shortlist with a recommended direction. Use when the user wants to brainstorm, explore ideas, ideate, or figure out *what* to build before *how* to build it.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-changelog/SKILL.md",
+      "blob": "d59c80490cfcd0c7ee2b611fde07dcc5d6a75f22",
+      "yaml": "name: ase-meta-changelog\nargument-hint: \"[--help|-h]\"\ndescription: >\n    Update ChangeLog entries in CHANGELOG.md files\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(git log *)\"\n    - \"Bash(git diff *)\"\n    - \"Bash(git show *)\"\n    - \"Bash(git tag --list *)\"\n    - \"Write\"\n    - \"Edit\"",
+      "expected": {
+        "name": "ase-meta-changelog",
+        "argument-hint": "[--help|-h]",
+        "description": "Update ChangeLog entries in CHANGELOG.md files\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(git log *)",
+          "Bash(git diff *)",
+          "Bash(git show *)",
+          "Bash(git tag --list *)",
+          "Write",
+          "Edit"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-chat/SKILL.md",
+      "blob": "5070ac8f5a1080d2507a9b056ec4e661d5b06293",
+      "yaml": "name: ase-meta-chat\nargument-hint: \"[--help|-h] <llm> <query>\"\ndescription: >\n    Query foreign LLM for chat.\n    Use this skill if a foreign LLM like OpenAI ChatGPT, Google Gemini,\n    DeepSeek or xAI Grok should be queried with a single chat message.\nuser-invocable: true\ndisable-model-invocation: false\neffort: medium\nallowed-tools:\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-chat",
+        "argument-hint": "[--help|-h] <llm> <query>",
+        "description": "Query foreign LLM for chat. Use this skill if a foreign LLM like OpenAI ChatGPT, Google Gemini, DeepSeek or xAI Grok should be queried with a single chat message.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "medium",
+        "allowed-tools": [
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-commit/SKILL.md",
+      "blob": "01e37e953a3f9589c84e4257bdad37df3514d385",
+      "yaml": "name: ase-meta-commit\nargument-hint: \"[--help|-h]\"\ndescription: >\n    Determine commit message for staged Git changes.\nuser-invocable: true\ndisable-model-invocation: false\neffort: medium\nallowed-tools:\n    - \"Bash(git diff *)\"",
+      "expected": {
+        "name": "ase-meta-commit",
+        "argument-hint": "[--help|-h]",
+        "description": "Determine commit message for staged Git changes.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "medium",
+        "allowed-tools": [
+          "Bash(git diff *)"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-compat/SKILL.md",
+      "blob": "ba6b4ca240294cfa22e31f09b6aa85b1efe7dc83",
+      "yaml": "name: ase-meta-compat\nargument-hint: \"[--help|-h]\"\ndescription: >\n    Self-test the LLM's ability to execute ASE's core interpreter\n    machinery (control flow, XML placeholders, regex matching,\n    arithmetic) and report an overall compatibility rating. Use when\n    the user wants to check how well the current model/harness is\n    compatible with ASE, or asks to \"test ASE compatibility\" or \"check\n    ASE compatibility\".\nuser-invocable: true\ndisable-model-invocation: true",
+      "expected": {
+        "name": "ase-meta-compat",
+        "argument-hint": "[--help|-h]",
+        "description": "Self-test the LLM's ability to execute ASE's core interpreter machinery (control flow, XML placeholders, regex matching, arithmetic) and report an overall compatibility rating. Use when the user wants to check how well the current model/harness is compatible with ASE, or asks to \"test ASE compatibility\" or \"check ASE compatibility\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": true
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-config/SKILL.md",
+      "blob": "8320b66c1fb0f2f59240970022ec21b607b5faad",
+      "yaml": "name: ase-meta-config\nargument-hint: \"[--help|-h] [--scope|-s <scope>] <operation> [<args>]\"\ndescription: >\n    List, get, set, or delete the layered ASE configuration values across\n    the user/project/task/session scope chain.\n    Use when the user wants to \"configure\" ASE, or to inspect or change a\n    configuration key like `agent.persona`, `agent.guidance`, `agent.task`,\n    or `project.boxing`.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-meta-config",
+        "argument-hint": "[--help|-h] [--scope|-s <scope>] <operation> [<args>]",
+        "description": "List, get, set, or delete the layered ASE configuration values across the user/project/task/session scope chain. Use when the user wants to \"configure\" ASE, or to inspect or change a configuration key like `agent.persona`, `agent.guidance`, `agent.task`, or `project.boxing`.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-diaboli/SKILL.md",
+      "blob": "716af246ef75704095d20d9556adfec355c02ed3",
+      "yaml": "name: ase-meta-diaboli\nargument-hint: \"[--help|-h] [--count|-c <count>] <thesis>\"\ndescription: >\n    Challenge a thesis by playing \"Devil's Advocate\" (Latin: \"Advocatus\n    Diaboli\"). Use when the user wants a thesis or statement\n    relentlessly challenged or criticised.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-meta-diaboli",
+        "argument-hint": "[--help|-h] [--count|-c <count>] <thesis>",
+        "description": "Challenge a thesis by playing \"Devil's Advocate\" (Latin: \"Advocatus Diaboli\"). Use when the user wants a thesis or statement relentlessly challenged or criticised.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-diff/SKILL.md",
+      "blob": "83905353695cd01e00c3024460db719dad5ed76f",
+      "yaml": "name: ase-meta-diff\nargument-hint: \"[--help|-h] [--coherence|-c] [--risk|-r] [--blast|-b]\"\ndescription: >\n    Summarize the currently staged Git changes as a human-readable,\n    intent-grouped narrative. Use when the user wants a concise and\n    brief report of what changed and why. Optionally can check the diff\n    for intent coherence and show a risk and blast radius report.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(git diff *)\"\n    - \"Bash(git grep *)\"\n    - \"Bash(git ls-files *)\"\n    - \"Bash(grep *)\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-diff",
+        "argument-hint": "[--help|-h] [--coherence|-c] [--risk|-r] [--blast|-b]",
+        "description": "Summarize the currently staged Git changes as a human-readable, intent-grouped narrative. Use when the user wants a concise and brief report of what changed and why. Optionally can check the diff for intent coherence and show a risk and blast radius report.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(git diff *)",
+          "Bash(git grep *)",
+          "Bash(git ls-files *)",
+          "Bash(grep *)",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-eli5/SKILL.md",
+      "blob": "02fb6715f9f79fcc26c513f576a24f2b9be344c4",
+      "yaml": "name: ase-meta-eli5\nargument-hint: \"[--help|-h] [--ground|-g] <topic>\"\ndescription: >\n    Explain a topic in \"Explain Like I'm 5\" (ELI5) style, optionally\n    grounded in Internet/Web facts. Use when the user wants a topic\n    explained in a very simple, child-friendly way, or mentions \"eli5\"\n    or \"explain like I'm 5\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-eli5",
+        "argument-hint": "[--help|-h] [--ground|-g] <topic>",
+        "description": "Explain a topic in \"Explain Like I'm 5\" (ELI5) style, optionally grounded in Internet/Web facts. Use when the user wants a topic explained in a very simple, child-friendly way, or mentions \"eli5\" or \"explain like I'm 5\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-evaluate/SKILL.md",
+      "blob": "478b9800a85163e2581c767ec8c4734c0191cbe6",
+      "yaml": "name: ase-meta-evaluate\nargument-hint: \"[--help|-h] <request>\"\ndescription: >\n    Evaluate alternatives through a weighted multi-criteria decision\n    matrix. Use when the user calls for the *evaluation* of\n    *alternatives*, wants to *compare* things, or asks what the best is\n    from a list of choices.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-meta-evaluate",
+        "argument-hint": "[--help|-h] <request>",
+        "description": "Evaluate alternatives through a weighted multi-criteria decision matrix. Use when the user calls for the *evaluation* of *alternatives*, wants to *compare* things, or asks what the best is from a list of choices.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-proximity/SKILL.md",
+      "blob": "c5bb6b9e13c57e0ba380fc102fcd3e8d263c2f1b",
+      "yaml": "name: ase-meta-proximity\nargument-hint: \"[--help|-h] [--ground|-g] [--loop|-l] <topic>\"\ndescription: >\n    Determine the conceptual proximity of a topic -- its parent topic,\n    its most relevant sibling topics, and its most relevant child\n    topics -- optionally grounded in Internet/Web facts and optionally\n    navigable in an interactive loop. Use when the user wants to explore\n    the conceptual neighborhood of a topic, or mentions \"proximity\" or\n    \"related topics\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-proximity",
+        "argument-hint": "[--help|-h] [--ground|-g] [--loop|-l] <topic>",
+        "description": "Determine the conceptual proximity of a topic -- its parent topic, its most relevant sibling topics, and its most relevant child topics -- optionally grounded in Internet/Web facts and optionally navigable in an interactive loop. Use when the user wants to explore the conceptual neighborhood of a topic, or mentions \"proximity\" or \"related topics\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-quorum/SKILL.md",
+      "blob": "b6c8abaa6e64756d23d30da57963b06d9a64c8a2",
+      "yaml": "name: ase-meta-quorum\nargument-hint: \"[--help|-h] [--models|-m <model>[,...]] <question>\"\ndescription: >\n    Query multiple foreign AIs in parallel and synthesize a consensus\n    (\"quorum\") answer with a consensus rating. Use when the user wants\n    a quorum, a consensus answer, or the opinions of multiple AIs on a\n    question.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"\n    - \"TaskCreate\"\n    - \"TaskUpdate\"",
+      "expected": {
+        "name": "ase-meta-quorum",
+        "argument-hint": "[--help|-h] [--models|-m <model>[,...]] <question>",
+        "description": "Query multiple foreign AIs in parallel and synthesize a consensus (\"quorum\") answer with a consensus rating. Use when the user wants a quorum, a consensus answer, or the opinions of multiple AIs on a question.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent",
+          "TaskCreate",
+          "TaskUpdate"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-quotes/SKILL.md",
+      "blob": "834c6e8a4b6574f94b1685a3982ea8f7e4c560b6",
+      "yaml": "name: ase-meta-quotes\nargument-hint: \"[--help|-h] [--ground|-g] [--proximity|-p] [--count|-c <count>] <topic-keywords>\"\ndescription: >\n    Find quotes for a set of topic keywords and place them into a\n    2x2 matrix, spanned by the presence of an author/origin and by\n    the literal containment of a keyword, optionally grounded in\n    Internet/Web facts and optionally widened to the conceptual\n    neighborhood of the topic. Use when the user wants \"quotes\",\n    \"sayings\", \"aphorisms\", or \"citations\" on a topic.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-quotes",
+        "argument-hint": "[--help|-h] [--ground|-g] [--proximity|-p] [--count|-c <count>] <topic-keywords>",
+        "description": "Find quotes for a set of topic keywords and place them into a 2x2 matrix, spanned by the presence of an author/origin and by the literal containment of a keyword, optionally grounded in Internet/Web facts and optionally widened to the conceptual neighborhood of the topic. Use when the user wants \"quotes\", \"sayings\", \"aphorisms\", or \"citations\" on a topic.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-review/SKILL.md",
+      "blob": "369885569226997cad2b4ceffdadd16fd1c4a9c7",
+      "yaml": "name: ase-meta-review\nargument-hint: \"[--help|-h] [--severity|-S=(LOW|MEDIUM|HIGH)]\"\ndescription: >\n    Perform a holistic, human-reviewer-style critique of the currently\n    staged Git changes and emit an approve/reject verdict with\n    prioritized, severity-tagged, line-cited findings. Use when the user\n    wants the staged diff \"reviewed\", \"critiqued\", or \"code-reviewed\"\n    before committing.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high\nallowed-tools:\n    - \"Bash(git diff *)\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-review",
+        "argument-hint": "[--help|-h] [--severity|-S=(LOW|MEDIUM|HIGH)]",
+        "description": "Perform a holistic, human-reviewer-style critique of the currently staged Git changes and emit an approve/reject verdict with prioritized, severity-tagged, line-cited findings. Use when the user wants the staged diff \"reviewed\", \"critiqued\", or \"code-reviewed\" before committing.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high",
+        "allowed-tools": [
+          "Bash(git diff *)",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-search/SKILL.md",
+      "blob": "5264390cbf075f9ba5716d7fc87221a5b18f3576",
+      "yaml": "name: ase-meta-search\nargument-hint: \"[--help|-h] [--services|-s=(all|perplexity|brave|exa|websearch)...] <query>\"\ndescription: >\n    Search the Internet/Web with a query.\n    Prefer this skill before using Perplexity, Brave and WebSearch.\nuser-invocable: true\ndisable-model-invocation: false\neffort: medium\nallowed-tools:\n    - \"mcp__search-perplexity__perplexity_search\"\n    - \"mcp__search-brave__brave_web_search\"\n    - \"mcp__search-exa__web_search_exa\"\n    - \"WebSearch\"\n    - \"Agent\"",
+      "expected": {
+        "name": "ase-meta-search",
+        "argument-hint": "[--help|-h] [--services|-s=(all|perplexity|brave|exa|websearch)...] <query>",
+        "description": "Search the Internet/Web with a query. Prefer this skill before using Perplexity, Brave and WebSearch.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "medium",
+        "allowed-tools": [
+          "mcp__search-perplexity__perplexity_search",
+          "mcp__search-brave__brave_web_search",
+          "mcp__search-exa__web_search_exa",
+          "WebSearch",
+          "Agent"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-steelman/SKILL.md",
+      "blob": "9b56cb9fae4c1276348d787fbce6622b437fb568",
+      "yaml": "name: ase-meta-steelman\nargument-hint: \"[--help|-h] [--count|-c <count>] [--rounds|-r <rounds>] <thesis>\"\ndescription: >\n    Build the strongest possible case for a thesis by playing\n    \"Steelman\" (Latin spirit: \"Advocatus Dei\"). Use when the user\n    wants a thesis or statement charitably strengthened and defended.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-meta-steelman",
+        "argument-hint": "[--help|-h] [--count|-c <count>] [--rounds|-r <rounds>] <thesis>",
+        "description": "Build the strongest possible case for a thesis by playing \"Steelman\" (Latin spirit: \"Advocatus Dei\"). Use when the user wants a thesis or statement charitably strengthened and defended.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-why/SKILL.md",
+      "blob": "c515014238b9f3d9b45399a31e1aec64a0153219",
+      "yaml": "name: ase-meta-why\nargument-hint: \"[--help|-h] [--depth|-d <N>] [--width|-w <M>] <fact>\"\ndescription: >\n    Five-Whys Root-Cause Analysis.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-meta-why",
+        "argument-hint": "[--help|-h] [--depth|-d <N>] [--width|-w <M>] <fact>",
+        "description": "Five-Whys Root-Cause Analysis.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-meta-workflow/SKILL.md",
+      "blob": "866507c0eb017e54f6e515581d8ae56be3170ad0",
+      "yaml": "name: ase-meta-workflow\nargument-hint: \"[--help|-h] [--scope|-s local|user] [--force|-f] <skill-name> <workflow-description>\"\ndescription: >\n    Generate a new agent tool skill, written in the style of ASE\n    skills, which orchestrates a workflow of sequential actions,\n    parallel actions, sub-agent calls, and skill calls. Use when the\n    user wants to \"generate a skill\", create a \"workflow\", \"orchestrate\"\n    or \"chain\" multiple ASE skills, or automate a recurring multi-step\n    procedure.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - \"Read\"\n    - \"Write\"",
+      "expected": {
+        "name": "ase-meta-workflow",
+        "argument-hint": "[--help|-h] [--scope|-s local|user] [--force|-f] <skill-name> <workflow-description>",
+        "description": "Generate a new agent tool skill, written in the style of ASE skills, which orchestrates a workflow of sequential actions, parallel actions, sub-agent calls, and skill calls. Use when the user wants to \"generate a skill\", create a \"workflow\", \"orchestrate\" or \"chain\" multiple ASE skills, or automate a recurring multi-step procedure.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Read",
+          "Write"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-sync-export/SKILL.md",
+      "blob": "90071c8dd6d26dafdfd44e676c568a41194244b9",
+      "yaml": "name: ase-sync-export\nargument-hint: \"[--help|-h] [--source|-s <source>[,...]] [<hint>]\"\ndescription: >\n    Export artifact content into side-by-side, ready-to-consume files,\n    one per artifact that declares an export. Use when the user wants to\n    \"export\", \"render\", or \"materialize\" artifacts like SPEC or ARCH into\n    derived files such as diagrams or tables.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh\nallowed-tools:\n    - Write",
+      "expected": {
+        "name": "ase-sync-export",
+        "argument-hint": "[--help|-h] [--source|-s <source>[,...]] [<hint>]",
+        "description": "Export artifact content into side-by-side, ready-to-consume files, one per artifact that declares an export. Use when the user wants to \"export\", \"render\", or \"materialize\" artifacts like SPEC or ARCH into derived files such as diagrams or tables.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh",
+        "allowed-tools": [
+          "Write"
+        ]
+      }
+    },
+    {
+      "path": "plugin/skills/ase-sync-import/SKILL.md",
+      "blob": "07cac4c62e48693d3c418004323b0325f0ea52fc",
+      "yaml": "name: ase-sync-import\nargument-hint: \"[--help|-h] [--target|-t <target>[,...]] <hint>\"\ndescription: >\n    Import information from foreign sources into a set of artifact kinds\n    (the target), generating or updating them to reflect the imported\n    information. Use when the user wants to \"import\", \"ingest\", or\n    \"bring in\" external sources like files, URLs, or pasted text into\n    artifacts like SPEC, ARCH, CODE, DOCS, TASK, INFR, or OTHR.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-sync-import",
+        "argument-hint": "[--help|-h] [--target|-t <target>[,...]] <hint>",
+        "description": "Import information from foreign sources into a set of artifact kinds (the target), generating or updating them to reflect the imported information. Use when the user wants to \"import\", \"ingest\", or \"bring in\" external sources like files, URLs, or pasted text into artifacts like SPEC, ARCH, CODE, DOCS, TASK, INFR, or OTHR.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-sync-reconcile/SKILL.md",
+      "blob": "0ffe0178ac237221f455370e2d8e5b6ec3dfe0c0",
+      "yaml": "name: ase-sync-reconcile\nargument-hint: \"[--help|-h] [--bidirectional|-b] [--target|-t <target>[,...]] [--source|-s <source>[,...]] [<hint>]\"\ndescription: >\n    Reconcile one set of artifact kinds (the target) to reflect the\n    current state of another set of artifact kinds (the source), while\n    optionally honoring a filtering hint. Use when the user wants to\n    \"reconcile\", \"sync\", \"align\", or \"update\" artifacts like SPEC, ARCH,\n    CODE, DOCS, TASK, INFR, or OTHR against each other.\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-sync-reconcile",
+        "argument-hint": "[--help|-h] [--bidirectional|-b] [--target|-t <target>[,...]] [--source|-s <source>[,...]] [<hint>]",
+        "description": "Reconcile one set of artifact kinds (the target) to reflect the current state of another set of artifact kinds (the source), while optionally honoring a filtering hint. Use when the user wants to \"reconcile\", \"sync\", \"align\", or \"update\" artifacts like SPEC, ARCH, CODE, DOCS, TASK, INFR, or OTHR against each other.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-condense/SKILL.md",
+      "blob": "9489388f1d7f5f205a4aae3d20abf690256ac96c",
+      "yaml": "name: ase-task-condense\nargument-hint: \"[--help|-h] [--next|-n <option>[,...]] [<id>]\"\ndescription: >\n    Condense the current or given task plan by compressing its wording.\n    Use when the user calls to \"condense\", \"compress\", \"shrink\" or\n    \"shorten\" the \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-condense",
+        "argument-hint": "[--help|-h] [--next|-n <option>[,...]] [<id>]",
+        "description": "Condense the current or given task plan by compressing its wording. Use when the user calls to \"condense\", \"compress\", \"shrink\" or \"shorten\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-delete/SKILL.md",
+      "blob": "4eaa8b2ef48a12644ff3ad5b973b8ac5db030831",
+      "yaml": "name: ase-task-delete\nargument-hint: \"[--help|-h] [<id>]\"\ndescription: >\n    Delete the current or given task plan.\n    Use when the user calls to \"delete\", \"remove\" or \"clear\" the\n    \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-delete",
+        "argument-hint": "[--help|-h] [<id>]",
+        "description": "Delete the current or given task plan. Use when the user calls to \"delete\", \"remove\" or \"clear\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-dissect/SKILL.md",
+      "blob": "05e037d85e9f03eb8c4f5ae19282622a66e12e63",
+      "yaml": "name: ase-task-dissect\nargument-hint: \"[--help|-h] [--max-parts|-m <count>] [--dry|-d] [--force|-f] [<task-id>[:]] [<dissect-hint>]\"\ndescription: >\n    Dissect the current or given task plan, treated as an epic,\n    domain-wise and logically into cohesive parts and materialize each\n    part as its own separate task plan. Use when the user calls to\n    \"dissect\", \"split\", \"break up\", or \"decompose\" a large \"task\" or\n    \"plan\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-dissect",
+        "argument-hint": "[--help|-h] [--max-parts|-m <count>] [--dry|-d] [--force|-f] [<task-id>[:]] [<dissect-hint>]",
+        "description": "Dissect the current or given task plan, treated as an epic, domain-wise and logically into cohesive parts and materialize each part as its own separate task plan. Use when the user calls to \"dissect\", \"split\", \"break up\", or \"decompose\" a large \"task\" or \"plan\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-edit/SKILL.md",
+      "blob": "b05ee11cc9481c699f4df102ee274633e50d25ea",
+      "yaml": "name: ase-task-edit\nargument-hint: \"[--help|-h] [--plan|-p <option>] [--dry|-d] [--next|-n <option>[,...]] [<id> | <id>: <instruction> | <instruction>]\"\ndescription: >\n    Iteratively edit and refine a named plan for a task through a\n    conversational loop. Each round, the current plan is shown and the\n    user is asked whether to keep refining, mark the plan as done, or\n    proceed to the implementation or preflight. Use when the user wants\n    to plan a task purely through chat-driven refinement.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-edit",
+        "argument-hint": "[--help|-h] [--plan|-p <option>] [--dry|-d] [--next|-n <option>[,...]] [<id> | <id>: <instruction> | <instruction>]",
+        "description": "Iteratively edit and refine a named plan for a task through a conversational loop. Each round, the current plan is shown and the user is asked whether to keep refining, mark the plan as done, or proceed to the implementation or preflight. Use when the user wants to plan a task purely through chat-driven refinement.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-grill/SKILL.md",
+      "blob": "c66c0c991b9d6867c8bb4740351f83b0e8964b7a",
+      "yaml": "name: ase-task-grill\nargument-hint: \"[--help|-h] [--next|-n <option>[,...]] [<id>]\"\ndescription: >\n    Interview the user relentlessly about the task plan until reaching a\n    shared understanding, resolving each branch of the question decision\n    tree. Use when the user wants to stress-test a plan, get grilled on\n    their plan, or mentions \"grill me\" or \"grill plan\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-grill",
+        "argument-hint": "[--help|-h] [--next|-n <option>[,...]] [<id>]",
+        "description": "Interview the user relentlessly about the task plan until reaching a shared understanding, resolving each branch of the question decision tree. Use when the user wants to stress-test a plan, get grilled on their plan, or mentions \"grill me\" or \"grill plan\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-id/SKILL.md",
+      "blob": "353b0a08b6b0f78e41a81259916abaa23c2311cb",
+      "yaml": "name: ase-task-id\nargument-hint: \"[--help|-h] [<id>]\"\ndescription: >\n    Get or set unique task id <id>.\n    Use when user requests to work on a certain task\n    or wants to know what the current task is.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-id",
+        "argument-hint": "[--help|-h] [<id>]",
+        "description": "Get or set unique task id <id>. Use when user requests to work on a certain task or wants to know what the current task is.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-implement/SKILL.md",
+      "blob": "a139046fc919147d154c80a26013a9b70118fb7d",
+      "yaml": "name: ase-task-implement\nargument-hint: \"[--help|-h] [--next|-n <option>[,...]] [--worktree|-w] [<id>]\"\ndescription: >\n    Implement current or given task plan.\n    Use when the user calls to \"implement\", \"realize\" or \"apply\" the\n    \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-task-implement",
+        "argument-hint": "[--help|-h] [--next|-n <option>[,...]] [--worktree|-w] [<id>]",
+        "description": "Implement current or given task plan. Use when the user calls to \"implement\", \"realize\" or \"apply\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-list/SKILL.md",
+      "blob": "2915af76bd080b61ab29de31278ae05d0987851e",
+      "yaml": "name: ase-task-list\nargument-hint: \"[--help|-h] [--verbose|-v]\"\ndescription: >\n    List all available task ids.\n    Use when user wants to see all tasks.\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-list",
+        "argument-hint": "[--help|-h] [--verbose|-v]",
+        "description": "List all available task ids. Use when user wants to see all tasks.\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-preflight/SKILL.md",
+      "blob": "99b96820c5db015229d4987aa0076f53c0e6233b",
+      "yaml": "name: ase-task-preflight\nargument-hint: \"[--help|-h] [--next|-n <option>[,...]] [<id>]\"\ndescription: >\n    Preflight the implementation of current or given task plan.\n    Use when the user calls to \"preflight\", \"dry-run\" or \"test-drive\"\n    the \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: xhigh",
+      "expected": {
+        "name": "ase-task-preflight",
+        "argument-hint": "[--help|-h] [--next|-n <option>[,...]] [<id>]",
+        "description": "Preflight the implementation of current or given task plan. Use when the user calls to \"preflight\", \"dry-run\" or \"test-drive\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "xhigh"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-reboot/SKILL.md",
+      "blob": "455c979b9c8f734961c49804167f0fb2f1d235f3",
+      "yaml": "name: ase-task-reboot\nargument-hint: \"[--help|-h] [--next|-n <option>[,...]] [<id>]\"\ndescription: >\n    Reboot the current or given task plan by re-creating it from scratch.\n    Use when the user calls to \"reboot\", \"recreate\" or \"refresh\"\n    the \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-reboot",
+        "argument-hint": "[--help|-h] [--next|-n <option>[,...]] [<id>]",
+        "description": "Reboot the current or given task plan by re-creating it from scratch. Use when the user calls to \"reboot\", \"recreate\" or \"refresh\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-rename/SKILL.md",
+      "blob": "93b88cc4198908988ff6363de26b360f321e8137",
+      "yaml": "name: ase-task-rename\nargument-hint: \"[--help|-h] [<old>] <new>\"\ndescription: >\n    Rename the current or given task plan.\n    Use when the user calls to \"rename\", \"move\" or \"relabel\" the\n    \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-rename",
+        "argument-hint": "[--help|-h] [<old>] <new>",
+        "description": "Rename the current or given task plan. Use when the user calls to \"rename\", \"move\" or \"relabel\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    },
+    {
+      "path": "plugin/skills/ase-task-view/SKILL.md",
+      "blob": "9b8c6b79bd8e30a8208382ea55212c313f78f4f7",
+      "yaml": "name: ase-task-view\nargument-hint: \"[--help|-h] [--full|-f] [<id>]\"\ndescription: >\n    View current or given task plan.\n    Use when the user calls to \"view\", \"show\" or \"see\" the\n    \"task\", \"plan\", \"spec\", or \"specification\".\nuser-invocable: true\ndisable-model-invocation: false\neffort: high",
+      "expected": {
+        "name": "ase-task-view",
+        "argument-hint": "[--help|-h] [--full|-f] [<id>]",
+        "description": "View current or given task plan. Use when the user calls to \"view\", \"show\" or \"see\" the \"task\", \"plan\", \"spec\", or \"specification\".\n",
+        "user-invocable": true,
+        "disable-model-invocation": false,
+        "effort": "high"
+      }
+    }
+  ]
+}

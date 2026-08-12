@@ -3,6 +3,7 @@ import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import * as mockedFs from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +36,7 @@ import {
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { buildRpcSlashCommands } from "../../src/modes/rpc/rpc-mode.ts";
 import { createTestExtensionsResult } from "../utilities.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, getMessageText } from "./harness.ts";
 
 vi.mock("fs", async (importOriginal) => {
 	const actual = (await importOriginal()) as typeof nodeFs;
@@ -1023,5 +1024,259 @@ describe("command visibility", () => {
 		expect(listing).toContain("<name>hidden-skill</name>");
 		expect(listing).toContain("<name>Upper.Name</name>");
 		expect(listing).not.toContain("<name>dmi-skill</name>");
+	});
+});
+
+describe("committed fixtures", () => {
+	const FIELDS_FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "skills-contract", "fields");
+	const FIXTURE_DIR_NAMES = nodeFs.readdirSync(FIELDS_FIXTURES_DIR).sort();
+
+	it("round-trips every per-field committed fixture through DefaultResourceLoader.getSkills()", async () => {
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			noSkills: true,
+			additionalSkillPaths: [FIELDS_FIXTURES_DIR],
+		});
+		await loader.reload();
+		const { skills, diagnostics } = loader.getSkills();
+		expect(skills).toHaveLength(FIXTURE_DIR_NAMES.length);
+
+		const byName = new Map(skills.map((skill) => [skill.name, skill]));
+
+		expect(byName.get("boolean-true")).toMatchObject({
+			disableModelInvocation: true,
+			userInvocable: true,
+			frontmatter: expect.objectContaining({ background: true }),
+		});
+		expect(byName.get("boolean-false")).toMatchObject({
+			disableModelInvocation: false,
+			userInvocable: false,
+			frontmatter: expect.objectContaining({ background: false }),
+		});
+		expect(byName.get("boolean-yes")).toMatchObject({ disableModelInvocation: true, userInvocable: true });
+		expect(byName.get("boolean-no")).toMatchObject({ disableModelInvocation: false, userInvocable: false });
+		expect(byName.get("boolean-on")).toMatchObject({ disableModelInvocation: true, userInvocable: true });
+		expect(byName.get("boolean-off")).toMatchObject({ disableModelInvocation: false, userInvocable: false });
+		expect(byName.get("boolean-1")).toMatchObject({ disableModelInvocation: true, userInvocable: true });
+		expect(byName.get("boolean-0")).toMatchObject({ disableModelInvocation: false, userInvocable: false });
+
+		expect(byName.get("arguments-string")?.frontmatter.arguments).toBe("path");
+		expect(byName.get("arguments-list")?.frontmatter.arguments).toEqual(["path", "verbose"]);
+		expect(byName.get("arguments-map")?.frontmatter.arguments).toEqual({
+			path: { description: "File path to operate on", required: true },
+		});
+
+		expect(byName.get("allowed-tools-string")?.frontmatter["allowed-tools"]).toBe("read");
+		expect(byName.get("allowed-tools-list")?.frontmatter["allowed-tools"]).toEqual(["read", "write"]);
+		expect(byName.get("disallowed-tools-string")?.frontmatter["disallowed-tools"]).toBe("bash, write");
+		expect(byName.get("disallowed-tools-list")?.frontmatter["disallowed-tools"]).toEqual(["bash", "write"]);
+		expect(byName.get("disallowed-tools-alias")?.frontmatter.disallowedTools).toEqual(["bash"]);
+
+		expect(byName.get("model")?.frontmatter.model).toBe("inherit");
+		expect(byName.get("effort-integer")?.frontmatter.effort).toBe(5000);
+		expect(byName.get("effort-string")?.frontmatter.effort).toBe("high");
+		expect(byName.get("context-inline")?.frontmatter.context).toBe("inline");
+		expect(byName.get("context-fork")?.frontmatter).toMatchObject({
+			context: "fork",
+			agent: "general-purpose",
+			background: true,
+		});
+		expect(byName.get("paths")?.frontmatter.paths).toEqual(["src/**", "docs/**/*.md"]);
+		expect(byName.get("shell")?.frontmatter.shell).toBe("powershell");
+		expect(byName.get("hooks")?.frontmatter.hooks).toMatchObject({
+			PreToolUse: [expect.objectContaining({ matcher: "Bash" })],
+			PostToolUse: [expect.objectContaining({ matcher: "*" })],
+		});
+		expect(byName.get("license-compatibility-metadata")?.frontmatter).toMatchObject({
+			license: "MIT",
+			compatibility: "Pi",
+			metadata: { owner: "core", tags: ["contract", "fixture"] },
+		});
+		expect(byName.get("unknown-nested")?.frontmatter["custom-extension-field"]).toEqual({
+			nested: { deep: true },
+			list: [1, 2, 3],
+		});
+		expect(byName.get("when-to-use")?.frontmatter.when_to_use).toBe(
+			"Use this skill when testing the when_to_use listing fold.",
+		);
+		expect(byName.get("argument-hint")?.argumentHint).toBe("[path] [--verbose]");
+
+		const validName = byName.get("valid-name");
+		expect(validName?.commandNameValid).toBe(true);
+		const warningName = byName.get("Upper.Name");
+		expect(warningName?.commandNameValid).toBe(true);
+		const invalidName = byName.get("trailing.");
+		expect(invalidName?.commandNameValid).toBe(false);
+
+		// The A.1-invalid fixture's namespace diagnostic fires on every load, unsuppressed. It also
+		// carries an Agent Skills invalid-characters warning (the "." is not lowercase a-z0-9-),
+		// alongside the separate name-warning fixture's own invalid-characters warning.
+		expect(diagnostics.filter((item) => item.message.includes("bare skill command namespace"))).toHaveLength(1);
+		expect(diagnostics.filter((item) => item.message.includes("invalid characters"))).toHaveLength(2);
+		expect(diagnostics).toHaveLength(3);
+	});
+
+	it("deep-matches the all-fields fixture against the c0b skills:changed and skills:query payloads", async () => {
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: [join(FIELDS_FIXTURES_DIR, "all-fields")],
+		});
+		await loader.reload();
+
+		const allFieldsSkill = loader.getSkills().skills[0];
+		expect(allFieldsSkill.name).toBe("all-fields");
+		expect(changedEvents).toHaveLength(1);
+		const entry = changedEvents[0].skills.find((candidate) => candidate.name === "all-fields");
+		expect(entry).toBeDefined();
+		expect(entry?.frontmatter).toEqual(allFieldsSkill.frontmatter);
+
+		const replies: Array<RpcReply<SkillSetSnapshot>> = [];
+		eventBus.on(skillsQueryReplyChannel("all-fields-query"), (data) =>
+			replies.push(data as RpcReply<SkillSetSnapshot>),
+		);
+		eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId: "all-fields-query" });
+		expect(replies).toHaveLength(1);
+		const queried = (replies[0] as { success: true; data: SkillSetSnapshot }).data;
+		expect(queried.skills.find((candidate) => candidate.name === "all-fields")?.frontmatter).toEqual(
+			allFieldsSkill.frontmatter,
+		);
+	});
+});
+
+describe("inertness matrix", () => {
+	const FIELDS_FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "skills-contract", "fields");
+
+	async function createInertnessHarness(fixtureName: string) {
+		const eventBus = createEventBus();
+		const spawnRequests: unknown[] = [];
+		eventBus.on("subagents:rpc:spawn", (data) => spawnRequests.push(data));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: [join(FIELDS_FIXTURES_DIR, fixtureName)],
+		});
+		await loader.reload();
+		const harness = await createHarness({ resourceLoader: loader });
+		return { harness, spawnRequests };
+	}
+
+	async function expandSkill(harness: Awaited<ReturnType<typeof createHarness>>, command: string): Promise<string> {
+		let expanded = "";
+		harness.setResponses([
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				expanded = users.length > 0 ? getMessageText(users[users.length - 1]) : "";
+				return fauxAssistantMessage("ok");
+			},
+		]);
+		await harness.session.prompt(command);
+		return expanded;
+	}
+
+	it("keeps allowed-tools advisory only: the active tool list is unchanged after expansion", async () => {
+		const { harness } = await createInertnessHarness("allowed-tools-list");
+		try {
+			const before = harness.session.getActiveToolNames();
+			await expandSkill(harness, "/skill:allowed-tools-list use tools");
+			expect(harness.session.getActiveToolNames()).toEqual(before);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("keeps disallowed-tools advisory only: matching tools are neither schema-removed nor blocked", async () => {
+		const { harness } = await createInertnessHarness("disallowed-tools-list");
+		try {
+			const before = harness.session.getActiveToolNames();
+			expect(before).toContain("bash");
+			await expandSkill(harness, "/skill:disallowed-tools-list use tools");
+			const after = harness.session.getActiveToolNames();
+			expect(after).toEqual(before);
+			expect(after).toContain("bash");
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("keeps model a no-op override: the session's resolved model is unchanged", async () => {
+		const { harness } = await createInertnessHarness("model");
+		try {
+			const beforeModelId = harness.session.model?.id;
+			await expandSkill(harness, "/skill:model run");
+			expect(harness.session.model?.id).toBe(beforeModelId);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("keeps effort a no-op override: the session's resolved thinking level is unchanged", async () => {
+		const { harness } = await createInertnessHarness("effort-string");
+		try {
+			const before = harness.session.thinkingLevel;
+			await expandSkill(harness, "/skill:effort-string run");
+			expect(harness.session.thinkingLevel).toBe(before);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it.each(["context", "agent", "background"] as const)(
+		"keeps %s inert for a context: fork skill: no subagents:rpc:spawn request is ever emitted",
+		async () => {
+			const { harness, spawnRequests } = await createInertnessHarness("context-fork");
+			try {
+				await expandSkill(harness, "/skill:context-fork run");
+				expect(spawnRequests).toEqual([]);
+			} finally {
+				harness.cleanup();
+			}
+		},
+	);
+
+	it("keeps shell inert: no tool executes and no shell command is injected on expansion", async () => {
+		const { harness } = await createInertnessHarness("shell");
+		try {
+			const expanded = await expandSkill(harness, "/skill:shell run");
+			expect(harness.eventsOfType("tool_execution_start")).toEqual([]);
+			expect(expanded).toContain('<skill name="shell" location="');
+			expect(expanded).not.toContain("powershell.exe");
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("keeps hooks parsed-never-executed: hook commands are not injected or run on expansion", async () => {
+		const { harness } = await createInertnessHarness("hooks");
+		try {
+			const expanded = await expandSkill(harness, "/skill:hooks run");
+			expect(harness.eventsOfType("tool_execution_start")).toEqual([]);
+			expect(expanded).not.toContain("echo pre-tool-use");
+			expect(expanded).not.toContain("echo post-tool-use");
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("keeps paths a no-op for listing order: no boost promotes it ahead of an earlier-declared skill", () => {
+		const { skills: pathsSkills } = loadSkillsFromDir({
+			dir: join(FIELDS_FIXTURES_DIR, "paths"),
+			source: "test",
+		});
+		const pathsSkill = pathsSkills[0];
+		const earlierControl = createSkillInput({ name: "aaa-earlier-control" });
+		const listing = formatSkillsForPrompt([earlierControl, pathsSkill]);
+		const earlierIndex = listing.indexOf("<name>aaa-earlier-control</name>");
+		const pathsIndex = listing.indexOf("<name>paths</name>");
+		expect(earlierIndex).toBeGreaterThan(-1);
+		expect(pathsIndex).toBeGreaterThan(earlierIndex);
 	});
 });

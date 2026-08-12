@@ -51,7 +51,7 @@ export type {
 /**
  * Build the slash-command list returned by the RPC `get_commands` command.
  * Skills are gated by the same `commandNameValid && userInvocable` visibility
- * predicate as every other command surface.
+ * predicate as every other skill-command surface.
  */
 export function buildRpcSlashCommands(session: AgentSession): RpcSlashCommand[] {
 	return session.getCommands();

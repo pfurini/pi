@@ -77,18 +77,42 @@ export interface SkillSetController {
 	getSnapshot(): SkillSetSnapshot;
 }
 
-function cloneJsonValue(value: unknown): SkillSetJsonValue {
-	if (value === null || typeof value !== "object") {
-		return value as SkillSetJsonValue;
+function cloneJsonValue(
+	value: unknown,
+	valuePath = "frontmatter",
+	activeObjects = new Set<object>(),
+): SkillSetJsonValue {
+	if (value === null || typeof value === "string" || typeof value === "boolean") {
+		return value;
 	}
-	if (Array.isArray(value)) {
-		return value.map(cloneJsonValue);
+	if (typeof value === "number") {
+		if (Number.isFinite(value)) return value;
+		throw new TypeError(`${valuePath} must contain only finite numbers`);
 	}
-	const result: { [key: string]: SkillSetJsonValue } = {};
-	for (const [key, item] of Object.entries(value)) {
-		result[key] = cloneJsonValue(item);
+	if (typeof value !== "object") {
+		throw new TypeError(`${valuePath} must contain only JSON-safe values`);
 	}
-	return result;
+	if (activeObjects.has(value)) {
+		throw new TypeError(`${valuePath} must not contain cyclic values`);
+	}
+
+	activeObjects.add(value);
+	try {
+		if (Array.isArray(value)) {
+			return value.map((item, index) => cloneJsonValue(item, `${valuePath}[${index}]`, activeObjects));
+		}
+		const prototype = Object.getPrototypeOf(value);
+		if (prototype !== Object.prototype && prototype !== null) {
+			throw new TypeError(`${valuePath} must contain only plain objects and arrays`);
+		}
+		const result: { [key: string]: SkillSetJsonValue } = {};
+		for (const [key, item] of Object.entries(value)) {
+			result[key] = cloneJsonValue(item, `${valuePath}.${key}`, activeObjects);
+		}
+		return result;
+	} finally {
+		activeObjects.delete(value);
+	}
 }
 
 function cloneSourceInfo(sourceInfo: SourceInfo): SkillSetSnapshotSource {

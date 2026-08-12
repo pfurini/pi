@@ -294,6 +294,12 @@ export function normalizeSkillInput(input: SkillInput): {
 	if (rawFrontmatter["disable-model-invocation"] === undefined) {
 		rawFrontmatter["disable-model-invocation"] = input.disableModelInvocation;
 	}
+	if (rawFrontmatter["argument-hint"] === undefined && input.argumentHint !== undefined) {
+		rawFrontmatter["argument-hint"] = input.argumentHint;
+	}
+	if (rawFrontmatter["user-invocable"] === undefined && input.userInvocable !== undefined) {
+		rawFrontmatter["user-invocable"] = input.userInvocable;
+	}
 
 	const safeResult = makeSkillFrontmatterJsonSafe(rawFrontmatter, input.filePath);
 	const frontmatter = safeResult.frontmatter;

@@ -288,6 +288,23 @@ describe("frontmatter contract", () => {
 		expect(customLoaded.frontmatter.when_to_use).toBe("When injected");
 		expect(normalizeSkillInput(customLoaded)).toEqual({ skill: customLoaded, diagnostics: [] });
 	});
+
+	it("uses top-level visibility and hint fields when frontmatter omits them", () => {
+		const fallback = normalizeSkillInput(
+			createSkillInput({ frontmatter: {}, argumentHint: "[path]", userInvocable: false }),
+		).skill;
+		expect(fallback).toMatchObject({ argumentHint: "[path]", userInvocable: false });
+		expect(fallback.frontmatter).toMatchObject({ "argument-hint": "[path]", "user-invocable": false });
+
+		const explicitFrontmatter = normalizeSkillInput(
+			createSkillInput({
+				argumentHint: "[top-level]",
+				userInvocable: true,
+				frontmatter: { "argument-hint": "[frontmatter]", "user-invocable": false },
+			}),
+		).skill;
+		expect(explicitFrontmatter).toMatchObject({ argumentHint: "[frontmatter]", userInvocable: false });
+	});
 });
 
 describe("serialization safety", () => {
@@ -376,6 +393,17 @@ describe("isolation boundary", () => {
 		expect(result.skills).toHaveLength(1);
 		expect(readdirSyncSpy).toHaveBeenCalledWith(allowedDir, { withFileTypes: true });
 		expect(readFileSyncSpy).toHaveBeenCalledWith(skillPath, "utf-8");
+
+		const targetDir = join(tempDir, "allowed-target");
+		const targetSkillPath = writeSkill(targetDir, "name: allowed-link\ndescription: Allowed link");
+		const linkedDir = join(tempDir, "allowed-link");
+		nodeFs.symlinkSync(targetDir, linkedDir, "dir");
+		clearFilesystemSpies();
+
+		const linkedResult = loadSkillsFromDir({ dir: tempDir, source: "test" });
+		expect(linkedResult.skills.some((skill) => skill.name === "allowed-link")).toBe(true);
+		expect(statSyncSpy).toHaveBeenCalledWith(linkedDir);
+		expect(readFileSyncSpy).toHaveBeenCalledWith(targetSkillPath, "utf-8");
 	});
 
 	it("does not traverse or read direct .claude roots", () => {
@@ -694,6 +722,17 @@ unknown-map:
 		});
 		expect(() => controller.publish([evil])).toThrow("clone boom");
 
+		const cyclicFrontmatter: Record<string, unknown> = {};
+		cyclicFrontmatter.self = cyclicFrontmatter;
+		for (const [frontmatter, message] of [
+			[cyclicFrontmatter, /cyclic/],
+			[{ nonFinite: Number.POSITIVE_INFINITY }, /finite numbers/],
+			[{ container: new Map() }, /plain objects and arrays/],
+		] satisfies Array<[Record<string, unknown>, RegExp]>) {
+			expect(() => controller.publish([{ ...good, frontmatter }])).toThrow(message);
+			expect(controller.getSnapshot()).toBe(before);
+		}
+
 		expect(controller.getSnapshot().revision).toBe(1);
 		const replies = querySkillSet(eventBus, "atomicity-query");
 		expect(replies).toEqual([{ success: true, data: before }]);
@@ -750,6 +789,13 @@ unknown-map:
 			eventBus.emit(SKILLS_QUERY_CHANNEL, payload);
 		}
 		expect(emittedChannels.filter((channel) => channel.startsWith("skills:query:reply"))).toEqual([]);
+
+		const replies: RpcReply<SkillSetSnapshot>[] = [];
+		const replyChannel = skillsQueryReplyChannel("positive-control");
+		eventBus.on(replyChannel, (data) => replies.push(data as RpcReply<SkillSetSnapshot>));
+		eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId: "positive-control" });
+		expect(replies).toHaveLength(1);
+		expect(emittedChannels.filter((channel) => channel === replyChannel)).toHaveLength(1);
 	});
 
 	it("keeps snapshots byte-stable for frontmatter that went through serialization-safety substitution", async () => {

@@ -4,10 +4,16 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import { createEventBus } from "../src/core/event-bus.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { DefaultResourceLoader, loadProjectContextFiles } from "../src/core/resource-loader.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import {
+	SKILLS_CHANGED_CHANNEL,
+	SKILLS_QUERY_CHANNEL,
+	skillsQueryReplyChannel,
+} from "../src/core/skills/skill-set-events.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 
@@ -1118,6 +1124,56 @@ export default function(pi: ExtensionAPI) {
 			const files = loadProjectContextFiles({ cwd: src, agentDir });
 
 			expect(files.map((f) => f.content)).toEqual(["repo instructions", "src instructions"]);
+		});
+	});
+
+	describe("skill-set event publication", () => {
+		function writeSkill(directory: string, frontmatter: string): void {
+			mkdirSync(directory, { recursive: true });
+			writeFileSync(join(directory, "SKILL.md"), `---\n${frontmatter}\n---\nSkill body`);
+		}
+
+		it("publishes the effective skill set on the event bus after reload and extendResources", async () => {
+			type Snapshot = { revision: number; skills: Array<{ name: string }>; removed: string[] };
+
+			writeSkill(join(cwd, "base-skill"), "name: base-skill\ndescription: Base skill");
+			writeSkill(join(cwd, "ext-skill"), "name: ext-skill\ndescription: Extension skill");
+
+			const eventBus = createEventBus();
+			const changedEvents: Snapshot[] = [];
+			eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as Snapshot));
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				eventBus,
+				noSkills: true,
+				additionalSkillPaths: ["base-skill"],
+			});
+
+			await loader.reload();
+			expect(changedEvents).toHaveLength(1);
+			expect(changedEvents[0].revision).toBe(1);
+			expect(changedEvents[0].skills.map((entry) => entry.name)).toEqual(["base-skill"]);
+			// Publication payload and getSkills() describe the same effective set.
+			expect(loader.getSkills().skills.map((skill) => skill.name)).toEqual(["base-skill"]);
+
+			loader.extendResources({
+				skillPaths: [
+					{
+						path: join(cwd, "ext-skill"),
+						metadata: { source: "test-extension", scope: "temporary", origin: "top-level" },
+					},
+				],
+			});
+			expect(changedEvents).toHaveLength(2);
+			expect(changedEvents[1].revision).toBe(2);
+			expect(changedEvents[1].skills.map((entry) => entry.name)).toEqual(["base-skill", "ext-skill"]);
+
+			// A query after publication replies with the latest snapshot.
+			const replies: unknown[] = [];
+			eventBus.on(skillsQueryReplyChannel("loader-query"), (data) => replies.push(data));
+			eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId: "loader-query" });
+			expect(replies).toEqual([{ success: true, data: changedEvents[1] }]);
 		});
 	});
 });

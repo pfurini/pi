@@ -765,6 +765,19 @@ buildable).
   `skill-agents:query {requestId}` → current maps, so a late-subscribing core pulls instead of
   waiting for the next registry change. Core keeps the last-received map; absence = empty map
   (rewrite stage no-ops).
+- **C0-time clarification (2026-08-12, appended by the C0b implementation — not original
+  frozen-v6 text):** for the skill-set seam above, each entry's `source` is the complete
+  detached object `{path: string, source: string, scope: "user" | "project" | "temporary",
+  origin: "package" | "top-level", baseDir?: string}` — never the `SourceInfo.source`
+  string alone; `baseDir` is omitted (never `null`/`undefined`) when absent. The canonical
+  serialization used for all byte comparisons is defined by `canonicalSkillSetJson` in
+  `packages/coding-agent/src/core/skills/skill-set-events.ts`: object keys sorted
+  lexicographically (recursively), absent optional fields omitted, `JSON.stringify` with
+  2-space indentation, and a single trailing LF. The canonical serialized conformance
+  fixture is committed at
+  `packages/coding-agent/test/suite/fixtures/skills-contract/skill-set-snapshot.json`;
+  companion repositories copy the public wire types, the canonical-JSON rule, and that
+  fixture byte-for-byte.
 
 ## Appendix B — Pi code anchor map (verified 2026-08-11, branch `personal`)
 

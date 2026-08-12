@@ -263,6 +263,21 @@ export {
 	type SettingsManagerCreateOptions,
 	type TuiMode,
 } from "./core/settings-manager.ts";
+export {
+	canonicalSkillSetJson,
+	getSkillSetController,
+	type RpcReply,
+	SKILLS_CHANGED_CHANNEL,
+	SKILLS_QUERY_CHANNEL,
+	type SkillSetController,
+	type SkillSetJsonValue,
+	type SkillSetSnapshot,
+	type SkillSetSnapshotEntry,
+	type SkillSetSnapshotSource,
+	type SkillsChangedEvent,
+	type SkillsQueryRequest,
+	skillsQueryReplyChannel,
+} from "./core/skills/skill-set-events.ts";
 // Skills
 export {
 	extractSkillListingBlock,

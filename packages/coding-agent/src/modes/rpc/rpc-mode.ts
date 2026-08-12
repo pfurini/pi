@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
@@ -25,6 +26,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { normalizeSkillInput } from "../../core/skills/frontmatter.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { toJsonEvent } from "../json-event.ts";
@@ -46,6 +48,46 @@ export type {
 	RpcResponse,
 	RpcSessionState,
 } from "./rpc-types.ts";
+
+/**
+ * Build the slash-command list returned by the RPC `get_commands` command.
+ * Skills are gated by the same `commandNameValid && userInvocable` visibility
+ * predicate as every other command surface.
+ */
+export function buildRpcSlashCommands(session: AgentSession): RpcSlashCommand[] {
+	const commands: RpcSlashCommand[] = [];
+
+	for (const command of session.extensionRunner.getRegisteredCommands()) {
+		commands.push({
+			name: command.invocationName,
+			description: command.description,
+			source: "extension",
+			sourceInfo: command.sourceInfo,
+		});
+	}
+
+	for (const template of session.promptTemplates) {
+		commands.push({
+			name: template.name,
+			description: template.description,
+			source: "prompt",
+			sourceInfo: template.sourceInfo,
+		});
+	}
+
+	for (const skill of session.resourceLoader.getSkills().skills) {
+		const normalized = normalizeSkillInput(skill).skill;
+		if (!normalized.commandNameValid || !normalized.userInvocable) continue;
+		commands.push({
+			name: `skill:${normalized.name}`,
+			description: normalized.description,
+			source: "skill",
+			sourceInfo: normalized.sourceInfo,
+		});
+	}
+
+	return commands;
+}
 
 /**
  * Run in RPC mode.
@@ -676,36 +718,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_commands": {
-				const commands: RpcSlashCommand[] = [];
-
-				for (const command of session.extensionRunner.getRegisteredCommands()) {
-					commands.push({
-						name: command.invocationName,
-						description: command.description,
-						source: "extension",
-						sourceInfo: command.sourceInfo,
-					});
-				}
-
-				for (const template of session.promptTemplates) {
-					commands.push({
-						name: template.name,
-						description: template.description,
-						source: "prompt",
-						sourceInfo: template.sourceInfo,
-					});
-				}
-
-				for (const skill of session.resourceLoader.getSkills().skills) {
-					commands.push({
-						name: `skill:${skill.name}`,
-						description: skill.description,
-						source: "skill",
-						sourceInfo: skill.sourceInfo,
-					});
-				}
-
-				return success(id, "get_commands", { commands });
+				return success(id, "get_commands", { commands: buildRpcSlashCommands(session) });
 			}
 
 			default: {

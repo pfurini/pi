@@ -22,6 +22,7 @@ import type { PromptTemplate } from "./prompt-templates.ts";
 import { loadPromptTemplates } from "./prompt-templates.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { type LoadedSkill, normalizeSkillInput, type SkillInput } from "./skills/frontmatter.ts";
+import { getSkillSetController, type SkillSetController } from "./skills/skill-set-events.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
@@ -197,6 +198,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private agentDir: string;
 	private settingsManager: SettingsManager;
 	private eventBus: EventBus;
+	private skillSetController: SkillSetController;
 	private packageManager: DefaultPackageManager;
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
@@ -255,6 +257,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.agentDir = resolvePath(options.agentDir);
 		this.settingsManager = options.settingsManager ?? SettingsManager.create(this.cwd, this.agentDir);
 		this.eventBus = options.eventBus ?? createEventBus();
+		this.skillSetController = getSkillSetController(this.eventBus);
 		this.packageManager = new DefaultPackageManager({
 			cwd: this.cwd,
 			agentDir: this.agentDir,
@@ -696,6 +699,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return normalized.skill;
 		});
 		this.skillDiagnostics = [...resolvedSkills.diagnostics, ...normalizationDiagnostics];
+		// Publish the effective set (post-override, post-source-info, post-normalization) so
+		// `getSkills()` and A.9 extension payloads describe the same skills.
+		this.skillSetController.publish(this.skills);
 	}
 
 	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {

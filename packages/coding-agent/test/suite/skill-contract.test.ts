@@ -1,24 +1,41 @@
+import { execSync } from "node:child_process";
 import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import * as mockedFs from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExtensionRuntime } from "../../src/core/extensions/loader.ts";
 import { normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import {
+	canonicalSkillSetJson,
+	createEventBus,
 	DefaultResourceLoader,
+	type EventBus,
+	type ExtensionAPI,
 	extractSkillListingBlock,
 	formatSkillsForPrompt,
+	getSkillSetController,
 	type LoadedSkill,
 	loadSkills,
 	loadSkillsFromDir,
 	type ResourceLoader,
+	type RpcReply,
 	SKILL_LISTING_END_DELIMITER,
 	SKILL_LISTING_START_DELIMITER,
 	SKILL_LISTING_VERSION,
+	SKILLS_CHANGED_CHANNEL,
+	SKILLS_QUERY_CHANNEL,
 	type SkillInput,
+	type SkillSetSnapshot,
+	skillsQueryReplyChannel,
 } from "../../src/index.ts";
+import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
+import { buildRpcSlashCommands } from "../../src/modes/rpc/rpc-mode.ts";
+import { createTestExtensionsResult } from "../utilities.ts";
+import { createHarness } from "./harness.ts";
 
 vi.mock("fs", async (importOriginal) => {
 	const actual = (await importOriginal()) as typeof nodeFs;
@@ -407,5 +424,558 @@ describe("isolation boundary", () => {
 		expect(result.diagnostics).toHaveLength(1);
 		expect(statSyncSpy).not.toHaveBeenCalledWith(linkPath);
 		expect(readFileSyncSpy).not.toHaveBeenCalledWith(linkPath, "utf-8");
+	});
+});
+
+describe("skill-set events", () => {
+	const FIXTURE_ROOT_PLACEHOLDER = "__SKILL_SET_FIXTURE_ROOT__";
+	const FIXTURE_PATH = join(
+		dirname(fileURLToPath(import.meta.url)),
+		"fixtures",
+		"skills-contract",
+		"skill-set-snapshot.json",
+	);
+
+	/**
+	 * Documented temp-root substitution for the canonical fixture: canonical skill IDs are
+	 * realpath-resolved while source paths are not, so the realpath form must be replaced
+	 * before the raw temp path (on macOS the raw form is a substring of the realpath form).
+	 */
+	function substituteFixtureRoot(serialized: string, tempRoot: string): string {
+		return serialized
+			.split(nodeFs.realpathSync(tempRoot))
+			.join(FIXTURE_ROOT_PLACEHOLDER)
+			.split(tempRoot)
+			.join(FIXTURE_ROOT_PLACEHOLDER);
+	}
+
+	function writeFullContractSkill(directory: string): void {
+		writeSkill(
+			directory,
+			`name: full-contract
+description: Full contract
+license: MIT
+compatibility: Pi
+metadata:
+  owner: core
+when_to_use: Use for contract tests
+argument-hint: "[path]"
+arguments: [path]
+allowed-tools: [read]
+disallowed-tools: bash
+disallowedTools: [write]
+model: inherit
+effort: high
+context: inline
+agent: general-purpose
+background: false
+paths: ["src/**"]
+shell: bash
+hooks:
+  PreToolUse: echo ignored
+unknown-scalar: value
+unknown-list: [one, two]
+unknown-map:
+  nested: true`,
+		);
+	}
+
+	/** Mirrors the fixture-generation flow: the override pins the baseDir-omission rule. */
+	function createFixtureLoader(eventBus: EventBus): DefaultResourceLoader {
+		return new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["full-contract", "minimal-skill", "removed-skill"],
+			skillsOverride: (base) => ({
+				skills: base.skills.map((skill) =>
+					skill.name === "minimal-skill"
+						? {
+								...skill,
+								sourceInfo: {
+									path: skill.filePath,
+									source: "fixture-package",
+									scope: "user" as const,
+									origin: "package" as const,
+								},
+							}
+						: skill,
+				),
+				diagnostics: base.diagnostics,
+			}),
+		});
+	}
+
+	function querySkillSet(eventBus: EventBus, requestId: string): Array<RpcReply<SkillSetSnapshot>> {
+		const replies: Array<RpcReply<SkillSetSnapshot>> = [];
+		eventBus.on(skillsQueryReplyChannel(requestId), (data) => replies.push(data as RpcReply<SkillSetSnapshot>));
+		eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId });
+		return replies;
+	}
+
+	it("answers pre-publication queries with the defined initial snapshot", () => {
+		const eventBus = createEventBus();
+		getSkillSetController(eventBus);
+
+		const replies = querySkillSet(eventBus, "early-query");
+		expect(replies).toEqual([{ success: true, data: { revision: 0, skills: [], removed: [] } }]);
+	});
+
+	it("publishes the A.9 lifecycle and matches the canonical wire fixture deep- and byte-exactly", async () => {
+		writeFullContractSkill(join(tempDir, "full-contract"));
+		writeSkill(join(tempDir, "minimal-skill"), "name: minimal-skill\ndescription: Minimal skill");
+		writeSkill(join(tempDir, "removed-skill"), "name: removed-skill\ndescription: Removed skill");
+
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = createFixtureLoader(eventBus);
+
+		await loader.reload();
+		expect(changedEvents).toHaveLength(1);
+		expect(changedEvents[0].revision).toBe(1);
+		expect(changedEvents[0].skills.map((entry) => entry.name)).toEqual([
+			"full-contract",
+			"minimal-skill",
+			"removed-skill",
+		]);
+
+		const removedId = nodeFs.realpathSync(join(tempDir, "removed-skill", "SKILL.md"));
+		nodeFs.rmSync(join(tempDir, "removed-skill"), { recursive: true, force: true });
+		await loader.reload();
+		expect(changedEvents).toHaveLength(2);
+
+		const snapshot = changedEvents[1];
+		expect(snapshot.revision).toBe(2);
+		expect(snapshot.removed).toEqual([removedId]);
+
+		// The query round-trip produces exactly one reply carrying the same authoritative snapshot.
+		const replies = querySkillSet(eventBus, "fixture-query");
+		expect(replies).toHaveLength(1);
+		expect(replies[0]).toEqual({ success: true, data: snapshot });
+
+		// Every entry deep-matches the normalized getSkills() output, including the full source object.
+		const loaded = loader.getSkills().skills;
+		expect(snapshot.skills.map((entry) => entry.id)).toEqual(loaded.map((skill) => skill.id));
+		for (const entry of snapshot.skills) {
+			const skill = loaded.find((candidate) => candidate.id === entry.id);
+			expect(skill).toBeDefined();
+			expect(entry.name).toBe(skill?.name);
+			expect(entry.listingName).toBe(skill?.listingName);
+			expect(entry.baseDir).toBe(skill?.baseDir);
+			expect(entry.frontmatter).toEqual(skill?.frontmatter);
+			expect(entry.source).toEqual({ ...skill?.sourceInfo });
+		}
+
+		// Deep- and byte-compare against the canonical fixture after the documented substitution.
+		const fixtureBytes = nodeFs.readFileSync(FIXTURE_PATH, "utf8");
+		const fixture = JSON.parse(fixtureBytes) as SkillSetSnapshot;
+		const substituted = substituteFixtureRoot(canonicalSkillSetJson(snapshot), tempDir);
+		expect(JSON.parse(substituted)).toEqual(fixture);
+		expect(substituted).toBe(fixtureBytes);
+		const querySubstituted = substituteFixtureRoot(
+			canonicalSkillSetJson((replies[0] as { success: true; data: SkillSetSnapshot }).data),
+			tempDir,
+		);
+		expect(querySubstituted).toBe(fixtureBytes);
+	});
+
+	it("increments bus-scoped revisions across empty load, unchanged reload, deletion, and extension resources", async () => {
+		const emptyBus = createEventBus();
+		const emptyEvents: SkillSetSnapshot[] = [];
+		emptyBus.on(SKILLS_CHANGED_CHANNEL, (data) => emptyEvents.push(data as SkillSetSnapshot));
+		const emptyLoader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus: emptyBus,
+			noSkills: true,
+		});
+		await emptyLoader.reload();
+		expect(emptyEvents).toHaveLength(1);
+		expect(emptyEvents[0]).toMatchObject({ revision: 1, skills: [], removed: [] });
+
+		writeSkill(join(tempDir, "skill-a"), "name: skill-a\ndescription: Skill A");
+		writeSkill(join(tempDir, "skill-b"), "name: skill-b\ndescription: Skill B");
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["skill-a"],
+		});
+
+		await loader.reload();
+		expect(changedEvents[0]).toMatchObject({ revision: 1, removed: [] });
+		expect(changedEvents[0].skills.map((entry) => entry.name)).toEqual(["skill-a"]);
+
+		await loader.reload();
+		expect(changedEvents[1]).toMatchObject({ revision: 2, removed: [] });
+		expect(changedEvents[1].skills.map((entry) => entry.name)).toEqual(["skill-a"]);
+
+		loader.extendResources({
+			skillPaths: [
+				{
+					path: join(tempDir, "skill-b"),
+					metadata: { source: "test-extension", scope: "temporary", origin: "top-level" },
+				},
+			],
+		});
+		expect(changedEvents[2]).toMatchObject({ revision: 3, removed: [] });
+		expect(changedEvents[2].skills.map((entry) => entry.name)).toEqual(["skill-a", "skill-b"]);
+
+		const removedId = nodeFs.realpathSync(join(tempDir, "skill-a", "SKILL.md"));
+		nodeFs.rmSync(join(tempDir, "skill-a"), { recursive: true, force: true });
+		await loader.reload();
+		expect(changedEvents[3].revision).toBe(4);
+		expect(changedEvents[3].removed).toContain(removedId);
+	});
+
+	it("shares one controller and query listener across loaders on the same bus", async () => {
+		writeSkill(join(tempDir, "first-skill"), "name: first-skill\ndescription: First skill");
+		writeSkill(join(tempDir, "second-skill"), "name: second-skill\ndescription: Second skill");
+		const eventBus = createEventBus();
+		const createLoader = (skillPath: string) =>
+			new DefaultResourceLoader({
+				cwd: tempDir,
+				agentDir: tempDir,
+				eventBus,
+				noSkills: true,
+				additionalSkillPaths: [skillPath],
+			});
+
+		// Two concurrently alive loaders: the latest publication is authoritative.
+		const first = createLoader("first-skill");
+		const second = createLoader("second-skill");
+		await first.reload();
+		await second.reload();
+		let replies = querySkillSet(eventBus, "multi-1");
+		expect(replies).toHaveLength(1);
+		expect(replies[0]).toMatchObject({ success: true, data: { revision: 2 } });
+		expect((replies[0] as { success: true; data: SkillSetSnapshot }).data.skills.map((entry) => entry.name)).toEqual([
+			"second-skill",
+		]);
+
+		// A sequential third loader keeps the bus-scoped monotonic revision going.
+		const third = createLoader("first-skill");
+		await third.reload();
+		replies = querySkillSet(eventBus, "multi-2");
+		expect(replies).toHaveLength(1);
+		expect(replies[0]).toMatchObject({ success: true, data: { revision: 3 } });
+		expect((replies[0] as { success: true; data: SkillSetSnapshot }).data.skills.map((entry) => entry.name)).toEqual([
+			"first-skill",
+		]);
+	});
+
+	it("keeps the previous authoritative snapshot when publication construction fails", async () => {
+		writeSkill(join(tempDir, "stable-skill"), "name: stable-skill\ndescription: Stable skill");
+		const eventBus = createEventBus();
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["stable-skill"],
+		});
+		await loader.reload();
+		const controller = getSkillSetController(eventBus);
+		const before = controller.getSnapshot();
+		expect(before.revision).toBe(1);
+
+		const good = loader.getSkills().skills[0];
+		const evil = { ...good };
+		Object.defineProperty(evil, "frontmatter", {
+			get(): never {
+				throw new Error("clone boom");
+			},
+		});
+		expect(() => controller.publish([evil])).toThrow("clone boom");
+
+		expect(controller.getSnapshot().revision).toBe(1);
+		const replies = querySkillSet(eventBus, "atomicity-query");
+		expect(replies).toEqual([{ success: true, data: before }]);
+	});
+
+	it("isolates snapshots from subscriber mutation of arrays, source, and nested frontmatter", async () => {
+		writeSkill(
+			join(tempDir, "frozen-skill"),
+			"name: frozen-skill\ndescription: Frozen skill\nmetadata:\n  owner: core\nunknown-list: [one]",
+		);
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["frozen-skill"],
+		});
+		await loader.reload();
+		const payload = changedEvents[0];
+
+		expect(() => (payload.skills as unknown as unknown[]).push({})).toThrow(TypeError);
+		expect(() => (payload.removed as unknown as string[]).push("x")).toThrow(TypeError);
+		expect(() => {
+			(payload.skills[0].source as { path: string }).path = "hacked";
+		}).toThrow(TypeError);
+		expect(() => {
+			(payload.skills[0].frontmatter.metadata as Record<string, unknown>).owner = "hacked";
+		}).toThrow(TypeError);
+
+		const replies = querySkillSet(eventBus, "mutation-query");
+		expect(replies).toEqual([{ success: true, data: payload }]);
+		expect(replies[0]).toMatchObject({ success: true, data: { revision: 1 } });
+
+		// Loader-owned skills are never frozen or mutated by publication.
+		const skill = loader.getSkills().skills[0];
+		expect(skill.frontmatter.metadata).toEqual({ owner: "core" });
+		expect(Object.isFrozen(skill.frontmatter)).toBe(false);
+	});
+
+	it("ignores malformed query payloads without throwing or emitting replies", () => {
+		const eventBus = createEventBus();
+		getSkillSetController(eventBus);
+		const emittedChannels: string[] = [];
+		const originalEmit = eventBus.emit;
+		eventBus.emit = (channel, data) => {
+			emittedChannels.push(channel);
+			originalEmit(channel, data);
+		};
+
+		for (const payload of [null, undefined, "skills:query", 42, {}, { requestId: "" }, { requestId: 42 }]) {
+			eventBus.emit(SKILLS_QUERY_CHANNEL, payload);
+		}
+		expect(emittedChannels.filter((channel) => channel.startsWith("skills:query:reply"))).toEqual([]);
+	});
+
+	it("keeps snapshots byte-stable for frontmatter that went through serialization-safety substitution", async () => {
+		writeSkill(
+			join(tempDir, "unsafe-yaml"),
+			`name: unsafe-yaml
+description: Unsafe YAML
+cycle: &loop
+  self: *loop
+nan: .nan
+binary: !!binary SGVsbG8=`,
+		);
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["unsafe-yaml"],
+		});
+		await loader.reload();
+
+		const snapshot = changedEvents[0];
+		expect(snapshot.skills[0].frontmatter).not.toHaveProperty("nan");
+		expect(snapshot.skills[0].frontmatter).not.toHaveProperty("binary");
+		const firstSerialization = canonicalSkillSetJson(snapshot);
+		expect(canonicalSkillSetJson(snapshot)).toBe(firstSerialization);
+		const replies = querySkillSet(eventBus, "safety-query");
+		expect(replies[0]).toEqual({ success: true, data: snapshot });
+		expect(canonicalSkillSetJson((replies[0] as { success: true; data: SkillSetSnapshot }).data)).toBe(
+			firstSerialization,
+		);
+	});
+
+	it("drives the seam end to end through a harness inline extension using the public pi.events API", async () => {
+		writeSkill(join(tempDir, "harness-skill"), "name: harness-skill\ndescription: Harness skill");
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		const initReplies: Array<RpcReply<SkillSetSnapshot>> = [];
+		let api: ExtensionAPI | undefined;
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: ["harness-skill"],
+			extensionFactories: [
+				(pi) => {
+					api = pi;
+					pi.events.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+					pi.events.on(skillsQueryReplyChannel("factory-init"), (data) =>
+						initReplies.push(data as RpcReply<SkillSetSnapshot>),
+					);
+					// A query issued during factory initialization gets the defined initial reply.
+					pi.events.emit(SKILLS_QUERY_CHANNEL, { requestId: "factory-init" });
+				},
+			],
+		});
+		await loader.reload();
+		const harness = await createHarness({ resourceLoader: loader });
+		try {
+			expect(initReplies).toEqual([{ success: true, data: { revision: 0, skills: [], removed: [] } }]);
+			expect(changedEvents).toHaveLength(1);
+			expect(changedEvents[0].skills.map((entry) => entry.name)).toEqual(["harness-skill"]);
+			expect(changedEvents[0].skills[0].source).toMatchObject({
+				path: join(tempDir, "harness-skill", "SKILL.md"),
+				source: "local",
+				scope: "temporary",
+				origin: "top-level",
+			});
+
+			expect(api).toBeDefined();
+			const replies: Array<RpcReply<SkillSetSnapshot>> = [];
+			api?.events.on(skillsQueryReplyChannel("after-load"), (data) =>
+				replies.push(data as RpcReply<SkillSetSnapshot>),
+			);
+			api?.events.emit(SKILLS_QUERY_CHANNEL, { requestId: "after-load" });
+			expect(replies).toEqual([{ success: true, data: changedEvents[0] }]);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("pins the A.9 source shape, fixture path, and canonical-JSON rule in the frozen plan document", () => {
+		const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+		const planText = nodeFs
+			.readFileSync(join(repoRoot, "docs", "plans", "pi-skill-system-plan.md"), "utf8")
+			.replace(/\s+/g, " ");
+		expect(planText).toContain(
+			'{path: string, source: string, scope: "user" | "project" | "temporary", origin: "package" | "top-level", baseDir?: string}',
+		);
+		expect(planText).toContain("packages/coding-agent/test/suite/fixtures/skills-contract/skill-set-snapshot.json");
+		expect(planText).toContain("canonicalSkillSetJson");
+		expect(planText).toContain("sorted lexicographically");
+		expect(planText).toContain("2-space indentation");
+		expect(planText).toContain("trailing LF");
+	});
+});
+
+describe("command visibility", () => {
+	function createVisibilitySkills(): SkillInput[] {
+		return [
+			createSkillInput({ name: "valid-skill", frontmatter: { "argument-hint": "[path]" } }),
+			createSkillInput({ name: "hidden-skill", frontmatter: { "user-invocable": false } }),
+			createSkillInput({ name: "dmi-skill", disableModelInvocation: true }),
+			createSkillInput({ name: "Upper.Name" }),
+			createSkillInput({ name: "trailing." }),
+			createSkillInput({ name: "skill:reserved" }),
+		];
+	}
+
+	function createVisibilityLoader(skills: SkillInput[]): ResourceLoader {
+		return {
+			getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+			getSkills: () => ({ skills, diagnostics: [] }),
+			getPrompts: () => ({ prompts: [], diagnostics: [] }),
+			getThemes: () => ({ themes: [], diagnostics: [] }),
+			getAgentsFiles: () => ({ agentsFiles: [] }),
+			getSystemPrompt: () => undefined,
+			getSystemPromptSource: () => undefined,
+			getAppendSystemPrompt: () => [],
+			getAppendSystemPromptSources: () => [],
+			extendResources: () => {},
+			reload: async () => {},
+		};
+	}
+
+	const VISIBLE_COMMANDS = ["skill:valid-skill", "skill:dmi-skill", "skill:Upper.Name"];
+	const GATED_COMMANDS = ["skill:hidden-skill", "skill:trailing.", "skill:skill:reserved"];
+
+	function expectVisibility(names: string[]): void {
+		for (const visible of VISIBLE_COMMANDS) {
+			expect(names).toContain(visible);
+		}
+		for (const gated of GATED_COMMANDS) {
+			expect(names).not.toContain(gated);
+		}
+	}
+
+	it("gates the extension getCommands enumerator", async () => {
+		let api: ExtensionAPI | undefined;
+		const extensionsResult = await createTestExtensionsResult(
+			[
+				(pi) => {
+					api = pi;
+				},
+			],
+			tempDir,
+		);
+		const base = createVisibilityLoader(createVisibilitySkills());
+		const harness = await createHarness({
+			resourceLoader: { ...base, getExtensions: () => extensionsResult },
+		});
+		try {
+			expect(api).toBeDefined();
+			const names = (api as ExtensionAPI).getCommands().map((command) => command.name);
+			expectVisibility(names);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("gates RPC get_commands", async () => {
+		const harness = await createHarness({ resourceLoader: createVisibilityLoader(createVisibilitySkills()) });
+		try {
+			const names = buildRpcSlashCommands(harness.session)
+				.filter((command) => command.source === "skill")
+				.map((command) => command.name);
+			expectVisibility(names);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("gates interactive autocomplete and surfaces argument hints", async () => {
+		type FakeInteractiveMode = {
+			session: {
+				scopedModels: [];
+				modelRuntime: { getAvailableSnapshot: () => [] };
+				promptTemplates: [];
+				extensionRunner: { getRegisteredCommands: () => [] };
+				resourceLoader: ResourceLoader;
+			};
+			settingsManager: { getEnableSkillCommands: () => boolean };
+			skillCommands: Map<string, string>;
+			sessionManager: { getCwd: () => string };
+			fdPath: null;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
+		};
+		const createBaseAutocompleteProvider = (
+			InteractiveMode as unknown as {
+				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
+			}
+		).prototype.createBaseAutocompleteProvider;
+		const fakeThis: FakeInteractiveMode = {
+			session: {
+				scopedModels: [],
+				modelRuntime: { getAvailableSnapshot: () => [] },
+				promptTemplates: [],
+				extensionRunner: { getRegisteredCommands: () => [] },
+				resourceLoader: createVisibilityLoader(createVisibilitySkills()),
+			},
+			settingsManager: { getEnableSkillCommands: () => true },
+			skillCommands: new Map(),
+			sessionManager: { getCwd: () => tempDir },
+			fdPath: null,
+			prefixAutocompleteDescription: (description) => description,
+		};
+
+		const provider = createBaseAutocompleteProvider.call(fakeThis);
+		const line = "/skill:";
+		const suggestions = await provider.getSuggestions([line], 0, line.length, {
+			signal: new AbortController().signal,
+		});
+		const items = suggestions?.items ?? [];
+		expectVisibility(items.map((item) => item.value));
+		const visible = items.find((item) => item.value === "skill:valid-skill");
+		expect(visible?.description).toContain("[path]");
+	});
+
+	it("keeps user-hidden skills model-listable and dmi skills command-visible only", () => {
+		const listing = formatSkillsForPrompt(createVisibilitySkills());
+		expect(listing).toContain("<name>hidden-skill</name>");
+		expect(listing).toContain("<name>Upper.Name</name>");
+		expect(listing).not.toContain("<name>dmi-skill</name>");
 	});
 });

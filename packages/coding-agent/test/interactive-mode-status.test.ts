@@ -482,6 +482,96 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 			},
 		]);
 	});
+	test("gates skill commands by visibility and shows argument hints", async () => {
+		type FakeInteractiveMode = {
+			session: {
+				scopedModels: [];
+				modelRuntime: { getAvailableSnapshot: () => [] };
+				promptTemplates: [];
+				extensionRunner: { getRegisteredCommands: () => [] };
+				resourceLoader: {
+					getSkills: () => {
+						skills: Array<{
+							name: string;
+							description: string;
+							filePath: string;
+							baseDir: string;
+							disableModelInvocation: boolean;
+							sourceInfo: SourceInfo;
+							frontmatter?: Record<string, unknown>;
+						}>;
+						diagnostics: [];
+					};
+				};
+			};
+			settingsManager: { getEnableSkillCommands: () => boolean };
+			skillCommands: Map<string, string>;
+			sessionManager: { getCwd: () => string };
+			fdPath: null;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
+		};
+		const createBaseAutocompleteProvider = (
+			InteractiveMode as unknown as {
+				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
+			}
+		).prototype.createBaseAutocompleteProvider;
+		const makeSkill = (name: string, frontmatter?: Record<string, unknown>) => ({
+			name,
+			description: `${name} description`,
+			filePath: `/tmp/skills/${name}.md`,
+			baseDir: "/tmp/skills",
+			disableModelInvocation: false,
+			sourceInfo: {
+				path: `/tmp/skills/${name}.md`,
+				source: "local",
+				scope: "project" as const,
+				origin: "top-level" as const,
+			},
+			...(frontmatter && { frontmatter }),
+		});
+		const fakeThis: FakeInteractiveMode = {
+			session: {
+				scopedModels: [],
+				modelRuntime: { getAvailableSnapshot: () => [] },
+				promptTemplates: [],
+				extensionRunner: { getRegisteredCommands: () => [] },
+				resourceLoader: {
+					getSkills: () => ({
+						skills: [
+							makeSkill("visible-skill", { "argument-hint": "[path]" }),
+							{ ...makeSkill("dmi-skill"), disableModelInvocation: true },
+							makeSkill("Upper.Name"),
+							makeSkill("hidden-skill", { "user-invocable": false }),
+							makeSkill("trailing."),
+							makeSkill("skill:reserved"),
+						],
+						diagnostics: [],
+					}),
+				},
+			},
+			settingsManager: { getEnableSkillCommands: () => true },
+			skillCommands: new Map(),
+			sessionManager: { getCwd: () => "/tmp" },
+			fdPath: null,
+			prefixAutocompleteDescription: (description) => description,
+		};
+
+		const provider = createBaseAutocompleteProvider.call(fakeThis);
+		const line = "/skill:";
+		const suggestions = await provider.getSuggestions([line], 0, line.length, {
+			signal: new AbortController().signal,
+		});
+		const items = suggestions?.items ?? [];
+		const values = items.map((item) => item.value);
+		expect(values).toContain("skill:visible-skill");
+		expect(values).toContain("skill:dmi-skill");
+		expect(values).toContain("skill:Upper.Name");
+		expect(values).not.toContain("skill:hidden-skill");
+		expect(values).not.toContain("skill:trailing.");
+		expect(values).not.toContain("skill:skill:reserved");
+		const visible = items.find((item) => item.value === "skill:visible-skill");
+		expect(visible?.description).toContain("[path]");
+	});
 });
 describe("InteractiveMode.showLoadedResources", () => {
 	beforeAll(() => {

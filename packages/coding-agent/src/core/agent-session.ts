@@ -103,6 +103,7 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.t
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
+import { normalizeSkillInput } from "./skills/frontmatter.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -1455,8 +1456,11 @@ export class AgentSession {
 		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 
-		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
-		if (!skill) return text; // Unknown skill, pass through
+		const skill = this.resourceLoader
+			.getSkills()
+			.skills.map((s) => normalizeSkillInput(s).skill)
+			.find((s) => s.name === skillName && s.commandNameValid && s.userInvocable);
+		if (!skill) return text; // Unknown, hidden, or command-ineligible skill, pass through
 
 		try {
 			const content = readFileSync(skill.filePath, "utf-8");
@@ -2494,13 +2498,16 @@ export class AgentSession {
 				sourceInfo: template.sourceInfo,
 			}));
 
-			const skills: SlashCommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
-				name: `skill:${skill.name}`,
-				description: skill.description,
-				source: "skill",
-				sourceInfo: skill.sourceInfo,
-			}));
-
+			const skills: SlashCommandInfo[] = this._resourceLoader
+				.getSkills()
+				.skills.map((skill) => normalizeSkillInput(skill).skill)
+				.filter((skill) => skill.commandNameValid && skill.userInvocable)
+				.map((skill) => ({
+					name: `skill:${skill.name}`,
+					description: skill.description,
+					source: "skill",
+					sourceInfo: skill.sourceInfo,
+				}));
 			return [...extensionCommands, ...templates, ...skills];
 		};
 

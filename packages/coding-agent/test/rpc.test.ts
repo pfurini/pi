@@ -4,9 +4,54 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { AgentSession } from "../src/core/agent-session.ts";
+import type { SkillInput } from "../src/core/skills.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { RpcClient } from "../src/modes/rpc/rpc-client.ts";
+import { buildRpcSlashCommands } from "../src/modes/rpc/rpc-mode.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+describe("buildRpcSlashCommands", () => {
+	function makeSkill(name: string, frontmatter?: Record<string, unknown>): SkillInput {
+		const filePath = `/tmp/skills/${name}.md`;
+		return {
+			name,
+			description: `${name} description`,
+			filePath,
+			baseDir: "/tmp/skills",
+			disableModelInvocation: false,
+			sourceInfo: createSyntheticSourceInfo(filePath, { source: "local", scope: "project", origin: "top-level" }),
+			...(frontmatter && { frontmatter }),
+		};
+	}
+
+	test("omits hidden and command-ineligible skills from get_commands", () => {
+		const skills: SkillInput[] = [
+			makeSkill("visible-skill"),
+			makeSkill("Upper.Name"),
+			{ ...makeSkill("dmi-skill"), disableModelInvocation: true },
+			makeSkill("hidden-skill", { "user-invocable": false }),
+			makeSkill("trailing."),
+			makeSkill("skill:reserved"),
+		];
+		const session = {
+			extensionRunner: { getRegisteredCommands: () => [] },
+			promptTemplates: [],
+			resourceLoader: { getSkills: () => ({ skills, diagnostics: [] }) },
+		} as unknown as AgentSession;
+
+		const names = buildRpcSlashCommands(session)
+			.filter((command) => command.source === "skill")
+			.map((command) => command.name);
+		expect(names).toContain("skill:visible-skill");
+		expect(names).toContain("skill:Upper.Name");
+		expect(names).toContain("skill:dmi-skill");
+		expect(names).not.toContain("skill:hidden-skill");
+		expect(names).not.toContain("skill:trailing.");
+		expect(names).not.toContain("skill:skill:reserved");
+	});
+});
 
 /**
  * RPC mode tests.

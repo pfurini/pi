@@ -94,6 +94,7 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
+import { normalizeSkillInput } from "../../core/skills/frontmatter.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
@@ -713,11 +714,14 @@ export class InteractiveMode {
 		const skillCommandList: SlashCommand[] = [];
 		if (this.settingsManager.getEnableSkillCommands()) {
 			for (const skill of this.session.resourceLoader.getSkills().skills) {
-				const commandName = `skill:${skill.name}`;
-				this.skillCommands.set(commandName, skill.filePath);
+				const normalized = normalizeSkillInput(skill).skill;
+				if (!normalized.commandNameValid || !normalized.userInvocable) continue;
+				const commandName = `skill:${normalized.name}`;
+				this.skillCommands.set(commandName, normalized.filePath);
 				skillCommandList.push({
 					name: commandName,
-					description: this.prefixAutocompleteDescription(skill.description, skill.sourceInfo),
+					description: this.prefixAutocompleteDescription(normalized.description, normalized.sourceInfo),
+					...(normalized.argumentHint && { argumentHint: normalized.argumentHint }),
 				});
 			}
 		}

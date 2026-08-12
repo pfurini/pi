@@ -21,7 +21,7 @@ import { DefaultPackageManager, type PathMetadata, type ResolvedResource } from 
 import type { PromptTemplate } from "./prompt-templates.ts";
 import { loadPromptTemplates } from "./prompt-templates.ts";
 import { SettingsManager } from "./settings-manager.ts";
-import type { Skill } from "./skills.ts";
+import { type LoadedSkill, normalizeSkillInput, type SkillInput } from "./skills/frontmatter.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
@@ -38,7 +38,7 @@ export interface ResourceLoaderReloadOptions {
 
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
-	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	getSkills(): { skills: SkillInput[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
@@ -173,8 +173,8 @@ export interface DefaultResourceLoaderOptions {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
-	skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
-		skills: Skill[];
+	skillsOverride?: (base: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] }) => {
+		skills: SkillInput[];
 		diagnostics: ResourceDiagnostic[];
 	};
 	promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
@@ -211,8 +211,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string[];
 	private extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
-	private skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
-		skills: Skill[];
+	private skillsOverride?: (base: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] }) => {
+		skills: SkillInput[];
 		diagnostics: ResourceDiagnostic[];
 	};
 	private promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
@@ -230,7 +230,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private appendSystemPromptOverride?: (base: string[]) => string[];
 
 	private extensionsResult: LoadExtensionsResult;
-	private skills: Skill[];
+	private skills: LoadedSkill[];
 	private skillDiagnostics: ResourceDiagnostic[];
 	private prompts: PromptTemplate[];
 	private promptDiagnostics: ResourceDiagnostic[];
@@ -304,7 +304,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return this.extensionsResult;
 	}
 
-	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
+	getSkills(): { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
 	}
 
@@ -670,7 +670,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
-		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+		let skillsResult: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
 		} else {
@@ -682,14 +682,20 @@ export class DefaultResourceLoader implements ResourceLoader {
 			});
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
-		this.skills = resolvedSkills.skills.map((skill) => ({
-			...skill,
-			sourceInfo:
-				this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, metadataByPath) ??
-				skill.sourceInfo ??
-				this.getDefaultSourceInfoForPath(skill.filePath),
-		}));
-		this.skillDiagnostics = resolvedSkills.diagnostics;
+		const normalizationDiagnostics: ResourceDiagnostic[] = [];
+		this.skills = resolvedSkills.skills.map((skill) => {
+			const withSourceInfo: SkillInput = {
+				...skill,
+				sourceInfo:
+					this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, metadataByPath) ??
+					skill.sourceInfo ??
+					this.getDefaultSourceInfoForPath(skill.filePath),
+			};
+			const normalized = normalizeSkillInput(withSourceInfo);
+			normalizationDiagnostics.push(...normalized.diagnostics);
+			return normalized.skill;
+		});
+		this.skillDiagnostics = [...resolvedSkills.diagnostics, ...normalizationDiagnostics];
 	}
 
 	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {

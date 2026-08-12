@@ -239,7 +239,7 @@ describe("skills", () => {
 
 			const result = formatSkillsForPrompt(skills);
 
-			expect(result).toContain("<available_skills>");
+			expect(result).toContain('<available_skills version="2">');
 			expect(result).toContain("</available_skills>");
 			expect(result).toContain("<skill>");
 			expect(result).toContain("<name>test-skill</name>");
@@ -258,7 +258,7 @@ describe("skills", () => {
 			];
 
 			const result = formatSkillsForPrompt(skills);
-			const xmlStart = result.indexOf("<available_skills>");
+			const xmlStart = result.indexOf('<available_skills version="2">');
 			const introText = result.substring(0, xmlStart);
 
 			expect(introText).toContain("The following skills provide specialized instructions");

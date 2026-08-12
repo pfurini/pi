@@ -265,13 +265,19 @@ export {
 } from "./core/settings-manager.ts";
 // Skills
 export {
+	extractSkillListingBlock,
 	formatSkillsForPrompt,
+	type LoadedSkill,
 	type LoadSkillsFromDirOptions,
 	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
+	SKILL_LISTING_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER,
+	SKILL_LISTING_VERSION,
 	type Skill,
 	type SkillFrontmatter,
+	type SkillInput,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";

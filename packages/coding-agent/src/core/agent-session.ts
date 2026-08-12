@@ -1118,6 +1118,33 @@ export class AgentSession {
 		return this._resourceLoader.getPrompts().prompts;
 	}
 
+	/** Commands exposed by extensions, prompt templates, and invocable skills. */
+	getCommands(): SlashCommandInfo[] {
+		const extensionCommands: SlashCommandInfo[] = this._extensionRunner.getRegisteredCommands().map((command) => ({
+			name: command.invocationName,
+			description: command.description,
+			source: "extension",
+			sourceInfo: command.sourceInfo,
+		}));
+		const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
+			name: template.name,
+			description: template.description,
+			source: "prompt",
+			sourceInfo: template.sourceInfo,
+		}));
+		const skills: SlashCommandInfo[] = this._resourceLoader
+			.getSkills()
+			.skills.map((skill) => normalizeSkillInput(skill).skill)
+			.filter((skill) => skill.commandNameValid && skill.userInvocable)
+			.map((skill) => ({
+				name: `skill:${skill.name}`,
+				description: skill.description,
+				source: "skill",
+				sourceInfo: skill.sourceInfo,
+			}));
+		return [...extensionCommands, ...templates, ...skills];
+	}
+
 	private _normalizePromptSnippet(text: string | undefined): string | undefined {
 		if (!text) return undefined;
 		const oneLine = text
@@ -2483,34 +2510,6 @@ export class AgentSession {
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
-		const getCommands = (): SlashCommandInfo[] => {
-			const extensionCommands: SlashCommandInfo[] = runner.getRegisteredCommands().map((command) => ({
-				name: command.invocationName,
-				description: command.description,
-				source: "extension",
-				sourceInfo: command.sourceInfo,
-			}));
-
-			const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
-				name: template.name,
-				description: template.description,
-				source: "prompt",
-				sourceInfo: template.sourceInfo,
-			}));
-
-			const skills: SlashCommandInfo[] = this._resourceLoader
-				.getSkills()
-				.skills.map((skill) => normalizeSkillInput(skill).skill)
-				.filter((skill) => skill.commandNameValid && skill.userInvocable)
-				.map((skill) => ({
-					name: `skill:${skill.name}`,
-					description: skill.description,
-					source: "skill",
-					sourceInfo: skill.sourceInfo,
-				}));
-			return [...extensionCommands, ...templates, ...skills];
-		};
-
 		runner.bindCore(
 			{
 				sendMessage: (message, options) => {
@@ -2551,7 +2550,7 @@ export class AgentSession {
 				getAllTools: () => this.getAllTools(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
-				getCommands,
+				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
 					if (!this._modelRuntime.hasConfiguredAuth(model.provider)) return false;
 					await this.setModel(model);

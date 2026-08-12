@@ -26,7 +26,6 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
-import { normalizeSkillInput } from "../../core/skills/frontmatter.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { toJsonEvent } from "../json-event.ts";
@@ -55,38 +54,7 @@ export type {
  * predicate as every other command surface.
  */
 export function buildRpcSlashCommands(session: AgentSession): RpcSlashCommand[] {
-	const commands: RpcSlashCommand[] = [];
-
-	for (const command of session.extensionRunner.getRegisteredCommands()) {
-		commands.push({
-			name: command.invocationName,
-			description: command.description,
-			source: "extension",
-			sourceInfo: command.sourceInfo,
-		});
-	}
-
-	for (const template of session.promptTemplates) {
-		commands.push({
-			name: template.name,
-			description: template.description,
-			source: "prompt",
-			sourceInfo: template.sourceInfo,
-		});
-	}
-
-	for (const skill of session.resourceLoader.getSkills().skills) {
-		const normalized = normalizeSkillInput(skill).skill;
-		if (!normalized.commandNameValid || !normalized.userInvocable) continue;
-		commands.push({
-			name: `skill:${normalized.name}`,
-			description: normalized.description,
-			source: "skill",
-			sourceInfo: normalized.sourceInfo,
-		});
-	}
-
-	return commands;
+	return session.getCommands();
 }
 
 /**

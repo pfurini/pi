@@ -3435,7 +3435,7 @@ export class InteractiveMode {
 
 	/** Record an accepted live editor submission into the prompt-history cache and the active editor. */
 	private recordPromptHistory(text: string): void {
-		this.promptHistoryController.record(text, this.editor);
+		this.promptHistoryController.record(text);
 	}
 
 	/**

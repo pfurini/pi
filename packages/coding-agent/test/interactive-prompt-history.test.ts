@@ -186,7 +186,7 @@ describe("PromptHistoryController", () => {
 		controller.setEditor(editor);
 
 		await controller.refresh(session);
-		controller.record("new prompt", editor);
+		controller.record("new prompt");
 
 		expect(editor.addToHistoryCalls).toEqual(["new prompt"]);
 
@@ -206,7 +206,7 @@ describe("PromptHistoryController", () => {
 
 		controller.setEditor(editor);
 		await controller.refresh(session);
-		controller.record("live prompt", editor);
+		controller.record("live prompt");
 
 		expect(setTextSpy).not.toHaveBeenCalled();
 	});
@@ -297,7 +297,7 @@ describe("PromptHistoryController", () => {
 		const firstRefresh = controller.refresh(session);
 
 		// A prompt is submitted while A is in flight.
-		controller.record("submitted during A", editor);
+		controller.record("submitted during A");
 
 		// Refresh B starts before A resolves (e.g. cycling maxEntries right after scope in /settings).
 		const secondRefresh = controller.refresh(session);
@@ -333,7 +333,7 @@ describe("PromptHistoryController", () => {
 		const refreshPromise = controller.refresh(session);
 
 		// A prompt is submitted while the collector's I/O is still pending.
-		controller.record("submitted during refresh", editor);
+		controller.record("submitted during refresh");
 		expect(editor.addToHistoryCalls).toEqual(["submitted during refresh"]);
 
 		resolveLoad(["old one", "old two"]);
@@ -362,7 +362,7 @@ describe("PromptHistoryController", () => {
 		controller.setEditor(editor);
 
 		const refreshPromise = controller.refresh(session);
-		controller.record("mid-refresh prompt", editor);
+		controller.record("mid-refresh prompt");
 
 		const unlimitedResult = Array.from({ length: 500 }, (_, i) => `old prompt ${i}`);
 		resolveLoad(unlimitedResult);
@@ -507,7 +507,7 @@ describe("PromptHistoryController", () => {
 		controller.setEditor(editor);
 
 		const inFlight = controller.refresh(session);
-		controller.record("live prompt", editor);
+		controller.record("live prompt");
 		rejectLoad(new Error("disk read failed"));
 		const result = await inFlight;
 

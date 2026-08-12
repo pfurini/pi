@@ -1,3 +1,4 @@
+import { deepFreeze } from "../../utils/deep-freeze.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { LoadedSkill } from "./frontmatter.ts";
@@ -98,16 +99,6 @@ function cloneSourceInfo(sourceInfo: SourceInfo): SkillSetSnapshotSource {
 		origin: sourceInfo.origin,
 		...(sourceInfo.baseDir !== undefined && { baseDir: sourceInfo.baseDir }),
 	};
-}
-
-function deepFreeze(value: unknown): void {
-	if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
-		return;
-	}
-	Object.freeze(value);
-	for (const key of Object.keys(value)) {
-		deepFreeze((value as Record<string, unknown>)[key]);
-	}
 }
 
 function sortKeysRecursively(value: unknown): unknown {

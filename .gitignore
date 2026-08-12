@@ -47,3 +47,6 @@ collect.sh
 
 !.pi/skills/prp-plan
 !.pi/skills/prp-plan-review
+!.pi/skills/prp-implement
+!.pi/skills/prp-review
+!.pi/skills/prp-commit

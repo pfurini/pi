@@ -799,14 +799,14 @@ export interface Model<TApi extends Api> {
 	baseUrl: string;
 	reasoning: boolean;
 	/**
-	 * True only when this model's concrete `(api, provider)` converter path has been verified
+	 * Present (always `true`) only when this model's concrete `(api, provider)` converter path has been verified
 	 * (`packages/ai/test/skill-synthetic-pair-replay.test.ts`) to replay a synthetic
 	 * assistant-tool-call/tool-result pair without corrupting order, name, arguments, result
-	 * text, or correlation ID. False or absent means the caller must fall back to message-block
+	 * text, or correlation ID. Absent means the caller must fall back to message-block
 	 * delivery. Never set by hand: generated only from {@link SKILL_SYNTHETIC_REPLAY_CLASSES} in
 	 * `scripts/generate-models.ts`. Custom/unknown models are never flagged.
 	 */
-	syntheticToolResultReplay?: boolean;
+	syntheticToolResultReplay?: true;
 	/**
 	 * Maps pi thinking levels to provider/model-specific values.
 	 * Missing keys use provider defaults. null marks a level as unsupported.
@@ -839,8 +839,8 @@ export interface Model<TApi extends Api> {
  * built-in model in the class needs excluding.
  */
 export interface SkillSyntheticReplayClass {
-	api: KnownApi;
-	provider: KnownProvider;
+	readonly api: KnownApi;
+	readonly provider: KnownProvider;
 }
 
 /**

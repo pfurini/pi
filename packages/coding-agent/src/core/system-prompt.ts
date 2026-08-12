@@ -60,12 +60,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += "</project_context>\n";
 		}
 
-		// Append skills section (only if read tool is available)
+		// Append skills section (available when the model can invoke skills: the
+		// read tool, or the A.1 skill tool when it is active)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills);
+		const customPromptHasSkillTool = selectedTools?.includes("skill") ?? false;
+		if ((customPromptHasRead || customPromptHasSkillTool) && skills.length > 0) {
+			prompt += formatSkillsForPrompt(skills, customPromptHasSkillTool ? "tool" : "read");
 		}
-
 		prompt += `\nCurrent working directory: ${promptCwd}`;
 
 		return prompt;
@@ -151,11 +152,12 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 		prompt += "</project_context>\n";
 	}
 
-	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills);
+	// Append skills section (available when the model can invoke skills: the
+	// read tool, or the A.1 skill tool when it is active)
+	const hasSkillTool = tools.includes("skill");
+	if ((hasRead || hasSkillTool) && skills.length > 0) {
+		prompt += formatSkillsForPrompt(skills, hasSkillTool ? "tool" : "read");
 	}
-
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;

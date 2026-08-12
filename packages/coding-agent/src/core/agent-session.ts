@@ -13,7 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
 	Agent,
@@ -29,9 +29,11 @@ import type {
 	AssistantMessage,
 	AuthResult,
 	ImageContent,
+	Message,
 	Model,
 	ProviderHeaders,
 	TextContent,
+	ToolResultMessage,
 	Usage,
 } from "@earendil-works/pi-ai/compat";
 import {
@@ -46,7 +48,6 @@ import {
 	resetApiProviders,
 } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
-import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
@@ -65,6 +66,7 @@ import {
 } from "./compaction/index.ts";
 import { type DefaultStreamTarget, isDefaultStreamFn, runWithDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -100,11 +102,28 @@ import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
-import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	SessionEntry,
+	SessionManager,
+	SessionMessageMetadata,
+	SkillInvocationEntry,
+} from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
-import { normalizeSkillInput } from "./skills/frontmatter.ts";
-import { SkillRuntime } from "./skills/runtime.ts";
+import {
+	buildSkillDelivery,
+	SKILL_TOOL_NAME,
+	type SkillDelivery,
+	type SkillToolResultDetails,
+	type SyntheticToolResultNotification,
+	selectSkillTransport,
+} from "./skills/delivery.ts";
+import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
+import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
+import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
+import { createSkillToolDefinition } from "./skills/skill-tool.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -140,6 +159,18 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 		userMessage: match[4]?.trim() || undefined,
 	};
 }
+
+/** A queued `/skill:` invocation awaiting consumption by the agent loop (C1c). */
+interface QueuedSkillInvocation {
+	skill: LoadedSkill;
+	invocation: SkillInvocation;
+	/** Literal `/skill:name args` text shown in the queue UI. */
+	displayText: string;
+	queue: "steer" | "followUp";
+}
+
+/** Entry metadata plus the pending synthetic tool_result notification payload. */
+type DeliveryMeta = SessionMessageMetadata & { syntheticNotification?: SyntheticToolResultNotification };
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -410,6 +441,18 @@ export class AgentSession {
 
 	/** Session-owned skill invocation runtime (C1b): activation-on-consumption, turn-scoped A.8 env. */
 	private readonly _skillRuntime: SkillRuntime;
+	/**
+	 * Queued skill invocations (C1c): application-defined queue message → its
+	 * structured record. The message carries the literal `/skill:` text for the
+	 * queue UI; rendering and activation happen when the agent loop consumes it.
+	 */
+	private readonly _queuedSkillInvocations = new WeakMap<AgentMessage, QueuedSkillInvocation>();
+	/** B.12/pairId entry metadata (+ synthetic event payload) per delivered message, by identity. */
+	private readonly _messageDeliveryMeta = new WeakMap<AgentMessage, DeliveryMeta>();
+	/** Synthetic-pair messages: immutable against message_end replacement (A.4). */
+	private readonly _syntheticPairMessages = new WeakSet<AgentMessage>();
+	/** Deferred first half of a synthetic pair, persisted atomically with its toolResult. */
+	private _pendingSyntheticAssistant?: { message: Message; metadata: SessionMessageMetadata };
 	/** Unregister for the bash spawn-context composer that injects turn-scoped skill env. */
 	private readonly _unregisterSkillSpawnComposer: () => void;
 	// Tool registry for extension getTools/setTools
@@ -448,7 +491,10 @@ export class AgentSession {
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
-
+		// C1c consumption seam: queued application-defined messages carrying a
+		// skill invocation are converted to their A.4 delivery form (message
+		// block or synthetic pair) just before the loop emits and inserts them.
+		this.agent.transformInjectedMessages = (messages, signal) => this._deliverQueuedSkillMessages(messages, signal);
 		// Skill runtime (C1b): records activate on consumption and expire at the
 		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
 		// composer reaches EVERY active bash execution (built-in or extension/SDK
@@ -742,7 +788,7 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.sessionManager.appendMessage(event.message);
+				await this._persistMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -769,6 +815,80 @@ export class AgentSession {
 		}
 	};
 
+	/**
+	 * Persist one LLM message with its B.12/pairId entry metadata. The two
+	 * halves of a synthetic skill pair (A.4) persist as one batched unit: the
+	 * assistant half is deferred until its toolResult arrives, and the
+	 * notification-only synthetic `tool_result` extension event fires once the
+	 * pair is durable.
+	 */
+	private async _persistMessage(message: Message): Promise<void> {
+		if (this._pendingSyntheticAssistant && this._messageDeliveryMeta.get(message)?.pairId === undefined) {
+			// Defensive: the pair's toolResult should arrive immediately after its
+			// assistant half. If anything else persists first, flush the deferred
+			// half alone; load-time repair downgrades such a torn pair.
+			this.sessionManager.appendMessage(
+				this._pendingSyntheticAssistant.message,
+				this._pendingSyntheticAssistant.metadata,
+			);
+			this._pendingSyntheticAssistant = undefined;
+		}
+
+		const metadata = this._messageDeliveryMeta.get(message) ?? this._genuineSkillResultMeta(message);
+		if (metadata?.pairId && message.role === "assistant") {
+			this._pendingSyntheticAssistant = { message, metadata };
+			return;
+		}
+		if (metadata?.pairId && message.role === "toolResult" && this._pendingSyntheticAssistant) {
+			const pending = this._pendingSyntheticAssistant;
+			this._pendingSyntheticAssistant = undefined;
+			this.sessionManager.appendSkillMessagePair(pending.message, message, pending.metadata, metadata);
+		} else {
+			this.sessionManager.appendMessage(message, metadata);
+		}
+
+		if (metadata?.syntheticNotification && message.role === "toolResult") {
+			const notification = metadata.syntheticNotification;
+			await this._extensionRunner.emitToolResultNotification({
+				type: "tool_result",
+				toolName: SKILL_TOOL_NAME,
+				toolCallId: notification.toolCallId,
+				input: notification.input,
+				content: notification.content,
+				details: (message as ToolResultMessage<SkillToolResultDetails>).details,
+				isError: false,
+				synthetic: true,
+			});
+		}
+	}
+
+	/** B.12 metadata for a genuine `skill` tool result, recovered from its details. */
+	private _genuineSkillResultMeta(message: AgentMessage): DeliveryMeta | undefined {
+		if (message.role !== "toolResult" || message.toolName !== SKILL_TOOL_NAME) {
+			return undefined;
+		}
+		const invocation = (message as ToolResultMessage<SkillToolResultDetails>).details?.invocation;
+		if (!invocation) {
+			return undefined;
+		}
+		const text = contentText(message.content, "");
+		return {
+			invocations: [
+				{
+					skillId: invocation.skillId,
+					name: invocation.name,
+					args: invocation.args,
+					blockStart: 0,
+					blockEnd: text.length,
+				},
+			],
+		};
+	}
+
+	/** B.12 invocation metadata of a freshly delivered message (live TUI rendering path). */
+	getMessageSkillInvocations(message: AgentMessage): SkillInvocationEntry[] | undefined {
+		return this._messageDeliveryMeta.get(message)?.invocations;
+	}
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
 		const settings = this.settingsManager.getRetrySettings();
 		if (!settings.enabled || this._retryAttempt >= settings.maxRetries) {
@@ -855,17 +975,27 @@ export class AgentSession {
 			};
 			const replacement = await this._extensionRunner.emitMessageEnd(extensionEvent);
 			if (replacement) {
-				// Untyped extension handlers can return messages with null/missing content;
-				// normalize so it never enters agent state or session history.
-				const normalized =
-					(replacement.role === "user" ||
-						replacement.role === "assistant" ||
-						replacement.role === "toolResult" ||
-						replacement.role === "custom") &&
-					replacement.content == null
-						? ({ ...replacement, content: [] } as AgentMessage)
-						: replacement;
-				this._replaceMessageInPlace(event.message, normalized);
+				if (this._syntheticPairMessages.has(event.message)) {
+					// A.4: synthetic skill pair messages are authoritative and immutable;
+					// a same-role message_end replacement must not alter them.
+					this._extensionRunner.emitError({
+						extensionPath: "<skills>",
+						event: "message_end",
+						error: "message_end replacement ignored: synthetic skill pair messages are immutable",
+					});
+				} else {
+					// Untyped extension handlers can return messages with null/missing content;
+					// normalize so it never enters agent state or session history.
+					const normalized =
+						(replacement.role === "user" ||
+							replacement.role === "assistant" ||
+							replacement.role === "toolResult" ||
+							replacement.role === "custom") &&
+						replacement.content == null
+							? ({ ...replacement, content: [] } as AgentMessage)
+							: replacement;
+					this._replaceMessageInPlace(event.message, normalized);
+				}
 			}
 		} else if (event.type === "tool_execution_start") {
 			const extensionEvent: ToolExecutionStartEvent = {
@@ -1363,10 +1493,12 @@ export class AgentSession {
 				}
 			}
 
-			// Expand skill commands (/skill:name args) and prompt templates (/template args)
+			// Resolve skill commands (/skill:name args); prompt templates (/template args) expand below.
+			// Skill resolution is side-effect free; rendering happens only once the
+			// message is actually sent (direct) or consumed (queued).
+			const skillCommand = expandPromptTemplates ? this._resolveSkillCommand(currentText) : undefined;
 			let expandedText = currentText;
-			if (expandPromptTemplates) {
-				expandedText = this._expandSkillCommand(expandedText);
+			if (!skillCommand && expandPromptTemplates) {
 				expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 			}
 
@@ -1377,7 +1509,11 @@ export class AgentSession {
 						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
 					);
 				}
-				if (options.streamingBehavior === "followUp") {
+				const queue = options.streamingBehavior === "followUp" ? "followUp" : "steer";
+				if (skillCommand) {
+					// Structured record: literal text in the queue UI, render on consumption.
+					await this._queueSkillInvocation(queue, currentText, skillCommand, currentImages);
+				} else if (queue === "followUp") {
 					await this._queueFollowUp(expandedText, currentImages);
 				} else {
 					await this._queueSteer(expandedText, currentImages);
@@ -1419,16 +1555,44 @@ export class AgentSession {
 			// Build messages array (custom message if any, then user message)
 			messages = [];
 
-			// Add user message
-			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-			if (currentImages) {
-				userContent.push(...currentImages);
+			// Text form reported to before_agent_start; for skill deliveries this
+			// is always the A.4 message-block text, whichever transport delivered.
+			let promptText = expandedText;
+
+			if (skillCommand) {
+				// Direct invocation: render after input transformation/validation and
+				// before before_agent_start; activate for this logical turn.
+				const invocation = this._skillRuntime.createInvocation(skillCommand.skill, skillCommand.rawArgs);
+				const delivery = await this._buildSkillDelivery(
+					skillCommand.skill,
+					invocation,
+					currentImages,
+					this._sessionAbortController?.signal,
+				);
+				if (delivery) {
+					messages.push(...delivery.messages);
+					promptText = delivery.textForm;
+				} else {
+					// Render failed (diagnostic already emitted): send the literal text.
+					const fallbackContent: (TextContent | ImageContent)[] = [{ type: "text", text: currentText }];
+					if (currentImages) {
+						fallbackContent.push(...currentImages);
+					}
+					messages.push({ role: "user", content: fallbackContent, timestamp: Date.now() });
+					promptText = currentText;
+				}
+			} else {
+				// Add user message
+				const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+				if (currentImages) {
+					userContent.push(...currentImages);
+				}
+				messages.push({
+					role: "user",
+					content: userContent,
+					timestamp: Date.now(),
+				});
 			}
-			messages.push({
-				role: "user",
-				content: userContent,
-				timestamp: Date.now(),
-			});
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
@@ -1438,7 +1602,7 @@ export class AgentSession {
 
 			// Emit before_agent_start extension event
 			const result = await this._extensionRunner.emitBeforeAgentStart(
-				expandedText,
+				promptText,
 				currentImages,
 				this._baseSystemPrompt,
 				this._baseSystemPromptOptions,
@@ -1509,37 +1673,211 @@ export class AgentSession {
 	}
 
 	/**
-	 * Expand skill commands (/skill:name args) to their full content.
-	 * Returns the expanded text, or the original text if not a skill command or skill not found.
-	 * Emits errors via extension runner if file read fails.
+	 * Resolve a `/skill:name args` command to its skill and raw args.
+	 * Returns undefined for unknown, user-hidden, or command-ineligible skills
+	 * (the text stays literal — A.1) and for non-skill text.
 	 */
-	private _expandSkillCommand(text: string): string {
-		if (!text.startsWith("/skill:")) return text;
+	private _resolveSkillCommand(text: string): { skill: LoadedSkill; rawArgs: string } | undefined {
+		if (!text.startsWith("/skill:")) return undefined;
 
 		const spaceIndex = text.indexOf(" ");
 		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		const rawArgs = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		if (!skillName) return undefined;
 
 		const skill = this.resourceLoader
 			.getSkills()
 			.skills.map((s) => normalizeSkillInput(s).skill)
 			.find((s) => s.name === skillName && s.commandNameValid && s.userInvocable);
-		if (!skill) return text; // Unknown, hidden, or command-ineligible skill, pass through
+		return skill ? { skill, rawArgs } : undefined;
+	}
 
+	/** Render one invocation through the C1b pipeline with the session's live context. */
+	private async _renderSkill(
+		skill: LoadedSkill,
+		invocation: SkillInvocation,
+		signal?: AbortSignal,
+	): Promise<RenderedSkillInvocation> {
+		const context: RenderSkillContext = {
+			...this._skillRuntime.interopContext(),
+			activeToolNames: this.getActiveToolNames(),
+			shellSettings: {
+				disabled: this.settingsManager.getDisableSkillShellExecution(),
+				timeoutMs: this.settingsManager.getSkillShellTimeoutMs(),
+				outputLimitBytes: this.settingsManager.getSkillShellOutputLimitBytes(),
+			},
+			shellPath: this.settingsManager.getShellPath(),
+			signal,
+			rewriteMap: this._skillRuntime.getRewriteMap(skill.id),
+		};
+		return renderSkillInvocation(skill, invocation, context);
+	}
+
+	/** Loaded skills visible to the model (A.1: `disable-model-invocation` excludes). */
+	private _getModelVisibleSkills(): LoadedSkill[] {
+		return this.resourceLoader
+			.getSkills()
+			.skills.map((s) => normalizeSkillInput(s).skill)
+			.filter((s) => !s.disableModelInvocation);
+	}
+
+	/**
+	 * The A.1 `skill` tool backed by this session: renders through the C1b
+	 * pipeline and activates the record for the rest of the logical turn (A.5:
+	 * a genuine tool call's invocation governs the continuation requests after
+	 * its tool result, expiring at turn end).
+	 */
+	private _createSkillTool(): ToolDefinition {
+		return createSkillToolDefinition({
+			getSkills: () => this._getModelVisibleSkills(),
+			render: async (skill, rawArgs, signal) => {
+				const invocation = this._skillRuntime.createInvocation(skill, rawArgs);
+				const rendered = await this._renderSkill(skill, invocation, signal);
+				this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
+				return rendered;
+			},
+			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		}) as ToolDefinition;
+	}
+
+	/** Surface render/activation diagnostics through the extension error channel (never swallowed). */
+	private _emitSkillDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void {
+		for (const diagnostic of diagnostics) {
+			this._extensionRunner.emitError({
+				extensionPath: diagnostic.path ?? "<skills>",
+				event: "skill_render",
+				error: diagnostic.message,
+			});
+		}
+	}
+
+	/**
+	 * Render + activate one invocation and build its A.4 delivery. Returns
+	 * undefined after emitting a diagnostic when rendering fails; callers fall
+	 * back to the original literal prompt (never silently drop the message).
+	 */
+	private async _buildSkillDelivery(
+		skill: LoadedSkill,
+		invocation: SkillInvocation,
+		images: ImageContent[] | undefined,
+		signal?: AbortSignal,
+	): Promise<SkillDelivery | undefined> {
+		let rendered: RenderedSkillInvocation;
 		try {
-			const content = readFileSync(skill.filePath, "utf-8");
-			const body = stripFrontmatter(content).trim();
-			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			return args ? `${skillBlock}\n\n${args}` : skillBlock;
+			rendered = await this._renderSkill(skill, invocation, signal);
+			this._emitSkillDiagnostics(rendered.diagnostics);
+			this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
 		} catch (err) {
-			// Emit error like extension commands do
 			this._extensionRunner.emitError({
 				extensionPath: skill.filePath,
 				event: "skill_expansion",
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return text; // Return original on error
+			return undefined;
 		}
+		const transport = selectSkillTransport(this.model, {
+			forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
+		});
+		const delivery = buildSkillDelivery(rendered, transport, { model: this.model, images });
+		for (const [message, metadata] of delivery.metadata) {
+			this._messageDeliveryMeta.set(message, metadata);
+		}
+		if (delivery.syntheticResult) {
+			for (const message of delivery.messages) {
+				if (message.role !== "user") {
+					this._syntheticPairMessages.add(message);
+				}
+			}
+			const toolResult = delivery.messages[delivery.messages.length - 1];
+			const metadata = this._messageDeliveryMeta.get(toolResult);
+			if (metadata) {
+				this._messageDeliveryMeta.set(toolResult, {
+					...metadata,
+					syntheticNotification: delivery.syntheticResult,
+				});
+			}
+		}
+		return delivery;
+	}
+
+	/**
+	 * Enqueue a structured skill invocation (A.5): the queue message carries the
+	 * literal `/skill:` text for the queue UI; the record renders and activates
+	 * only when the agent loop consumes it, never at queue time.
+	 */
+	private async _queueSkillInvocation(
+		queue: "steer" | "followUp",
+		literalText: string,
+		command: { skill: LoadedSkill; rawArgs: string },
+		images?: ImageContent[],
+	): Promise<void> {
+		const invocation = this._skillRuntime.createInvocation(command.skill, command.rawArgs);
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text: literalText }];
+		if (images) {
+			content.push(...images);
+		}
+		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		this._queuedSkillInvocations.set(message, { skill: command.skill, invocation, displayText: literalText, queue });
+		if (queue === "steer") {
+			this._steeringMessages.push(literalText);
+			this._emitQueueUpdate();
+			this.agent.steer(message);
+		} else {
+			this._followUpMessages.push(literalText);
+			this._emitQueueUpdate();
+			this.agent.followUp(message);
+		}
+	}
+
+	/** Remove a consumed queued invocation's display text from the queue UI. */
+	private _removeQueuedDisplayText(queued: QueuedSkillInvocation): void {
+		const list = queued.queue === "steer" ? this._steeringMessages : this._followUpMessages;
+		const index = list.indexOf(queued.displayText);
+		if (index !== -1) {
+			list.splice(index, 1);
+			this._emitQueueUpdate();
+		}
+	}
+
+	/**
+	 * Agent `transformInjectedMessages` hook (C1c consumption seam): convert
+	 * queued application-defined skill messages to their A.4 delivery form just
+	 * before the loop emits them and inserts them into context. Rendering,
+	 * runtime activation, queue-UI removal, and delivery-metadata attachment all
+	 * happen here — at consumption time, never at queue time. A render/abort
+	 * failure after the queue drained falls back to the original literal
+	 * `/skill:` message so the text is never silently dropped.
+	 */
+	private async _deliverQueuedSkillMessages(messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> {
+		const delivered: AgentMessage[] = [];
+		for (const message of messages) {
+			const queued = this._queuedSkillInvocations.get(message);
+			if (!queued) {
+				delivered.push(message);
+				continue;
+			}
+			this._queuedSkillInvocations.delete(message);
+			try {
+				const images =
+					message.role === "user" && Array.isArray(message.content)
+						? message.content.filter((part): part is ImageContent => part.type === "image")
+						: undefined;
+				const delivery = await this._buildSkillDelivery(queued.skill, queued.invocation, images, signal);
+				delivered.push(...(delivery?.messages ?? [message]));
+			} catch (err) {
+				// Defensive: _buildSkillDelivery already reports and returns
+				// undefined on render failure; never lose the message.
+				this._extensionRunner.emitError({
+					extensionPath: queued.skill.filePath,
+					event: "skill_expansion",
+					error: err instanceof Error ? err.message : String(err),
+				});
+				delivered.push(message);
+			} finally {
+				this._removeQueuedDisplayText(queued);
+			}
+		}
+		return delivered;
 	}
 
 	/**
@@ -1556,9 +1894,14 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+		// Skill commands queue as structured records (rendered on consumption);
+		// everything else expands prompt templates at queue time as before.
+		const skillCommand = this._resolveSkillCommand(text);
+		if (skillCommand) {
+			await this._queueSkillInvocation("steer", text, skillCommand, images);
+			return;
+		}
+		const expandedText = expandPromptTemplate(text, [...this.promptTemplates]);
 
 		await this._queueSteer(expandedText, images);
 	}
@@ -1576,9 +1919,14 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+		// Skill commands queue as structured records (rendered on consumption);
+		// everything else expands prompt templates at queue time as before.
+		const skillCommand = this._resolveSkillCommand(text);
+		if (skillCommand) {
+			await this._queueSkillInvocation("followUp", text, skillCommand, images);
+			return;
+		}
+		const expandedText = expandPromptTemplate(text, [...this.promptTemplates]);
 
 		await this._queueFollowUp(expandedText, images);
 	}
@@ -2762,6 +3110,13 @@ export class AgentSession {
 			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
 		);
 
+		// A.1 skill tool (C1c): a base tool so allowed/excluded/active rules apply
+		// like built-ins. Registered only when model-visible skills exist; a reload
+		// rebuilds the registry when the skill set changes.
+		if (this._getModelVisibleSkills().length > 0) {
+			this._baseToolDefinitions.set(SKILL_TOOL_NAME, this._createSkillTool());
+		}
+
 		const extensionsResult = this._resourceLoader.getExtensions();
 		if (options.flagValues) {
 			for (const [name, value] of options.flagValues) {
@@ -2788,7 +3143,13 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					...(this._baseToolDefinitions.has(SKILL_TOOL_NAME) ? [SKILL_TOOL_NAME] : []),
+				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

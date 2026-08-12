@@ -186,9 +186,11 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("/skill:test explain this");
 
-		expect(expandedPrompt).toContain('<skill name="test" location="');
+		// A.4 message block: name/args attributes, base-dir preamble, rendered
+		// body with the raw args appended (A.3.2 rule 7).
+		expect(expandedPrompt).toContain('<skill name="test" args="explain this">');
 		expect(expandedPrompt).toContain("Use the skill body.");
-		expect(expandedPrompt).toContain("explain this");
+		expect(expandedPrompt).toContain("ARGUMENTS: explain this");
 	});
 
 	it("keeps hidden or command-ineligible skill commands literal while valid skills expand", async () => {
@@ -256,7 +258,7 @@ describe("AgentSession prompt characterization", () => {
 			},
 		]);
 		await harness.session.prompt("/skill:visible-skill do things");
-		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="visible-skill" location="');
+		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="visible-skill" args="do things">');
 		harness.appendResponses([
 			(context) => {
 				const users = context.messages.filter((message) => message.role === "user");
@@ -265,7 +267,7 @@ describe("AgentSession prompt characterization", () => {
 			},
 		]);
 		await harness.session.prompt("/skill:Upper.Name do things");
-		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="Upper.Name" location="');
+		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="Upper.Name" args="do things">');
 	});
 
 	it("expands prompt templates before sending the prompt", async () => {

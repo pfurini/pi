@@ -257,6 +257,16 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 
 	/**
+	 * Optional transform applied to application-supplied messages immediately
+	 * before they are emitted and appended to the transcript: the initial
+	 * prompt batch and each drained steering/follow-up batch. May rewrite,
+	 * expand, or split messages (one message may become several). Runs after
+	 * the queue has been drained, so a failure here cannot lose the message
+	 * silently — implementations should catch their own errors and return a
+	 * fallback form. Generic by design: it carries no domain semantics.
+	 */
+	transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently;

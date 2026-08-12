@@ -1,8 +1,14 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import type { ResourceLoader } from "../../src/index.ts";
+import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
 
 async function createWaitingHarness(
@@ -441,5 +447,241 @@ describe("AgentSession queue characterization", () => {
 		await harness.session.agent.waitForIdle();
 
 		expect(getUserTexts(harness)).toEqual(["hello", "conflict report"]);
+	});
+});
+
+describe("AgentSession skill invocation queueing (C1c)", () => {
+	const queueTempDirs: string[] = [];
+	const skillHarnesses: Harness[] = [];
+
+	afterEach(() => {
+		while (skillHarnesses.length > 0) {
+			skillHarnesses.pop()?.cleanup();
+		}
+		while (queueTempDirs.length > 0) {
+			rmSync(queueTempDirs.pop() as string, { recursive: true, force: true });
+		}
+	});
+
+	function createSkillResourceLoader(tempDir: string): ResourceLoader {
+		const skillPath = join(tempDir, "SKILL.md");
+		writeFileSync(skillPath, "# Queue Skill\n\nQueued skill body.");
+		return {
+			...createTestResourceLoader(),
+			getSkills: () => ({
+				skills: [
+					{
+						name: "test",
+						description: "Queue skill",
+						filePath: skillPath,
+						disableModelInvocation: false,
+						baseDir: tempDir,
+						sourceInfo: createSyntheticSourceInfo(skillPath, {
+							source: "local",
+							scope: "project",
+							origin: "top-level",
+							baseDir: tempDir,
+						}),
+					},
+				],
+				diagnostics: [],
+			}),
+		};
+	}
+
+	async function createSkillWaitingHarness(): Promise<{
+		harness: Harness;
+		releaseToolExecution: () => void;
+		promptPromise: Promise<void>;
+		waitForToolStart: Promise<void>;
+	}> {
+		const tempDir = join(tmpdir(), `pi-skill-queue-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		queueTempDirs.push(tempDir);
+		let releaseToolExecution: (() => void) | undefined;
+		const toolRelease = new Promise<void>((resolve) => {
+			releaseToolExecution = resolve;
+		});
+		const waitTool: AgentTool = {
+			name: "wait",
+			label: "Wait",
+			description: "Wait for release",
+			parameters: Type.Object({}),
+			execute: async () => {
+				await toolRelease;
+				return { content: [{ type: "text", text: "released" }], details: {} };
+			},
+		};
+		const harness = await createHarness({ tools: [waitTool], resourceLoader: createSkillResourceLoader(tempDir) });
+		skillHarnesses.push(harness);
+		const waitForToolStart = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "tool_execution_start" && event.toolName === "wait") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+		return {
+			harness,
+			releaseToolExecution: () => releaseToolExecution?.(),
+			promptPromise: harness.session.prompt("start"),
+			waitForToolStart,
+		};
+	}
+
+	it("queues a steer skill invocation as a structured record rendered on consumption", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+		let activeAtConsumption = -1;
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			(context) => {
+				// Consumed (rendered + activated) before this next request.
+				activeAtConsumption = harness.session.skillRuntime.getActiveInvocations().length;
+				const delivered = context.messages.some(
+					(message) =>
+						message.role === "user" && getMessageText(message).includes('<skill name="test" args="queued args">'),
+				);
+				return fauxAssistantMessage(delivered ? "saw skill block" : "missing skill block");
+			},
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:test queued args");
+
+		// Queue time: literal display text, one pending message, NO activation/render yet.
+		expect(harness.session.pendingMessageCount).toBe(1);
+		expect(harness.session.skillRuntime.getActiveInvocations()).toHaveLength(0);
+		const queueUpdate = harness.eventsOfType("queue_update").at(-1);
+		expect(queueUpdate?.steering).toEqual(["/skill:test queued args"]);
+
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(activeAtConsumption).toBe(1);
+		expect(getAssistantTexts(harness)).toContain("saw skill block");
+		expect(harness.session.pendingMessageCount).toBe(0);
+		// Turn expired after the run settled.
+		expect(harness.session.skillRuntime.getActiveInvocations()).toHaveLength(0);
+	});
+
+	it("queues a follow-up skill invocation delivered after the run finishes", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("first turn done"),
+			(context) => {
+				const delivered = context.messages.some(
+					(message) =>
+						message.role === "user" && getMessageText(message).includes('<skill name="test" args="later">'),
+				);
+				return fauxAssistantMessage(delivered ? "saw follow-up block" : "missing follow-up block");
+			},
+		]);
+
+		await waitForToolStart;
+		await harness.session.followUp("/skill:test later");
+		expect(harness.session.pendingMessageCount).toBe(1);
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(getAssistantTexts(harness)).toContain("saw follow-up block");
+		expect(harness.session.pendingMessageCount).toBe(0);
+	});
+
+	it("converts multiple queued skills in one batch in all mode", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+		harness.session.setSteeringMode("all");
+		let deliveredBlocks: string[] = [];
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			(context) => {
+				deliveredBlocks = context.messages
+					.filter((message) => message.role === "user")
+					.map((message) => getMessageText(message))
+					.filter((text) => text.includes("<skill"));
+				return fauxAssistantMessage("batched");
+			},
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:test one");
+		await harness.session.steer("/skill:test two");
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(deliveredBlocks).toHaveLength(2);
+		expect(deliveredBlocks[0]).toContain('args="one"');
+		expect(deliveredBlocks[1]).toContain('args="two"');
+	});
+
+	it("keeps images attached to the delivered user message", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+		let sawImage = false;
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			(context) => {
+				const skillMessage = context.messages.find(
+					(message) => message.role === "user" && getMessageText(message).includes("<skill"),
+				);
+				sawImage =
+					skillMessage?.role === "user" &&
+					Array.isArray(skillMessage.content) &&
+					skillMessage.content.some((part) => part.type === "image");
+				return fauxAssistantMessage("done");
+			},
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:test with image", [
+			{ type: "image", mimeType: "image/png", data: "ZmFrZQ==" },
+		]);
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(sawImage).toBe(true);
+	});
+
+	it("delivers a queued invocation as an unflattened synthetic pair for flagged models", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+		harness.session.agent.state.model = { ...harness.getModel(), syntheticToolResultReplay: true };
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:test via queue");
+		releaseToolExecution();
+		await promptPromise;
+
+		const roles = harness.session.messages.map((message) => message.role);
+		expect(roles).toEqual(["user", "assistant", "toolResult", "assistant", "toolResult", "assistant"]);
+		const pairAssistant = harness.session.messages[3];
+		const pairResult = harness.session.messages[4];
+		expect(pairAssistant).toMatchObject({ role: "assistant", stopReason: "toolUse" });
+		expect(pairResult).toMatchObject({ role: "toolResult", toolName: "skill" });
+		expect(getMessageText(pairResult!)).toContain("Queued skill body.");
+	});
+
+	it("keeps an unknown queued skill literal through the queue", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:unknown stuff");
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(getUserTexts(harness)).toEqual(["start", "/skill:unknown stuff"]);
 	});
 });

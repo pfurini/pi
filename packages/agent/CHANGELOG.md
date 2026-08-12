@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the optional `transformInjectedMessages` hook (`Agent` property and `AgentLoopConfig` callback): application-supplied messages — the initial prompt batch and each drained steering/follow-up batch — may be rewritten, expanded, or split immediately before they are emitted and appended to the transcript.
+
 ### Fixed
 
 - Fixed `streamProxy()` dropping finalized tool-call metadata such as OpenAI Responses namespaces ([#7709](https://github.com/earendil-works/pi/issues/7709)).

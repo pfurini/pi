@@ -901,6 +901,44 @@ export class ExtensionRunner {
 		});
 	}
 
+	/**
+	 * Notification-only `tool_result` dispatch (A.4 synthetic skill results):
+	 * each handler receives its own unmodified snapshot and handler returns are
+	 * never applied — an extension cannot veto or mutate authoritative synthetic
+	 * content. Deliberately separate from emitToolResult, which applies handler
+	 * mutations cumulatively to genuine tool output.
+	 */
+	async emitToolResultNotification(event: ToolResultEvent): Promise<void> {
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("tool_result");
+				if (!handlers || handlers.length === 0) continue;
+
+				for (const handler of handlers) {
+					try {
+						const snapshot: ToolResultEvent = {
+							...event,
+							input: structuredClone(event.input),
+							content: structuredClone(event.content),
+						};
+						await handler(snapshot, ctx);
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "tool_result",
+							error: message,
+							stack,
+						});
+					}
+				}
+			}
+		});
+	}
+
 	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
 		return this.runScoped(async () => {
 			const ctx = this.createContext();

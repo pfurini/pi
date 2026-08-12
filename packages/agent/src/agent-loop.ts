@@ -100,15 +100,17 @@ export async function runAgentLoop(
 	signal: AbortSignal | undefined,
 	streamFn: StreamFn,
 ): Promise<AgentMessage[]> {
-	const newMessages: AgentMessage[] = [...prompts];
+	const deliveredPrompts = config.transformInjectedMessages
+		? await config.transformInjectedMessages(prompts, signal)
+		: prompts;
+	const newMessages: AgentMessage[] = [...deliveredPrompts];
 	const currentContext: AgentContext = {
 		...context,
-		messages: [...context.messages, ...prompts],
+		messages: [...context.messages, ...deliveredPrompts],
 	};
-
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
-	for (const prompt of prompts) {
+	for (const prompt of deliveredPrompts) {
 		await emit({ type: "message_start", message: prompt });
 		await emit({ type: "message_end", message: prompt });
 	}
@@ -180,6 +182,9 @@ async function runLoop(
 
 			// Process pending messages (inject before next assistant response)
 			if (pendingMessages.length > 0) {
+				if (config.transformInjectedMessages) {
+					pendingMessages = await config.transformInjectedMessages(pendingMessages, signal);
+				}
 				for (const message of pendingMessages) {
 					await emit({ type: "message_start", message });
 					await emit({ type: "message_end", message });

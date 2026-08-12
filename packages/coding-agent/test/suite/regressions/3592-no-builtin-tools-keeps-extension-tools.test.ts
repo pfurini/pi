@@ -35,6 +35,9 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: tempDir,
 			agentDir,
+			// Hermetic: global ~/.agents/skills would otherwise register the C1c
+			// skill tool on machines that have user skills installed.
+			noSkills: true,
 			settingsManager,
 			extensionFactories: [
 				(pi) => {

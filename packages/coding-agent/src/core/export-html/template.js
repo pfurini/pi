@@ -329,6 +329,32 @@
         };
       }
 
+      /**
+       * Slice message text by B.12 invocation offsets (UTF-16 code units,
+       * document order) into text/block segments. Returns null when the
+       * metadata is malformed; callers then render the plain message plus a
+       * diagnostic and never consult the legacy parser (absent-field only).
+       */
+      function sliceSkillInvocations(text, invocations) {
+        if (!Array.isArray(invocations)) return null;
+        if (invocations.length === 0) return [{ type: 'text', text }];
+        const segments = [];
+        let cursor = 0;
+        for (const invocation of invocations) {
+          const blockStart = invocation && invocation.blockStart;
+          const blockEnd = invocation && invocation.blockEnd;
+          if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd) ||
+              blockStart < cursor || blockStart < 0 || blockEnd < blockStart || blockEnd > text.length) {
+            return null;
+          }
+          if (blockStart > cursor) segments.push({ type: 'text', text: text.slice(cursor, blockStart) });
+          segments.push({ type: 'block', invocation, content: text.slice(blockStart, blockEnd) });
+          cursor = blockEnd;
+        }
+        if (cursor < text.length) segments.push({ type: 'text', text: text.slice(cursor) });
+        return segments;
+      }
+
       function getSearchableText(entry, label) {
         const parts = [];
         if (label) parts.push(label);
@@ -645,6 +671,22 @@
             const msg = entry.message;
             if (msg.role === 'user') {
               const rawContent = extractContent(msg.content);
+              // B.12 metadata-first: a present invocations field is authoritative
+              // and the legacy parser is never consulted for that entry.
+              if (Array.isArray(entry.invocations)) {
+                const segments = sliceSkillInvocations(rawContent, entry.invocations);
+                if (segments) {
+                  const names = entry.invocations.map(i => i && i.name).filter(Boolean);
+                  let treeHtml = labelHtml + `<span class="tree-role-skill">skill:</span> ${escapeHtml(names.join(', ') || 'invocation')}`;
+                  const remainder = segments.filter(s => s.type === 'text').map(s => s.text).join(' ').trim();
+                  if (remainder) {
+                    treeHtml += ` · <span class="tree-role-user">user:</span> ${escapeHtml(truncate(normalize(remainder)))}`;
+                  }
+                  return treeHtml;
+                }
+                // Malformed present metadata: plain user text (no legacy parse).
+                return labelHtml + `<span class="tree-role-user">user:</span> ${escapeHtml(truncate(normalize(rawContent)))}`;
+              }
               const skillBlock = parseSkillBlock(rawContent);
               if (skillBlock) {
                 let treeHtml = labelHtml + `<span class="tree-role-skill">skill:</span> ${escapeHtml(skillBlock.name)}`;
@@ -1184,6 +1226,56 @@
             const content = msg.content;
             const text = typeof content === 'string' ? content :
               content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+            // B.12 metadata-first: a present invocations field is authoritative;
+            // the legacy parser is consulted only when the field is absent.
+            if (Array.isArray(entry.invocations)) {
+              const images = Array.isArray(content) ? content.filter(c => c.type === 'image') : [];
+              const segments = sliceSkillInvocations(text, entry.invocations);
+              if (segments) {
+                let html = `<div class="skill-user-entry" id="${entryDomId}">${copyBtnHtml}${tsHtml}`;
+                for (const segment of segments) {
+                  if (segment.type !== 'block') continue;
+                  html += `<div class="skill-invocation" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
+                    <div class="skill-invocation-label">[skill] ${escapeHtml(segment.invocation.name)}</div>
+                    <div class="skill-invocation-collapsed">${escapeHtml(segment.invocation.name)} (click to expand)</div>
+                    <div class="skill-invocation-content markdown-content">${safeMarkedParse(segment.content)}</div>
+                  </div>`;
+                }
+                const userText = segments.filter(s => s.type === 'text').map(s => s.text).join('\n').trim();
+                if (userText || images.length > 0) {
+                  html += '<div class="user-message">';
+                  if (images.length > 0) {
+                    html += '<div class="message-images">';
+                    for (const img of images) {
+                      html += `<img src="data:${escapeHtml(img.mimeType || 'image/png')};base64,${escapeHtml(img.data || '')}" class="message-image" />`;
+                    }
+                    html += '</div>';
+                  }
+                  if (userText) {
+                    html += `<div class="markdown-content">${safeMarkedParse(userText)}</div>`;
+                  }
+                  html += '</div>';
+                }
+                html += '</div>';
+                return html;
+              }
+              // Malformed present metadata: ordinary message plus one non-fatal
+              // diagnostic; the legacy parser is NOT consulted.
+              let html = `<div class="user-message" id="${entryDomId}">${copyBtnHtml}${tsHtml}`;
+              if (images.length > 0) {
+                html += '<div class="message-images">';
+                for (const img of images) {
+                  html += `<img src="data:${escapeHtml(img.mimeType || 'image/png')};base64,${escapeHtml(img.data || '')}" class="message-image" />`;
+                }
+                html += '</div>';
+              }
+              if (text) {
+                html += `<div class="markdown-content">${safeMarkedParse(text)}</div>`;
+              }
+              html += `<div class="tree-muted">[skill invocation metadata malformed; showing raw message]</div>`;
+              html += '</div>';
+              return html;
+            }
             const skillBlock = parseSkillBlock(text);
 
             if (skillBlock) {

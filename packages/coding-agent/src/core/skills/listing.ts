@@ -7,7 +7,7 @@ export const SKILL_LISTING_END_DELIMITER = "</available_skills>";
 
 const MAX_LISTING_DESCRIPTION_LENGTH = 1536;
 
-function escapeXml(value: string): string {
+export function escapeXml(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
@@ -24,7 +24,13 @@ function getListingDescription(skill: LoadedSkill): string {
 }
 
 /** Format skills for inclusion in a system prompt. */
-export function formatSkillsForPrompt(skills: SkillInput[]): string {
+/**
+ * Format skills for inclusion in a system prompt.
+ * `invocation` selects the instruction line: "tool" when the A.1 `skill` tool
+ * is active (the model invokes skills through it), "read" otherwise (legacy
+ * model-read convention for consumers without the tool, e.g. AskClaude).
+ */
+export function formatSkillsForPrompt(skills: SkillInput[], invocation: "read" | "tool" = "read"): string {
 	const visibleSkills = skills
 		.map((skill) => normalizeSkillInput(skill).skill)
 		.filter((skill) => !skill.disableModelInvocation);
@@ -35,7 +41,9 @@ export function formatSkillsForPrompt(skills: SkillInput[]): string {
 
 	const lines = [
 		"\n\nThe following skills provide specialized instructions for specific tasks.",
-		"Use the read tool to load a skill's file when the task matches its description.",
+		invocation === "tool"
+			? "Use the skill tool to invoke a skill and receive its rendered instructions when the task matches its description."
+			: "Use the read tool to load a skill's file when the task matches its description.",
 		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"",
 		SKILL_LISTING_START_DELIMITER,

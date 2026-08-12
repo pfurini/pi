@@ -1247,7 +1247,7 @@ describe("inertness matrix", () => {
 		try {
 			const expanded = await expandSkill(harness, "/skill:shell run");
 			expect(harness.eventsOfType("tool_execution_start")).toEqual([]);
-			expect(expanded).toContain('<skill name="shell" location="');
+			expect(expanded).toContain('<skill name="shell" args="run">');
 			expect(expanded).not.toContain("powershell.exe");
 		} finally {
 			harness.cleanup();

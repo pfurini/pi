@@ -92,8 +92,10 @@ import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { extractUserMessageText, loadProjectPromptHistory } from "../../core/prompt-history.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
+import type { SkillInvocationEntry } from "../../core/session-manager.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
+import { sliceSkillInvocationSegments } from "../../core/skills/delivery.ts";
 import { normalizeSkillInput } from "../../core/skills/frontmatter.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
@@ -3159,7 +3161,7 @@ export class InteractiveMode {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
-					this.addMessageToChat(event.message);
+					this.addMessageToChat(event.message, this.session.getMessageSkillInvocations(event.message));
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
@@ -3486,7 +3488,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(component);
 	}
 
-	private addMessageToChat(message: AgentMessage): void {
+	private addMessageToChat(message: AgentMessage, skillInvocations?: readonly SkillInvocationEntry[]): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -3536,6 +3538,12 @@ export class InteractiveMode {
 				if (textContent) {
 					if (this.chatContainer.children.length > 0) {
 						this.chatContainer.addChild(new Spacer(1));
+					}
+					if (skillInvocations !== undefined) {
+						// B.12 metadata-first path: the entry field is authoritative;
+						// the legacy parser is never consulted when it is present.
+						this.addSkillInvocationSegmentsToChat(textContent, skillInvocations);
+						break;
 					}
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {
@@ -3591,7 +3599,59 @@ export class InteractiveMode {
 		}
 	}
 
-	private renderSessionItems(items: readonly RenderSessionItem[], options: { updateFooter?: boolean } = {}): void {
+	/**
+	 * Metadata-first (B.12) rendering of a user message carrying skill
+	 * invocation blocks: slice the text by UTF-16 offsets and render each block
+	 * collapsibly, with surrounding text in order. Malformed present-metadata
+	 * renders the ordinary message plus one non-fatal diagnostic and never
+	 * consults the legacy parser (absent-field fallback only).
+	 */
+	private addSkillInvocationSegmentsToChat(textContent: string, invocations: readonly SkillInvocationEntry[]): void {
+		const segments = sliceSkillInvocationSegments(textContent, invocations);
+		if (!segments) {
+			const userComponent = new UserMessageComponent(
+				textContent,
+				this.getMarkdownThemeWithSettings(),
+				this.outputPad,
+				this.getMarkdownTransformers(),
+			);
+			this.chatContainer.addChild(userComponent);
+			this.chatContainer.addChild(
+				new Text(theme.fg("warning", "[skill invocation metadata malformed; showing raw message]"), 0, 0),
+			);
+			return;
+		}
+		for (const segment of segments) {
+			if (segment.type === "block") {
+				const component = new SkillInvocationMessageComponent(
+					{
+						name: segment.invocation.name,
+						location: segment.invocation.skillId,
+						content: segment.content,
+						userMessage: undefined,
+					},
+					this.getMarkdownThemeWithSettings(),
+				);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+			} else if (segment.text.trim().length > 0) {
+				this.chatContainer.addChild(
+					new UserMessageComponent(
+						segment.text,
+						this.getMarkdownThemeWithSettings(),
+						this.outputPad,
+						this.getMarkdownTransformers(),
+					),
+				);
+			}
+		}
+	}
+
+	private renderSessionItems(
+		items: readonly RenderSessionItem[],
+		options: { updateFooter?: boolean } = {},
+		invocationsByMessage?: ReadonlyMap<AgentMessage, readonly SkillInvocationEntry[]>,
+	): void {
 		this.pendingTools.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache-miss notices are not persisted; re-derive them from the full entry
@@ -3663,7 +3723,7 @@ export class InteractiveMode {
 				}
 			} else {
 				// All other messages use standard rendering
-				this.addMessageToChat(message);
+				this.addMessageToChat(message, invocationsByMessage?.get(message));
 			}
 		}
 
@@ -3679,15 +3739,21 @@ export class InteractiveMode {
 	 * @param options.updateFooter Update footer state
 	 */
 	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
+		// Keep B.12 entry metadata attached for display; context projection drops it.
+		const invocationsByMessage = new Map<AgentMessage, readonly SkillInvocationEntry[]>();
+		for (const entry of entries) {
+			if (entry.type === "message" && entry.invocations) {
+				invocationsByMessage.set(entry.message, entry.invocations);
+			}
+		}
 		const items = entries.flatMap((entry): RenderSessionItem[] => {
 			if (entry.type === "custom") {
 				return [entry];
 			}
 			return sessionEntryToContextMessages(entry);
 		});
-		this.renderSessionItems(items, options);
+		this.renderSessionItems(items, options, invocationsByMessage);
 	}
-
 	/**
 	 * Show a transcript notice when a completed assistant message paid for a
 	 * significant cache miss. Only states observable facts: the miss itself,

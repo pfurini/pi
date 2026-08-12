@@ -212,6 +212,12 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
+	/**
+	 * Optional transform applied to application-supplied messages (initial
+	 * prompt batch and drained queue batches) immediately before they are
+	 * emitted and appended to the transcript. See AgentLoopConfig.
+	 */
+	public transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
 
 	constructor(options: AgentOptions) {
 		// Older compiled consumers may omit options or streamFn even though the current API requires them.
@@ -480,6 +486,7 @@ export class Agent {
 				return this.steeringQueue.drain();
 			},
 			getFollowUpMessages: async () => this.followUpQueue.drain(),
+			transformInjectedMessages: this.transformInjectedMessages,
 		};
 	}
 

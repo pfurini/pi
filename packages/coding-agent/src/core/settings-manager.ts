@@ -136,7 +136,7 @@ export interface Settings {
 	skillShellTimeoutMs?: number; // default: 30000 - per-command skill shell injection timeout in milliseconds
 	skillShellOutputLimitBytes?: number; // default: 16384 - per-command skill shell injection output cap in bytes
 	skillInterop?: boolean; // default: true - accept CLAUDE_* aliases alongside PI_* skill variables (A.8)
-	disableSkillEnvInjection?: boolean; // default: false - bypass ALL skill PI_/CLAUDE_ env composition in the bash spawn seam (independent of skillInterop)
+	disableSkillEnvInjection?: boolean; // default: false - bypass ALL skill PI_/CLAUDE_ env composition in the bash spawn seam (independent of skillInterop). Scope note: A.3.5 shell injection is unaffected; it always carries the rendering skill's own A.8 variables.
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)

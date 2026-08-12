@@ -1,15 +1,15 @@
 /**
- * A.3 render pipeline orchestration (ADR-0004): one deterministic async
- * renderer consumed by every invocation path. Stage order (A.3.1, single
- * pass — later stages never re-scan text produced by earlier stages for
- * earlier-stage syntax):
+ * A.3 render pipeline orchestration (ADR-0004): one async renderer with
+ * deterministic stage ordering, consumed by every invocation path. Stage
+ * order (A.3.1, single pass: later stages never re-scan text produced by
+ * earlier stages for earlier-stage syntax):
  *
  * 1. Base-dir preamble (`Base directory for this skill: <dir>`).
  * 2. Argument substitution (A.3.2, arguments.ts).
  * 3. Variable substitution: `${PI_*}` plus `${CLAUDE_*}` aliases when enabled
  *    (A.8, interop.ts).
  * 4. `@path` references made absolute against the skill baseDir (no inlining
- *    for skills — the model reads them).
+ *    for skills; the model reads them).
  * 5. Agent-name rewrite (A.3.4; no-op without a Workstream 2 rewrite map).
  * 6. Shell injection (A.3.5, shell-injection.ts).
  * 7. Conditional CC tool-name steering note (ADR-0006 layer 3).
@@ -20,7 +20,8 @@ import { resolve } from "node:path";
 import { stripFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { BashOperations } from "../tools/bash.ts";
-import { parseDeclaredArgumentNames, type SkillArgumentsDeclaration, substituteSkillArguments } from "./arguments.ts";
+import { parseDeclaredArgumentNames, substituteSkillArguments } from "./arguments.ts";
+import { scanFenceBlocks } from "./fences.ts";
 import type { LoadedSkill } from "./frontmatter.ts";
 import {
 	buildCcToolNote,
@@ -82,11 +83,11 @@ export async function renderSkillInvocation(
 	body = substituteSkillArguments(
 		body,
 		invocation.rawArgs,
-		parseDeclaredArgumentNames(skill.frontmatter.arguments as SkillArgumentsDeclaration | undefined),
+		parseDeclaredArgumentNames(skill.frontmatter.arguments),
 	).text;
 
 	// Stage 3: PI_* / CLAUDE_* variable substitution (A.8).
-	body = substituteSkillVariables(body, buildSkillSubstitutionMap(invocation, context));
+	body = substituteSkillVariables(body, buildSkillSubstitutionMap(invocation, { ...context, diagnostics }));
 
 	// Stage 4: `@path` references become absolute against the skill baseDir.
 	body = absolutizeSkillPaths(body, skill.baseDir);
@@ -142,7 +143,7 @@ export function rewriteAgentNames(body: string, rewriteMap: SkillAgentRewriteMap
 }
 
 /**
- * Make skill-relative `@path` references absolute (no inlining — A.3.1).
+ * Make skill-relative `@path` references absolute (no inlining, A.3.1).
  * Recognition: `@` + a run of non-whitespace characters, preceded by
  * start-of-line or whitespace, outside fenced code blocks and inline code
  * spans; `\@path` escapes (backslash removed). Already-absolute tokens and
@@ -151,27 +152,17 @@ export function rewriteAgentNames(body: string, rewriteMap: SkillAgentRewriteMap
  */
 export function absolutizeSkillPaths(body: string, baseDir: string): string {
 	const lines = body.split("\n");
-	let inFence = false;
-	let fenceChar = "";
-	let fenceLength = 0;
-	const out = lines.map((line) => {
-		const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
-		if (fenceMatch) {
-			const run = fenceMatch[1];
-			if (!inFence) {
-				inFence = true;
-				fenceChar = run[0];
-				fenceLength = run.length;
-			} else if (run[0] === fenceChar && run.length >= fenceLength) {
-				inFence = false;
-			}
-			return line;
+	// Fenced lines (opener through closer, inclusive) stay verbatim; the shared
+	// scanner (fences.ts) keeps this stage consistent with shell injection's
+	// fence recognition, including unterminated blocks running to end of input.
+	const fencedLines = new Set<number>();
+	for (const block of scanFenceBlocks(lines)) {
+		const lastLine = block.closeLine === -1 ? lines.length - 1 : block.closeLine;
+		for (let i = block.openLine; i <= lastLine; i++) {
+			fencedLines.add(i);
 		}
-		if (inFence) {
-			return line;
-		}
-		return absolutizeSkillPathsInLine(line, baseDir);
-	});
+	}
+	const out = lines.map((line, index) => (fencedLines.has(index) ? line : absolutizeSkillPathsInLine(line, baseDir)));
 	return out.join("\n");
 }
 

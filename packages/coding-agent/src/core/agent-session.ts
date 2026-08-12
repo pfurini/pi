@@ -451,8 +451,8 @@ export class AgentSession {
 
 		// Skill runtime (C1b): records activate on consumption and expire at the
 		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
-		// composer reaches EVERY active bash execution — built-in or extension/SDK
-		// replacement with its own spawnHook — because createBashToolDefinition
+		// composer reaches EVERY active bash execution (built-in or extension/SDK
+		// replacement with its own spawnHook) because createBashToolDefinition
 		// applies registered composers before the tool's own hook. Scoped to this
 		// session by ExtensionContext identity; env is copied per execution and
 		// process.env / getShellEnv() are never mutated.
@@ -480,7 +480,7 @@ export class AgentSession {
 		return this._modelRuntime;
 	}
 
-	/** Session-owned skill invocation runtime — the C1b renderer/runtime contract C1c consumes. */
+	/** Session-owned skill invocation runtime: the C1b renderer/runtime contract C1c consumes. */
 	get skillRuntime(): SkillRuntime {
 		return this._skillRuntime;
 	}
@@ -1266,7 +1266,7 @@ export class AgentSession {
 			} finally {
 				this._systemPromptOverride = undefined;
 				// Logical-turn boundary (agent_settled): turn-scoped skill env and
-				// overrides expire here — after the full retry+continuation loop,
+				// overrides expire here, after the full retry+continuation loop,
 				// never on the per-run agent_end or the turn_end event.
 				this._skillRuntime.expireTurn();
 				this._flushPendingBashMessages();

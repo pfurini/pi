@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { ResourceDiagnostic } from "../../src/core/diagnostics.ts";
+import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
 import {
 	commandTimedOutMarker,
 	DEFAULT_SKILL_SHELL_SETTINGS,
@@ -20,9 +20,9 @@ import {
 	type SkillShellSettings,
 	shellUnavailableMarker,
 	splitInjectionSegments,
-} from "../../src/core/skills/shell-injection.ts";
-import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS } from "../../src/core/skills/tool-redirects.ts";
-import type { BashOperations } from "../../src/core/tools/bash.ts";
+} from "../src/core/skills/shell-injection.ts";
+import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS } from "../src/core/skills/tool-redirects.ts";
+import type { BashOperations } from "../src/core/tools/bash.ts";
 
 const SETTINGS: SkillShellSettings = { ...DEFAULT_SKILL_SHELL_SETTINGS };
 
@@ -34,7 +34,7 @@ interface ExecRecord {
 }
 
 /** Fake BashOperations: deterministic, records calls, replays scripted outcomes. */
-function fakeOperations(script: Array<{ output?: string; exitCode?: number | null; error?: Error }> = []): {
+function fakeOperations(script: Array<{ output?: string; exitCode?: number | null; error?: unknown }> = []): {
 	operations: BashOperations;
 	calls: ExecRecord[];
 } {
@@ -103,6 +103,33 @@ describe("splitInjectionSegments", () => {
 
 	it("an unterminated fence runs to end of input", () => {
 		expect(splitInjectionSegments("``` !\necho hi")).toEqual([{ kind: "command", command: "echo hi" }]);
+	});
+
+	it("recognizes CRLF fenced injection blocks", () => {
+		const body = "before\r\n``` !\r\necho hi\r\n```\r\nafter";
+		expect(splitInjectionSegments(body)).toEqual([
+			{ kind: "text", text: "before\n" },
+			{ kind: "command", command: "echo hi" },
+			{ kind: "text", text: "\nafter" },
+		]);
+	});
+
+	it("does not execute inline spans inside CRLF plain code fences", () => {
+		const body = "```\r\n!`echo hi`\r\n```";
+		expect(splitInjectionSegments(body)).toEqual([{ kind: "text", text: "```\n!`echo hi`\n```" }]);
+	});
+
+	it("treats a closing fence with an info string as unterminated", () => {
+		// CommonMark: backtick-fence closers allow whitespace only. A ``` js
+		// line does not close the block, so the whole rest is one command.
+		expect(splitInjectionSegments("``` !\necho a\n``` js\necho b")).toEqual([
+			{ kind: "command", command: "echo a\n``` js\necho b" },
+		]);
+	});
+
+	it("does not execute injection syntax documented inside an inline code span", () => {
+		const body = "use ``!`git status` `` to inject";
+		expect(splitInjectionSegments(body)).toEqual([{ kind: "text", text: body }]);
 	});
 });
 
@@ -223,11 +250,15 @@ describe("injectShellCommands", () => {
 		expect(calls[0].timeout).toBe(30);
 	});
 
-	it("a timeout inlines the exact marker", async () => {
+	it("a timeout inlines the exact marker and records a diagnostic", async () => {
 		const { operations } = fakeOperations([{ error: new Error("timeout:30") }]);
-		const result = await injectShellCommands("!`cmd`", injectionOptions({ operations }));
+		const diagnostics: ResourceDiagnostic[] = [];
+		const result = await injectShellCommands("!`cmd`", injectionOptions({ operations, diagnostics }));
 		expect(result).toBe(commandTimedOutMarker(30000));
 		expect(result).toBe("[command timed out after 30s]");
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0].message).toContain("timed out after 30000ms");
+		expect(diagnostics[0].message).toContain("cmd");
 	});
 
 	it("a non-zero exit inlines the output plus the exit marker", async () => {
@@ -240,6 +271,22 @@ describe("injectShellCommands", () => {
 		const { operations } = fakeOperations([{ exitCode: 1 }]);
 		const result = await injectShellCommands("!`cmd`", injectionOptions({ operations }));
 		expect(result).toBe(exitCodeMarker(1));
+	});
+
+	it("caps streamed multi-chunk output at the byte limit with exactly one truncation marker", async () => {
+		const operations: BashOperations = {
+			exec: async (_command, _cwd, options) => {
+				for (const chunk of ["aaaa", "bbbb", "cccc", "dddd"]) {
+					options.onData(Buffer.from(chunk));
+				}
+				return { exitCode: 0 };
+			},
+		};
+		const result = await injectShellCommands(
+			"!`cmd`",
+			injectionOptions({ operations, settings: { ...SETTINGS, outputLimitBytes: 10 } }),
+		);
+		expect(result).toBe(`aaaabbbbcc\n${outputTruncatedMarker(10)}`);
 	});
 
 	it("caps output at the byte limit with a truncation marker", async () => {
@@ -262,11 +309,17 @@ describe("injectShellCommands", () => {
 		expect(result.length).toBeLessThan(snowman.length + 40);
 	});
 
-	it("an unavailable shell inlines the unavailable marker", async () => {
+	it("an unavailable shell inlines the unavailable marker and records a diagnostic", async () => {
 		const enoent = Object.assign(new Error("spawn pwsh ENOENT"), { code: "ENOENT" });
 		const { operations } = fakeOperations([{ error: enoent }]);
-		const result = await injectShellCommands("!`cmd`", injectionOptions({ operations, shell: "powershell" }));
+		const diagnostics: ResourceDiagnostic[] = [];
+		const result = await injectShellCommands(
+			"!`cmd`",
+			injectionOptions({ operations, shell: "powershell", diagnostics }),
+		);
 		expect(result).toBe(shellUnavailableMarker("powershell"));
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0].message).toContain("shell unavailable: powershell");
 	});
 
 	it("an aborted session inlines the aborted marker and does not execute further blocks", async () => {
@@ -289,8 +342,19 @@ describe("injectShellCommands", () => {
 
 	it("an unexpected backend error inlines a failure marker and the render continues", async () => {
 		const { operations } = fakeOperations([{ error: new Error("spawn blew up") }, { output: "ok" }]);
-		const result = await injectShellCommands("!`cmd1` then !`cmd2`", injectionOptions({ operations }));
+		const diagnostics: ResourceDiagnostic[] = [];
+		const result = await injectShellCommands("!`cmd1` then !`cmd2`", injectionOptions({ operations, diagnostics }));
 		expect(result).toBe("[shell execution failed: spawn blew up] then ok");
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0].message).toContain("spawn blew up");
+	});
+
+	it("a non-Error rejection inlines a failure marker instead of throwing", async () => {
+		const { operations } = fakeOperations([{ error: "plain string rejection" }]);
+		const diagnostics: ResourceDiagnostic[] = [];
+		const result = await injectShellCommands("!`cmd`", injectionOptions({ operations, diagnostics }));
+		expect(result).toBe("[shell execution failed: plain string rejection]");
+		expect(diagnostics).toHaveLength(1);
 	});
 
 	it("replaces each injection with the policy marker when the kill switch is set", async () => {

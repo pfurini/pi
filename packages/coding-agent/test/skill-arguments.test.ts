@@ -9,7 +9,7 @@ import {
 	parseDeclaredArgumentNames,
 	substituteSkillArguments,
 	tokenizeSkillArgs,
-} from "../../src/core/skills/arguments.ts";
+} from "../src/core/skills/arguments.ts";
 
 describe("tokenizeSkillArgs (A.3.2 rule 2)", () => {
 	it("splits on whitespace", () => {
@@ -208,7 +208,7 @@ describe("substituteSkillArguments — append fallback (rule 7)", () => {
 		expect(result.consumedInput).toBe(false);
 	});
 
-	it("does not append when a default fired (defaults are not input)", () => {
+	it("still appends when only a default fired (defaults are not input)", () => {
 		const result = substituteSkillArguments("body ${2:-d}", "a", []);
 		expect(result.text).toBe("body d\n\nARGUMENTS: a");
 		expect(result.consumedInput).toBe(false);

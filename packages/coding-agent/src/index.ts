@@ -271,6 +271,7 @@ export {
 	substituteSkillArguments,
 	tokenizeSkillArgs,
 } from "./core/skills/arguments.ts";
+export { type FenceBlock, inlineCodeSpans, scanFenceBlocks } from "./core/skills/fences.ts";
 export {
 	buildCcToolNote,
 	buildSkillEnvironment,

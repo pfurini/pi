@@ -8,10 +8,12 @@
 
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ResourceDiagnostic } from "../../src/core/diagnostics.ts";
 import { createEventBus } from "../../src/core/event-bus.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { type LoadedSkill, normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
 import {
+	buildSkillExecutionEnv,
 	buildSkillSubstitutionMap,
 	buildSkillVariableValues,
 	detectCcToolNames,
@@ -89,6 +91,42 @@ describe("buildSkillVariableValues (A.8)", () => {
 		expect(values.CLAUDE_PROJECT_DIR).toBeUndefined();
 		runtime.dispose();
 	});
+
+	it("buildSkillExecutionEnv strips poisoned host session vars and re-adds invocation-scoped values", () => {
+		const PI_VARS = ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"] as const;
+		const saved = new Map(PI_VARS.map((name) => [name, process.env[name]] as const));
+		try {
+			process.env.PI_SESSION_ID = "host-session";
+			process.env.PI_SESSION_FILE = "/host/session.jsonl";
+			process.env.PI_PROVIDER = "host-provider";
+			process.env.PI_MODEL = "host-model";
+			process.env.PI_REASONING_LEVEL = "host-level";
+			const runtime = new SkillRuntime(runtimeContext());
+			const invocation = runtime.createInvocation(makeSkill({ baseDir: "/tmp/sk" }), "");
+			const env = buildSkillExecutionEnv(invocation, {
+				cwd: "/tmp/work",
+				sessionId: "session-1",
+				thinkingLevel: "medium",
+				skillInterop: false,
+			});
+			// The invocation's own scoped session id wins; the other host values are gone.
+			expect(env.PI_SESSION_ID).toBe("session-1");
+			expect(env.PI_SESSION_FILE).toBeUndefined();
+			expect(env.PI_PROVIDER).toBeUndefined();
+			expect(env.PI_MODEL).toBeUndefined();
+			expect(env.PI_REASONING_LEVEL).toBeUndefined();
+			runtime.dispose();
+		} finally {
+			for (const name of PI_VARS) {
+				const value = saved.get(name);
+				if (value === undefined) {
+					delete process.env[name];
+				} else {
+					process.env[name] = value;
+				}
+			}
+		}
+	});
 });
 
 describe("resolveEffectiveEffort", () => {
@@ -103,6 +141,16 @@ describe("resolveEffectiveEffort", () => {
 		expect(resolveEffectiveEffort(50000, "medium")).toBe("xhigh");
 	});
 
+	it("clamp-mapping an integer budget emits the A.2 diagnostic", () => {
+		const diagnostics: ResourceDiagnostic[] = [];
+		expect(resolveEffectiveEffort(4096, "medium", diagnostics)).toBe("medium");
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0].message).toContain('clamp-maps to "medium"');
+		// String efforts and fallbacks stay silent.
+		expect(resolveEffectiveEffort("high", "medium", diagnostics)).toBe("high");
+		expect(resolveEffectiveEffort(undefined, "low", diagnostics)).toBe("low");
+		expect(diagnostics).toHaveLength(1);
+	});
 	it("falls back to the session level", () => {
 		expect(resolveEffectiveEffort(undefined, "low")).toBe("low");
 	});
@@ -188,7 +236,21 @@ describe("SkillRuntime", () => {
 		expect(runtime.getRewriteMap("skill-1")).toBeDefined();
 		runtime.dispose();
 	});
-
+	it("sanitizes malformed rewrite-map payloads instead of trusting the declared shape", () => {
+		const bus = createEventBus();
+		const runtime = new SkillRuntime(runtimeContext({ eventBus: bus }));
+		bus.emit(SKILL_AGENTS_REWRITE_MAPS_CHANNEL, {
+			revision: 3,
+			maps: {
+				"skill-1": { good: { qualified: "s:good", collided: true }, bad: null, worse: { qualified: 42 } },
+				"skill-2": null,
+			},
+		});
+		expect(runtime.getRewriteMap("skill-1")).toEqual({ good: { qualified: "s:good", collided: true } });
+		expect(runtime.getRewriteMap("skill-2")).toBeUndefined();
+		expect(runtime.getRewriteMapsRevision()).toBe(3);
+		runtime.dispose();
+	});
 	it("pulls rewrite maps via the query/reply seam", async () => {
 		const bus = createEventBus();
 		bus.on(SKILL_AGENTS_QUERY_CHANNEL, (data) => {
@@ -277,6 +339,24 @@ describe("turn-scoped bash env composition (session level)", () => {
 		expect(process.env.PI_SKILL_DIR).toBe(before);
 	});
 
+	it("skill env persists across tool continuations within the same logical turn", async () => {
+		const { harness, runs } = await createBashCaptureHarness();
+		const skill = makeSkill({ baseDir: "/tmp/turn-skill" });
+		harness.session.skillRuntime.activate(harness.session.skillRuntime.createInvocation(skill, ""));
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("bash", { command: "first" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage([fauxToolCall("bash", { command: "second" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+		await harness.session.prompt("run both");
+		await harness.session.agent.waitForIdle();
+		// Both runs belong to one logical turn: the env survives the continuation.
+		expect(runs).toHaveLength(2);
+		expect(runs[0].env.PI_SKILL_DIR).toBe("/tmp/turn-skill");
+		expect(runs[1].env.PI_SKILL_DIR).toBe("/tmp/turn-skill");
+		// Expiry still fires at the end of the logical turn.
+		expect(harness.session.skillRuntime.getActiveInvocation()).toBeUndefined();
+	});
 	it("env expires at the logical-turn boundary: the next turn's bash run has no skill env", async () => {
 		const { harness, runs } = await createBashCaptureHarness();
 		const skill = makeSkill({ baseDir: "/tmp/turn-skill" });

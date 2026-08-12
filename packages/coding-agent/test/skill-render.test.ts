@@ -9,12 +9,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type LoadedSkill, normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
-import { type RenderSkillContext, renderSkillInvocation } from "../../src/core/skills/render.ts";
-import type { SkillInvocation } from "../../src/core/skills/runtime.ts";
-import { DEFAULT_SKILL_SHELL_SETTINGS } from "../../src/core/skills/shell-injection.ts";
-import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
-import type { BashOperations } from "../../src/core/tools/bash.ts";
+import { type LoadedSkill, normalizeSkillInput } from "../src/core/skills/frontmatter.ts";
+import { type RenderSkillContext, renderSkillInvocation } from "../src/core/skills/render.ts";
+import type { SkillInvocation } from "../src/core/skills/runtime.ts";
+import { DEFAULT_SKILL_SHELL_SETTINGS } from "../src/core/skills/shell-injection.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import type { BashOperations } from "../src/core/tools/bash.ts";
 
 const tempDirs: string[] = [];
 
@@ -158,6 +158,13 @@ describe("renderSkillInvocation — variable substitution (A.8)", () => {
 		expect(result.body).toContain("effort=high");
 		expect(result.invocation.effort).toBe("high");
 	});
+
+	it("carries disallowed-tools into the detached invocation metadata", async () => {
+		const { skill } = writeSkill("body");
+		const invocation = invocationFor(skill, "", { disallowedTools: ["Bash"] });
+		const result = await renderSkillInvocation(skill, invocation, renderContext());
+		expect(result.invocation.disallowedTools).toEqual(["Bash"]);
+	});
 });
 
 describe("renderSkillInvocation — @path absolutization (no inlining)", () => {
@@ -184,6 +191,15 @@ describe("renderSkillInvocation — @path absolutization (no inlining)", () => {
 		expect(result.body).toContain("mention @user");
 		expect(result.body).toContain("inline `@references/inline.md`");
 		expect(result.body).toContain("fenced @references/fenced.md");
+	});
+
+	it("treats a closing fence with an info string as unterminated, consistent with shell injection", async () => {
+		const body = ["```", "@references/a.md", "``` js", "@references/b.md"].join("\n");
+		const { skill } = writeSkill(body);
+		const result = await renderSkillInvocation(skill, invocationFor(skill), renderContext());
+		// The ``` js line does not close the fence, so both @paths stay relative.
+		expect(result.body).toContain("@references/a.md");
+		expect(result.body).toContain("@references/b.md");
 	});
 });
 

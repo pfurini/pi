@@ -6,8 +6,10 @@
  * single pass over the template; substituted values are never re-scanned.
  */
 
+import type { SkillArguments } from "./frontmatter.ts";
+
 /** Skill `arguments:` frontmatter: list of names, one string, or a name → description map. */
-export type SkillArgumentsDeclaration = string | string[] | Record<string, unknown>;
+export type SkillArgumentsDeclaration = SkillArguments;
 
 export interface SkillArgumentSubstitution {
 	/** Rendered text, including the rule-7 append fallback when it applies. */
@@ -179,21 +181,23 @@ export function substituteSkillArguments(
 			simple: string | undefined,
 			identifier: string | undefined,
 		): string => {
-			// Rule 6: `\$` escape — the match is just `\$`; the following
+			// Rule 6: `\$` escape: the match is just `\$`; the following
 			// characters stay literal because no placeholder pattern can start
 			// without a leading `$`.
 			if (match.startsWith("\\")) {
 				return "$";
 			}
 			if (defaultTarget !== undefined) {
-				const value =
-					defaultTarget === "ARGUMENTS"
-						? args.raw
-						: defaultTarget === "@"
-							? allPositionals()
-							: /^\d+$/.test(defaultTarget)
-								? positionalAt(Number.parseInt(defaultTarget, 10))
-								: namedValue(defaultTarget);
+				let value: string;
+				if (defaultTarget === "ARGUMENTS") {
+					value = args.raw;
+				} else if (defaultTarget === "@") {
+					value = allPositionals();
+				} else if (/^\d+$/.test(defaultTarget)) {
+					value = positionalAt(Number.parseInt(defaultTarget, 10));
+				} else {
+					value = namedValue(defaultTarget);
+				}
 				// Rule 5: defaults are not input; they never count as consuming.
 				return value !== "" ? mark(value) : (defaultValue ?? "");
 			}

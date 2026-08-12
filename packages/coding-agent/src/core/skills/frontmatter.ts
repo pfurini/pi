@@ -8,7 +8,7 @@ const RESERVED_COMMAND_PREFIXES = ["skill:", "prompt:", "ext:"];
 const OMIT_VALUE = Symbol("omit-skill-frontmatter-value");
 
 export type SkillBooleanInput = boolean | string | number;
-export type SkillArguments = string | string[];
+export type SkillArguments = string | string[] | Record<string, unknown>;
 export type SkillToolList = string | string[];
 export type SkillPathList = string | string[];
 

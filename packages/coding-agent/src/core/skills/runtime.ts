@@ -4,7 +4,7 @@
  * invocation is recognized, activated only when the carrying message is
  * consumed by the agent loop (queue time is NOT activation time), retained
  * across tool continuations and retries within the same logical turn, and
- * expired on definitive turn completion — anchored by AgentSession to the
+ * expired on definitive turn completion, anchored by AgentSession to the
  * `_runAgentPrompt()` `finally` / `agent_settled` boundary, not the per-run
  * `agent_end` or the low-level `turn_end` event.
  *
@@ -64,7 +64,7 @@ export interface SkillInvocation {
 }
 
 /**
- * Detached, JSON-serializable invocation metadata (no runtime references) —
+ * Detached, JSON-serializable invocation metadata (no runtime references):
  * the shape session entries and render results carry.
  */
 export interface SkillInvocationMetadata {
@@ -76,6 +76,7 @@ export interface SkillInvocationMetadata {
 	readonly args: string;
 	readonly model?: string;
 	readonly effort?: string | number;
+	readonly disallowedTools?: SkillToolList;
 	readonly shell?: string;
 }
 
@@ -89,6 +90,7 @@ export function toInvocationMetadata(invocation: SkillInvocation): SkillInvocati
 		args: invocation.rawArgs,
 		...(invocation.model !== undefined && { model: invocation.model }),
 		...(invocation.effort !== undefined && { effort: invocation.effort }),
+		...(invocation.disallowedTools !== undefined && { disallowedTools: invocation.disallowedTools }),
 		...(invocation.shell !== undefined && { shell: invocation.shell }),
 	};
 }
@@ -255,8 +257,25 @@ export class SkillRuntime {
 		if (event.revision < this.rewriteMapsRevision) {
 			return;
 		}
+		// The payload crosses the event-bus boundary unvalidated; sanitize the
+		// nested records before trusting the declared shape (a malformed entry
+		// would otherwise crash rewriteAgentNames when it reads entry.collided).
+		const maps: Record<string, SkillAgentRewriteMap> = {};
+		for (const [skillId, map] of Object.entries(event.maps as Record<string, unknown>)) {
+			if (typeof map !== "object" || map === null) {
+				continue;
+			}
+			const entries: Record<string, SkillAgentRewriteEntry> = {};
+			for (const [bareName, entry] of Object.entries(map as Record<string, unknown>)) {
+				const candidate = entry as Partial<SkillAgentRewriteEntry> | null;
+				if (typeof candidate?.qualified === "string" && typeof candidate?.collided === "boolean") {
+					entries[bareName] = { qualified: candidate.qualified, collided: candidate.collided };
+				}
+			}
+			maps[skillId] = entries;
+		}
 		this.rewriteMapsRevision = event.revision;
-		this.rewriteMaps = event.maps;
+		this.rewriteMaps = maps;
 	}
 
 	/** Pull the current maps once so a late-registered fork is not required to re-emit. */

@@ -12,6 +12,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { buildSpawnShellEnv } from "../../utils/shell.ts";
+import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { SkillInvocation } from "./runtime.ts";
 import { DEFAULT_TOOL_REDIRECTS } from "./tool-redirects.ts";
 
@@ -32,6 +33,8 @@ export interface SkillInteropContext {
 	thinkingLevel: string;
 	/** `skillInterop` setting: when false, CLAUDE_* aliases are dropped. */
 	skillInterop: boolean;
+	/** Optional sink for substitution diagnostics (A.2 effort clamp-map note). */
+	diagnostics?: ResourceDiagnostic[];
 }
 
 const projectRootCache = new Map<string, string>();
@@ -67,14 +70,28 @@ export function resolveProjectRoot(cwd: string): string {
 /**
  * Effective effort for an invocation: the invocation's own `effort` when
  * present (integer budgets clamp-map per A.2: ≤2k→low, ≤8k→medium,
- * ≤24k→high, >24k→xhigh), otherwise the session thinking level.
+ * ≤24k→high, >24k→xhigh, with a diagnostic noting the mapping), otherwise
+ * the session thinking level.
  */
-export function resolveEffectiveEffort(invocationEffort: string | number | undefined, sessionLevel: string): string {
+export function resolveEffectiveEffort(
+	invocationEffort: string | number | undefined,
+	sessionLevel: string,
+	diagnostics?: ResourceDiagnostic[],
+): string {
 	if (typeof invocationEffort === "number") {
-		if (invocationEffort <= 2048) return "low";
-		if (invocationEffort <= 8192) return "medium";
-		if (invocationEffort <= 24576) return "high";
-		return "xhigh";
+		let mapped = "xhigh";
+		if (invocationEffort <= 2048) {
+			mapped = "low";
+		} else if (invocationEffort <= 8192) {
+			mapped = "medium";
+		} else if (invocationEffort <= 24576) {
+			mapped = "high";
+		}
+		diagnostics?.push({
+			type: "warning",
+			message: `effort budget ${invocationEffort} clamp-maps to "${mapped}" (A.2)`,
+		});
+		return mapped;
 	}
 	if (typeof invocationEffort === "string" && invocationEffort !== "") {
 		return invocationEffort;
@@ -91,7 +108,7 @@ export function buildSkillVariableValues(
 		PI_SKILL_DIR: invocation.baseDir,
 		PI_PROJECT_DIR: resolveProjectRoot(context.cwd),
 		PI_SESSION_ID: context.sessionId,
-		PI_EFFORT: resolveEffectiveEffort(invocation.effort, context.thinkingLevel),
+		PI_EFFORT: resolveEffectiveEffort(invocation.effort, context.thinkingLevel, context.diagnostics),
 	};
 	if (context.skillInterop) {
 		for (const { pi, claude } of SKILL_VARIABLES) {
@@ -158,7 +175,7 @@ const CC_ONLY_TOOL_NAMES = Object.entries(DEFAULT_TOOL_REDIRECTS)
 /**
  * Detect CC tool names used lexically in a rendered body. Case-sensitive,
  * complete-identifier matching (not preceded or followed by `[A-Za-z0-9_-]`,
- * not part of a qualified `name:tool` form) — the same boundary rule as the
+ * not part of a qualified `name:tool` form), the same boundary rule as the
  * A.3.4 agent rewrite.
  */
 export function detectCcToolNames(body: string): Array<{ source: string; target: string }> {

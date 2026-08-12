@@ -5,6 +5,14 @@
  * exact bracketed markers. Failures never abort the render; injected output
  * is inlined once and never re-scanned for substitution or injection syntax.
  *
+ * Injection scanning runs AFTER argument substitution (single pass, A.3.1), so
+ * invocation args are in scope for `` !` `` recognition. That includes the
+ * rule-7 `ARGUMENTS: R` verbatim append (arguments.ts): caller-controlled text
+ * can execute even when the skill author wrote no injection. This is CC parity
+ * and crosses no privilege boundary (the A.3.5 gate below still requires an
+ * active, non-disallowed `bash` capability), but skill consumers should know
+ * the append path exists.
+ *
  * The `disallowed-tools` gate canonicalizes each declared name through the
  * shared ADR-0006 redirect map (`canonicalizeToolName`) before matching, so
  * `disallowed-tools: [Bash]` blocks the registered `bash` capability and
@@ -14,6 +22,7 @@
 import type { ShellConfig } from "../../utils/shell.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import { type BashOperations, createLocalBashOperations } from "../tools/bash.ts";
+import { inlineCodeSpans, scanFenceBlocks } from "./fences.ts";
 import type { SkillToolList } from "./frontmatter.ts";
 import { canonicalizeToolName } from "./tool-redirects.ts";
 
@@ -30,7 +39,7 @@ export function shellUnavailableMarker(shell: string): string {
 }
 
 export function commandTimedOutMarker(timeoutMs: number): string {
-	return `[command timed out after ${formatTimeoutSeconds(timeoutMs)}s]`;
+	return `[command timed out after ${timeoutMs / 1000}s]`;
 }
 
 export function exitCodeMarker(exitCode: number): string {
@@ -45,10 +54,6 @@ export function shellExecutionFailedMarker(message: string): string {
 	return `[shell execution failed: ${message}]`;
 }
 
-function formatTimeoutSeconds(timeoutMs: number): string {
-	return String(timeoutMs / 1000);
-}
-
 /**
  * Aggregate per-render budget: at most this many injection blocks execute per
  * render; the remainder is replaced with the limit marker so a hostile local
@@ -60,7 +65,7 @@ export const MAX_SHELL_INJECTIONS_PER_RENDER = 32;
 export interface SkillShellSettings {
 	/** `disableSkillShellExecution` kill switch. */
 	disabled: boolean;
-	/** `skillShellTimeoutMs` — milliseconds, converted to seconds at the BashOperations boundary. */
+	/** `skillShellTimeoutMs` in milliseconds, converted to seconds at the BashOperations boundary. */
 	timeoutMs: number;
 	/** `skillShellOutputLimitBytes`. */
 	outputLimitBytes: number;
@@ -96,83 +101,78 @@ export interface ShellInjectionOptions {
 
 type Segment = { kind: "text"; text: string } | { kind: "command"; command: string };
 
-const FENCE_OPEN = /^(\s{0,3})(`{3,}|~{3,})(.*)$/;
 const INLINE_INJECTION = /!`([^`\n]+)`/g;
 
 /**
  * Split a body into text and command segments. Fenced blocks whose info
  * string is `!` become one command segment (fences excluded); inline
- * `` !`cmd` `` spans are recognized only outside fenced blocks. Everything
- * else is literal text.
+ * `` !`cmd` `` spans are recognized only outside fenced blocks and outside
+ * inline code spans (a documented `` ``!`cmd` `` `` example never executes).
+ * Everything else is literal text. Newlines are normalized to LF first, so
+ * CRLF bodies parse exactly like LF (fence patterns anchor at line end).
  */
 export function splitInjectionSegments(body: string): Segment[] {
+	const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 	// Line table with exact offsets so text between segments keeps its bytes.
 	const lineStarts: number[] = [0];
-	for (let i = 0; i < body.length; i++) {
-		if (body[i] === "\n") {
+	for (let i = 0; i < normalized.length; i++) {
+		if (normalized[i] === "\n") {
 			lineStarts.push(i + 1);
 		}
 	}
 	const lines = lineStarts.map((start, index) => {
-		const end = index + 1 < lineStarts.length ? lineStarts[index + 1] - 1 : body.length;
-		return body.slice(start, end);
+		const end = index + 1 < lineStarts.length ? lineStarts[index + 1] - 1 : normalized.length;
+		return normalized.slice(start, end);
 	});
 	// End of a fence block: up to and including the closing fence line's bytes,
-	// but not its terminating newline — the replacement keeps the separator.
+	// but not its terminating newline (the replacement keeps the separator).
 	const blockEndOffset = (closeLine: number): number =>
-		closeLine === -1 ? body.length : closeLine + 1 < lineStarts.length ? lineStarts[closeLine + 1] - 1 : body.length;
+		closeLine === -1
+			? normalized.length
+			: closeLine + 1 < lineStarts.length
+				? lineStarts[closeLine + 1] - 1
+				: normalized.length;
 
-	// Pass 1: classify every fence block. `!` blocks become commands; other
-	// fences stay literal text (inline spans inside them never execute).
+	// Pass 1: classify every fence block with the shared scanner (fences.ts).
+	// `!` blocks become commands; other fences stay literal text (inline spans
+	// inside them never execute).
 	type Block =
 		| { kind: "outside"; start: number; end: number }
 		| { kind: "literal"; start: number; end: number }
 		| { kind: "command"; start: number; end: number };
 	const blocks: Block[] = [];
 	let cursor = 0;
-	let i = 0;
-	while (i < lines.length) {
-		const open = lines[i].match(FENCE_OPEN);
-		if (!open) {
-			i++;
-			continue;
+	for (const fence of scanFenceBlocks(lines)) {
+		if (lineStarts[fence.openLine] > cursor) {
+			blocks.push({ kind: "outside", start: cursor, end: lineStarts[fence.openLine] });
 		}
-		const fence = open[2];
-		const closePattern = new RegExp(`^\\s{0,3}${fence[0] === "`" ? "`" : "~"}{${fence.length},}\\s*$`);
-		let closeLine = -1;
-		for (let j = i + 1; j < lines.length; j++) {
-			if (closePattern.test(lines[j])) {
-				closeLine = j;
-				break;
-			}
-		}
-		const isInjection = open[3].trim() === "!";
-		if (lineStarts[i] > cursor) {
-			blocks.push({ kind: "outside", start: cursor, end: lineStarts[i] });
-		}
-		if (isInjection) {
-			const contentStart = lineStarts[i + 1] ?? body.length;
+		if (fence.info === "!") {
+			const contentStart = lineStarts[fence.openLine + 1] ?? normalized.length;
 			const contentEnd =
-				closeLine === -1 ? body.length : closeLine === i + 1 ? contentStart : lineStarts[closeLine] - 1;
+				fence.closeLine === -1
+					? normalized.length
+					: fence.closeLine === fence.openLine + 1
+						? contentStart
+						: lineStarts[fence.closeLine] - 1;
 			blocks.push({ kind: "command", start: contentStart, end: contentEnd });
 		} else {
 			blocks.push({
 				kind: "literal",
-				start: lineStarts[i],
-				end: blockEndOffset(closeLine),
+				start: lineStarts[fence.openLine],
+				end: blockEndOffset(fence.closeLine),
 			});
 		}
-		cursor = blockEndOffset(closeLine);
-		i = closeLine === -1 ? lines.length : closeLine + 1;
+		cursor = blockEndOffset(fence.closeLine);
 	}
-	if (cursor < body.length) {
-		blocks.push({ kind: "outside", start: cursor, end: body.length });
+	if (cursor < normalized.length) {
+		blocks.push({ kind: "outside", start: cursor, end: normalized.length });
 	}
 
-	// Pass 2: inline spans are recognized in outside ranges only.
+	// Pass 2: inline spans are recognized in outside ranges only, and never
+	// inside inline code spans.
 	const segments: Segment[] = [];
 	for (const block of blocks) {
-		const text = body.slice(block.start, block.end);
+		const text = normalized.slice(block.start, block.end);
 		if (block.kind === "command") {
 			segments.push({ kind: "command", command: text });
 			continue;
@@ -181,8 +181,12 @@ export function splitInjectionSegments(body: string): Segment[] {
 			segments.push({ kind: "text", text });
 			continue;
 		}
+		const spans = inlineCodeSpans(text);
 		let last = 0;
 		for (const match of text.matchAll(INLINE_INJECTION)) {
+			if (spans.some((span) => match.index >= span.start && match.index < span.end)) {
+				continue;
+			}
 			if (match.index > last) {
 				segments.push({ kind: "text", text: text.slice(last, match.index) });
 			}
@@ -324,7 +328,7 @@ async function executeCommand(
 	};
 
 	// BashOperations.exec interprets `timeout` as SECONDS (resolveTimeoutMs
-	// multiplies by 1000); skillShellTimeoutMs is milliseconds. Convert here —
+	// multiplies by 1000); skillShellTimeoutMs is milliseconds. Convert here:
 	// passing 30000 straight through would yield an ~8.3-hour timeout.
 	const timeoutSeconds = settings.timeoutMs / 1000;
 
@@ -338,17 +342,32 @@ async function executeCommand(
 		});
 		exitCode = result.exitCode;
 	} catch (error) {
-		const err = error as NodeJS.ErrnoException;
-		if (err instanceof Error && err.message === "aborted") {
+		// Extension-provided BashOperations can reject with anything; only Error
+		// rejections carry a message/code.
+		const err = error instanceof Error ? (error as NodeJS.ErrnoException) : undefined;
+		if (err?.message === "aborted") {
 			return SHELL_MARKERS.aborted;
 		}
-		if (err instanceof Error && err.message.startsWith("timeout:")) {
+		const commandLabel = command.split("\n", 1)[0].slice(0, 120);
+		if (err?.message.startsWith("timeout:")) {
+			options.diagnostics?.push({
+				type: "warning",
+				message: `shell injection timed out after ${settings.timeoutMs}ms: ${commandLabel}`,
+			});
 			return finishOutput(chunks, truncated, settings.outputLimitBytes, commandTimedOutMarker(settings.timeoutMs));
 		}
-		if (err.code === "ENOENT") {
+		if (err?.code === "ENOENT") {
+			options.diagnostics?.push({
+				type: "warning",
+				message: `shell unavailable: ${shellName} (command: ${commandLabel})`,
+			});
 			return shellUnavailableMarker(shellName);
 		}
-		const message = err instanceof Error ? err.message : String(err);
+		const message = err ? err.message : String(error);
+		options.diagnostics?.push({
+			type: "warning",
+			message: `shell execution failed: ${message} (command: ${commandLabel})`,
+		});
 		return shellExecutionFailedMarker(message);
 	}
 
@@ -362,11 +381,13 @@ function finishOutput(chunks: Buffer[], truncated: boolean, limitBytes: number, 
 	// stdout/stderr in arrival order; a cap cutting a multibyte sequence decodes
 	// to U+FFFD at the boundary (non-fatal decoder) and is covered by the marker.
 	let output = new TextDecoder().decode(Buffer.concat(chunks));
-	if (truncated) {
-		output += `${output.endsWith("\n") || output === "" ? "" : "\n"}${outputTruncatedMarker(limitBytes)}`;
-	}
-	if (marker !== undefined) {
-		output += `${output.endsWith("\n") || output === "" ? "" : "\n"}${marker}`;
+	const markers = [truncated ? outputTruncatedMarker(limitBytes) : undefined, marker];
+	for (const m of markers) {
+		if (m === undefined) {
+			continue;
+		}
+		// Markers start on their own line unless the output is empty or already ends with one.
+		output += `${output.endsWith("\n") || output === "" ? "" : "\n"}${m}`;
 	}
 	return output;
 }
@@ -376,6 +397,11 @@ function finishOutput(chunks: Buffer[], truncated: boolean, limitBytes: number, 
  * inlining each result or marker. Never throws for command failures.
  */
 export async function injectShellCommands(body: string, options: ShellInjectionOptions): Promise<string> {
+	// Cheap guard: no `!` anywhere means no injection syntax can match, so the
+	// common injection-free render skips segment parsing entirely.
+	if (!body.includes("!")) {
+		return body;
+	}
 	const segments = splitInjectionSegments(body);
 	if (!segments.some((segment) => segment.kind === "command")) {
 		return body;

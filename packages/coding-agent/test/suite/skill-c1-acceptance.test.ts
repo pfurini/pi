@@ -102,10 +102,11 @@ async function createSkillHarness(options: {
 	const extensionsResult = options.extensionFactories
 		? await createTestExtensionsResult(options.extensionFactories, tempDir)
 		: undefined;
+	const skillsLoader = createSkillsLoader(tempDir, options.fixtures);
 	const resourceLoader = {
-		...createSkillsLoader(tempDir, options.fixtures),
+		...skillsLoader,
 		...(extensionsResult ? createTestResourceLoader({ extensionsResult }) : {}),
-		getSkills: createSkillsLoader(tempDir, options.fixtures).getSkills,
+		getSkills: skillsLoader.getSkills,
 	};
 	const harness = await createHarness({
 		resourceLoader,
@@ -119,9 +120,9 @@ async function createSkillHarness(options: {
 }
 
 function flagModel(harness: Harness): void {
-	harness.session.agent.state.model = { ...harness.getModel(), syntheticToolResultReplay: true };
+	const flaggedModel = { ...harness.getModel(), syntheticToolResultReplay: true as const };
+	harness.session.agent.state.model = flaggedModel;
 }
-
 function messageEntries(harness: Harness): SessionMessageEntry[] {
 	return harness.sessionManager.getEntries().filter((entry) => entry.type === "message");
 }

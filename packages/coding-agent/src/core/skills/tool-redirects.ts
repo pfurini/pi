@@ -27,15 +27,10 @@ export const DEFAULT_TOOL_REDIRECTS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Resolve a declared tool name to its canonical Pi name through the redirect
- * map. Matching is exact first, then case-insensitive over map keys; names
- * with no mapping pass through unchanged (comparison against the active tool
- * set is itself case-insensitive at the call site).
+ * Look up a declared tool name in the redirect map. Matching is exact first,
+ * then case-insensitive over map keys.
  */
-export function canonicalizeToolName(
-	name: string,
-	redirects: Readonly<Record<string, string>> = DEFAULT_TOOL_REDIRECTS,
-): string {
+function findToolRedirect(name: string, redirects: Readonly<Record<string, string>>): string | undefined {
 	const direct = redirects[name];
 	if (direct !== undefined) {
 		return direct;
@@ -46,7 +41,19 @@ export function canonicalizeToolName(
 			return target;
 		}
 	}
-	return name;
+	return undefined;
+}
+
+/**
+ * Resolve a declared tool name to its canonical Pi name through the redirect
+ * map. Names with no mapping pass through unchanged (comparison against the
+ * active tool set is itself case-insensitive at the call site).
+ */
+export function canonicalizeToolName(
+	name: string,
+	redirects: Readonly<Record<string, string>> = DEFAULT_TOOL_REDIRECTS,
+): string {
+	return findToolRedirect(name, redirects) ?? name;
 }
 
 /** Options for the C1d unknown-tool redirect policy (ADR-0006). */
@@ -107,16 +114,7 @@ export function resolveToolRedirect(options: ToolRedirectOptions): string | unde
 	const registered = new Set(registeredToolNames);
 	const redirects: Record<string, string> = { ...DEFAULT_TOOL_REDIRECTS, ...options.redirects };
 
-	let mapped = redirects[attemptedName];
-	if (mapped === undefined) {
-		const lowered = attemptedName.toLowerCase();
-		for (const [key, target] of Object.entries(redirects)) {
-			if (key.toLowerCase() === lowered) {
-				mapped = target;
-				break;
-			}
-		}
-	}
+	const mapped = findToolRedirect(attemptedName, redirects);
 	if (mapped !== undefined && registered.has(mapped)) {
 		return formatToolRedirectMessage(attemptedName, mapped);
 	}

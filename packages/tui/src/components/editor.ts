@@ -1,4 +1,9 @@
-import type { AutocompleteProvider, AutocompleteSuggestions } from "../autocomplete.ts";
+import {
+	type AutocompleteItem,
+	type AutocompleteProvider,
+	type AutocompleteSuggestions,
+	slashRunAtCursor,
+} from "../autocomplete.ts";
 import { getKeybindings } from "../keybindings.ts";
 import { decodePrintableKey, matchesKey } from "../keys.ts";
 import { KillRing } from "../kill-ring.ts";
@@ -1188,8 +1193,8 @@ export class Editor implements Component, Focusable {
 
 		// Check if we should trigger or update autocomplete
 		if (!this.autocompleteState) {
-			// Auto-trigger for "/" at the start of a line (slash commands)
-			if (char === "/" && this.isAtStartOfMessage()) {
+			// Auto-trigger for "/" at a candidate start (slash commands)
+			if (char === "/" && this.isSlashTokenStart()) {
 				this.tryTriggerAutocomplete();
 			}
 			// Auto-trigger for symbol-based completion like @, #, or provider triggers at token boundaries
@@ -2148,21 +2153,21 @@ export class Editor implements Component, Focusable {
 		);
 	}
 
-	// Slash menu only allowed on the first line of the editor
-	private isSlashMenuAllowed(): boolean {
-		return this.state.cursorLine === 0;
-	}
-
-	// Helper method to check if cursor is at start of message (for slash command detection)
-	private isAtStartOfMessage(): boolean {
-		if (!this.isSlashMenuAllowed()) return false;
+	// A "/" begins a command candidate at message start or immediately after whitespace,
+	// on every line (A.1 candidate-start rule). Called right after a "/" was inserted, so the
+	// "/" is the last character before the cursor.
+	private isSlashTokenStart(): boolean {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
-		return beforeCursor.trim() === "" || beforeCursor.trim() === "/";
+		const beforeSlash = beforeCursor.slice(0, -1);
+		return beforeSlash === "" || isWhitespaceChar(beforeSlash.charAt(beforeSlash.length - 1));
 	}
 
 	private isInSlashCommandContext(textBeforeCursor: string): boolean {
-		return this.isSlashMenuAllowed() && textBeforeCursor.trimStart().startsWith("/");
+		if (slashRunAtCursor(textBeforeCursor) !== null) return true;
+		// Whole-message-initial command with an argument span: argument completion context
+		// (A.1 rule 4 keeps argument completion message-initial).
+		return this.state.cursorLine === 0 && textBeforeCursor.startsWith("/");
 	}
 
 	// Autocomplete methods
@@ -2195,12 +2200,21 @@ export class Editor implements Component, Focusable {
 		return firstPrefixIndex;
 	}
 
-	private createAutocompleteList(
-		prefix: string,
-		items: Array<{ value: string; label: string; description?: string }>,
-	): SelectList {
-		const layout = prefix.startsWith("/") ? SLASH_COMMAND_SELECT_LIST_LAYOUT : undefined;
-		return new SelectList(items, this.autocompleteMaxVisible, this.theme.selectList, layout);
+	private createAutocompleteList(prefix: string, items: AutocompleteItem[]): SelectList {
+		const isSlashMenu = prefix.startsWith("/");
+		const layout = isSlashMenu ? SLASH_COMMAND_SELECT_LIST_LAYOUT : undefined;
+		// Slash candidates carry their provenance as a [source] badge in the description column.
+		const selectItems = isSlashMenu
+			? items.map((item) =>
+					item.source
+						? {
+								...item,
+								description: item.description ? `[${item.source}] ${item.description}` : `[${item.source}]`,
+							}
+						: item,
+				)
+			: items;
+		return new SelectList(selectItems, this.autocompleteMaxVisible, this.theme.selectList, layout);
 	}
 
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
@@ -2213,7 +2227,7 @@ export class Editor implements Component, Focusable {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
 
-		if (this.isInSlashCommandContext(beforeCursor) && !beforeCursor.trimStart().includes(" ")) {
+		if (slashRunAtCursor(beforeCursor) !== null) {
 			this.handleSlashCommandCompletion();
 		} else {
 			this.forceFileAutocomplete(true);
@@ -2319,7 +2333,7 @@ export class Editor implements Component, Focusable {
 			this.state.lines,
 			this.state.cursorLine,
 			this.state.cursorCol,
-			{ signal: controller.signal, force: options.force },
+			{ signal: controller.signal, force: options.force, explicitTab: options.explicitTab },
 		);
 
 		if (!this.isAutocompleteRequestCurrent(requestId, controller, snapshotText, snapshotLine, snapshotCol)) {

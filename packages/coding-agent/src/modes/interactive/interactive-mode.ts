@@ -637,6 +637,7 @@ export class InteractiveMode {
 		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
 			name: command.name,
 			description: command.description,
+			source: "builtin" as const,
 			...(command.argumentHint && { argumentHint: command.argumentHint }),
 		}));
 
@@ -682,6 +683,7 @@ export class InteractiveMode {
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
 			name: cmd.name,
 			description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
+			source: "prompt" as const,
 			...(cmd.argumentHint && { argumentHint: cmd.argumentHint }),
 		}));
 
@@ -693,6 +695,7 @@ export class InteractiveMode {
 			.map((cmd) => ({
 				name: cmd.invocationName,
 				description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
+				source: "extension" as const,
 				getArgumentCompletions: cmd.getArgumentCompletions,
 			}));
 
@@ -708,6 +711,7 @@ export class InteractiveMode {
 				skillCommandList.push({
 					name: commandName,
 					description: this.prefixAutocompleteDescription(normalized.description, normalized.sourceInfo),
+					source: "skill" as const,
 					...(normalized.argumentHint && { argumentHint: normalized.argumentHint }),
 				});
 			}

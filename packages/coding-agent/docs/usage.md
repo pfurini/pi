@@ -32,7 +32,7 @@ See [Keybindings](keybindings.md) for all shortcuts and customization.
 
 ## Slash Commands
 
-Type `/` in the editor to open command completion. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
+Type `/` in the editor to open command completion. Built-ins, extension commands, commands, prompt templates, and skills share one namespace: extensions register custom commands, commands and [prompt templates](prompt-templates.md) expand via `/name` (bare or mid-prompt), and [skills](skills.md) expand via `/name` or `/skill:name`. On a name collision the higher tier wins (built-ins > extension commands > commands/templates > skills) and the loser stays reachable via its qualifier (`/prompt:name`, `/skill:name`, `/ext:name`).
 
 | Command | Description |
 |---------|-------------|

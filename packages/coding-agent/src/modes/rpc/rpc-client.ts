@@ -438,7 +438,7 @@ export class RpcClient {
 	}
 
 	/**
-	 * Get available commands (extension commands, prompt templates, skills).
+	 * Get the unified command listing (built-ins, extension commands, commands, prompt templates, skills).
 	 */
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });

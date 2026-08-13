@@ -54,6 +54,7 @@ import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
+import { CommandMessagePreparer, type QueuedInvocationSnapshot } from "./commands/message-preparer.ts";
 import { buildCommandRegistry, type CommandRegistry, type ExtensionCommandInfo } from "./commands/registry.ts";
 import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
 import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
@@ -86,6 +87,7 @@ import {
 	type MessageStartEvent,
 	type MessageUpdateEvent,
 	type ReplacedSessionContext,
+	type ResolvedCommand,
 	type SessionBeforeCompactResult,
 	type SessionBeforeTreeResult,
 	type SessionShutdownEvent,
@@ -119,7 +121,6 @@ import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader }
 import type { SettingsManager } from "./settings-manager.ts";
 import {
 	buildSkillDelivery,
-	buildSkillMessageBlock,
 	SKILL_TOOL_NAME,
 	type SkillDelivery,
 	type SkillToolResultDetails,
@@ -168,16 +169,8 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 }
 
 /** A queued invocation-bearing message awaiting consumption by the agent loop (C1c). */
-interface QueuedInvocation {
-	/** Immutable resolved span snapshot captured at queue time; rendered only on consumption. */
-	spans: MessageSpan[];
-	/** True when the queued message began with an invocation (single-skill synthetic-pair path). */
-	messageInitial: boolean;
-	/** Whole original message text: shown in the queue UI and delivered literally on any render/abort failure. */
-	originalText: string;
+interface QueuedInvocation extends QueuedInvocationSnapshot {
 	queue: "steer" | "followUp";
-	/** Images attached to the composed message. */
-	images?: ImageContent[];
 }
 
 /** Entry metadata plus the pending synthetic tool_result notification payload. */
@@ -460,6 +453,22 @@ export class AgentSession {
 	private readonly _queuedSkillInvocations = new WeakMap<AgentMessage, QueuedInvocation>();
 	/** B.12/pairId entry metadata (+ synthetic event payload) per delivered message, by identity. */
 	private readonly _messageDeliveryMeta = new WeakMap<AgentMessage, DeliveryMeta>();
+	/** Tokenize → compose → render → activate → fallback coordinator (no session reference). */
+	private readonly _messagePreparer = new CommandMessagePreparer({
+		createSkillInvocation: (skill, rawArgs) => this._skillRuntime.createInvocation(skill, rawArgs),
+		renderSkill: (skill, invocation, signal) => this._renderSkill(skill, invocation, signal),
+		renderCommand: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
+		activateSkill: (invocation) => this._skillRuntime.activate(invocation),
+		emitDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		emitRenderError: (extensionPath, event, err) =>
+			this._extensionRunner.emitError({
+				extensionPath,
+				event,
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		literalMessage: (text, images) => this._literalUserMessage(text, images),
+		attachInvocations: (message, invocations) => this._messageDeliveryMeta.set(message, { invocations }),
+	});
 	/** Synthetic-pair messages: immutable against message_end replacement (A.4). */
 	private readonly _syntheticPairMessages = new WeakSet<AgentMessage>();
 	/** Deferred first half of a synthetic pair, persisted atomically with its toolResult. */
@@ -1473,10 +1482,22 @@ export class AgentSession {
 		let messages: AgentMessage[] | undefined;
 
 		try {
+			// The command registry is built at most once per prompt and shared by
+			// the extension-command check and A.1 tokenization (its inputs cannot
+			// change mid-prompt; cross-call caching is unsafe because extensions
+			// can register commands at any time without a notification seam).
+			let commandRegistry: CommandRegistry | undefined;
+			const getCommandRegistry = (): CommandRegistry => {
+				if (commandRegistry === undefined) {
+					commandRegistry = this._buildCommandRegistry();
+				}
+				return commandRegistry;
+			};
+
 			// Handle extension commands first (execute immediately, even during streaming)
 			// Extension commands manage their own LLM interaction via pi.sendMessage()
 			if (expandPromptTemplates && text.startsWith("/")) {
-				const handled = await this._tryExecuteExtensionCommand(text);
+				const handled = await this._tryExecuteExtensionCommand(text, getCommandRegistry);
 				if (handled) {
 					// Extension command executed, no prompt to send
 					preflightResult?.(true);
@@ -1513,9 +1534,7 @@ export class AgentSession {
 			// A.1 tokenization: resolve prompt-producing invocations (skills + commands),
 			// bare / mid-prompt / stacked. Replay bypass (expandPromptTemplates:false) keeps
 			// the text literal; rendering happens only at send (direct) or consumption (queued).
-			const tokenized = expandPromptTemplates
-				? tokenizeMessage(currentText, this._buildCommandRegistry())
-				: undefined;
+			const tokenized = expandPromptTemplates ? tokenizeMessage(currentText, getCommandRegistry()) : undefined;
 			if (tokenized && tokenized.diagnostics.length > 0) {
 				this._emitSkillDiagnostics(tokenized.diagnostics);
 			}
@@ -1585,17 +1604,16 @@ export class AgentSession {
 			// A message-initial single skill keeps the C1 synthetic-pair / message-block
 			// delivery; everything else composes one user message (commands splice text,
 			// mid-prompt skills splice `<skill>` blocks with B.12 offsets).
-			const soleSkill =
-				tokenized?.messageInitial &&
-				invocationSpans.length === 1 &&
-				invocationSpans[0].invocation.source === "skill"
-					? invocationSpans[0].invocation.skill
-					: undefined;
-
-			if (soleSkill) {
-				const invocation = this._skillRuntime.createInvocation(soleSkill, invocationSpans[0].rawArgs);
+			const prepared = await this._messagePreparer.prepareDirect({
+				tokenized,
+				text: currentText,
+				images: currentImages,
+				signal: this._sessionAbortController?.signal,
+			});
+			if (prepared.kind === "sole-skill") {
+				const invocation = this._skillRuntime.createInvocation(prepared.skill, prepared.rawArgs);
 				const delivery = await this._buildSkillDelivery(
-					soleSkill,
+					prepared.skill,
 					invocation,
 					currentImages,
 					this._sessionAbortController?.signal,
@@ -1608,24 +1626,9 @@ export class AgentSession {
 					messages.push(this._literalUserMessage(currentText, currentImages));
 					promptText = currentText;
 				}
-			} else if (tokenized && invocationSpans.length > 0) {
-				const composed = await this._composeSpans(
-					tokenized.spans,
-					currentImages,
-					this._sessionAbortController?.signal,
-				);
-				if (composed) {
-					messages.push(composed.message);
-					promptText = composed.textForm;
-				} else {
-					messages.push(this._literalUserMessage(currentText, currentImages));
-					promptText = currentText;
-				}
 			} else {
-				// No invocations (or replay bypass): plain user message with escape-processed text.
-				const finalText = tokenized ? this._spansPlainText(tokenized.spans) : currentText;
-				messages.push(this._literalUserMessage(finalText, currentImages));
-				promptText = finalText;
+				messages.push(prepared.message);
+				promptText = prepared.textForm;
 			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
@@ -1680,13 +1683,13 @@ export class AgentSession {
 	/**
 	 * Try to execute an extension command. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+	private async _tryExecuteExtensionCommand(text: string, getRegistry?: () => CommandRegistry): Promise<boolean> {
 		// Parse command name and args
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
 
-		const command = this._extensionRunner.getCommand(commandName);
+		const command = this._resolveExtensionCommand(commandName, getRegistry);
 		if (!command) return false;
 
 		// Get command context from extension runner (includes session control methods)
@@ -1704,6 +1707,40 @@ export class AgentSession {
 			});
 			return true;
 		}
+	}
+
+	/**
+	 * Resolve an extension command by bare invocation name or by `ext:`-qualified
+	 * name. Bare names keep the direct fast path; qualified names route through
+	 * the A.1 registry (extension tier) so `/ext:name` dispatches even when the
+	 * bare name collides with a built-in. Callers handling a whole message pass
+	 * their per-operation registry so it is built at most once per message.
+	 */
+	private _resolveExtensionCommand(
+		commandName: string,
+		getRegistry?: () => CommandRegistry,
+	): ResolvedCommand | undefined {
+		const direct = this._extensionRunner.getCommand(commandName);
+		if (direct) {
+			return direct;
+		}
+		if (!commandName.includes(":")) {
+			return undefined;
+		}
+		const invocation = (getRegistry?.() ?? this._buildCommandRegistry()).resolve(commandName, {
+			messageInitial: true,
+		});
+		if (invocation?.source !== "extension") {
+			return undefined;
+		}
+		// Extension entries carry `name: invocationName`, which is what the
+		// runner's getCommand matches.
+		return this._extensionRunner.getCommand(invocation.name);
+	}
+
+	/** Resolve an extension command for UI gating (bare or `ext:`-qualified). */
+	resolveExtensionCommand(commandName: string): ResolvedCommand | undefined {
+		return this._resolveExtensionCommand(commandName);
 	}
 
 	/** Render one invocation through the C1b pipeline with the session's live context. */
@@ -1728,7 +1765,7 @@ export class AgentSession {
 	}
 
 	/** Loaded commands (native + adapted templates); falls back to adapting prompts for lightweight loaders. */
-	private _getLoadedCommands(): LoadedCommand[] {
+	private _getLoadedCommands(): readonly LoadedCommand[] {
 		const loader = this._resourceLoader;
 		if (loader.getCommands) {
 			return loader.getCommands().commands;
@@ -1792,7 +1829,7 @@ export class AgentSession {
 
 	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
 	private _spansPlainText(spans: MessageSpan[]): string {
-		return spans.map((span) => (span.kind === "text" ? span.text : "")).join("");
+		return this._messagePreparer.plainText(spans);
 	}
 
 	/** Build a plain literal user message (whole-message fallback). */
@@ -1802,73 +1839,6 @@ export class AgentSession {
 			content.push(...images);
 		}
 		return { role: "user", content, timestamp: Date.now() };
-	}
-
-	/**
-	 * Compose tokenized spans (mid-prompt / mixed) into one user message: command
-	 * spans splice rendered text, skill spans splice `<skill>` blocks with B.12
-	 * UTF-16 offsets. Skill records activate only after the whole composition
-	 * succeeds (A.5). Returns undefined after emitting a diagnostic on any render
-	 * failure, so the caller falls back to the whole original literal message.
-	 */
-	private async _composeSpans(
-		spans: MessageSpan[],
-		images: ImageContent[] | undefined,
-		signal?: AbortSignal,
-	): Promise<{ message: AgentMessage; textForm: string } | undefined> {
-		let text = "";
-		const invocations: SkillInvocationEntry[] = [];
-		const activations: SkillInvocation[] = [];
-		for (const span of spans) {
-			if (span.kind === "text") {
-				text += span.text;
-				continue;
-			}
-			if (span.invocation.source === "skill" && span.invocation.skill) {
-				const skill = span.invocation.skill;
-				const invocation = this._skillRuntime.createInvocation(skill, span.rawArgs);
-				let rendered: RenderedSkillInvocation;
-				try {
-					rendered = await this._renderSkill(skill, invocation, signal);
-					this._emitSkillDiagnostics(rendered.diagnostics);
-				} catch (err) {
-					this._extensionRunner.emitError({
-						extensionPath: skill.filePath,
-						event: "skill_expansion",
-						error: err instanceof Error ? err.message : String(err),
-					});
-					return undefined;
-				}
-				const block = buildSkillMessageBlock(rendered.invocation, rendered.body);
-				const blockStart = text.length;
-				text += block.text;
-				invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
-				activations.push(invocation);
-			} else if (span.invocation.command) {
-				const command = span.invocation.command;
-				let rendered: RenderedCommand;
-				try {
-					rendered = await this._renderCommand(command, span.rawArgs, signal);
-					this._emitSkillDiagnostics(rendered.diagnostics);
-				} catch (err) {
-					this._extensionRunner.emitError({
-						extensionPath: command.filePath,
-						event: "command_expansion",
-						error: err instanceof Error ? err.message : String(err),
-					});
-					return undefined;
-				}
-				text += rendered.text;
-			}
-		}
-		for (const invocation of activations) {
-			this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
-		}
-		const message = this._literalUserMessage(text, images);
-		if (invocations.length > 0) {
-			this._messageDeliveryMeta.set(message, { invocations });
-		}
-		return { message, textForm: text };
 	}
 
 	/** Loaded skills visible to the model (A.1: `disable-model-invocation` excludes). */
@@ -2000,8 +1970,7 @@ export class AgentSession {
 	): Promise<void> {
 		const message = this._buildQueueMessage(originalText, images);
 		this._queuedSkillInvocations.set(message, {
-			spans: tokenized.spans,
-			messageInitial: tokenized.messageInitial,
+			snapshot: tokenized,
 			originalText,
 			queue,
 			...(images && { images }),
@@ -2038,22 +2007,17 @@ export class AgentSession {
 			}
 			this._queuedSkillInvocations.delete(message);
 			try {
-				const invocationSpans = queued.spans.filter((span): span is InvocationSpan => span.kind === "invocation");
-				const soleSkill =
-					queued.messageInitial && invocationSpans.length === 1 && invocationSpans[0].invocation.source === "skill"
-						? invocationSpans[0].invocation.skill
-						: undefined;
-				if (soleSkill) {
+				const prepared = await this._messagePreparer.prepareQueued(queued, signal);
+				if (prepared.kind === "sole-skill") {
 					// Message-initial single skill: preserve C1 synthetic-pair delivery.
-					const invocation = this._skillRuntime.createInvocation(soleSkill, invocationSpans[0].rawArgs);
-					const delivery = await this._buildSkillDelivery(soleSkill, invocation, queued.images, signal);
+					const invocation = this._skillRuntime.createInvocation(prepared.skill, prepared.rawArgs);
+					const delivery = await this._buildSkillDelivery(prepared.skill, invocation, queued.images, signal);
 					delivered.push(
 						...(delivery?.messages ?? [this._literalUserMessage(queued.originalText, queued.images)]),
 					);
 				} else {
-					// Mid-prompt / mixed / command: compose at consumption time.
-					const composed = await this._composeSpans(queued.spans, queued.images, signal);
-					delivered.push(composed?.message ?? this._literalUserMessage(queued.originalText, queued.images));
+					// Mid-prompt / mixed / command: composed at consumption time.
+					delivered.push(prepared.message);
 				}
 			} catch (err) {
 				// Defensive: render helpers already report and fall back; never lose the message.
@@ -2099,11 +2063,19 @@ export class AgentSession {
 	 * on consumption; plain text queues directly), then dispatch to the given queue.
 	 */
 	private async _queueTokenized(queue: "steer" | "followUp", text: string, images?: ImageContent[]): Promise<void> {
+		// One lazily-built registry shared by the extension-command check and tokenization.
+		let commandRegistry: CommandRegistry | undefined;
+		const getCommandRegistry = (): CommandRegistry => {
+			if (commandRegistry === undefined) {
+				commandRegistry = this._buildCommandRegistry();
+			}
+			return commandRegistry;
+		};
 		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
+			this._throwIfExtensionCommand(text, getCommandRegistry);
 		}
-		const tokenized = tokenizeMessage(text, this._buildCommandRegistry());
+		const tokenized = tokenizeMessage(text, getCommandRegistry());
 		if (tokenized.spans.some((span) => span.kind === "invocation")) {
 			await this._queueInvocation(queue, text, tokenized, images);
 			return;
@@ -2133,10 +2105,10 @@ export class AgentSession {
 	/**
 	 * Throw an error if the text is an extension command.
 	 */
-	private _throwIfExtensionCommand(text: string): void {
+	private _throwIfExtensionCommand(text: string, getRegistry?: () => CommandRegistry): void {
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const command = this._extensionRunner.getCommand(commandName);
+		const command = this._resolveExtensionCommand(commandName, getRegistry);
 
 		if (command) {
 			throw new Error(

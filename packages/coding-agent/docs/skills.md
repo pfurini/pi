@@ -67,14 +67,16 @@ This is progressive disclosure: only descriptions are always in context, full in
 
 ## Skill Commands
 
-Skills register as `/skill:name` commands when their name is command-eligible (see [Validation](#validation)) and `user-invocable` is not `false`:
+Skills join the unified command namespace when their name is command-eligible (see [Validation](#validation)) and `user-invocable` is not `false`. A skill is invocable bare as `/name` (also mid-prompt) and always via its `/skill:name` qualifier; on a bare-name collision with a higher-precedence tier (built-ins > extension commands > commands/templates > skills) only the qualifier form stays reachable:
 
 ```bash
-/skill:brave-search           # Load and execute the skill
-/skill:pdf-tools extract      # Load skill with arguments
+/brave-search                # Bare invocation (enableSkillCommands on)
+please /brave-search this    # Mid-prompt invocation (no arguments)
+/skill:brave-search          # Qualifier — always resolves to the skill
+/skill:pdf-tools extract     # Load skill with arguments
 ```
 
-Everything after the command name is the raw argument string `R`, passed verbatim through the [Argument Grammar](#argument-grammar). A `/skill:name` message typed while the agent is streaming can be queued with steer or follow-up; the invocation is then rendered and activated exactly when the queued message is consumed, never at queue time. `argument-hint` (if set) shows in autocomplete for `/skill:name`.
+Argument ownership: a message that *starts* with the invocation hands it the whole remainder as the raw argument string `R`, passed verbatim through the [Argument Grammar](#argument-grammar); mid-prompt invocations take no arguments. A skill invocation typed while the agent is streaming can be queued with steer or follow-up; the invocation is then rendered and activated exactly when the queued message is consumed, never at queue time. `argument-hint` (if set) shows in autocomplete.
 
 Toggle skill commands via `/settings` in interactive mode or in `settings.json`:
 

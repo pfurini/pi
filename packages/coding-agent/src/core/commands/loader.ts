@@ -15,7 +15,7 @@
  * from `/name` invocation and autocomplete, with exactly one diagnostic.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
@@ -121,15 +121,12 @@ export function parseCommandFile(
 
 /**
  * Load native command files from one directory (non-recursive, `.md` only).
- * Symlinks are followed; broken symlinks are skipped. Directory read failures
- * become a diagnostic, never an exception.
+ * Symlinks are followed; broken symlinks are skipped. An absent directory is
+ * not a diagnostic; a real read failure (permissions, etc.) is.
  */
 export function loadCommandsFromDir(dir: string, getSourceInfo: (filePath: string) => SourceInfo): LoadCommandsResult {
 	const commands: LoadedCommand[] = [];
 	const diagnostics: ResourceDiagnostic[] = [];
-	if (!existsSync(dir)) {
-		return { commands, diagnostics };
-	}
 	try {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
 			if (!entry.name.endsWith(".md")) {
@@ -154,11 +151,15 @@ export function loadCommandsFromDir(dir: string, getSourceInfo: (filePath: strin
 			}
 		}
 	} catch (error) {
-		diagnostics.push({
-			type: "warning",
-			message: `could not read commands directory: ${error instanceof Error ? error.message : String(error)}`,
-			path: dir,
-		});
+		// ENOENT means the directory is absent (normal); anything else (EACCES
+		// and friends) is a real failure that must not pass silently.
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			diagnostics.push({
+				type: "warning",
+				message: `could not read commands directory: ${error instanceof Error ? error.message : String(error)}`,
+				path: dir,
+			});
+		}
 	}
 	return { commands, diagnostics };
 }

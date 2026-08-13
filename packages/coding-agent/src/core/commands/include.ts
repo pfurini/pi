@@ -2,7 +2,7 @@
  * A.7.1 command include inlining (normative). Pure module: filesystem reads
  * only, no session state. A command body is scanned for `@path` references and
  * each is replaced by the referenced file's text (recursively), BEFORE argument
- * substitution (A.3.1) so arguments can never introduce include directives and
+ * substitution (A.3.2) so arguments can never introduce include directives and
  * includes can never be built from substituted values.
  *
  * Recognition mirrors `skills/render.ts:absolutizeSkillPathsInLine`: `@` plus a
@@ -15,7 +15,7 @@
  * cycle detection, missing file, directory, non-UTF-8, per-file 64 KiB / total
  * 256 KiB size caps, and — beyond the spec's six named markers — permission and
  * read failures and stat/read races (mapped to not-found or a read-failed
- * marker). Total decoded bytes are counted across the whole recursion.
+ * marker). Total raw file bytes are counted across the whole recursion.
  */
 
 import { readFileSync, statSync } from "node:fs";
@@ -159,6 +159,15 @@ function resolveInclude(
 		return INCLUDE_MARKERS.directory(token);
 	}
 
+	// Cycle check before the read: a self-referencing file must not be
+	// re-read/decoded on every recursive reference. Safe here because statSync
+	// already succeeded (canonicalizePath requires the path to exist).
+	const canonical = canonicalizePath(resolved);
+	if (visited.has(canonical)) {
+		warn(state, `include cycle: "${token}"`, filePath);
+		return INCLUDE_MARKERS.cycle(token);
+	}
+
 	let buffer: Buffer;
 	try {
 		buffer = readFileSync(resolved);
@@ -183,12 +192,6 @@ function resolveInclude(
 	} catch {
 		warn(state, `include not text (invalid UTF-8): "${token}"`, filePath);
 		return INCLUDE_MARKERS.notText(token);
-	}
-
-	const canonical = canonicalizePath(resolved);
-	if (visited.has(canonical)) {
-		warn(state, `include cycle: "${token}"`, filePath);
-		return INCLUDE_MARKERS.cycle(token);
 	}
 
 	state.totalBytes += buffer.byteLength;

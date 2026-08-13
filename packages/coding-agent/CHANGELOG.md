@@ -19,6 +19,12 @@
 - Fixed a synthetic skill `tool_result` extension handler being able to mutate the authoritative invocation `details` shared with the persisted message and later handlers; the notification-only snapshot now deep-clones `details` alongside `input`/`content`.
 - Fixed session load crashing on a hand-edited or corrupt entry that carries a skill `pairId` on a null or malformed message; torn-pair repair now skips such entries instead of dereferencing them.
 - Fixed a queued or user skill invocation leaving its `SkillRuntime` record active when delivery construction failed after activation; activation now runs only after the delivery is fully built.
+- Fixed `/ext:name` being sent to the model as literal text instead of dispatching the extension command; control-command resolution now routes qualified names through the command registry, so a collided extension command is reachable via its qualifier.
+- Fixed the A.1 tokenizer duplicating message text when an inline-code span closed after a fenced code block; the fence guard now skips ranges already behind the scan position instead of rewinding it.
+- Fixed same-name collisions collapsing to one qualified key (e.g. two `skill:deploy` losers) being silently unreachable; the registry now emits an ambiguity diagnostic naming the unreachable qualifier.
+- Corrected the command documentation to describe the shipped C2a behavior (unified namespace, qualifiers, mid-prompt expansion, `slash_command` tool) and documented the `@path` include trust implication (trusting a project authorizes its command files to inline any file the process can read).
+- Fixed a message starting with `\\/<skill>` (an even backslash run before a message-initial skill) silently dropping the collapsed literal backslash from the delivered message; the escape prefix now routes through span composition and survives.
+- Added a warning when a `commands/` directory exists but cannot be read (permission failures were previously indistinguishable from an absent directory), and a load-time normalization warning for skill frontmatter `context` values other than `inline`/`fork` (treated as `inline`).
 
 ## [0.84.1] - 2026-08-07
 

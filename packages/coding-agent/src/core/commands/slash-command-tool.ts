@@ -29,7 +29,7 @@ export interface SlashCommandToolResultDetails {
 
 export interface SlashCommandToolDeps {
 	/** Current loaded commands (native + adapted templates); visibility filtering happens here. */
-	getCommands: () => LoadedCommand[];
+	getCommands: () => readonly LoadedCommand[];
 	/** Render one command invocation through the A.7 pipeline. */
 	render: (
 		command: LoadedCommand,

@@ -203,7 +203,7 @@ interface PromptOptions {
 
 It fires before `prompt()` resolves. `prompt()` still resolves only after the full accepted run finishes, including retries. Failures after acceptance are reported through the normal event and message stream, not through `preflightResult(false)`.
 
-The `prompt()` method handles prompt templates, extension commands, and message sending:
+The `prompt()` method handles extension commands, the unified command/skill/template expansion, and message sending:
 
 ```typescript
 // Basic prompt (when not streaming)
@@ -220,8 +220,8 @@ await session.prompt("After you're done, also check X", { streamingBehavior: "fo
 ```
 
 **Behavior:**
-- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
-- **File-based prompt templates** (from `.md` files): Expanded to their content before sending or queueing.
+- **Extension commands** (e.g., `/mycommand`, or `/ext:mycommand` to disambiguate): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+- **Prompt-producing invocations** (commands, file-based prompt templates, skills — bare `/name`, qualified `/prompt:name` / `/skill:name`, or mid-prompt): Rendered and composed before sending; while streaming they queue as immutable snapshots rendered when consumed.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
 - **`preflightResult(true)`**: Means the prompt was accepted, queued, or handled immediately.
 - **`preflightResult(false)`**: Means preflight rejected before acceptance.
@@ -236,7 +236,7 @@ await session.steer("New instruction");
 await session.followUp("After you're done, also do this");
 ```
 
-Both `steer()` and `followUp()` expand file-based prompt templates but error on extension commands (extension commands cannot be queued).
+Both `steer()` and `followUp()` expand prompt-producing invocations (commands, prompt templates, skills) when the queued message is consumed, but error on extension commands (extension commands cannot be queued).
 
 ### Agent and AgentState
 

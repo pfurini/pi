@@ -698,7 +698,11 @@ share the skill render pipeline with these differences:
   substituted values. Inlined content **is** scanned for further includes (recursion) but is
   never re-scanned by later pipeline stages beyond the normal single-pass flow.
 - **Resolution:** relative paths resolve against the including file's directory; absolute
-  paths allowed.
+  paths allowed. Absolute and parent-relative (`../`) targets are permitted **by design**:
+  command files run under the project-trust boundary, so trusting a project authorizes its
+  command files to read and inline any file the process can access (combined with `!` shell
+  injection this is exfiltration-capable). This is the intended trust model; there is no
+  path containment beyond the trust gate.
 - **Limits and errors** (each inlined as a bracketed marker in place of the reference, never
   aborting the render): recursion depth cap 10 — the root command file is depth 0, and an
   include that would sit at depth 11 is not inlined (`[include depth exceeded: <path>]`);

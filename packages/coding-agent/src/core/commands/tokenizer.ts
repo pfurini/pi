@@ -10,7 +10,8 @@
  * 2. Candidates inside fenced code blocks and inline code spans are literal
  *    (shared scanner, `skills/fences.ts`).
  * 3. A candidate preceded by an odd number of backslashes is escaped (literal);
- *    backslash runs collapse CommonMark-style (a pair → one literal backslash).
+ *    backslash runs preceding a candidate `/` collapse CommonMark-style (a pair
+ *    becomes one literal backslash); runs elsewhere stay verbatim.
  * 4. Argument ownership: if the message starts with an invocation token that
  *    command owns the whole raw remainder as args and no inner token expands;
  *    otherwise every recognized token is a mid-prompt invocation with no args.
@@ -29,15 +30,15 @@ import type { CommandRegistry, ResolvedInvocation } from "./registry.ts";
 export const MAX_INVOCATIONS_PER_MESSAGE = 6;
 
 export interface TextSpan {
-	kind: "text";
-	text: string;
+	readonly kind: "text";
+	readonly text: string;
 }
 
 export interface InvocationSpan {
-	kind: "invocation";
-	invocation: ResolvedInvocation;
+	readonly kind: "invocation";
+	readonly invocation: ResolvedInvocation;
 	/** Raw argument string (non-empty only in argument-ownership mode). */
-	rawArgs: string;
+	readonly rawArgs: string;
 }
 
 export type MessageSpan = TextSpan | InvocationSpan;
@@ -53,11 +54,8 @@ const TRAILING_PUNCTUATION = /[.,;!?)]+$/;
 const NAME_RUN = /^[A-Za-z0-9._:/-]+/;
 
 function isForkSkill(invocation: ResolvedInvocation): boolean {
-	if (invocation.source !== "skill" || !invocation.skill) {
-		return false;
-	}
-	const context = invocation.skill.frontmatter.context;
-	return typeof context === "string" && context.toLowerCase() === "fork";
+	// `context` is normalized to "inline" | "fork" at load (skills/frontmatter.ts).
+	return invocation.source === "skill" && invocation.skill.frontmatter.context === "fork";
 }
 
 /** Compute the inclusive char ranges of fenced code blocks (verbatim regions). */
@@ -104,6 +102,9 @@ export function tokenizeMessage(message: string, registry: CommandRegistry): Tok
 	};
 
 	while (i < message.length) {
+		// Discard ranges already behind `i`: a char-based inline-code jump can
+		// advance past a fence range, and the guard below must never rewind.
+		while (rangeIdx < ranges.length && i >= ranges[rangeIdx][1]) rangeIdx++;
 		// Fenced regions are copied verbatim; candidates inside never expand.
 		if (rangeIdx < ranges.length && i >= ranges[rangeIdx][0]) {
 			const [, end] = ranges[rangeIdx];

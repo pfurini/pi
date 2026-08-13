@@ -51,22 +51,47 @@ export interface ExtensionCommandInfo {
 	sourceInfo?: SourceInfo;
 }
 
-/** Resolution result for a recognized token. */
-export interface ResolvedInvocation {
-	source: CommandSource;
+interface ResolvedInvocationBase {
 	/** Bare display name of the entry. */
 	name: string;
-	/** True for built-in / extension controls (message-initial only, not prompt-producing). */
-	control: boolean;
-	/** Present for `command` / `prompt` sources. */
-	command?: LoadedCommand;
-	/** Present for `skill` source. */
-	skill?: LoadedSkill;
-	/** For extension controls: the name to pass to the extension runner's `getCommand`. */
-	extensionName?: string;
 	/** When a bare name is ambiguous (same-tier nested collision), the qualified variants. */
 	nestedVariants?: string[];
 }
+
+/** Skill invocation (prompt-producing). */
+export interface ResolvedSkillInvocation extends ResolvedInvocationBase {
+	source: "skill";
+	control: false;
+	skill: LoadedSkill;
+}
+
+/** Command / grandfathered-template invocation (prompt-producing). */
+export interface ResolvedCommandInvocation extends ResolvedInvocationBase {
+	source: "command" | "prompt";
+	control: false;
+	command: LoadedCommand;
+}
+
+/** Built-in control (message-initial only, not prompt-producing). */
+export interface ResolvedBuiltinInvocation extends ResolvedInvocationBase {
+	source: "builtin";
+	control: true;
+}
+
+/** Extension control (message-initial only, not prompt-producing). */
+export interface ResolvedExtensionInvocation extends ResolvedInvocationBase {
+	source: "extension";
+	control: true;
+	/** The name to pass to the extension runner's `getCommand`. */
+	extensionName: string;
+}
+
+/** Resolution result for a recognized token (discriminated on `source`). */
+export type ResolvedInvocation =
+	| ResolvedSkillInvocation
+	| ResolvedCommandInvocation
+	| ResolvedBuiltinInvocation
+	| ResolvedExtensionInvocation;
 
 /** One flat listing row (built-ins included exactly once). */
 export interface CommandListingEntry {
@@ -196,15 +221,29 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 	const listing: CommandListingEntry[] = [];
 	const collisions: string[] = [];
 
-	const toInvocation = (entry: InternalEntry, nestedVariants?: string[]): ResolvedInvocation => ({
-		source: entry.source,
-		name: entry.name,
-		control: entry.control,
-		...(entry.command !== undefined && { command: entry.command }),
-		...(entry.skill !== undefined && { skill: entry.skill }),
-		...(entry.extensionName !== undefined && { extensionName: entry.extensionName }),
-		...(nestedVariants !== undefined && { nestedVariants }),
-	});
+	const toInvocation = (entry: InternalEntry, nestedVariants?: string[]): ResolvedInvocation => {
+		const base: ResolvedInvocationBase = {
+			name: entry.name,
+			...(nestedVariants !== undefined && { nestedVariants }),
+		};
+		// Entry construction above guarantees the variant field per source.
+		switch (entry.source) {
+			case "skill":
+				return { ...base, source: "skill", control: false, skill: entry.skill as LoadedSkill };
+			case "command":
+			case "prompt":
+				return { ...base, source: entry.source, control: false, command: entry.command as LoadedCommand };
+			case "extension":
+				return {
+					...base,
+					source: "extension",
+					control: true,
+					extensionName: entry.extensionName as string,
+				};
+			case "builtin":
+				return { ...base, source: "builtin", control: true };
+		}
+	};
 
 	const toListingEntry = (entry: InternalEntry, displayName: string): CommandListingEntry => ({
 		name: displayName,
@@ -214,9 +253,11 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 		...(entry.sourceInfo !== undefined && { sourceInfo: entry.sourceInfo }),
 	});
 
-	const register = (name: string, invocation: ResolvedInvocation): void => {
+	const register = (name: string, invocation: ResolvedInvocation, onDuplicate?: () => void): void => {
 		if (!resolved.has(name)) {
 			resolved.set(name, invocation);
+		} else {
+			onDuplicate?.();
 		}
 	};
 
@@ -242,9 +283,17 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 			// name; the bare name resolves to the first and carries the variant note.
 			const variants = winnerTierPeers.map((entry) => dirQualifier(entry.baseDir, name));
 			winnerTierPeers.forEach((entry, index) => {
-				register(variants[index], toInvocation(entry));
+				register(variants[index], toInvocation(entry), () => {
+					collisions.push(
+						`/${name} qualifier "${variants[index]}" is ambiguous; one variant is unreachable (dir-qualified names land in C4)`,
+					);
+				});
 				if (entry.qualifier) {
-					register(entry.qualifier, toInvocation(entry));
+					register(entry.qualifier, toInvocation(entry), () => {
+						collisions.push(
+							`/${name} qualifier "${entry.qualifier}" is ambiguous; one variant is unreachable (dir-qualified names land in C4)`,
+						);
+					});
 				}
 				listing.push(toListingEntry(entry, variants[index]));
 			});
@@ -266,7 +315,11 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 			if (!loser.qualifier) {
 				continue;
 			}
-			register(loser.qualifier, toInvocation(loser));
+			register(loser.qualifier, toInvocation(loser), () => {
+				collisions.push(
+					`/${name} qualifier "${loser.qualifier}" is ambiguous; one variant is unreachable (dir-qualified names land in C4)`,
+				);
+			});
 			listing.push(toListingEntry(loser, loser.qualifier));
 			loserLabels.push(`/${loser.qualifier}`);
 		}

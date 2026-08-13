@@ -28,7 +28,7 @@ export interface SkillFrontmatter {
 	disallowedTools?: SkillToolList;
 	model?: string;
 	effort?: string | number;
-	context?: string;
+	context?: "inline" | "fork";
 	agent?: string;
 	background?: SkillBooleanInput;
 	paths?: SkillPathList;
@@ -313,6 +313,24 @@ export function normalizeSkillInput(input: SkillInput): {
 	);
 	const userInvocable = normalizeKnownBoolean(frontmatter, "user-invocable", true, input.filePath, diagnostics);
 	normalizeKnownBoolean(frontmatter, "background", true, input.filePath, diagnostics);
+
+	// Normalize `context` to the closed union; the raw parsed value is retained in
+	// the caller's own frontmatter copy (rawFrontmatter was spread-copied above).
+	const rawContext: unknown = frontmatter.context;
+	if (rawContext !== undefined) {
+		const normalizedContext = typeof rawContext === "string" ? rawContext.toLowerCase() : "";
+		if (normalizedContext === "inline" || normalizedContext === "fork") {
+			frontmatter.context = normalizedContext;
+		} else {
+			diagnostics.push(
+				diagnostic(
+					`context must be "inline" or "fork"; got ${JSON.stringify(rawContext)} (treating it as "inline")`,
+					input.filePath,
+				),
+			);
+			delete frontmatter.context;
+		}
+	}
 
 	for (const error of validateAgentSkillName(input.name)) {
 		diagnostics.push(diagnostic(error, input.filePath));

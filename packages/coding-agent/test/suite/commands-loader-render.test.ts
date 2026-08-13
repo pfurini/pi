@@ -96,6 +96,27 @@ describe("command loader", () => {
 		expect(result.commands[0].description).toBe("Release notes body");
 	});
 
+	it("treats an absent commands directory as empty without a diagnostic", () => {
+		const result = loadCommandsFromDir(join(makeTempDir(), "does-not-exist"), sourceInfo);
+		expect(result.commands).toEqual([]);
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("emits a warning diagnostic when the commands directory cannot be read", () => {
+		const dir = makeTempDir();
+		writeFileSync(join(dir, "deploy.md"), "body\n");
+		chmodSync(dir, 0o000);
+		let result: ReturnType<typeof loadCommandsFromDir> | undefined;
+		try {
+			result = loadCommandsFromDir(dir, sourceInfo);
+		} finally {
+			chmodSync(dir, 0o755);
+		}
+		// Root bypasses permission bits; accept either the diagnostic or a normal load.
+		const warned = result.diagnostics.some((d) => d.message.includes("could not read commands directory"));
+		const loaded = result.commands.length === 1;
+		expect(warned || loaded).toBe(true);
+	});
 	it("adapts a prompt template into a grandfathered command", () => {
 		const command = adaptPromptTemplate({
 			name: "changelog",
@@ -160,8 +181,31 @@ describe("A.7.1 include inlining", () => {
 		writeFileSync(join(dir, "big.md"), "a".repeat(64 * 1024 + 1));
 		const result = inlineCommandIncludes("@big.md", join(dir, "root.md"));
 		expect(result.text).toBe("[include too large: big.md]");
+		expect(result.diagnostics).toHaveLength(1);
+		expect(result.diagnostics[0].message).toContain('include too large: "big.md"');
 	});
 
+	it("marks the reference that crosses the 256 KiB total cap", () => {
+		const dir = makeTempDir();
+		// Each file fits the per-file 64 KiB cap; five of them cross the total.
+		for (const name of ["a", "b", "c", "d", "e"]) {
+			writeFileSync(join(dir, `${name}.md`), "x".repeat(60 * 1024));
+		}
+		const result = inlineCommandIncludes("@a.md @b.md @c.md @d.md @e.md", join(dir, "root.md"));
+		expect(result.text).toContain("[include too large: e.md]");
+		expect(result.text).not.toContain("[include too large: d.md]");
+		expect(result.diagnostics).toHaveLength(1);
+		expect(result.diagnostics[0].message).toContain('include too large: "e.md"');
+	});
+
+	it("does not inline an include inside an inline code span", () => {
+		const dir = makeTempDir();
+		writeFileSync(join(dir, "secret.md"), "SECRET-CONTENTS");
+		const result = inlineCommandIncludes("`` `@secret.md` ``", join(dir, "root.md"));
+		expect(result.text).toBe("`` `@secret.md` ``");
+		expect(result.text).not.toContain("SECRET-CONTENTS");
+		expect(result.diagnostics).toHaveLength(0);
+	});
 	it("detects a cycle by canonical path", () => {
 		const dir = makeTempDir();
 		writeFileSync(join(dir, "a.md"), "A @b.md");

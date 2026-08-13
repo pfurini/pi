@@ -58,10 +58,6 @@ export interface RenderedCommand {
 	diagnostics: ResourceDiagnostic[];
 }
 
-function stringField(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
-
 /** Render one command invocation through the A.7 stage order. Never throws for shell failures. */
 export async function renderCommand(
 	command: LoadedCommand,
@@ -105,7 +101,7 @@ export async function renderCommand(
 	body = await injectShellCommands(body, {
 		cwd: context.cwd,
 		env: () => ({ ...buildSpawnShellEnv(), ...values }),
-		shell: stringField(command.frontmatter.shell),
+		shell: typeof command.frontmatter.shell === "string" ? command.frontmatter.shell : undefined,
 		activeToolNames: context.activeToolNames,
 		disallowedTools: command.frontmatter["disallowed-tools"] as SkillToolList | undefined,
 		settings: context.shellSettings,

@@ -9,7 +9,10 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LoadedCommand } from "../../src/core/commands/loader.ts";
 import { sliceSkillInvocationSegments } from "../../src/core/skills/delivery.ts";
@@ -59,7 +62,14 @@ function command(name: string, body: string, opts: Partial<LoadedCommand> = {}):
 	};
 }
 
-async function createSession(options: { skills?: SkillFixture[]; commands?: LoadedCommand[] }): Promise<Harness> {
+interface SessionOptions {
+	skills?: SkillFixture[];
+	commands?: LoadedCommand[];
+	tools?: AgentTool[];
+	extensionFactories?: Array<(pi: ExtensionAPI) => void>;
+}
+
+async function createSession(options: SessionOptions): Promise<Harness> {
 	const tempDir = makeTempDir();
 	const skills = (options.skills ?? []).map((fixture) => {
 		const baseDir = join(tempDir, fixture.name);
@@ -83,11 +93,55 @@ async function createSession(options: { skills?: SkillFixture[]; commands?: Load
 		getSkills: () => ({ skills, diagnostics: [] }),
 		getCommands: () => ({ commands, diagnostics: [] }),
 	};
-	const harness = await createHarness({ resourceLoader });
+	const harness = await createHarness({
+		resourceLoader,
+		...(options.tools && { tools: options.tools }),
+		...(options.extensionFactories && { extensionFactories: options.extensionFactories }),
+	});
 	harnesses.push(harness);
 	return harness;
 }
 
+/**
+ * Session with a `wait` tool held open: prompt "start" is streaming until
+ * `releaseToolExecution()` resolves, so steer/followUp hit the queue path.
+ */
+async function createWaitingSession(options: SessionOptions): Promise<{
+	harness: Harness;
+	releaseToolExecution: () => void;
+	promptPromise: Promise<void>;
+	waitForToolStart: Promise<void>;
+}> {
+	let releaseToolExecution: (() => void) | undefined;
+	const toolRelease = new Promise<void>((resolve) => {
+		releaseToolExecution = resolve;
+	});
+	const waitTool: AgentTool = {
+		name: "wait",
+		label: "Wait",
+		description: "Wait for release",
+		parameters: Type.Object({}),
+		execute: async () => {
+			await toolRelease;
+			return { content: [{ type: "text", text: "released" }], details: {} };
+		},
+	};
+	const harness = await createSession({ ...options, tools: [waitTool, ...(options.tools ?? [])] });
+	const waitForToolStart = new Promise<void>((resolve) => {
+		const unsubscribe = harness.session.subscribe((event) => {
+			if (event.type === "tool_execution_start" && event.toolName === "wait") {
+				unsubscribe();
+				resolve();
+			}
+		});
+	});
+	return {
+		harness,
+		releaseToolExecution: () => releaseToolExecution?.(),
+		promptPromise: harness.session.prompt("start"),
+		waitForToolStart,
+	};
+}
 function deliveredUserMessage(harness: Harness) {
 	return harness.session.messages.find((message) => message.role === "user");
 }
@@ -134,6 +188,19 @@ describe("argument ownership and command rendering", () => {
 		expect(text).toContain("args=[src/core and more]");
 	});
 
+	it("a collapsed leading backslash before a message-initial skill is preserved", async () => {
+		const harness = await createSession({ skills: [{ name: "rev", body: "REVIEWED" }] });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		// `\\/` collapses to one literal backslash; the skill still invokes and the
+		// `\` must survive in the composed message (not the sole-skill path).
+		await harness.session.prompt("\\\\/rev take this");
+
+		const text = getMessageText(deliveredUserMessage(harness));
+		expect(text.startsWith('\\<skill name="rev" args="take this">')).toBe(true);
+		expect(text).toContain("REVIEWED");
+	});
+
 	it("a message-initial command renders its body with substituted args", async () => {
 		const harness = await createSession({ commands: [command("deploy", "Deploy to $1 now")] });
 		harness.setResponses([fauxAssistantMessage("ok")]);
@@ -175,5 +242,114 @@ describe("unified getCommands() listing (c2b handoff)", () => {
 		for (const entry of listing) {
 			expect(["builtin", "extension", "command", "prompt", "skill"]).toContain(entry.source);
 		}
+	});
+});
+
+describe("extension command dispatch via the ext: qualifier (Fix #1)", () => {
+	it("dispatches /ext:name for an extension command colliding with a built-in", async () => {
+		const runs: string[] = [];
+		// No custom resource loader: the harness must build its own around the
+		// extension factories so the session's extension runner sees the command.
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					// "model" collides with the built-in /model command.
+					pi.registerCommand("model", {
+						description: "Extension model command",
+						handler: async (args) => {
+							runs.push(args);
+						},
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.prompt("/ext:model staging");
+
+		expect(runs).toEqual(["staging"]);
+		// The command executed; nothing was sent to the model as literal text.
+		expect(harness.session.messages).toEqual([]);
+		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("refuses to queue an /ext:-qualified extension command", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.registerCommand("testcmd", {
+						description: "Test command",
+						handler: async () => {},
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await expect(harness.session.steer("/ext:testcmd queued")).rejects.toThrow(
+			'Extension command "/ext:testcmd" cannot be queued.',
+		);
+	});
+});
+
+describe("queued mixed invocations (A.5 deferred rendering)", () => {
+	it("queues literal text, then composes skill + command spans on consumption with images intact", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createWaitingSession({
+			skills: [{ name: "rev", body: "REVIEWED" }],
+			commands: [command("note", "NOTED")],
+		});
+		let deliveredText = "";
+		let sawImage = false;
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			(context) => {
+				const delivered = context.messages.find(
+					(message) => message.role === "user" && getMessageText(message).includes("REVIEWED"),
+				);
+				deliveredText = delivered ? getMessageText(delivered) : "";
+				sawImage =
+					delivered?.role === "user" &&
+					Array.isArray(delivered.content) &&
+					delivered.content.some((part) => part.type === "image");
+				return fauxAssistantMessage("done");
+			},
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("before /rev mid /note end", [
+			{ type: "image", mimeType: "image/png", data: "ZmFrZQ==" },
+		]);
+
+		// Queue time: literal display text, one pending message, NO activation/render yet.
+		expect(harness.session.pendingMessageCount).toBe(1);
+		expect(harness.session.skillRuntime.getActiveInvocations()).toHaveLength(0);
+		const queueUpdate = harness.eventsOfType("queue_update").at(-1);
+		expect(queueUpdate?.steering).toEqual(["before /rev mid /note end"]);
+
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(deliveredText).toContain("before ");
+		expect(deliveredText).toContain('<skill name="rev" args="">');
+		expect(deliveredText).toContain("REVIEWED");
+		expect(deliveredText).toContain("NOTED");
+		expect(deliveredText).toContain(" end");
+		expect(sawImage).toBe(true);
+		expect(harness.session.pendingMessageCount).toBe(0);
+	});
+});
+
+describe("slash_command tool registration (A.7)", () => {
+	it("is active iff a model-visible command exists", async () => {
+		const withCommand = await createSession({ commands: [command("deploy", "body")] });
+		expect(withCommand.session.getActiveToolNames()).toContain("slash_command");
+
+		const hiddenOnly = await createSession({
+			commands: [command("deploy", "body", { disableModelInvocation: true })],
+		});
+		expect(hiddenOnly.session.getActiveToolNames()).not.toContain("slash_command");
+
+		const withoutCommands = await createSession({});
+		expect(withoutCommands.session.getActiveToolNames()).not.toContain("slash_command");
 	});
 });

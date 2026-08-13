@@ -42,8 +42,8 @@ export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: SkillInput[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
-	/** A.7 command snapshot (native commands + adapted templates). Optional so lightweight test doubles can omit it. */
-	getCommands?(): { commands: LoadedCommand[]; diagnostics: ResourceDiagnostic[] };
+	/** A.7 command snapshot (native commands + adapted templates). Optional so lightweight test doubles can omit it. The snapshot is immutable: consumers must not mutate the returned array. */
+	getCommands?(): { commands: readonly LoadedCommand[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
@@ -328,7 +328,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { prompts: this.prompts, diagnostics: this.promptDiagnostics };
 	}
 
-	getCommands(): { commands: LoadedCommand[]; diagnostics: ResourceDiagnostic[] } {
+	getCommands(): { commands: readonly LoadedCommand[]; diagnostics: ResourceDiagnostic[] } {
 		return { commands: this.commands, diagnostics: this.commandDiagnostics };
 	}
 

@@ -103,6 +103,17 @@ Prompt templates are now a source of the unified **Commands system**. Nothing in
 
 Alongside `prompts/`, Pi loads first-class commands from `~/.pi/agent/commands/` (user) and `.pi/commands/` (project, only after the project is trusted). Commands use the same Markdown + frontmatter format and the same argument grammar as templates, plus `@path` include inlining (the referenced file's text is spliced in at expansion time, with recursion/cycle/size guards). Existing prompt templates are **grandfathered** as command sources: a `/name` template still works exactly as before its filename dictates.
 
+> **Security note:** `@path` includes may reference absolute or parent-relative paths by design. Project commands run under the project-trust boundary, so trusting a project authorizes its command files to read and inline any file the process can access (combined with `` !` `` shell injection this is exfiltration-capable). Only trust projects you would give shell access to.
+
+### One namespace, qualifiers, and the `slash_command` tool
+
+Commands, templates, skills, built-ins, and extension commands share one namespace. On a bare-name collision the higher tier wins and the loser stays reachable through its qualifier:
+
+- Precedence: **built-ins > extension commands > commands/templates > skills**
+- Qualifiers: `/prompt:name` (commands and templates), `/skill:name` (skills), `/ext:name` (extension commands)
+- **Argument ownership:** a message that *starts* with a prompt-producing invocation hands it the whole remainder as arguments (`/review src/core`); invocations elsewhere in the message expand inline with no arguments
+- The model can invoke model-visible commands through the `slash_command` tool, subject to `disable-model-invocation`
+
 ### Rendering now uses the A.3.2 argument engine
 
 Template arguments previously ran through a legacy substitution. They now render through the shared **A.3.2** engine (the same one skills use). The grammar is a superset of the old one, so `$1`, `$@`/`$ARGUMENTS`, `${@:N}`/`${@:N:L}` slicing, and `${…:-default}` behave as documented above. The differences to be aware of:

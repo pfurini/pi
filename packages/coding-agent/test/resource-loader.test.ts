@@ -480,6 +480,47 @@ Project skill content`,
 		});
 	});
 
+	describe("command trust boundary (A.7)", () => {
+		it("gates project commands on project trust; user commands and adapted prompts are always present", async () => {
+			const userCommandsDir = join(agentDir, "commands");
+			mkdirSync(userCommandsDir, { recursive: true });
+			writeFileSync(join(userCommandsDir, "user-cmd.md"), "User command body");
+
+			const projectCommandsDir = join(cwd, ".pi", "commands");
+			mkdirSync(projectCommandsDir, { recursive: true });
+			writeFileSync(join(projectCommandsDir, "proj-cmd.md"), "Project command body");
+
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(join(promptsDir, "test-prompt.md"), "Prompt body");
+
+			const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const names = () => loader.getCommands().commands.map((command) => command.name);
+
+			// Untrusted: the project commands dir is excluded.
+			expect(names()).toContain("user-cmd");
+			expect(names()).toContain("test-prompt");
+			expect(names()).not.toContain("proj-cmd");
+
+			// Trusted reload includes the project commands.
+			settingsManager.setProjectTrusted(true);
+			await loader.reload();
+			expect(names()).toContain("user-cmd");
+			expect(names()).toContain("proj-cmd");
+			expect(names()).toContain("test-prompt");
+
+			// Revoked trust removes them again.
+			settingsManager.setProjectTrusted(false);
+			await loader.reload();
+			expect(names()).toContain("user-cmd");
+			expect(names()).not.toContain("proj-cmd");
+			expect(names()).toContain("test-prompt");
+		});
+	});
+
 	describe("system prompt sources", () => {
 		it("exposes discovered project SYSTEM.md as the system prompt source", async () => {
 			const piDir = join(cwd, ".pi");

@@ -157,6 +157,28 @@ describe("A.1 tokenizer grammar examples", () => {
 	it("even backslashes leave the candidate live", () => {
 		const result = tokenizeMessage("a \\\\/fix b", reg);
 		expect(invocationNames(result.spans)).toEqual(["fix"]);
+		// The collapsed run stays as one literal backslash in the text span.
+		expect(plainText(result.spans)).toBe("a \\<fix> b");
+	});
+
+	it("a message-initial qualified skill invocation owns its args", () => {
+		const result = tokenizeMessage("/skill:review this", reg);
+		expect(result.messageInitial).toBe(true);
+		const spans = result.spans.filter((span): span is InvocationSpan => span.kind === "invocation");
+		expect(spans).toHaveLength(1);
+		expect(spans[0].invocation.name).toBe("review");
+		expect(spans[0].invocation.source).toBe("skill");
+		expect(spans[0].rawArgs).toBe("this");
+	});
+
+	it("an inline-code jump across a fenced block never rewinds or duplicates text", () => {
+		// The 4-backtick inline span closes only after the fenced block, so the
+		// char-based jump lands past the fence range; the fence guard must skip
+		// the stale range instead of rewinding `i` and re-emitting text.
+		const message = "x ````code\n```\nfenced\n```\nclose```` /fix";
+		const result = tokenizeMessage(message, reg);
+		expect(invocationNames(result.spans)).toEqual(["fix"]);
+		expect(plainText(result.spans)).toBe("x ````code\n```\nfenced\n```\nclose```` <fix>");
 	});
 });
 
@@ -168,7 +190,12 @@ describe("A.1 caps and fork stop", () => {
 		const result = tokenizeMessage(message, reg);
 		expect(invocationNames(result.spans)).toEqual(["a", "b", "c", "d", "e", "f"]);
 		expect(invocationNames(result.spans)).toHaveLength(MAX_INVOCATIONS_PER_MESSAGE);
+		// The 7th candidate stays a literal text span.
+		expect(plainText(result.spans)).toBe("x <a> <b> <c> <d> <e> <f> /g y");
 		expect(result.diagnostics).toHaveLength(1);
+		expect(result.diagnostics[0].message).toBe(
+			`more than ${MAX_INVOCATIONS_PER_MESSAGE} invocations in one message; extras were left literal (A.1 cap)`,
+		);
 	});
 
 	it("stops recognizing after a context: fork skill", () => {
@@ -176,7 +203,10 @@ describe("A.1 caps and fork stop", () => {
 		const reg = registry({ skills: [forking, makeSkill("review")] });
 		const result = tokenizeMessage("go /plan then /review", reg);
 		expect(invocationNames(result.spans)).toEqual(["plan"]);
+		// The post-fork candidate stays a literal text span.
+		expect(plainText(result.spans)).toBe("go <plan> then /review");
 		expect(result.diagnostics).toHaveLength(1);
+		expect(result.diagnostics[0].message).toBe("invocations after a forking skill were left literal (A.1 fork stop)");
 	});
 });
 
@@ -226,6 +256,38 @@ describe("namespace precedence and collisions", () => {
 		expect(reg.resolve("web:deploy", { messageInitial: false })?.source).toBe("skill");
 		expect(reg.resolve("api:deploy", { messageInitial: false })?.source).toBe("skill");
 		expect(reg.collisionDiagnostic?.message).toContain("nested variants");
+	});
+
+	it("two same-name losers sharing a reserved qualifier emit an ambiguity diagnostic", () => {
+		// The command wins the bare name; both skills demote to `skill:deploy`
+		// and the second would be silently unreachable without the diagnostic.
+		const reg = registry({
+			commands: [makeCommand("deploy")],
+			skills: [
+				makeSkill("deploy", { baseDir: "/root/web", filePath: "/root/web/SKILL.md" }),
+				makeSkill("deploy", { baseDir: "/root/api", filePath: "/root/api/SKILL.md", id: "/root/api/SKILL.md" }),
+			],
+		});
+		expect(reg.resolve("deploy", { messageInitial: false })?.source).toBe("command");
+		expect(reg.resolve("skill:deploy", { messageInitial: false })?.source).toBe("skill");
+		expect(reg.collisionDiagnostic?.message).toContain('qualifier "skill:deploy" is ambiguous');
+	});
+
+	it("same-tier peers collapsing to one dir qualifier emit an ambiguity diagnostic", () => {
+		// Both baseDirs share the `web` basename, so both variants qualify to
+		// `web:deploy`; the second is unreachable (root-relative names land in C4).
+		const reg = registry({
+			skills: [
+				makeSkill("deploy", { baseDir: "/apps-one/web", filePath: "/apps-one/web/SKILL.md" }),
+				makeSkill("deploy", {
+					baseDir: "/apps-two/web",
+					filePath: "/apps-two/web/SKILL.md",
+					id: "/apps-two/web/SKILL.md",
+				}),
+			],
+		});
+		expect(reg.resolve("web:deploy", { messageInitial: false })?.source).toBe("skill");
+		expect(reg.collisionDiagnostic?.message).toContain('qualifier "web:deploy" is ambiguous');
 	});
 });
 

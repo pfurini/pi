@@ -4321,11 +4321,9 @@ export class InteractiveMode {
 	private isExtensionCommand(text: string): boolean {
 		if (!text.startsWith("/")) return false;
 
-		const extensionRunner = this.session.extensionRunner;
-
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		return !!extensionRunner.getCommand(commandName);
+		return this.session.resolveExtensionCommand(commandName) !== undefined;
 	}
 
 	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {

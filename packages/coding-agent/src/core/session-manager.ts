@@ -551,8 +551,13 @@ export function repairTornSkillPairs(entries: FileEntry[]): { entries: FileEntry
 	const pairsById = new Map<string, { assistant?: SessionMessageEntry; toolResult?: SessionMessageEntry }>();
 	for (const entry of entries) {
 		if (entry.type !== "message" || typeof entry.pairId !== "string") continue;
+		// Session files are parsed without validation; a hand-edited or corrupt
+		// entry can carry a pairId on a null/malformed message, so guard the
+		// role access before grouping (a missing message never forms a pair).
+		const message = (entry as SessionMessageEntry).message as Message | null | undefined;
+		if (message == null || typeof message.role !== "string") continue;
 		const group = pairsById.get(entry.pairId) ?? {};
-		if (entry.message.role === "assistant") {
+		if (message.role === "assistant") {
 			group.assistant = entry;
 		} else if (entry.message.role === "toolResult") {
 			group.toolResult = entry;

@@ -566,6 +566,31 @@ describe("AgentSession skill invocation queueing (C1c)", () => {
 		expect(harness.session.skillRuntime.getActiveInvocations()).toHaveLength(0);
 	});
 
+	it("clears queued skill invocations without activating or delivering them", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.steer("/skill:test steer one");
+		await harness.session.followUp("/skill:test follow one");
+		expect(harness.session.pendingMessageCount).toBe(2);
+
+		const cleared = harness.session.clearQueue();
+		expect(cleared.steering).toEqual(["/skill:test steer one"]);
+		expect(cleared.followUp).toEqual(["/skill:test follow one"]);
+		expect(harness.session.pendingMessageCount).toBe(0);
+
+		releaseToolExecution();
+		await promptPromise;
+
+		// A cleared skill is never consumed: no runtime activation, no delivered block.
+		expect(harness.session.skillRuntime.getActiveInvocations()).toHaveLength(0);
+		expect(getUserTexts(harness).some((text) => text.includes("<skill"))).toBe(false);
+	});
+
 	it("queues a follow-up skill invocation delivered after the run finishes", async () => {
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createSkillWaitingHarness();
 

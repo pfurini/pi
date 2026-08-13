@@ -903,10 +903,12 @@ export class ExtensionRunner {
 
 	/**
 	 * Notification-only `tool_result` dispatch (A.4 synthetic skill results):
-	 * each handler receives its own unmodified snapshot and handler returns are
-	 * never applied — an extension cannot veto or mutate authoritative synthetic
-	 * content. Deliberately separate from emitToolResult, which applies handler
-	 * mutations cumulatively to genuine tool output.
+	 * each handler receives its own deep-cloned snapshot (input, content, and
+	 * details) and handler returns are never applied — an extension cannot veto
+	 * or mutate authoritative synthetic content, nor corrupt the shared details
+	 * seen by later handlers or the live message. Deliberately separate from
+	 * emitToolResult, which applies handler mutations cumulatively to genuine
+	 * tool output.
 	 */
 	async emitToolResultNotification(event: ToolResultEvent): Promise<void> {
 		return this.runScoped(async () => {
@@ -918,11 +920,14 @@ export class ExtensionRunner {
 
 				for (const handler of handlers) {
 					try {
-						const snapshot: ToolResultEvent = {
+						const snapshot = {
 							...event,
 							input: structuredClone(event.input),
 							content: structuredClone(event.content),
-						};
+						} as ToolResultEvent & { details?: unknown };
+						if (snapshot.details !== undefined) {
+							snapshot.details = structuredClone(snapshot.details);
+						}
 						await handler(snapshot, ctx);
 					} catch (err) {
 						const message = err instanceof Error ? err.message : String(err);

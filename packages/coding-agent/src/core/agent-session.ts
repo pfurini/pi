@@ -1766,7 +1766,6 @@ export class AgentSession {
 		try {
 			rendered = await this._renderSkill(skill, invocation, signal);
 			this._emitSkillDiagnostics(rendered.diagnostics);
-			this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
 		} catch (err) {
 			this._extensionRunner.emitError({
 				extensionPath: skill.filePath,
@@ -1779,6 +1778,11 @@ export class AgentSession {
 			forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
 		});
 		const delivery = buildSkillDelivery(rendered, transport, { model: this.model, images });
+		// Activate only after delivery is fully constructed. Render (not active
+		// state) drives the pipeline, so deferring activation to the last
+		// fallible step means a delivery-construction failure leaves no stale
+		// active invocation behind (A.5 activation-on-consumption).
+		this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
 		for (const [message, metadata] of delivery.metadata) {
 			this._messageDeliveryMeta.set(message, metadata);
 		}

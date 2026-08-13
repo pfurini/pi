@@ -12,6 +12,12 @@
 
 - Replaced the inherited Mistral SDK transport with a native Chat Completions HTTP stream, eliminating its generated client and schema runtime overhead.
 
+### Fixed
+
+- Fixed a synthetic skill `tool_result` extension handler being able to mutate the authoritative invocation `details` shared with the persisted message and later handlers; the notification-only snapshot now deep-clones `details` alongside `input`/`content`.
+- Fixed session load crashing on a hand-edited or corrupt entry that carries a skill `pairId` on a null or malformed message; torn-pair repair now skips such entries instead of dereferencing them.
+- Fixed a queued or user skill invocation leaving its `SkillRuntime` record active when delivery construction failed after activation; activation now runs only after the delivery is fully built.
+
 ## [0.84.1] - 2026-08-07
 
 ### New Features

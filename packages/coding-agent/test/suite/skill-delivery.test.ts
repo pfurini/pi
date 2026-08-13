@@ -415,6 +415,21 @@ describe("genuine skill tool calls (A.1)", () => {
 		expect(getMessageText(toolResult!)).toContain("nonexistent");
 		expect(getMessageText(toolResult!)).toContain("test");
 	});
+
+	it("defaults omitted genuine-tool args to an empty string in rendered metadata", async () => {
+		const { harness } = await createSkillHarness({});
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("skill", { name: "test" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await harness.session.prompt("use the skill");
+
+		const resultEntry = messageEntries(harness).find((e) => e.message.role === "toolResult");
+		expect(resultEntry?.invocations?.[0]).toMatchObject({ name: "test", args: "" });
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(getMessageText(toolResult!)).toContain("Use the skill body.");
+	});
 });
 
 describe("synthetic pair immutability (A.4)", () => {
@@ -460,5 +475,29 @@ describe("synthetic pair immutability (A.4)", () => {
 		// The persisted entries match the immutable messages.
 		const resultEntry = messageEntries(harness).find((e) => e.message.role === "toolResult");
 		expect(getMessageText(resultEntry!.message)).toContain("Use the skill body.");
+	});
+
+	it("snapshots the details payload so a synthetic tool_result handler cannot mutate it", async () => {
+		const { harness } = await createSkillHarness({
+			extensionFactories: [
+				(pi: ExtensionAPI) => {
+					pi.on("tool_result", (event) => {
+						if (event.synthetic) {
+							const details = (event as { details?: { invocation?: { name?: string } } }).details;
+							if (details?.invocation) details.invocation.name = "HACKED";
+						}
+						return undefined;
+					});
+				},
+			],
+		});
+		flagModel(harness);
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("/skill:test details");
+
+		const resultEntry = messageEntries(harness).find((e) => e.message.role === "toolResult");
+		const details = (resultEntry?.message as { details?: { invocation?: { name?: string } } }).details;
+		expect(details?.invocation?.name).toBe("test");
 	});
 });

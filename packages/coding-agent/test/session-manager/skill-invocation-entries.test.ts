@@ -243,4 +243,35 @@ describe("repairTornSkillPairs", () => {
 		expect(entry.pairId).toBeUndefined();
 		expect(entry.invocations?.[0].name).toBe("test");
 	});
+
+	it("skips entries with a missing or malformed message without throwing", () => {
+		// Hand-edited or corrupt files can carry a pairId on an entry whose
+		// message object is null/invalid; grouping must not dereference it.
+		const entries: FileEntry[] = [
+			{
+				type: "message",
+				id: "bad",
+				parentId: null,
+				timestamp: "t",
+				pairId: "orphan",
+				message: null,
+			} as unknown as FileEntry,
+			{
+				type: "message",
+				id: "a1",
+				parentId: null,
+				timestamp: "t",
+				message: pairAssistant("torn"),
+				pairId: "torn-pair",
+				invocations: [{ skillId: "/s/SKILL.md", name: "test", args: "a b", blockStart: 0, blockEnd: 0 }],
+			} satisfies SessionMessageEntry,
+		];
+		let result: ReturnType<typeof repairTornSkillPairs> | undefined;
+		expect(() => {
+			result = repairTornSkillPairs(entries);
+		}).not.toThrow();
+		// The valid torn half is still repaired; the malformed entry is left as-is.
+		expect(result?.repaired).toBe(1);
+		expect((result?.entries[1] as SessionMessageEntry).message.role).toBe("user");
+	});
 });

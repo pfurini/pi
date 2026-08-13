@@ -1710,23 +1710,16 @@ export class AgentSession {
 	}
 
 	/**
-	 * Resolve an extension command by bare invocation name or by `ext:`-qualified
-	 * name. Bare names keep the direct fast path; qualified names route through
-	 * the A.1 registry (extension tier) so `/ext:name` dispatches even when the
-	 * bare name collides with a built-in. Callers handling a whole message pass
-	 * their per-operation registry so it is built at most once per message.
+	 * Resolve an extension command by bare invocation name or `ext:`-qualified name,
+	 * routed through the A.1 registry so namespace precedence holds: a bare name an
+	 * extension shares with a higher-tier built-in resolves to the built-in, and the
+	 * extension stays reachable via its `ext:` qualifier. Callers handling a whole
+	 * message pass their per-operation registry so it is built at most once per message.
 	 */
 	private _resolveExtensionCommand(
 		commandName: string,
 		getRegistry?: () => CommandRegistry,
 	): ResolvedCommand | undefined {
-		const direct = this._extensionRunner.getCommand(commandName);
-		if (direct) {
-			return direct;
-		}
-		if (!commandName.includes(":")) {
-			return undefined;
-		}
 		const invocation = (getRegistry?.() ?? this._buildCommandRegistry()).resolve(commandName, {
 			messageInitial: true,
 		});

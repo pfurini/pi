@@ -273,6 +273,41 @@ describe("extension command dispatch via the ext: qualifier (Fix #1)", () => {
 		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 
+	it("does not dispatch a bare extension command that collides with a built-in (precedence)", async () => {
+		const runs: string[] = [];
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					// "model" collides with the built-in /model, which outranks extensions;
+					// "unique" has no collision.
+					pi.registerCommand("model", {
+						description: "Extension model command",
+						handler: async (args) => {
+							runs.push(args);
+						},
+					});
+					pi.registerCommand("unique", {
+						description: "Non-colliding extension command",
+						handler: async () => {},
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		// Resolution seam: the built-in wins the bare name, so a bare `model` must NOT
+		// resolve to the extension; the `ext:` qualifier and non-colliding names still do.
+		expect(harness.session.resolveExtensionCommand("model")).toBeUndefined();
+		expect(harness.session.resolveExtensionCommand("ext:model")).toBeDefined();
+		expect(harness.session.resolveExtensionCommand("unique")).toBeDefined();
+
+		// Dispatch seam (headless): a bare `/model` is left literal and sent to the model;
+		// the extension handler never runs.
+		harness.setResponses([fauxAssistantMessage("ok")]);
+		await harness.session.prompt("/model staging");
+		expect(runs).toEqual([]);
+	});
+
 	it("refuses to queue an /ext:-qualified extension command", async () => {
 		const harness = await createHarness({
 			extensionFactories: [

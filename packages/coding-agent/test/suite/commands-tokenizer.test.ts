@@ -148,6 +148,28 @@ describe("A.1 tokenizer grammar examples", () => {
 		expect(invocationNames(tokenizeMessage("please /skill:review it", reg).spans)).toEqual(["review"]);
 	});
 
+	it("a generated nested-dir qualifier dispatches through the tokenizer mid-prompt", () => {
+		// Same-tier nested skills generate `web:deploy` / `api:deploy` dir qualifiers. The
+		// enumerated "nested names" acceptance clause must hold at the DISPATCH layer
+		// (tokenizeMessage), not only via reg.resolve() at the registry unit level.
+		const reg = registry({
+			skills: [
+				makeSkill("deploy", { baseDir: "/root/web", filePath: "/root/web/SKILL.md" }),
+				makeSkill("deploy", { baseDir: "/root/api", filePath: "/root/api/SKILL.md", id: "/root/api/SKILL.md" }),
+			],
+		});
+		const result = tokenizeMessage("ship it with /web:deploy now", reg);
+		expect(result.messageInitial).toBe(false);
+		const spans = result.spans.filter((span): span is InvocationSpan => span.kind === "invocation");
+		expect(spans).toHaveLength(1);
+		const inv = spans[0].invocation;
+		expect(inv.source).toBe("skill");
+		if (inv.source === "skill") {
+			expect(inv.skill.baseDir).toBe("/root/web");
+		}
+		expect(spans[0].rawArgs).toBe("");
+	});
+
 	it("candidates inside a fenced block never expand", () => {
 		const message = "before\n```\n/review inside\n```\nafter /fix";
 		const result = tokenizeMessage(message, reg);

@@ -76,7 +76,7 @@ While a skill invocation is active, bash tool executions receive an additional t
 | `PI_SKILL_DIR` | `CLAUDE_SKILL_DIR` | The skill's base directory |
 | `PI_PROJECT_DIR` | `CLAUDE_PROJECT_DIR` | Project root (nearest `.git` ancestor), else `cwd` |
 | `PI_SESSION_ID` | `CLAUDE_SESSION_ID` | Current session ID (same value as the session variable above) |
-| `PI_EFFORT` | `CLAUDE_EFFORT` | The invocation's `effort` frontmatter, else the session thinking level |
+| `PI_EFFORT` | `CLAUDE_EFFORT` | Effective thinking level: the invocation's `effort` (else the session level), clamped to the invocation's effective (possibly `model`-overridden) model's supported levels — the same level the provider request runs with |
 
 Scope and lifetime: the overlay activates when the message carrying the invocation is consumed (a direct `/skill:name` prompt, a queued steer/follow-up at consumption, or a genuine `skill` tool call) and expires when the logical turn settles. It applies to every bash execution in that window, including extension/SDK replacement bash tools, because injection happens in the shared bash spawn path. The overlay is copied per execution; `process.env` and the user's shell environment are never mutated. The `CLAUDE_*` aliases are included only while `skillInterop` is on.
 

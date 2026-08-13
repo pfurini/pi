@@ -327,8 +327,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * injected/transformed: the first turn after the top-level
 	 * {@link transformInjectedMessages} and after every inner-loop injection,
 	 * but NOT on a retry/continuation (which rebuilds the loop config from
-	 * scratch). Returns replacement context/model/thinking state merged exactly
-	 * like {@link prepareNextTurn}, or undefined to keep the current values.
+	 * scratch). Applies `context.tools` (when present) plus `model`/`thinkingLevel`
+	 * from the returned {@link AgentLoopTurnUpdate}, or undefined to keep the
+	 * current values. Unlike {@link prepareNextTurn}, `context.systemPrompt` and
+	 * `context.messages` are NOT applied here: the transcript is already live at
+	 * the injection point, so replacing it would drop the just-injected messages.
 	 *
 	 * Exists so an override that only becomes active while injected messages are
 	 * being consumed (e.g. a queued skill invocation activated inside
@@ -350,9 +353,9 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * policy. This seam guarantees a policy block that names the tool remains
 	 * reachable after the schema has been removed.
 	 *
-	 * Contract: synchronous and advisory. A throw is swallowed and the call
-	 * proceeds to the normal lookup, so a faulty policy can never interrupt the
-	 * low-level loop.
+	 * Contract: synchronous and advisory. A throw fails closed — the call is
+	 * blocked with a generic policy error rather than allowed — but is never
+	 * rethrown, so a faulty policy can never interrupt the low-level loop.
 	 */
 	isToolCallDisallowed?: (name: string) => string | undefined;
 }

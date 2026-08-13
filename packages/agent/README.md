@@ -256,16 +256,19 @@ const agent = new Agent({
   // Re-resolve model/reasoning/tools right before a provider request whose
   // triggering messages were just injected/transformed (the first turn after the
   // top-level transform + every inner-loop injection; NOT retries). Return an
-  // AgentLoopTurnUpdate (merged like prepareNextTurn: model/reasoning, and
-  // context.tools) or undefined to keep the current values. Use it when an
-  // override only becomes active during injection (e.g. a queued skill).
+  // AgentLoopTurnUpdate — only model/reasoning and context.tools are applied here
+  // (context.systemPrompt/messages are NOT, since the transcript is already live)
+  // — or undefined to keep the current values. Use it when an override only
+  // becomes active during injection (e.g. a queued skill). Contracted not to
+  // throw; a throw is contained and treated as undefined.
   refreshTurnAfterInjection: async (signal) => undefined,
 
   // Pre-lookup tool-call policy, checked before the registry lookup and before
   // beforeToolCall. Return a block reason to reject the call with an immediate
   // error result, or undefined to allow it. Because it runs before the lookup, a
   // policy block that names the tool stays reachable even after the tool's schema
-  // has been removed from the context.
+  // has been removed from the context. Synchronous; a throw fails closed (the
+  // call is blocked, never rethrown).
   isToolCallDisallowed: (name) => undefined,
 });
 

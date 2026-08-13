@@ -976,4 +976,61 @@ describe("Agent C3a seams", () => {
 		expect(text).toBe('Tool "bash" is blocked by policy');
 		expect(text).not.toContain("not found");
 	});
+
+	it("fails closed when isToolCallDisallowed throws", async () => {
+		let requestCount = 0;
+		const agent = new Agent({
+			// bash IS registered here: a fail-open would execute it; a fail-closed blocks it.
+			initialState: { tools: [toolNamed("bash")] },
+			isToolCallDisallowed: () => {
+				throw new Error("policy boom");
+			},
+			streamFn: (_model, _context, _options) => {
+				requestCount++;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (requestCount === 1) {
+						stream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantToolUseMessage([
+								{ type: "toolCall", id: "tc-1", name: "bash", arguments: {} },
+							]),
+						});
+						return;
+					}
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("run bash");
+
+		const toolResult = agent.state.messages.find((message) => message.role === "toolResult");
+		if (!toolResult || toolResult.role !== "toolResult") throw new Error("expected tool result");
+		expect(toolResult.isError).toBe(true);
+		const text = toolResult.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+		expect(text).toContain("policy check failed");
+	});
+
+	it("contains a throwing refreshTurnAfterInjection instead of rejecting the loop", async () => {
+		const requests: string[] = [];
+		const agent = new Agent({
+			refreshTurnAfterInjection: () => {
+				throw new Error("refresh boom");
+			},
+			streamFn: (model, context, options) => {
+				requests.push(model.id);
+				return stopAfterMessage("ok")(model, context, options);
+			},
+		});
+		const sessionModelId = agent.state.model.id;
+
+		// Resolves rather than rejecting, despite the throw on the injected first request.
+		await agent.prompt("hello");
+
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toBe(sessionModelId);
+	});
 });

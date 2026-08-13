@@ -149,6 +149,8 @@ editor trigger, and mid-line/second-line Enter behavior tested in `packages/tui`
 
 ### Phase C3 — execution semantics
 
+*Status (2026-08-13): C3a shipped* — items 1 (`model`/`effort` ephemeral override on all A.5 paths: initial, mid-turn `skill` tool call, queued steer/follow-up, in-turn retry, incl. continuation rebuilds) and 2 (`disallowed-tools` schema removal + pre-lookup `tool_call` block via the redirect-canonicalized union, same-batch siblings exempt), plus A.8 `PI_EFFORT`/`CLAUDE_EFFORT` model-clamping and the shared `InvocationCoordinator`. C3b remains: items 3 (`context: fork`/`agent`/`background` — fields parsed and preserved, execution not wired) and 4 (`paths` activation).
+
 1. Per-skill `effort` and `model` overrides via the **ephemeral request-override record** of
    Appendix A.5. Not `setModel`/`setThinkingLevel` (persistent), and not a plain chained
    `prepareNextTurn` either — `AgentSession`'s next-turn refresh overwrites chained snapshots

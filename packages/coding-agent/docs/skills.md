@@ -128,7 +128,7 @@ Stage 3 substitutes these braced variables; the same values are injected into sh
 | `${PI_SESSION_ID}` | `${CLAUDE_SESSION_ID}` | Current session id |
 | `${PI_EFFORT}` | `${CLAUDE_EFFORT}` | The invocation's `effort` frontmatter, else the session thinking level |
 
-The `CLAUDE_*` aliases are accepted alongside the `PI_*` spellings only while the `skillInterop` setting is on (default); with `skillInterop: false` they stay literal. An integer `effort` budget clamp-maps to a level with a diagnostic (≤2048 → `low`, ≤8192 → `medium`, ≤24576 → `high`, above → `xhigh`). Unknown `${...}` text is left untouched.
+The `CLAUDE_*` aliases are accepted alongside the `PI_*` spellings only while the `skillInterop` setting is on (default); with `skillInterop: false` they stay literal. An integer `effort` budget clamp-maps to a level with a diagnostic (≤2048 → `low`, ≤8192 → `medium`, ≤24576 → `high`, above → `xhigh`). `${PI_EFFORT}`/`${CLAUDE_EFFORT}` then reflect the *effective* effort, clamped to the invocation's effective (possibly `model`-overridden) model's supported thinking levels, so the value equals the reasoning level the provider request actually runs with. Unknown `${...}` text is left untouched.
 
 While a skill invocation is active (from consumption until the logical turn settles), its variables are also injected into `bash` tool executions — including extension/SDK replacement bash tools — as a turn-scoped environment overlay. `process.env` is never mutated. Set `disableSkillEnvInjection: true` to bypass this overlay (A.3.5 shell injection is unaffected: it always carries the rendering skill's own variables). See [environment-variables.md](environment-variables.md).
 
@@ -136,7 +136,7 @@ While a skill invocation is active (from consumption until the logical turn sett
 
 > **Security (authoring):** `` !`command` `` blocks execute real shell commands at render time with the skill's own `PI_*`/`CLAUDE_*` variables in the environment. A skill author can run anything the user can. Only load skills you trust, and treat project trust as the boundary: trusting a project authorizes its skills' shell blocks, including after a later `git pull`.
 
-A body segment `` !`command` `` executes `command` and is replaced by its output. Execution is gated by tool policy — injection runs only when the session's active tool set includes `bash` and the invocation's `disallowed-tools` does not block it (`Bash` and `bash` both match; blocking is shell-time only, not turn-scoped enforcement). When blocked, the segment is replaced inline by `[shell command execution disabled by tool policy]`; when the `disableSkillShellExecution` kill switch is on, by `[shell command execution disabled by policy]`; a timed-out or aborted command inlines `[command aborted]`.
+A body segment `` !`command` `` executes `command` and is replaced by its output. Execution is gated by tool policy — injection runs only when the session's active tool set includes `bash` and the invocation's `disallowed-tools` does not block it (`Bash` and `bash` both match). This render-time gate is separate from the turn-scoped enforcement of `disallowed-tools` on the model's own tool calls (see [Frontmatter](#frontmatter)). When blocked, the segment is replaced inline by `[shell command execution disabled by tool policy]`; when the `disableSkillShellExecution` kill switch is on, by `[shell command execution disabled by policy]`; a timed-out or aborted command inlines `[command aborted]`.
 
 Per-command limits come from settings: `skillShellTimeoutMs` (default 30000) and `skillShellOutputLimitBytes` (default 16384). The `shell` frontmatter field selects `bash` (default) or `powershell`.
 
@@ -173,6 +173,7 @@ Pi supports a deliberate subset of Claude Code skill semantics (ADR-0007). The b
 
 - The Agent Skills frontmatter contract (lenient validation; see [Frontmatter](#frontmatter))
 - The argument grammar, `${CLAUDE_*}` variable aliases, and `` !` `` shell injection (gated by tool policy)
+- Per-invocation `model`/`effort` overrides (ephemeral, non-persistent per-turn; CC aliases `opus`/`sonnet`/`haiku`/`fable` resolve best-effort against available models) and turn-scoped `disallowed-tools` enforcement
 - CC tool-name correction: the redirect map above plus the stage-7 steering note in rendered bodies
 
 **Not supported (no translation, by design):**
@@ -182,7 +183,7 @@ Pi supports a deliberate subset of Claude Code skill semantics (ADR-0007). The b
 - Hook execution (`hooks` frontmatter is parsed and preserved, never executed)
 - `allowed-tools` enforcement (parsed and preserved, advisory only)
 - `Skill(name)` permission rules
-- Per-invocation `model`/`effort` overrides, `context: fork`, `agent`, `background`, and `paths` activation (parsed and preserved; consumed by later phases)
+- Per-invocation `context: fork`, `agent`, `background`, and `paths` activation (parsed and preserved; consumed by later phases)
 
 ## Skill Structure
 
@@ -246,9 +247,9 @@ Booleans accept `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` (case-insens
 | `compatibility` | No | Max 500 chars. Environment requirements. |
 | `metadata` | No | Arbitrary key-value mapping, preserved as-is. |
 | `allowed-tools` | No | Tool names as a string or list. Parsed and preserved; **advisory only**, not enforced. |
-| `disallowed-tools` (alias `disallowedTools`) | No | Tool names as a comma-separated string or a YAML list. Blocks [shell command injection](#shell-command-injection) when a canonicalized entry matches `bash`; turn-scoped blocking of model tool calls lands in a later phase. `Tool(pattern)` entries reduce to the bare name with a diagnostic; wildcards are unsupported (diagnostic, entry skipped). |
-| `model` | No | A model id, or `inherit`. Parsed and preserved; not yet applied as a per-request override. |
-| `effort` | No | A `ThinkingLevel` string (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) or an integer token budget. Preserved on the invocation and exposed as `${PI_EFFORT}` (integer budgets clamp-map with a diagnostic); not yet applied as a per-request override. |
+| `disallowed-tools` (alias `disallowedTools`) | No | Tool names as a comma-separated string or a YAML list. Turn-scoped: while the invocation is active, matching tools are removed from the model's request schema and a matching tool call is blocked before lookup (case-insensitive after redirect canonicalization, so `Bash`, `bash`, and `Task` map to the registered `bash`/`Agent`); the same list also gates [shell command injection](#shell-command-injection). Stacked invocations union their lists; same-batch siblings of an invoking `skill` call are exempt (restriction starts with the next request). `Tool(pattern)` entries reduce to the bare name with a diagnostic; wildcards are unsupported (diagnostic, entry skipped). |
+| `model` | No | A model id, `inherit`, or a CC alias (`opus`/`sonnet`/`haiku`/`fable`, best-effort against available models). Applied as an ephemeral, non-persistent per-turn override on the invocation's provider requests; `inherit`/empty keeps the session model; an unmatched value is a diagnostic + ignore. Session defaults are untouched. |
+| `effort` | No | A `ThinkingLevel` string (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) or an integer token budget. Applied as an ephemeral per-turn thinking-level override, clamped to the effective (possibly `model`-overridden) model's supported levels; integer budgets clamp-map with a diagnostic. Exposed as `${PI_EFFORT}` at the same clamped value. |
 | `context` | No | `inline` (default) or `fork`. Parsed and preserved; fork execution is not yet implemented. |
 | `agent` | No | Subagent type name for `context: fork`. Parsed and preserved; not yet consumed. |
 | `background` | No | Fork-only; default `true`. Parsed and preserved; not yet consumed. |

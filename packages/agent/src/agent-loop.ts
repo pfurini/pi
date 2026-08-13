@@ -228,7 +228,15 @@ async function runLoop(
 			// model/reasoning/tools for the consuming request. Skipped for retries.
 			if (injectionPending) {
 				injectionPending = false;
-				const injectionSnapshot = await config.refreshTurnAfterInjection?.(signal);
+				// The callback is contracted not to throw, but it is application
+				// supplied; contain a faulty implementation so it degrades to "no
+				// override" instead of rejecting the whole loop.
+				let injectionSnapshot: AgentLoopTurnUpdate | undefined;
+				try {
+					injectionSnapshot = await config.refreshTurnAfterInjection?.(signal);
+				} catch {
+					injectionSnapshot = undefined;
+				}
 				if (injectionSnapshot) {
 					if (injectionSnapshot.context?.tools !== undefined) {
 						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
@@ -651,8 +659,11 @@ async function prepareToolCall(
 		try {
 			disallowedReason = config.isToolCallDisallowed(toolCall.name);
 		} catch {
-			// An advisory policy must never interrupt the loop; fall through.
-			disallowedReason = undefined;
+			// Fail closed: this gate is the only block that catches a tool the
+			// schema filter never saw (e.g. added mid-turn), so a throwing policy
+			// blocks rather than allows. Returning an error result (not rethrowing)
+			// keeps the "advisory policy never interrupts the loop" property.
+			disallowedReason = `Tool "${toolCall.name}" was blocked: the disallowed-tools policy check failed.`;
 		}
 		if (disallowedReason) {
 			return { kind: "immediate", result: createErrorToolResult(disallowedReason), isError: true };

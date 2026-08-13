@@ -747,17 +747,18 @@ export class AgentSession {
 			// wrapper (which otherwise overwrites snapshots with persistent state,
 			// B.4). Tools already have the disallowed union removed; model/effort
 			// override the persistent state only while an invocation is active.
-			const active = this._skillRuntime.getActiveInvocation();
-			const override = this._computeTurnRequestOverride();
+			// _syncPendingTurnOverride also persists it so a fresh continuation
+			// (agent.continue) after a mid-turn activation keeps the override.
+			const { active, model, thinkingLevel, tools } = this._syncPendingTurnOverride();
 			return {
 				...previousSnapshot,
 				context: {
 					...previousContext,
 					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
-					tools: override.tools,
+					tools,
 				},
-				model: active && override.model ? override.model : this.agent.state.model,
-				thinkingLevel: active && override.thinkingLevel ? override.thinkingLevel : this.agent.state.thinkingLevel,
+				model: active && model ? model : this.agent.state.model,
+				thinkingLevel: active && thinkingLevel ? thinkingLevel : this.agent.state.thinkingLevel,
 			};
 		};
 	}
@@ -1459,9 +1460,10 @@ export class AgentSession {
 			try {
 				// C3a application point (a): resolve the ephemeral override for the
 				// first request from the now-active invocation (direct/mid-prompt
-				// both activate before this). Retries/continuations rebuild config
-				// and read it too; it is cleared once in the finally below.
-				this._applyFirstRequestOverride();
+				// both activate before this). Persisted to pendingTurnOverride so
+				// retries/continuations rebuild config and read it too; it is cleared
+				// once in the finally below.
+				this._syncPendingTurnOverride();
 				await this.agent.prompt(messages);
 				while (await this._handlePostAgentRun()) {
 					await this.agent.continue();
@@ -1931,9 +1933,9 @@ export class AgentSession {
 	 * diagnostics exactly once.
 	 */
 	private _computeTurnRequestOverride(): {
-		model?: Model<any>;
+		model?: AgentState["model"];
 		thinkingLevel?: ThinkingLevel;
-		tools: AgentTool<any>[];
+		tools: AgentState["tools"];
 	} {
 		this._emitPendingOverrideDiagnostics();
 		const redirects = this._mergedToolRedirects();
@@ -2000,41 +2002,53 @@ export class AgentSession {
 	}
 
 	/**
-	 * C3a application point (a): set the ephemeral per-turn override before the
-	 * first request streams. Left undefined when no invocation is active or it
-	 * declares nothing, so the session defaults are used.
+	 * Compute the per-turn override once and persist it to `agent.pendingTurnOverride`
+	 * so every request that rebuilds the loop config/context from scratch
+	 * (`createLoopConfig`/`createContextSnapshot` on the initial prompt, each
+	 * `agent.continue()` continuation, and every retry) reads the same values.
+	 * Shared by all three C3a application points (a/b/c). Left undefined when no
+	 * invocation is active or it declares nothing, so the session defaults apply.
+	 * Also refreshes the disallowed-union snapshot (via `_computeTurnRequestOverride`)
+	 * that backs the pre-lookup block.
 	 */
-	private _applyFirstRequestOverride(): void {
+	private _syncPendingTurnOverride(): {
+		active: SkillInvocation | undefined;
+		model?: AgentState["model"];
+		thinkingLevel?: ThinkingLevel;
+		tools: AgentState["tools"];
+	} {
 		const active = this._skillRuntime.getActiveInvocation();
 		const { model, thinkingLevel, tools } = this._computeTurnRequestOverride();
-		if (active && (model || thinkingLevel || this._currentRequestDisallowedUnion.size > 0)) {
-			this.agent.pendingTurnOverride = {
-				...(model ? { model } : {}),
-				...(thinkingLevel ? { thinkingLevel } : {}),
-				tools,
-			};
-		} else {
-			this.agent.pendingTurnOverride = undefined;
-		}
+		this.agent.pendingTurnOverride =
+			active && (model || thinkingLevel || this._currentRequestDisallowedUnion.size > 0)
+				? {
+						...(model ? { model } : {}),
+						...(thinkingLevel ? { thinkingLevel } : {}),
+						tools,
+					}
+				: undefined;
+		return { active, model, thinkingLevel, tools };
 	}
 
 	/**
 	 * C3a application point (b): re-resolve the override for a request whose
 	 * triggering messages were just injected (a queued invocation activates only
-	 * then). Returns undefined when no invocation is active.
+	 * then). Persists the override to `pendingTurnOverride` (so a subsequent
+	 * continuation/retry keeps it) and returns the tools-only turn update the
+	 * agent loop consumes post-injection. Returns undefined when no invocation is
+	 * active.
 	 */
 	private _resolveInjectedTurnOverride(): AgentLoopTurnUpdate | undefined {
-		const active = this._skillRuntime.getActiveInvocation();
-		const { model, thinkingLevel, tools } = this._computeTurnRequestOverride();
+		const { active, model, thinkingLevel, tools } = this._syncPendingTurnOverride();
 		if (!active) {
 			return undefined;
 		}
 		return {
 			...(model ? { model } : {}),
 			...(thinkingLevel ? { thinkingLevel } : {}),
-			// Only `context.tools` is consumed post-injection (agent-loop applies
-			// tools, model, thinkingLevel; it never reads messages/systemPrompt here),
-			// so alias the live transcript rather than copying it.
+			// Post-injection the agent loop applies only `context.tools` (plus
+			// model/thinkingLevel); it never reads messages/systemPrompt here, so
+			// alias the live transcript rather than copying it.
 			context: {
 				systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
 				messages: this.agent.state.messages,

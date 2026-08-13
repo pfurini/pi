@@ -116,6 +116,18 @@ function captureRequest(sink: CapturedRequest[], text = "ok"): FauxResponseFacto
 	};
 }
 
+/** A faux response that records the request, then fails with a retryable error. */
+function captureRequestThenError(sink: CapturedRequest[]): FauxResponseFactory {
+	return (context: Context, options: SimpleStreamOptions | undefined, _state, model: Model<string>) => {
+		sink.push({
+			modelId: model.id,
+			reasoning: options?.reasoning,
+			toolNames: (context.tools ?? []).map((tool) => tool.name),
+		});
+		return fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" });
+	};
+}
+
 /** A faux response that records the request, then replies with a single tool call. */
 function captureToolCall(
 	sink: CapturedRequest[],
@@ -303,16 +315,60 @@ describe("C3a overrides: survives an in-turn retry", () => {
 		harnesses.push(harness);
 		const requests: CapturedRequest[] = [];
 		harness.setResponses([
-			fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
+			// Capture the failed attempt too, so a regression that applies the
+			// override only on the retried request cannot pass.
+			captureRequestThenError(requests),
 			captureRequest(requests, "recovered"),
 		]);
 
 		await harness.session.prompt("/skill:both");
 
 		expect(harness.faux.state.callCount).toBe(2);
-		expect(requests).toHaveLength(1);
+		expect(requests).toHaveLength(2);
+		// Both the failed attempt and the retry ran under the override.
+		for (const request of requests) {
+			expect(request.modelId).toBe("opus-model");
+			expect(request.reasoning).toBe("high");
+		}
+	});
+});
+
+describe("C3a overrides: queued override survives a continuation retry", () => {
+	it("re-applies the queued skill's model/effort when the consuming request is retried", async () => {
+		const { tool, release } = waitTool();
+		const harness = await createHarness({
+			models: MODELS,
+			resourceLoader: createSkillsLoader(makeTempDir(), [
+				{ name: "both", frontmatter: { model: "opus-model", effort: "high" }, body: "body" },
+			]),
+			tools: [tool],
+			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
+		});
+		harnesses.push(harness);
+		const requests: CapturedRequest[] = [];
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("first turn done"),
+			// The queued skill activates here; its consuming request runs under the
+			// override (point b), then hits a retryable error.
+			captureRequestThenError(requests),
+			// The retry rebuilds the loop config from pendingTurnOverride via
+			// agent.continue(); the override must persist across that rebuild.
+			captureRequest(requests, "recovered"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.followUp("/skill:both");
+		release();
+		await promptPromise;
+
+		expect(requests).toHaveLength(2);
 		expect(requests[0].modelId).toBe("opus-model");
 		expect(requests[0].reasoning).toBe("high");
+		// Finding 1 regression: the continuation must not revert to session defaults.
+		expect(requests[1].modelId).toBe("opus-model");
+		expect(requests[1].reasoning).toBe("high");
 	});
 });
 

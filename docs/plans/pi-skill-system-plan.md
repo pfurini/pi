@@ -195,6 +195,8 @@ frontmatter columns — across listing, model invocation, user invocation, and S
 visibility survives a collision-winner deletion (ID-keyed, B.8); model-switch budget rebuild
 and watcher deletion covered.
 
+*Implementation carry-in (from the C2a super-code-review, verified against `1a2a5f031`+`2ff925a27`):* enforce the ADR-0005 namespace precedence at **dispatch** for control commands. C2a wired the `ext:` qualifier and built the unified registry, but built-in > extension bare-name precedence is not enforced at runtime — `_tryExecuteExtensionCommand` / `interactive-mode.isExtensionCommand` (pre-existing, #454/#475) reparse `/name` and match `invocationName` first, so an extension `/foo` still shadows a built-in `/foo` even though the registry and listing rank the built-in ahead (autocomplete already favors built-ins; only runtime dispatch order diverges). Route control-command dispatch (built-ins + extensions) through the C2a `CommandRegistry.resolve()` so runtime resolution matches the advertised precedence and qualified forms resolve uniformly. The other C2a review fixes (and the `ext:`-qualifier wiring this depends on) live in the C2a review-fixes plan (`pi-skill-system-c2a-review-fixes.plan.md`).
+
 ## 4. Workstream 2 — pi-subagents fork (parallel)
 
 Separate plan, executed in the pi-subagents fork repo (current upstream state in Appendix B.5);

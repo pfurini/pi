@@ -206,6 +206,14 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 		...(nestedVariants !== undefined && { nestedVariants }),
 	});
 
+	const toListingEntry = (entry: InternalEntry, displayName: string): CommandListingEntry => ({
+		name: displayName,
+		...(entry.description !== undefined && { description: entry.description }),
+		...(entry.argumentHint !== undefined && { argumentHint: entry.argumentHint }),
+		source: entry.source,
+		...(entry.sourceInfo !== undefined && { sourceInfo: entry.sourceInfo }),
+	});
+
 	const register = (name: string, invocation: ResolvedInvocation): void => {
 		if (!resolved.has(name)) {
 			resolved.set(name, invocation);
@@ -238,13 +246,7 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 				if (entry.qualifier) {
 					register(entry.qualifier, toInvocation(entry));
 				}
-				listing.push({
-					name: variants[index],
-					...(entry.description !== undefined && { description: entry.description }),
-					...(entry.argumentHint !== undefined && { argumentHint: entry.argumentHint }),
-					source: entry.source,
-					...(entry.sourceInfo !== undefined && { sourceInfo: entry.sourceInfo }),
-				});
+				listing.push(toListingEntry(entry, variants[index]));
 			});
 			register(name, toInvocation(winner, variants));
 			collisions.push(`/${name} nested variants: ${variants.join(", ")}`);
@@ -254,13 +256,7 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 			if (winner.qualifier) {
 				register(winner.qualifier, toInvocation(winner));
 			}
-			listing.push({
-				name,
-				...(winner.description !== undefined && { description: winner.description }),
-				...(winner.argumentHint !== undefined && { argumentHint: winner.argumentHint }),
-				source: winner.source,
-				...(winner.sourceInfo !== undefined && { sourceInfo: winner.sourceInfo }),
-			});
+			listing.push(toListingEntry(winner, name));
 		}
 
 		// Cross-tier losers keep only their qualified form.
@@ -271,13 +267,7 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 				continue;
 			}
 			register(loser.qualifier, toInvocation(loser));
-			listing.push({
-				name: loser.qualifier,
-				...(loser.description !== undefined && { description: loser.description }),
-				...(loser.argumentHint !== undefined && { argumentHint: loser.argumentHint }),
-				source: loser.source,
-				...(loser.sourceInfo !== undefined && { sourceInfo: loser.sourceInfo }),
-			});
+			listing.push(toListingEntry(loser, loser.qualifier));
 			loserLabels.push(`/${loser.qualifier}`);
 		}
 		if (loserLabels.length > 0) {

@@ -20,7 +20,7 @@ import { basename, dirname, join } from "node:path";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { PromptTemplate } from "../prompt-templates.ts";
-import { isBareSkillCommandName } from "../skills/frontmatter.ts";
+import { isBareSkillCommandName, normalizeBoolean } from "../skills/frontmatter.ts";
 import type { SourceInfo } from "../source-info.ts";
 
 export type CommandKind = "command" | "prompt";
@@ -50,30 +50,6 @@ export interface LoadedCommand {
 export interface LoadCommandsResult {
 	commands: LoadedCommand[];
 	diagnostics: ResourceDiagnostic[];
-}
-
-/** YAML already coerces true/false; also accept the A.2 string spellings. */
-function asBoolean(value: unknown, defaultValue: boolean): boolean {
-	if (typeof value === "boolean") {
-		return value;
-	}
-	if (value === 1) return true;
-	if (value === 0) return false;
-	if (typeof value === "string") {
-		switch (value.trim().toLowerCase()) {
-			case "true":
-			case "yes":
-			case "on":
-			case "1":
-				return true;
-			case "false":
-			case "no":
-			case "off":
-			case "0":
-				return false;
-		}
-	}
-	return defaultValue;
 }
 
 function firstNonEmptyLine(body: string): string | undefined {
@@ -137,8 +113,8 @@ export function parseCommandFile(
 		baseDir: dirname(filePath),
 		sourceInfo,
 		commandNameValid,
-		userInvocable: asBoolean(frontmatter["user-invocable"], true),
-		disableModelInvocation: asBoolean(frontmatter["disable-model-invocation"], false),
+		userInvocable: normalizeBoolean(frontmatter["user-invocable"]) ?? true,
+		disableModelInvocation: normalizeBoolean(frontmatter["disable-model-invocation"]) ?? false,
 	};
 	return { command, diagnostics };
 }

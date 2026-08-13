@@ -168,7 +168,7 @@ export function makeSkillFrontmatterJsonSafe(
 	return { frontmatter: cloned as SkillFrontmatter, diagnostics };
 }
 
-function normalizeBoolean(value: unknown): boolean | undefined {
+export function normalizeBoolean(value: unknown): boolean | undefined {
 	if (typeof value === "boolean") {
 		return value;
 	}

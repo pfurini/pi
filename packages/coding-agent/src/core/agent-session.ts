@@ -173,10 +173,8 @@ interface QueuedInvocation {
 	spans: MessageSpan[];
 	/** True when the queued message began with an invocation (single-skill synthetic-pair path). */
 	messageInitial: boolean;
-	/** Whole original message text, delivered literally on any render/abort failure. */
+	/** Whole original message text: shown in the queue UI and delivered literally on any render/abort failure. */
 	originalText: string;
-	/** Literal text shown in the queue UI. */
-	displayText: string;
 	queue: "steer" | "followUp";
 	/** Images attached to the composed message. */
 	images?: ImageContent[];
@@ -1866,11 +1864,7 @@ export class AgentSession {
 		for (const invocation of activations) {
 			this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
 		}
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		const message = this._literalUserMessage(text, images);
 		if (invocations.length > 0) {
 			this._messageDeliveryMeta.set(message, { invocations });
 		}
@@ -2009,7 +2003,6 @@ export class AgentSession {
 			spans: tokenized.spans,
 			messageInitial: tokenized.messageInitial,
 			originalText,
-			displayText: originalText,
 			queue,
 			...(images && { images }),
 		});
@@ -2019,7 +2012,7 @@ export class AgentSession {
 	/** Remove a consumed queued invocation's display text from the queue UI. */
 	private _removeQueuedDisplayText(queued: QueuedInvocation): void {
 		const list = queued.queue === "steer" ? this._steeringMessages : this._followUpMessages;
-		const index = list.indexOf(queued.displayText);
+		const index = list.indexOf(queued.originalText);
 		if (index !== -1) {
 			list.splice(index, 1);
 			this._emitQueueUpdate();
@@ -2086,19 +2079,7 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
-		}
-
-		// Tokenize once: invocation-bearing messages queue as immutable resolved
-		// snapshots (rendered on consumption); plain text queues directly.
-		const tokenized = tokenizeMessage(text, this._buildCommandRegistry());
-		if (tokenized.spans.some((span) => span.kind === "invocation")) {
-			await this._queueInvocation("steer", text, tokenized, images);
-			return;
-		}
-		await this._queueSteer(this._spansPlainText(tokenized.spans), images);
+		await this._queueTokenized("steer", text, images);
 	}
 
 	/**
@@ -2109,19 +2090,30 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string, images?: ImageContent[]): Promise<void> {
+		await this._queueTokenized("followUp", text, images);
+	}
+
+	/**
+	 * Shared steer/follow-up queue path: reject extension commands, tokenize once
+	 * (invocation-bearing messages queue as immutable resolved snapshots rendered
+	 * on consumption; plain text queues directly), then dispatch to the given queue.
+	 */
+	private async _queueTokenized(queue: "steer" | "followUp", text: string, images?: ImageContent[]): Promise<void> {
 		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
 		}
-
-		// Tokenize once: invocation-bearing messages queue as immutable resolved
-		// snapshots (rendered on consumption); plain text queues directly.
 		const tokenized = tokenizeMessage(text, this._buildCommandRegistry());
 		if (tokenized.spans.some((span) => span.kind === "invocation")) {
-			await this._queueInvocation("followUp", text, tokenized, images);
+			await this._queueInvocation(queue, text, tokenized, images);
 			return;
 		}
-		await this._queueFollowUp(this._spansPlainText(tokenized.spans), images);
+		const plainText = this._spansPlainText(tokenized.spans);
+		if (queue === "steer") {
+			await this._queueSteer(plainText, images);
+		} else {
+			await this._queueFollowUp(plainText, images);
+		}
 	}
 
 	/**

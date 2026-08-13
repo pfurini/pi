@@ -498,6 +498,8 @@ export class AgentSession {
 	 * removal and the `isToolCallDisallowed` pre-lookup block. Reset at turn end.
 	 */
 	private _currentRequestDisallowedUnion: Set<string> = new Set();
+	/** Merged redirect map used to build the current union; reused by the per-tool-call block check so it is not rebuilt per call. */
+	private _currentRequestDisallowedRedirects: Record<string, string> = {};
 	/** Invocations whose model/effort/disallowed diagnostics were already surfaced this turn. */
 	private _overrideDiagnosedInvocations: Set<string> = new Set();
 
@@ -1466,13 +1468,10 @@ export class AgentSession {
 				}
 			} finally {
 				this._systemPromptOverride = undefined;
-				this.agent.pendingTurnOverride = undefined;
-				this._currentRequestDisallowedUnion = new Set();
-				this._overrideDiagnosedInvocations = new Set();
 				// Logical-turn boundary (agent_settled): turn-scoped skill env and
 				// overrides expire here, after the full retry+continuation loop,
 				// never on the per-run agent_end or the turn_end event.
-				this._skillRuntime.expireTurn();
+				this._expireTurnOverrideState();
 				this._flushPendingBashMessages();
 				await this._emitAgentSettled();
 			}
@@ -1720,10 +1719,7 @@ export class AgentSession {
 			// before_agent_start) must not leak the active invocation or its
 			// override/restriction into the next prompt, since _runAgentPrompt's
 			// finally never ran.
-			this._skillRuntime.expireTurn();
-			this.agent.pendingTurnOverride = undefined;
-			this._currentRequestDisallowedUnion = new Set();
-			this._overrideDiagnosedInvocations = new Set();
+			this._expireTurnOverrideState();
 			throw error;
 		}
 
@@ -1943,6 +1939,7 @@ export class AgentSession {
 		const redirects = this._mergedToolRedirects();
 		const { union } = computeDisallowedUnion(this._skillRuntime.getActiveInvocations(), redirects);
 		this._currentRequestDisallowedUnion = union;
+		this._currentRequestDisallowedRedirects = redirects;
 		const baseTools = this.agent.state.tools.slice();
 		const tools =
 			union.size > 0
@@ -1990,6 +1987,19 @@ export class AgentSession {
 	}
 
 	/**
+	 * Expire the turn-scoped skill runtime and clear the C3a ephemeral override
+	 * state (pending model/effort override, disallowed-tools union, and the
+	 * once-per-turn diagnostic dedup set). Shared by the normal turn-end finally
+	 * and the pre-run rollback (fork #5) where that finally never runs.
+	 */
+	private _expireTurnOverrideState(): void {
+		this._skillRuntime.expireTurn();
+		this.agent.pendingTurnOverride = undefined;
+		this._currentRequestDisallowedUnion = new Set();
+		this._overrideDiagnosedInvocations = new Set();
+	}
+
+	/**
 	 * C3a application point (a): set the ephemeral per-turn override before the
 	 * first request streams. Left undefined when no invocation is active or it
 	 * declares nothing, so the session defaults are used.
@@ -2022,9 +2032,12 @@ export class AgentSession {
 		return {
 			...(model ? { model } : {}),
 			...(thinkingLevel ? { thinkingLevel } : {}),
+			// Only `context.tools` is consumed post-injection (agent-loop applies
+			// tools, model, thinkingLevel; it never reads messages/systemPrompt here),
+			// so alias the live transcript rather than copying it.
 			context: {
 				systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
-				messages: this.agent.state.messages.slice(),
+				messages: this.agent.state.messages,
 				tools,
 			},
 		};
@@ -2035,7 +2048,7 @@ export class AgentSession {
 		if (this._currentRequestDisallowedUnion.size === 0) {
 			return undefined;
 		}
-		const canonical = canonicalizeToolName(name, this._mergedToolRedirects()).toLowerCase();
+		const canonical = canonicalizeToolName(name, this._currentRequestDisallowedRedirects).toLowerCase();
 		if (!this._currentRequestDisallowedUnion.has(canonical)) {
 			return undefined;
 		}

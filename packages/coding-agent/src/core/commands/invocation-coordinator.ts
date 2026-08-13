@@ -70,7 +70,6 @@ export type PreparedInvocationMessage = SoleSkillPreparation | ComposedPreparati
 export interface PreparedSkillInvocation {
 	record: SkillInvocation;
 	rendered: RenderedSkillInvocation;
-	diagnostics: readonly ResourceDiagnostic[];
 }
 
 export class InvocationCoordinator {
@@ -90,7 +89,7 @@ export class InvocationCoordinator {
 	async prepare(skill: LoadedSkill, rawArgs: string, signal?: AbortSignal): Promise<PreparedSkillInvocation> {
 		const record = this.deps.createSkillInvocation(skill, rawArgs);
 		const rendered = await this.deps.renderSkill(skill, record, signal);
-		return { record, rendered, diagnostics: rendered.diagnostics };
+		return { record, rendered };
 	}
 
 	/** Activate a prepared record for the rest of the logical turn; returns diagnostics. */

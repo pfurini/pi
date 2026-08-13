@@ -15,6 +15,7 @@ import type {
 	AgentContext,
 	AgentEvent,
 	AgentLoopConfig,
+	AgentLoopTurnUpdate,
 	AgentMessage,
 	AgentTool,
 	AgentToolCall,
@@ -152,6 +153,26 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 }
 
 /**
+ * Merge an {@link AgentLoopTurnUpdate}'s model/thinking state into the loop
+ * config. Shared by the post-injection refresh and the per-turn prepareNextTurn
+ * hook, which apply the identical model/reasoning merge (they differ only in
+ * how they handle the replacement context). `thinkingLevel: "off"` clears
+ * reasoning; an undefined `thinkingLevel` keeps the current value.
+ */
+function applyTurnUpdateToConfig(config: AgentLoopConfig, update: AgentLoopTurnUpdate): AgentLoopConfig {
+	return {
+		...config,
+		model: update.model ?? config.model,
+		reasoning:
+			update.thinkingLevel === undefined
+				? config.reasoning
+				: update.thinkingLevel === "off"
+					? undefined
+					: update.thinkingLevel,
+	};
+}
+
+/**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
 async function runLoop(
@@ -212,16 +233,7 @@ async function runLoop(
 					if (injectionSnapshot.context?.tools !== undefined) {
 						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
 					}
-					config = {
-						...config,
-						model: injectionSnapshot.model ?? config.model,
-						reasoning:
-							injectionSnapshot.thinkingLevel === undefined
-								? config.reasoning
-								: injectionSnapshot.thinkingLevel === "off"
-									? undefined
-									: injectionSnapshot.thinkingLevel,
-					};
+					config = applyTurnUpdateToConfig(config, injectionSnapshot);
 				}
 			}
 
@@ -268,16 +280,7 @@ async function runLoop(
 			const nextTurnSnapshot = await config.prepareNextTurn?.(nextTurnContext);
 			if (nextTurnSnapshot) {
 				currentContext = nextTurnSnapshot.context ?? currentContext;
-				config = {
-					...config,
-					model: nextTurnSnapshot.model ?? config.model,
-					reasoning:
-						nextTurnSnapshot.thinkingLevel === undefined
-							? config.reasoning
-							: nextTurnSnapshot.thinkingLevel === "off"
-								? undefined
-								: nextTurnSnapshot.thinkingLevel,
-				};
+				config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
 			}
 
 			if (

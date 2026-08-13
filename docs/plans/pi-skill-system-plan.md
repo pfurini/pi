@@ -170,6 +170,8 @@ block, spawn-failure fallback, completion-event ordering/buffering race); fork f
 through a stub subagents extension in the test harness; override fixtures cover initial,
 mid-turn tool-call, queued, and retry paths.
 
+*Implementation carry-ins (from the C1c super-code-review, verified against `a1ba977e9`+`41ce2de50`):* before wiring the per-field behavior above, extract a session-owned skill-invocation/delivery coordinator — C1c left render + activate + diagnostics duplicated across the genuine `skill` tool path and the user/queue delivery path (`agent-session.ts` `_createSkillTool` vs `_buildSkillDelivery`), and C3 applies `model`/`effort`/`disallowed-tools`/fork to *both* paths, so unify them first into one `prepare(invocation) → {record, rendered, diagnostics, activation}` that each path adapts (delivery selects an A.4 transport; the tool returns an inline/fork result). When that seam is touched, also finalize the generic `transformInjectedMessages` agent hook — a mutable public `Agent` property absent from `AgentOptions` and unconditionally overwritten by `AgentSession`; add it to `AgentOptions` + the constructor, compose rather than clobber a prior transform, and document it in `packages/agent/README.md`. Tracking detail lives in the C1d plan's Amendments.
+
 ### Phase C4 — lifecycle & management
 
 1. Re-invocation dedup (identity tuple and compaction-interaction rules in Appendix A.6).

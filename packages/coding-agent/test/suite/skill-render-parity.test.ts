@@ -170,7 +170,10 @@ const PATHS = {
 
 describe("skill render parity across invocation paths and transports", () => {
 	for (const [pathName, run] of Object.entries(PATHS)) {
-		for (const transport of ["block", "synthetic"] as const) {
+		// Genuine model tool calls ignore the transport argument (see runGenuineTool):
+		// running both labels would execute the identical test body twice.
+		const transports = pathName === "genuineTool" ? (["block"] as const) : (["block", "synthetic"] as const);
+		for (const transport of transports) {
 			it(`${pathName} × ${transport}: one renderer output, structured metadata`, async () => {
 				const run1 = await run(transport);
 

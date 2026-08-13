@@ -1805,6 +1805,26 @@ export class AgentSession {
 	 * literal `/skill:` text for the queue UI; the record renders and activates
 	 * only when the agent loop consumes it, never at queue time.
 	 */
+	private _buildQueueMessage(text: string, images?: ImageContent[]): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		return { role: "user", content, timestamp: Date.now() };
+	}
+
+	private _dispatchQueue(queue: "steer" | "followUp", displayText: string, message: AgentMessage): void {
+		if (queue === "steer") {
+			this._steeringMessages.push(displayText);
+			this._emitQueueUpdate();
+			this.agent.steer(message);
+		} else {
+			this._followUpMessages.push(displayText);
+			this._emitQueueUpdate();
+			this.agent.followUp(message);
+		}
+	}
+
 	private async _queueSkillInvocation(
 		queue: "steer" | "followUp",
 		literalText: string,
@@ -1812,21 +1832,9 @@ export class AgentSession {
 		images?: ImageContent[],
 	): Promise<void> {
 		const invocation = this._skillRuntime.createInvocation(command.skill, command.rawArgs);
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text: literalText }];
-		if (images) {
-			content.push(...images);
-		}
-		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		const message = this._buildQueueMessage(literalText, images);
 		this._queuedSkillInvocations.set(message, { skill: command.skill, invocation, displayText: literalText, queue });
-		if (queue === "steer") {
-			this._steeringMessages.push(literalText);
-			this._emitQueueUpdate();
-			this.agent.steer(message);
-		} else {
-			this._followUpMessages.push(literalText);
-			this._emitQueueUpdate();
-			this.agent.followUp(message);
-		}
+		this._dispatchQueue(queue, literalText, message);
 	}
 
 	/** Remove a consumed queued invocation's display text from the queue UI. */
@@ -1935,34 +1943,14 @@ export class AgentSession {
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this._dispatchQueue("steer", text, this._buildQueueMessage(text, images));
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.followUp({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this._dispatchQueue("followUp", text, this._buildQueueMessage(text, images));
 	}
 
 	/**

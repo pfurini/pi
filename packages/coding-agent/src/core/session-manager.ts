@@ -26,6 +26,7 @@ import {
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "./messages.ts";
+import { escapeXml } from "./skills/listing.ts";
 
 export const CURRENT_SESSION_VERSION = 3;
 
@@ -587,17 +588,7 @@ export function repairTornSkillPairs(entries: FileEntry[]): { entries: FileEntry
 			body =
 				"[skill invocation content unavailable: the session write was interrupted before the result was stored]";
 		}
-		const escapedName = name
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;");
-		const escapedArgs = args
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;");
-		const text = `<skill name="${escapedName}" args="${escapedArgs}">\n${body}\n</skill>`;
+		const text = `<skill name="${escapeXml(name)}" args="${escapeXml(args)}">\n${body}\n</skill>`;
 		torn.message = {
 			role: "user",
 			content: [{ type: "text", text }],
@@ -1119,32 +1110,7 @@ export class SessionManager {
 	}
 
 	_persist(entry: SessionEntry): void {
-		if (!this.persist || !this.sessionFile) return;
-
-		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-		if (!hasAssistant) {
-			if (this.flushed) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-			} else {
-				// Mark as not flushed so when assistant arrives, all entries get written
-				this.flushed = false;
-			}
-			return;
-		}
-
-		if (!this.flushed) {
-			const fd = openSync(this.sessionFile, "wx");
-			try {
-				for (const e of this.fileEntries) {
-					writeFileSync(fd, `${JSON.stringify(e)}\n`);
-				}
-			} finally {
-				closeSync(fd);
-			}
-			this.flushed = true;
-		} else {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
-		}
+		this._persistBatched([entry]);
 	}
 
 	private _appendEntry(entry: SessionEntry): void {

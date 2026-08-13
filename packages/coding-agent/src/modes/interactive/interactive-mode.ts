@@ -3741,17 +3741,17 @@ export class InteractiveMode {
 	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
 		// Keep B.12 entry metadata attached for display; context projection drops it.
 		const invocationsByMessage = new Map<AgentMessage, readonly SkillInvocationEntry[]>();
+		const items: RenderSessionItem[] = [];
 		for (const entry of entries) {
+			if (entry.type === "custom") {
+				items.push(entry);
+				continue;
+			}
 			if (entry.type === "message" && entry.invocations) {
 				invocationsByMessage.set(entry.message, entry.invocations);
 			}
+			items.push(...sessionEntryToContextMessages(entry));
 		}
-		const items = entries.flatMap((entry): RenderSessionItem[] => {
-			if (entry.type === "custom") {
-				return [entry];
-			}
-			return sessionEntryToContextMessages(entry);
-		});
 		this.renderSessionItems(items, options, invocationsByMessage);
 	}
 	/**

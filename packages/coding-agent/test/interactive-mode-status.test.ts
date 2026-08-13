@@ -376,19 +376,25 @@ describe("InteractiveMode.setupAutocompleteProvider", () => {
 	});
 });
 
+type CommandListingEntry = {
+	name: string;
+	description?: string;
+	argumentHint?: string;
+	source: "builtin" | "extension" | "command" | "prompt" | "skill";
+	sourceInfo?: SourceInfo;
+};
+
 describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 	test("matches model command arguments across provider/model order", async () => {
 		type TestModel = { id: string; provider: string; name: string };
 		type FakeInteractiveMode = {
 			session: {
+				getCommands: () => CommandListingEntry[];
 				scopedModels: Array<{ model: TestModel }>;
 				modelRuntime: { getAvailableSnapshot: () => TestModel[] };
-				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: { getSkills: () => { skills: [] } };
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 			sessionManager: { getCwd: () => string };
 			fdPath: null;
 		};
@@ -404,14 +410,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		];
 		const fakeThis: FakeInteractiveMode = {
 			session: {
+				getCommands: () => [{ name: "model", source: "builtin", description: "Select model" }],
 				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => models },
-				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: { getSkills: () => ({ skills: [] }) },
 			},
-			settingsManager: { getEnableSkillCommands: () => false },
-			skillCommands: new Map(),
+			prefixAutocompleteDescription: (description) => description,
 			sessionManager: { getCwd: () => "/tmp" },
 			fdPath: null,
 		};
@@ -431,14 +435,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 	test("matches login command arguments by provider id and name", async () => {
 		type FakeInteractiveMode = {
 			session: {
+				getCommands: () => CommandListingEntry[];
 				scopedModels: [];
 				modelRuntime: { getAvailableSnapshot: () => [] };
-				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: { getSkills: () => { skills: [] } };
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 			sessionManager: { getCwd: () => string };
 			fdPath: null;
 			getLoginProviderOptions: () => AuthSelectorProvider[];
@@ -451,14 +453,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		).prototype.createBaseAutocompleteProvider;
 		const fakeThis: FakeInteractiveMode = {
 			session: {
+				getCommands: () => [{ name: "login", source: "builtin", description: "Configure auth" }],
 				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => [] },
-				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: { getSkills: () => ({ skills: [] }) },
 			},
-			settingsManager: { getEnableSkillCommands: () => false },
-			skillCommands: new Map(),
+			prefixAutocompleteDescription: (description) => description,
 			sessionManager: { getCwd: () => "/tmp" },
 			fdPath: null,
 			getLoginProviderOptions: () => [
@@ -482,95 +482,71 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 			},
 		]);
 	});
-	test("gates skill commands by visibility and shows argument hints", async () => {
+
+	test("projects the unified getCommands listing with bare names and source badges", async () => {
 		type FakeInteractiveMode = {
 			session: {
+				getCommands: () => CommandListingEntry[];
 				scopedModels: [];
 				modelRuntime: { getAvailableSnapshot: () => [] };
-				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: {
-					getSkills: () => {
-						skills: Array<{
-							name: string;
-							description: string;
-							filePath: string;
-							baseDir: string;
-							disableModelInvocation: boolean;
-							sourceInfo: SourceInfo;
-							frontmatter?: Record<string, unknown>;
-						}>;
-						diagnostics: [];
-					};
-				};
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 			sessionManager: { getCwd: () => string };
 			fdPath: null;
-			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 		};
+
 		const createBaseAutocompleteProvider = (
 			InteractiveMode as unknown as {
 				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
 			}
 		).prototype.createBaseAutocompleteProvider;
-		const makeSkill = (name: string, frontmatter?: Record<string, unknown>) => ({
-			name,
-			description: `${name} description`,
-			filePath: `/tmp/skills/${name}.md`,
-			baseDir: "/tmp/skills",
-			disableModelInvocation: false,
-			sourceInfo: {
-				path: `/tmp/skills/${name}.md`,
-				source: "local",
-				scope: "project" as const,
-				origin: "top-level" as const,
-			},
-			...(frontmatter && { frontmatter }),
-		});
+		const sourceInfo: SourceInfo = {
+			path: "/tmp/x.md",
+			source: "local",
+			scope: "project",
+			origin: "top-level",
+		};
+		// The registry hands the provider bare winner names and a `command` source for native
+		// `commands/` entries; the provider must project them verbatim (no `skill:` requalifying,
+		// no separate built-in assembly) so the [command] badge is reachable and precedence
+		// stays consistent with dispatch.
 		const fakeThis: FakeInteractiveMode = {
 			session: {
+				getCommands: () => [
+					{ name: "model", source: "builtin", description: "Select model" },
+					{ name: "deploy", source: "extension", description: "Deploy", sourceInfo },
+					{ name: "note", source: "command", description: "Take a note", argumentHint: "<text>", sourceInfo },
+					{ name: "review", source: "skill", description: "Review code", sourceInfo },
+				],
 				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => [] },
-				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: {
-					getSkills: () => ({
-						skills: [
-							makeSkill("visible-skill", { "argument-hint": "[path]" }),
-							{ ...makeSkill("dmi-skill"), disableModelInvocation: true },
-							makeSkill("Upper.Name"),
-							makeSkill("hidden-skill", { "user-invocable": false }),
-							makeSkill("trailing."),
-							makeSkill("skill:reserved"),
-						],
-						diagnostics: [],
-					}),
-				},
 			},
-			settingsManager: { getEnableSkillCommands: () => true },
-			skillCommands: new Map(),
+			prefixAutocompleteDescription: (description) => description,
 			sessionManager: { getCwd: () => "/tmp" },
 			fdPath: null,
-			prefixAutocompleteDescription: (description) => description,
 		};
 
 		const provider = createBaseAutocompleteProvider.call(fakeThis);
-		const line = "/skill:";
-		const suggestions = await provider.getSuggestions([line], 0, line.length, {
-			signal: new AbortController().signal,
-		});
-		const items = suggestions?.items ?? [];
-		const values = items.map((item) => item.value);
-		expect(values).toContain("skill:visible-skill");
-		expect(values).toContain("skill:dmi-skill");
-		expect(values).toContain("skill:Upper.Name");
-		expect(values).not.toContain("skill:hidden-skill");
-		expect(values).not.toContain("skill:trailing.");
-		expect(values).not.toContain("skill:skill:reserved");
-		const visible = items.find((item) => item.value === "skill:visible-skill");
-		expect(visible?.description).toContain("[path]");
+
+		// Message-initial "/" offers every source, including the native `command` and a bare skill.
+		const initial = await provider.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+		const bySource = new Map((initial?.items ?? []).map((item) => [item.value, item.source]));
+		expect(bySource.get("model")).toBe("builtin");
+		expect(bySource.get("deploy")).toBe("extension");
+		expect(bySource.get("note")).toBe("command");
+		expect(bySource.get("review")).toBe("skill");
+		const note = initial?.items.find((item) => item.value === "note");
+		expect(note?.description).toContain("<text>");
+
+		// Mid-prompt only prompt-producing sources survive: builtin and extension controls drop.
+		const midLine = await provider.getSuggestions(["hey /"], 0, 5, { signal: new AbortController().signal });
+		const midValues = (midLine?.items ?? []).map((item) => item.value);
+		expect(midValues).toContain("note");
+		expect(midValues).toContain("review");
+		expect(midValues).not.toContain("model");
+		expect(midValues).not.toContain("deploy");
 	});
 });
 describe("InteractiveMode.showLoadedResources", () => {

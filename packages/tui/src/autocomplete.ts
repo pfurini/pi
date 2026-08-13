@@ -246,6 +246,11 @@ async function walkDirectoryWithFd(
 /** Where a slash-command candidate comes from; absent for file/symbol completions. */
 export type AutocompleteItemSource = "builtin" | "extension" | "command" | "prompt" | "skill";
 
+/** Mid-prompt completion offers only prompt-producing sources; builtin/extension are controls. */
+function isPromptProducingSource(source: AutocompleteItemSource | undefined): boolean {
+	return source === "command" || source === "prompt" || source === "skill";
+}
+
 export interface AutocompleteItem {
 	value: string;
 	label: string;
@@ -265,9 +270,18 @@ export interface SlashCommand {
 	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
 }
 
+/**
+ * Semantic class of a suggestion set. Lets the editor decide submit-on-Enter and
+ * slash-menu layout from the provider's intent rather than from the prefix spelling
+ * (a file/argument completion can legitimately carry a "/"-prefixed token).
+ */
+export type AutocompleteSuggestionKind = "command" | "argument" | "file" | "symbol";
+
 export interface AutocompleteSuggestions {
 	items: AutocompleteItem[];
 	prefix: string; // What we're matching against (e.g., "/" or "src/")
+	/** Absent for third-party providers that predate the discriminant. */
+	kind?: AutocompleteSuggestionKind;
 }
 
 export interface AutocompleteProvider {
@@ -333,6 +347,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			return {
 				items: suggestions,
 				prefix: atPrefix,
+				kind: "file",
 			};
 		}
 
@@ -350,6 +365,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					return {
 						items: filtered,
 						prefix: textBeforeCursor,
+						kind: "command",
 					};
 				}
 
@@ -372,6 +388,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				return {
 					items: argumentSuggestions,
 					prefix: argumentText,
+					kind: "argument",
 				};
 			}
 
@@ -385,6 +402,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					return {
 						items: filtered,
 						prefix: slashRun.text,
+						kind: "command",
 					};
 				}
 				if (!options.explicitTab) return null;
@@ -407,15 +425,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		return {
 			items: suggestions,
 			prefix: pathMatch,
+			kind: "file",
 		};
 	}
 
-	// Build command-name completion items matching the given name fragment. Control
-	// commands (source "builtin") are excluded unless includeControls is set, per A.1
-	// rule 7 (controls are only recognized message-initial).
+	// Build command-name completion items matching the given name fragment. Mid-prompt only
+	// prompt-producing sources are offered; control commands (builtin + extension, per the
+	// coding-agent registry) are recognized message-initial only (A.1 rule 7). The allowlist
+	// is fail-closed: an item with an absent or unknown source is excluded mid-prompt.
 	private getSlashCommandItems(namePrefix: string, options: { includeControls: boolean }): AutocompleteItem[] {
 		const commandItems = this.commands
-			.filter((cmd) => options.includeControls || cmd.source !== "builtin")
+			.filter((cmd) => options.includeControls || isPromptProducingSource(cmd.source))
 			.map((cmd) => {
 				const name = "name" in cmd ? cmd.name : cmd.value;
 				const hint = "argumentHint" in cmd && cmd.argumentHint ? cmd.argumentHint : undefined;

@@ -96,8 +96,6 @@ import type { SkillInvocationEntry } from "../../core/session-manager.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { sliceSkillInvocationSegments } from "../../core/skills/delivery.ts";
-import { normalizeSkillInput } from "../../core/skills/frontmatter.ts";
-import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -455,9 +453,6 @@ export class InteractiveMode {
 		theme,
 	});
 
-	// Skill commands: command name -> skill file path
-	private skillCommands = new Map<string, string>();
-
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
@@ -633,95 +628,66 @@ export class InteractiveMode {
 	}
 
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
-		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
-			name: command.name,
-			description: command.description,
-			source: "builtin" as const,
-			...(command.argumentHint && { argumentHint: command.argumentHint }),
-		}));
+		// Argument completers keyed by command name. The unified getCommands() listing carries
+		// no completers, so reattach the built-in and extension ones by resolved name.
+		const argumentCompleters = new Map<string, NonNullable<SlashCommand["getArgumentCompletions"]>>();
 
-		const modelCommand = slashCommands.find((command) => command.name === "model");
-		if (modelCommand) {
-			modelCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const models =
-					this.session.scopedModels.length > 0
-						? this.session.scopedModels.map((s) => s.model)
-						: this.session.modelRuntime.getAvailableSnapshot();
+		argumentCompleters.set("model", (prefix: string): AutocompleteItem[] | null => {
+			const models =
+				this.session.scopedModels.length > 0
+					? this.session.scopedModels.map((s) => s.model)
+					: this.session.modelRuntime.getAvailableSnapshot();
 
-				if (models.length === 0) return null;
+			if (models.length === 0) return null;
 
-				// Create items with provider/id format
-				const items = models.map((m) => ({
-					id: m.id,
-					provider: m.provider,
-					name: m.name,
-					label: `${m.provider}/${m.id}`,
-				}));
-
-				return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
-					value: item.label,
-					label: item.id,
-					description: item.provider,
-				}));
-			};
-		}
-
-		const loginCommand = slashCommands.find((command) => command.name === "login");
-		if (loginCommand) {
-			loginCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
-				return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
-					value: provider.id,
-					label: provider.id,
-					description: formatLoginProviderCompletionDescription(provider),
-				}));
-			};
-		}
-
-		// Convert prompt templates to SlashCommand format for autocomplete
-		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
-			name: cmd.name,
-			description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-			source: "prompt" as const,
-			...(cmd.argumentHint && { argumentHint: cmd.argumentHint }),
-		}));
-
-		// Convert extension commands to SlashCommand format
-		const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
-		const extensionCommands: SlashCommand[] = this.session.extensionRunner
-			.getRegisteredCommands()
-			.filter((cmd) => !builtinCommandNames.has(cmd.name))
-			.map((cmd) => ({
-				name: cmd.invocationName,
-				description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-				source: "extension" as const,
-				getArgumentCompletions: cmd.getArgumentCompletions,
+			// Create items with provider/id format
+			const items = models.map((m) => ({
+				id: m.id,
+				provider: m.provider,
+				name: m.name,
+				label: `${m.provider}/${m.id}`,
 			}));
 
-		// Build skill commands from session.skills (if enabled)
-		this.skillCommands.clear();
-		const skillCommandList: SlashCommand[] = [];
-		if (this.settingsManager.getEnableSkillCommands()) {
-			for (const skill of this.session.resourceLoader.getSkills().skills) {
-				const normalized = normalizeSkillInput(skill).skill;
-				if (!normalized.commandNameValid || !normalized.userInvocable) continue;
-				const commandName = `skill:${normalized.name}`;
-				this.skillCommands.set(commandName, normalized.filePath);
-				skillCommandList.push({
-					name: commandName,
-					description: this.prefixAutocompleteDescription(normalized.description, normalized.sourceInfo),
-					source: "skill" as const,
-					...(normalized.argumentHint && { argumentHint: normalized.argumentHint }),
-				});
-			}
+			return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
+				value: item.label,
+				label: item.id,
+				description: item.provider,
+			}));
+		});
+
+		argumentCompleters.set("login", (prefix: string): AutocompleteItem[] | null => {
+			const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
+			return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
+				value: provider.id,
+				label: provider.id,
+				description: formatLoginProviderCompletionDescription(provider),
+			}));
+		});
+
+		for (const command of this.session.extensionRunner.getRegisteredCommands()) {
+			if (!command.getArgumentCompletions) continue;
+			// Register under both the bare invocation name and the qualified fallback the
+			// registry assigns when an extension command collides with a built-in.
+			argumentCompleters.set(command.invocationName, command.getArgumentCompletions);
+			argumentCompleters.set(`ext:${command.name}`, command.getArgumentCompletions);
 		}
 
-		return new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
-			this.sessionManager.getCwd(),
-			this.fdPath,
-		);
+		// Project the sole complete A.1 listing (built-ins once, extension commands, native
+		// commands and grandfathered templates, invocable skills) with winner bare names,
+		// qualified fallbacks, and structural source values — the same namespace the tokenizer
+		// dispatches, so the mid-prompt menu and the source badges never diverge from execution.
+		const slashCommands: SlashCommand[] = this.session.getCommands().map((command) => {
+			const completer = argumentCompleters.get(command.name);
+			return {
+				name: command.name,
+				description: this.prefixAutocompleteDescription(command.description, command.sourceInfo),
+				source: command.source,
+				...(command.argumentHint && { argumentHint: command.argumentHint }),
+				...(completer && { getArgumentCompletions: completer }),
+			};
+		});
+
+		return new CombinedAutocompleteProvider(slashCommands, this.sessionManager.getCwd(), this.fdPath);
 	}
 
 	private setupAutocompleteProvider(): void {

@@ -6,6 +6,7 @@ export {
 	type AutocompleteItem,
 	type AutocompleteItemSource,
 	type AutocompleteProvider,
+	type AutocompleteSuggestionKind,
 	type AutocompleteSuggestions,
 	CombinedAutocompleteProvider,
 	type SlashCommand,

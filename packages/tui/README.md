@@ -375,7 +375,7 @@ editor.getPaddingX();  // Get current padding
 
 **Features:**
 - Multi-line editing with word wrap
-- Slash command autocomplete (type `/`)
+- Slash command autocomplete: type `/` at message start or after whitespace (including mid-prompt and on any line); the completion is applied at the cursor, and each candidate shows a source badge
 - File path autocomplete (press `Tab`)
 - Large paste handling (>10 lines creates `[paste #1 +50 lines]` marker)
 - Horizontal lines above/below editor
@@ -618,7 +618,8 @@ editor.setAutocompleteProvider(provider);
 ```
 
 **Features:**
-- Type `/` to see slash commands
+- Type `/` to see slash commands — at message start or after whitespace, including mid-prompt and on any line
+- Slash items may carry a `source` (`builtin`/`extension`/`command`/`prompt`/`skill`), rendered as a `[source]` badge; the provider tags each result with a `kind` (`command`/`argument`/`file`/`symbol`) so the editor knows when Enter submits versus inserts. Reuse `slashRunAtCursor()` for the same start-of-token detection rule
 - Press `Tab` for file path completion
 - Works with `~/`, `./`, `../`, and `@` prefix
 - Filters to attachable files for `@` prefix

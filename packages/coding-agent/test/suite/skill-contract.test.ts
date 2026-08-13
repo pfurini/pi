@@ -926,21 +926,9 @@ describe("command visibility", () => {
 		};
 	}
 
-	const VISIBLE_COMMANDS = ["skill:valid-skill", "skill:dmi-skill", "skill:Upper.Name"];
-	const GATED_COMMANDS = ["skill:hidden-skill", "skill:trailing.", "skill:skill:reserved"];
-
-	function expectVisibility(names: string[]): void {
-		for (const visible of VISIBLE_COMMANDS) {
-			expect(names).toContain(visible);
-		}
-		for (const gated of GATED_COMMANDS) {
-			expect(names).not.toContain(gated);
-		}
-	}
-
-	// A.1 / ADR-0005: the unified `getCommands()` listing exposes uncontested
-	// skills under their bare winner name, not the `skill:` qualifier. (The
-	// interactive autocomplete provider still emits `skill:` names until c2b.)
+	// A.1 / ADR-0005: every surface — extension enumerator, RPC, and interactive autocomplete —
+	// exposes uncontested skills under their bare winner name, not the `skill:` qualifier; the
+	// interactive provider now projects the unified `session.getCommands()` listing directly.
 	const VISIBLE_BARE_COMMANDS = ["valid-skill", "dmi-skill", "Upper.Name"];
 	const GATED_BARE_COMMANDS = ["hidden-skill", "trailing.", "skill:reserved"];
 
@@ -989,49 +977,42 @@ describe("command visibility", () => {
 	});
 
 	it("gates interactive autocomplete and surfaces argument hints", async () => {
-		type FakeInteractiveMode = {
-			session: {
-				scopedModels: [];
-				modelRuntime: { getAvailableSnapshot: () => [] };
-				promptTemplates: [];
-				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: ResourceLoader;
+		const harness = await createHarness({ resourceLoader: createVisibilityLoader(createVisibilitySkills()) });
+		try {
+			// Drive the real InteractiveMode provider builder against a real session so it
+			// projects the unified getCommands() listing (bare winners, gated skills dropped)
+			// rather than a hand-built stub.
+			type FakeInteractiveMode = {
+				session: Awaited<ReturnType<typeof createHarness>>["session"];
+				prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
+				sessionManager: { getCwd: () => string };
+				fdPath: null;
+				getLoginProviderOptions: () => [];
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
-			sessionManager: { getCwd: () => string };
-			fdPath: null;
-			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
-		};
-		const createBaseAutocompleteProvider = (
-			InteractiveMode as unknown as {
-				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
-			}
-		).prototype.createBaseAutocompleteProvider;
-		const fakeThis: FakeInteractiveMode = {
-			session: {
-				scopedModels: [],
-				modelRuntime: { getAvailableSnapshot: () => [] },
-				promptTemplates: [],
-				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: createVisibilityLoader(createVisibilitySkills()),
-			},
-			settingsManager: { getEnableSkillCommands: () => true },
-			skillCommands: new Map(),
-			sessionManager: { getCwd: () => tempDir },
-			fdPath: null,
-			prefixAutocompleteDescription: (description) => description,
-		};
+			const createBaseAutocompleteProvider = (
+				InteractiveMode as unknown as {
+					prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
+				}
+			).prototype.createBaseAutocompleteProvider;
+			const fakeThis: FakeInteractiveMode = {
+				session: harness.session,
+				prefixAutocompleteDescription: (description) => description,
+				sessionManager: { getCwd: () => tempDir },
+				fdPath: null,
+				getLoginProviderOptions: () => [],
+			};
 
-		const provider = createBaseAutocompleteProvider.call(fakeThis);
-		const line = "/skill:";
-		const suggestions = await provider.getSuggestions([line], 0, line.length, {
-			signal: new AbortController().signal,
-		});
-		const items = suggestions?.items ?? [];
-		expectVisibility(items.map((item) => item.value));
-		const visible = items.find((item) => item.value === "skill:valid-skill");
-		expect(visible?.description).toContain("[path]");
+			const provider = createBaseAutocompleteProvider.call(fakeThis);
+			const suggestions = await provider.getSuggestions(["/"], 0, 1, {
+				signal: new AbortController().signal,
+			});
+			const items = suggestions?.items ?? [];
+			expectBareVisibility(items.map((item) => item.value));
+			const visible = items.find((item) => item.value === "valid-skill");
+			expect(visible?.description).toContain("[path]");
+		} finally {
+			harness.cleanup();
+		}
 	});
 
 	it("keeps user-hidden skills model-listable and dmi skills command-visible only", () => {

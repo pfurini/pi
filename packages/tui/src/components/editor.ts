@@ -1,6 +1,7 @@
 import {
 	type AutocompleteItem,
 	type AutocompleteProvider,
+	type AutocompleteSuggestionKind,
 	type AutocompleteSuggestions,
 	slashRunAtCursor,
 } from "../autocomplete.ts";
@@ -313,6 +314,9 @@ export class Editor implements Component, Focusable {
 	private autocompleteList?: SelectList;
 	private autocompleteState: "regular" | "force" | null = null;
 	private autocompletePrefix: string = "";
+	// Semantic class of the open menu (from the provider). Drives submit-on-Enter and
+	// slash-menu layout. Undefined for third-party providers that omit the discriminant.
+	private autocompleteKind: AutocompleteSuggestionKind | undefined = undefined;
 	private autocompleteMaxVisible: number = 5;
 	private autocompleteAbort?: AbortController;
 	private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
@@ -769,7 +773,14 @@ export class Editor implements Component, Focusable {
 					this.state.cursorLine = result.cursorLine;
 					this.setCursorCol(result.cursorCol);
 
-					if (this.autocompletePrefix.startsWith("/")) {
+					// Only a completed slash command submits on Enter; file and argument
+					// completions (which can also carry a "/"-prefix) just insert. Fall back to
+					// the prefix spelling for providers that omit the kind discriminant.
+					const submitsOnConfirm =
+						this.autocompleteKind !== undefined
+							? this.autocompleteKind === "command"
+							: this.autocompletePrefix.startsWith("/");
+					if (submitsOnConfirm) {
 						this.cancelAutocomplete();
 						// Fall through to submit
 					} else {
@@ -2200,8 +2211,14 @@ export class Editor implements Component, Focusable {
 		return firstPrefixIndex;
 	}
 
-	private createAutocompleteList(prefix: string, items: AutocompleteItem[]): SelectList {
-		const isSlashMenu = prefix.startsWith("/");
+	private createAutocompleteList(
+		prefix: string,
+		items: AutocompleteItem[],
+		kind?: AutocompleteSuggestionKind,
+	): SelectList {
+		// The slash-command menu is chosen from the provider's kind; fall back to the prefix
+		// spelling only for providers that omit the discriminant.
+		const isSlashMenu = kind !== undefined ? kind === "command" : prefix.startsWith("/");
 		const layout = isSlashMenu ? SLASH_COMMAND_SELECT_LIST_LAYOUT : undefined;
 		// Slash candidates carry their provenance as a [source] badge in the description column.
 		const selectItems = isSlashMenu
@@ -2389,7 +2406,8 @@ export class Editor implements Component, Focusable {
 
 	private applyAutocompleteSuggestions(suggestions: AutocompleteSuggestions, state: "regular" | "force"): void {
 		this.autocompletePrefix = suggestions.prefix;
-		this.autocompleteList = this.createAutocompleteList(suggestions.prefix, suggestions.items);
+		this.autocompleteKind = suggestions.kind;
+		this.autocompleteList = this.createAutocompleteList(suggestions.prefix, suggestions.items, suggestions.kind);
 
 		const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
 		if (bestMatchIndex >= 0) {
@@ -2413,6 +2431,7 @@ export class Editor implements Component, Focusable {
 		this.autocompleteState = null;
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
+		this.autocompleteKind = undefined;
 	}
 
 	private cancelAutocomplete(): void {

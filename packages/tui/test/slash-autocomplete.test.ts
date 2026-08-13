@@ -114,8 +114,8 @@ describe("CombinedAutocompleteProvider slash runs", () => {
 
 		assert.notStrictEqual(result, null);
 		assert.strictEqual(result?.prefix, "/");
-		assert.deepStrictEqual(itemValues(result?.items ?? []), ["review", "fix", "release", "deploy"]);
-		assert.ok(result?.items.every((item) => item.source !== "builtin"));
+		assert.deepStrictEqual(itemValues(result?.items ?? []), ["review", "fix", "release"]);
+		assert.ok(result?.items.every((item) => item.source !== "builtin" && item.source !== "extension"));
 	});
 
 	it("offers a run on the second line without control commands", async () => {
@@ -392,6 +392,8 @@ describe("Editor mid-prompt slash menu", () => {
 		assert.ok(rendered.includes("[skill]"));
 		assert.ok(!rendered.includes("model"));
 		assert.ok(!rendered.includes("[builtin]"));
+		assert.ok(!rendered.includes("[extension]"));
+		assert.ok(!rendered.includes("deploy"));
 	});
 
 	it("renders a badge for every source and keeps rows aligned", async () => {
@@ -437,5 +439,28 @@ describe("Editor mid-prompt slash menu", () => {
 		assert.strictEqual(editor.isShowingAutocomplete(), true);
 		editor.handleInput("\t");
 		assert.strictEqual(editor.getText(), "/deploy ant");
+	});
+
+	it("does not submit when accepting a file completion on a slash-prefixed path", async () => {
+		const editor = new Editor(createTestTUI(), defaultEditorTheme);
+		editor.setAutocompleteProvider(new CombinedAutocompleteProvider(fixtureCommands, baseDir));
+
+		let submitted: string | undefined;
+		editor.onSubmit = (text) => {
+			submitted = text;
+		};
+
+		// A "/"-prefixed path token mid-line whose run matches no command falls back to
+		// file completion on explicit Tab. Accepting it with Enter must complete the path
+		// in place, not submit the message (regression: prefix.startsWith("/") mis-submitted).
+		editor.setText(`check ${baseDir}/b`);
+		editor.handleInput("\t");
+		await flushAutocomplete();
+		assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+		editor.handleInput("\r");
+		assert.strictEqual(submitted, undefined);
+		assert.strictEqual(editor.getText(), `check ${baseDir}/bin/`);
+		assert.strictEqual(editor.isShowingAutocomplete(), false);
 	});
 });

@@ -164,6 +164,9 @@ describe("C1 acceptance: ASE-style fixture on each supported transport", () => {
 		it(`renders args, the \${CLAUDE_SKILL_DIR} include, and effort frontmatter on the ${transport} transport`, async () => {
 			const { harness, tempDir } = await createSkillHarness({ fixtures: [ASE_FIXTURE] });
 			if (transport === "synthetic") flagModel(harness);
+			// A.8 clamps PI_EFFORT to the model's supported levels; use a
+			// reasoning-capable model so "high" is supported and flows through.
+			harness.session.agent.state.model = { ...harness.session.agent.state.model, reasoning: true };
 			harness.setResponses([fauxAssistantMessage("ok")]);
 
 			await harness.session.prompt(`/skill:ase ${RAW_ARGS}`);
@@ -173,7 +176,7 @@ describe("C1 acceptance: ASE-style fixture on each supported transport", () => {
 			expect(delivered).toContain(`args=[${RAW_ARGS}]`);
 			// ASE include convention: ${CLAUDE_SKILL_DIR} resolves to the skill base dir.
 			expect(delivered).toContain(`include=Read ${join(tempDir, "ase")}/references/x.md for details.`);
-			// Effort frontmatter is preserved into PI_EFFORT.
+			// Effort frontmatter flows into PI_EFFORT (A.8-clamped to a supported level).
 			expect(delivered).toContain("effort=high");
 
 			const entries = messageEntries(harness);

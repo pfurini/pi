@@ -115,7 +115,7 @@ export async function runAgentLoop(
 		await emit({ type: "message_end", message: prompt });
 	}
 
-	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
+	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn(), true);
 	return newMessages;
 }
 
@@ -140,7 +140,7 @@ export async function runAgentLoopContinue(
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
 
-	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
+	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn(), false);
 	return newMessages;
 }
 
@@ -161,10 +161,17 @@ async function runLoop(
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 	streamFunction: StreamFn,
+	// True when the request that will stream first was preceded by an injection
+	// (runAgentLoop's top-level transformInjectedMessages). False for a
+	// continuation/retry, which rebuilds config and reads the override directly.
+	initialInjected: boolean,
 ): Promise<void> {
 	let currentContext = initialContext;
 	let config = initialConfig;
 	let firstTurn = true;
+	// Fires refreshTurnAfterInjection before the next stream when set: seeded by
+	// the top-level injection and re-set after every inner-loop injection.
+	let injectionPending = initialInjected;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -192,6 +199,30 @@ async function runLoop(
 					newMessages.push(message);
 				}
 				pendingMessages = [];
+				injectionPending = true;
+			}
+
+			// A just-injected request may activate an override (e.g. a queued
+			// skill) only now, after the loop config was already built. Re-resolve
+			// model/reasoning/tools for the consuming request. Skipped for retries.
+			if (injectionPending) {
+				injectionPending = false;
+				const injectionSnapshot = await config.refreshTurnAfterInjection?.(signal);
+				if (injectionSnapshot) {
+					if (injectionSnapshot.context?.tools !== undefined) {
+						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
+					}
+					config = {
+						...config,
+						model: injectionSnapshot.model ?? config.model,
+						reasoning:
+							injectionSnapshot.thinkingLevel === undefined
+								? config.reasoning
+								: injectionSnapshot.thinkingLevel === "off"
+									? undefined
+									: injectionSnapshot.thinkingLevel,
+					};
+				}
 			}
 
 			// Stream assistant response
@@ -609,6 +640,21 @@ async function prepareToolCall(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
+	// Pre-lookup policy gate: runs before the registry lookup and before
+	// beforeToolCall, so a call to a tool already removed from the schema still
+	// returns a policy block that names the tool instead of a generic not-found.
+	if (config.isToolCallDisallowed) {
+		let disallowedReason: string | undefined;
+		try {
+			disallowedReason = config.isToolCallDisallowed(toolCall.name);
+		} catch {
+			// An advisory policy must never interrupt the loop; fall through.
+			disallowedReason = undefined;
+		}
+		if (disallowedReason) {
+			return { kind: "immediate", result: createErrorToolResult(disallowedReason), isError: true };
+		}
+	}
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
 		let errorText = `Tool ${toolCall.name} not found`;

@@ -1,15 +1,18 @@
 /**
- * Invocation-preparation coordinator (extracted from `AgentSession`). Owns the
- * tokenize → compose → render → activate → fallback flow for both the direct
- * send path and the queued consumption path, behind narrow injected ports so
- * it never references the session. Behavior is identical to the inlined
- * original: skill records activate only after the whole composition succeeds
- * (A.5), and any render failure falls back to the whole original literal
+ * Invocation coordinator (extracted from `AgentSession`). Owns the shared
+ * render+activate primitive for all three invocation sites — the direct/queued
+ * user-message composition (tokenize → compose → render → activate → fallback),
+ * the sole-skill delivery, and the genuine `skill` tool — behind narrow injected
+ * ports so it never references the session. Behavior is identical to the inlined
+ * original: composed skill records activate only after the whole composition
+ * succeeds (A.5), and any render failure falls back to the whole original literal
  * message (never silently dropped).
  *
  * The message-initial single-skill path is returned as a discriminated
  * `sole-skill` result; the caller (AgentSession) chooses the A.4 transport
- * (message block vs synthetic pair) and owns its fallback.
+ * (message block vs synthetic pair) and owns its fallback. The lower
+ * `prepare`/`activate` primitive is consumed directly by the sole-skill delivery
+ * and the `skill` tool, which render a body rather than a delivery message.
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -34,8 +37,8 @@ export interface QueuedInvocationSnapshot {
 	images?: ImageContent[];
 }
 
-/** Narrow ports the preparer needs; AgentSession binds closures over its runtime/renderers. */
-export interface CommandMessagePreparerDeps {
+/** Narrow ports the coordinator needs; AgentSession binds closures over its runtime/renderers. */
+export interface InvocationCoordinatorDeps {
 	createSkillInvocation(skill: LoadedSkill, rawArgs: string): SkillInvocation;
 	renderSkill(skill: LoadedSkill, invocation: SkillInvocation, signal?: AbortSignal): Promise<RenderedSkillInvocation>;
 	renderCommand(command: LoadedCommand, rawArgs: string, signal?: AbortSignal): Promise<RenderedCommand>;
@@ -63,11 +66,47 @@ export interface ComposedPreparation {
 
 export type PreparedInvocationMessage = SoleSkillPreparation | ComposedPreparation;
 
-export class CommandMessagePreparer {
-	private readonly deps: CommandMessagePreparerDeps;
+/** Result of the shared render primitive: an inert record plus its rendered body. */
+export interface PreparedSkillInvocation {
+	record: SkillInvocation;
+	rendered: RenderedSkillInvocation;
+	diagnostics: readonly ResourceDiagnostic[];
+}
 
-	constructor(deps: CommandMessagePreparerDeps) {
+export class InvocationCoordinator {
+	private readonly deps: InvocationCoordinatorDeps;
+
+	constructor(deps: InvocationCoordinatorDeps) {
 		this.deps = deps;
+	}
+
+	/**
+	 * Shared render primitive: create the inert record and render it once. Does
+	 * NOT emit diagnostics or activate — the caller chooses when to do both, so
+	 * each site keeps its own activation timing (compose-then-activate-all for the
+	 * user message; activate-after-transport for delivery; activate-after-render
+	 * for the `skill` tool).
+	 */
+	async prepare(skill: LoadedSkill, rawArgs: string, signal?: AbortSignal): Promise<PreparedSkillInvocation> {
+		const record = this.deps.createSkillInvocation(skill, rawArgs);
+		const rendered = await this.deps.renderSkill(skill, record, signal);
+		return { record, rendered, diagnostics: rendered.diagnostics };
+	}
+
+	/** Activate a prepared record for the rest of the logical turn; returns diagnostics. */
+	activate(record: SkillInvocation): readonly ResourceDiagnostic[] {
+		return this.deps.activateSkill(record);
+	}
+
+	/**
+	 * The genuine `skill` tool path: render, activate (emitting activation
+	 * diagnostics), and return the rendered body. Render diagnostics stay on the
+	 * returned value for the tool to surface, matching the other sites.
+	 */
+	async prepareSkillTool(skill: LoadedSkill, rawArgs: string, signal?: AbortSignal): Promise<RenderedSkillInvocation> {
+		const { record, rendered } = await this.prepare(skill, rawArgs, signal);
+		this.deps.emitDiagnostics(this.activate(record));
+		return rendered;
 	}
 
 	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
@@ -169,20 +208,19 @@ export class CommandMessagePreparer {
 			}
 			if (span.invocation.source === "skill") {
 				const skill = span.invocation.skill;
-				const invocation = this.deps.createSkillInvocation(skill, span.rawArgs);
-				let rendered: RenderedSkillInvocation;
+				let prepared: PreparedSkillInvocation;
 				try {
-					rendered = await this.deps.renderSkill(skill, invocation, signal);
-					this.deps.emitDiagnostics(rendered.diagnostics);
+					prepared = await this.prepare(skill, span.rawArgs, signal);
+					this.deps.emitDiagnostics(prepared.rendered.diagnostics);
 				} catch (err) {
 					this.deps.emitRenderError(skill.filePath, "skill_expansion", err);
 					return undefined;
 				}
-				const block = buildSkillMessageBlock(rendered.invocation, rendered.body);
+				const block = buildSkillMessageBlock(prepared.rendered.invocation, prepared.rendered.body);
 				const blockStart = text.length;
 				text += block.text;
 				invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
-				activations.push(invocation);
+				activations.push(prepared.record);
 			} else if (span.invocation.source === "command" || span.invocation.source === "prompt") {
 				const command = span.invocation.command;
 				let rendered: RenderedCommand;
@@ -196,8 +234,8 @@ export class CommandMessagePreparer {
 				text += rendered.text;
 			}
 		}
-		for (const invocation of activations) {
-			this.deps.emitDiagnostics(this.deps.activateSkill(invocation));
+		for (const record of activations) {
+			this.deps.emitDiagnostics(this.activate(record));
 		}
 		const message = this.deps.literalMessage(text, images);
 		if (invocations.length > 0) {

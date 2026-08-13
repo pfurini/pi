@@ -239,7 +239,42 @@ const agent = new Agent({
     medium: 1024,
     high: 2048,
   },
+
+  // Transform application-supplied messages (initial prompt batch + each drained
+  // steering/follow-up batch) right before they are emitted and appended. May
+  // rewrite/expand/split messages. Runs after the queue is drained, so it can
+  // never lose a message silently — catch your own errors and return a fallback.
+  //
+  // Composition: this is a plain field, so a later assignment overwrites it. When
+  // both an option and an external assignment are needed (e.g. the coding-agent's
+  // AgentSession sets `agent.transformInjectedMessages` after construction), the
+  // assigner must capture the previous transform and chain them. AgentSession
+  // composes queued skill delivery FIRST, then feeds the result to the captured
+  // option/instance transform.
+  transformInjectedMessages: async (messages, signal) => messages,
+
+  // Re-resolve model/reasoning/tools right before a provider request whose
+  // triggering messages were just injected/transformed (the first turn after the
+  // top-level transform + every inner-loop injection; NOT retries). Return an
+  // AgentLoopTurnUpdate (merged like prepareNextTurn: model/reasoning, and
+  // context.tools) or undefined to keep the current values. Use it when an
+  // override only becomes active during injection (e.g. a queued skill).
+  refreshTurnAfterInjection: async (signal) => undefined,
+
+  // Pre-lookup tool-call policy, checked before the registry lookup and before
+  // beforeToolCall. Return a block reason to reject the call with an immediate
+  // error result, or undefined to allow it. Because it runs before the lookup, a
+  // policy block that names the tool stays reachable even after the tool's schema
+  // has been removed from the context.
+  isToolCallDisallowed: (name) => undefined,
 });
+
+// Ephemeral per-turn override (not an AgentOptions field; a public instance
+// field). Non-persistent: read by the loop-config builder (model/reasoning) and
+// the context snapshot (tools) for the next run, never written into `state`. The
+// owner sets it before a run and clears it at the turn boundary, so the session
+// defaults are untouched afterward.
+agent.pendingTurnOverride = { model, thinkingLevel: "high", tools };
 ```
 
 ## Agent State

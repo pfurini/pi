@@ -8,16 +8,20 @@
  * `_runAgentPrompt()` `finally` / `agent_settled` boundary, not the per-run
  * `agent_end` or the low-level `turn_end` event.
  *
- * C1b deliberately does not apply `model`/`effort` overrides or
- * `disallowed-tools` filtering to provider requests (that is C3); the runtime
- * preserves those fields, stacks records, and exposes them read-only.
+ * C3 applies these preserved fields: c3a governs the turn's provider requests
+ * with `model`/`effort` and enforces `disallowed-tools`; c3b consumes the
+ * `context`/`agent`/`background` fork fields (inert here). The runtime still
+ * only preserves and stacks the records and exposes them read-only; AgentSession
+ * owns the application.
  */
 
 import { randomUUID } from "node:crypto";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { LoadedSkill, SkillToolList } from "./frontmatter.ts";
 import { buildSkillEnvironment, type SkillInteropContext } from "./interop.ts";
+import { resolveModelOverride } from "./skill-overrides.ts";
 
 /** A.9 rewrite-map seam (Workstream 2 fork emits; core keeps the last received). */
 export const SKILL_AGENTS_REWRITE_MAPS_CHANNEL = "skill-agents:rewrite-maps";
@@ -61,6 +65,10 @@ export interface SkillInvocation {
 	readonly effort?: string | number;
 	readonly disallowedTools?: SkillToolList;
 	readonly shell?: string;
+	/** Fork execution fields (A.5). Preserved in c3a, consumed by the c3b fork client. */
+	readonly context?: "inline" | "fork";
+	readonly agent?: string;
+	readonly background?: boolean;
 }
 
 /**
@@ -78,6 +86,9 @@ export interface SkillInvocationMetadata {
 	readonly effort?: string | number;
 	readonly disallowedTools?: SkillToolList;
 	readonly shell?: string;
+	readonly context?: "inline" | "fork";
+	readonly agent?: string;
+	readonly background?: boolean;
 }
 
 export function toInvocationMetadata(invocation: SkillInvocation): SkillInvocationMetadata {
@@ -92,6 +103,9 @@ export function toInvocationMetadata(invocation: SkillInvocation): SkillInvocati
 		...(invocation.effort !== undefined && { effort: invocation.effort }),
 		...(invocation.disallowedTools !== undefined && { disallowedTools: invocation.disallowedTools }),
 		...(invocation.shell !== undefined && { shell: invocation.shell }),
+		...(invocation.context !== undefined && { context: invocation.context }),
+		...(invocation.agent !== undefined && { agent: invocation.agent }),
+		...(invocation.background !== undefined && { background: invocation.background }),
 	};
 }
 
@@ -104,6 +118,10 @@ export interface SkillRuntimeContext {
 	readonly getThinkingLevel: () => string;
 	/** `skillInterop` setting (read at use time so reload swaps take effect). */
 	readonly getSkillInterop: () => boolean;
+	/** Current session model (read at use time) — the A.8 effort clamp target when no override resolves. */
+	readonly getModel?: () => Model<Api> | undefined;
+	/** Available models the A.8 effort clamp resolves a skill `model` override against. */
+	readonly getAvailableModels?: () => readonly Model<Api>[];
 	/** Shared event bus for the A.9 rewrite-map seam; absence = empty map. */
 	readonly eventBus?: EventBus;
 }
@@ -152,6 +170,9 @@ export class SkillRuntime {
 			}),
 			...(disallowedTools !== undefined && { disallowedTools }),
 			...(typeof frontmatter.shell === "string" && { shell: frontmatter.shell }),
+			...(typeof frontmatter.context === "string" && { context: frontmatter.context }),
+			...(typeof frontmatter.agent === "string" && { agent: frontmatter.agent }),
+			...(typeof frontmatter.background === "boolean" && { background: frontmatter.background }),
 		};
 	}
 
@@ -167,7 +188,13 @@ export class SkillRuntime {
 		const previous = this.getActiveInvocation();
 		if (previous && previous.invocationId !== invocation.invocationId) {
 			for (const field of ["model", "effort"] as const) {
-				if (previous[field] !== undefined && invocation[field] === undefined) {
+				// A.5: the newer invocation's override wins, so a defined previous
+				// override is discarded both when the newer record omits the field
+				// and when it defines a conflicting value.
+				if (
+					previous[field] !== undefined &&
+					(invocation[field] === undefined || previous[field] !== invocation[field])
+				) {
 					diagnostics.push({
 						type: "warning",
 						message:
@@ -221,17 +248,33 @@ export class SkillRuntime {
 		if (!active) {
 			return undefined;
 		}
-		return buildSkillEnvironment(active, this.interopContext());
+		return buildSkillEnvironment(active, this.interopContext(active));
 	}
 
-	/** Interop context for a specific invocation's own rendering (shell injection). */
-	interopContext(): SkillInteropContext {
-		return {
+	/**
+	 * Interop context for rendering / env composition. When an invocation is
+	 * given and the session model is known, the context carries the effective
+	 * (possibly overridden) model so PI_EFFORT is clamped to it (A.8).
+	 */
+	interopContext(invocation?: SkillInvocation): SkillInteropContext {
+		const base: SkillInteropContext = {
 			cwd: this.context.cwd,
 			sessionId: this.context.sessionId,
 			thinkingLevel: this.context.getThinkingLevel(),
 			skillInterop: this.context.getSkillInterop(),
 		};
+		const current = this.context.getModel?.();
+		if (!current) {
+			return base;
+		}
+		if (!invocation) {
+			return { ...base, model: current };
+		}
+		const { model } = resolveModelOverride(invocation.model ?? "", {
+			available: this.context.getAvailableModels?.() ?? [],
+			current,
+		});
+		return { ...base, model: model ?? current };
 	}
 
 	/** Stop bus subscriptions; the runtime must not receive maps after disposal. */

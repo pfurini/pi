@@ -321,6 +321,40 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * interrupt the low-level loop.
 	 */
 	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
+
+	/**
+	 * Called before a provider request whose triggering messages were just
+	 * injected/transformed: the first turn after the top-level
+	 * {@link transformInjectedMessages} and after every inner-loop injection,
+	 * but NOT on a retry/continuation (which rebuilds the loop config from
+	 * scratch). Returns replacement context/model/thinking state merged exactly
+	 * like {@link prepareNextTurn}, or undefined to keep the current values.
+	 *
+	 * Exists so an override that only becomes active while injected messages are
+	 * being consumed (e.g. a queued skill invocation activated inside
+	 * `transformInjectedMessages`) can still govern the consuming request.
+	 *
+	 * Contract: must not throw or reject. Return undefined on failure.
+	 */
+	refreshTurnAfterInjection?: (
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+
+	/**
+	 * Called at the very top of tool-call preparation, before the registry
+	 * lookup and before {@link beforeToolCall}. Returns a block reason to reject
+	 * the call with an immediate error result, or undefined to allow it.
+	 *
+	 * Distinct from schema removal: a disallowed tool may already be absent from
+	 * `context.tools`, in which case the plain not-found path would hide the
+	 * policy. This seam guarantees a policy block that names the tool remains
+	 * reachable after the schema has been removed.
+	 *
+	 * Contract: synchronous and advisory. A throw is swallowed and the call
+	 * proceeds to the normal lookup, so a faulty policy can never interrupt the
+	 * low-level loop.
+	 */
+	isToolCallDisallowed?: (name: string) => string | undefined;
 }
 
 /**

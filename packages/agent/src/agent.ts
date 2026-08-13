@@ -26,6 +26,7 @@ import type {
 	ResolveToolRedirectContext,
 	ShouldStopAfterTurnContext,
 	StreamFn,
+	ThinkingLevel,
 	ToolExecutionMode,
 } from "./types.ts";
 
@@ -122,6 +123,11 @@ export interface AgentOptions {
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
 	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
+	transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	refreshTurnAfterInjection?: (
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	isToolCallDisallowed?: (name: string) => string | undefined;
 }
 
 class PendingMessageQueue {
@@ -226,6 +232,32 @@ export class Agent {
 	 * emitted and appended to the transcript. See AgentLoopConfig.
 	 */
 	public transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	/**
+	 * Optional post-injection turn refresh. Called before a provider request
+	 * whose triggering messages were just injected/transformed, so an override
+	 * that only activates during injection (e.g. a queued skill) can still
+	 * govern the consuming request. See AgentLoopConfig.
+	 */
+	public refreshTurnAfterInjection?: (
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	/**
+	 * Optional pre-lookup tool-call policy. Returns a block reason to reject a
+	 * call before the registry lookup, so a policy block naming the tool stays
+	 * reachable after its schema has been removed. See AgentLoopConfig.
+	 */
+	public isToolCallDisallowed?: (name: string) => string | undefined;
+	/**
+	 * Ephemeral per-turn override for the next provider request(s). Non-persistent:
+	 * read by `createLoopConfig` (model/reasoning) and `createContextSnapshot`
+	 * (tools), never written back into `state`. The owner sets it before a run and
+	 * clears it at the turn boundary.
+	 */
+	public pendingTurnOverride?: {
+		model?: AgentState["model"];
+		thinkingLevel?: ThinkingLevel;
+		tools?: AgentState["tools"];
+	};
 
 	constructor(options: AgentOptions) {
 		// Older compiled consumers may omit options or streamFn even though the current API requires them.
@@ -250,6 +282,9 @@ export class Agent {
 		this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
 		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
 		this.resolveToolRedirect = runtimeOptions.resolveToolRedirect;
+		this.transformInjectedMessages = runtimeOptions.transformInjectedMessages;
+		this.refreshTurnAfterInjection = runtimeOptions.refreshTurnAfterInjection;
+		this.isToolCallDisallowed = runtimeOptions.isToolCallDisallowed;
 	}
 
 	/**
@@ -453,16 +488,20 @@ export class Agent {
 		return {
 			systemPrompt: this._state.systemPrompt,
 			messages: this._state.messages.slice(),
-			tools: this._state.tools.slice(),
+			tools: (this.pendingTurnOverride?.tools ?? this._state.tools).slice(),
 		};
 	}
 
 	private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
 		let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
 		const shouldStopAfterTurn = this.shouldStopAfterTurn;
+		// Ephemeral per-turn override wins over persistent state for this request;
+		// retries/continuations rebuild config here and read it too.
+		const effectiveModel = this.pendingTurnOverride?.model ?? this._state.model;
+		const effectiveThinkingLevel = this.pendingTurnOverride?.thinkingLevel ?? this._state.thinkingLevel;
 		return {
-			model: this._state.model,
-			reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
+			model: effectiveModel,
+			reasoning: effectiveThinkingLevel === "off" ? undefined : effectiveThinkingLevel,
 			sessionId: this.sessionId,
 			onPayload: this.onPayload,
 			onResponse: this.onResponse,
@@ -497,6 +536,8 @@ export class Agent {
 			getFollowUpMessages: async () => this.followUpQueue.drain(),
 			transformInjectedMessages: this.transformInjectedMessages,
 			resolveToolRedirect: this.resolveToolRedirect,
+			refreshTurnAfterInjection: this.refreshTurnAfterInjection,
+			isToolCallDisallowed: this.isToolCallDisallowed,
 		};
 	}
 

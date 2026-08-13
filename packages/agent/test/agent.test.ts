@@ -808,3 +808,172 @@ describe("Agent", () => {
 		expect(receivedSessionId).toBe("session-def");
 	});
 });
+
+describe("Agent C3a seams", () => {
+	function toolNamed(name: string): AgentTool<typeof emptySchema> {
+		return {
+			name,
+			label: name,
+			description: `${name} tool`,
+			parameters: emptySchema,
+			execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+		};
+	}
+	const emptySchema = Type.Object({});
+
+	function stopAfterMessage(text: string): StreamFn {
+		return () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push({ type: "done", reason: "stop", message: createAssistantMessage(text) });
+			});
+			return stream;
+		};
+	}
+
+	it("applies transformInjectedMessages from AgentOptions and composes when chained", async () => {
+		const order: string[] = [];
+		const base: NonNullable<ConstructorParameters<typeof Agent>[0]["transformInjectedMessages"]> = async (
+			messages,
+		) => {
+			order.push("option");
+			return messages.map((message) =>
+				message.role === "user" ? { ...message, content: [{ type: "text" as const, text: "delivered" }] } : message,
+			);
+		};
+		const agent = new Agent({ streamFn: stopAfterMessage("ok"), transformInjectedMessages: base });
+		// Compose over the option the way AgentSession does at construction time.
+		const previous = agent.transformInjectedMessages;
+		agent.transformInjectedMessages = async (messages, signal) => {
+			order.push("delivery-first");
+			const delivered = await Promise.resolve(
+				messages.map((message) =>
+					message.role === "user" ? { ...message, content: [{ type: "text" as const, text: "queued" }] } : message,
+				),
+			);
+			return previous ? previous(delivered, signal) : delivered;
+		};
+
+		await agent.prompt("hello");
+
+		// Delivery runs first, then the captured option transform sees its output.
+		expect(order).toEqual(["delivery-first", "option"]);
+		const userMessage = agent.state.messages.find((message) => message.role === "user");
+		expect(userMessage && "content" in userMessage && userMessage.content).toEqual([
+			{ type: "text", text: "delivered" },
+		]);
+	});
+
+	it("applies pendingTurnOverride to the first request without persisting it to state", async () => {
+		const overrideModel = getModel("openai", "gpt-4o-mini");
+		const keptTool = toolNamed("kept");
+		const requests: Array<{ modelId: string; reasoning: unknown; toolNames: string[] }> = [];
+		const agent = new Agent({
+			initialState: { tools: [keptTool, toolNamed("dropped")], thinkingLevel: "off" },
+			streamFn: (model, context, options) => {
+				requests.push({
+					modelId: model.id,
+					reasoning: options?.reasoning,
+					toolNames: (context.tools ?? []).map((tool) => tool.name),
+				});
+				return stopAfterMessage("ok")(model, context, options);
+			},
+		});
+		const sessionModelId = agent.state.model.id;
+		agent.pendingTurnOverride = { model: overrideModel, thinkingLevel: "high", tools: [keptTool] };
+
+		await agent.prompt("first");
+
+		expect(requests).toHaveLength(1);
+		expect(requests[0].modelId).toBe(overrideModel.id);
+		expect(requests[0].reasoning).toBe("high");
+		expect(requests[0].toolNames).toEqual(["kept"]);
+		// Non-persistent: state is untouched by the override.
+		expect(agent.state.model.id).toBe(sessionModelId);
+		expect(agent.state.thinkingLevel).toBe("off");
+		expect(agent.state.tools.map((tool) => tool.name)).toEqual(["kept", "dropped"]);
+
+		// The owner clears the ephemeral field at the turn boundary; the next run uses defaults.
+		agent.pendingTurnOverride = undefined;
+		await agent.prompt("second");
+		expect(requests[1].modelId).toBe(sessionModelId);
+		expect(requests[1].reasoning).toBeUndefined();
+	});
+
+	it("fires refreshTurnAfterInjection for the injected request but not the tool continuation", async () => {
+		const overrideModel = getModel("openai", "gpt-4o-mini");
+		let refreshCalls = 0;
+		const requests: string[] = [];
+		let requestCount = 0;
+		const agent = new Agent({
+			initialState: { tools: [toolNamed("noop")], thinkingLevel: "off" },
+			refreshTurnAfterInjection: () => {
+				refreshCalls++;
+				return { model: overrideModel, thinkingLevel: "high" };
+			},
+			streamFn: (model, _context, _options) => {
+				requests.push(model.id);
+				requestCount++;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (requestCount === 1) {
+						stream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantToolUseMessage([
+								{ type: "toolCall", id: "tc-1", name: "noop", arguments: {} },
+							]),
+						});
+						return;
+					}
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("start");
+
+		// Fired once — for the injected first request only, not the tool-result
+		// continuation (which rebuilds via prepareNextTurn in production, point c).
+		expect(refreshCalls).toBe(1);
+		expect(requests).toHaveLength(2);
+		expect(requests[0]).toBe(overrideModel.id);
+	});
+
+	it("blocks a disallowed tool call by name even when the tool is absent from the schema", async () => {
+		let requestCount = 0;
+		const agent = new Agent({
+			// No tools registered: without the seam this would be a generic "not found".
+			isToolCallDisallowed: (name) => (name === "bash" ? `Tool "${name}" is blocked by policy` : undefined),
+			streamFn: (_model, _context, _options) => {
+				requestCount++;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (requestCount === 1) {
+						stream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantToolUseMessage([
+								{ type: "toolCall", id: "tc-1", name: "bash", arguments: {} },
+							]),
+						});
+						return;
+					}
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("run bash");
+
+		const toolResult = agent.state.messages.find((message) => message.role === "toolResult");
+		expect(toolResult).toBeDefined();
+		if (!toolResult || toolResult.role !== "toolResult") throw new Error("expected tool result");
+		expect(toolResult.isError).toBe(true);
+		const text = toolResult.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+		expect(text).toBe('Tool "bash" is blocked by policy');
+		expect(text).not.toContain("not found");
+	});
+});

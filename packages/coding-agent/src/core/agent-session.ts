@@ -18,6 +18,7 @@ import { basename, dirname } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
+	AgentLoopTurnUpdate,
 	AgentMessage,
 	AgentState,
 	AgentTool,
@@ -53,8 +54,12 @@ import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
+import {
+	InvocationCoordinator,
+	type PreparedSkillInvocation,
+	type QueuedInvocationSnapshot,
+} from "./commands/invocation-coordinator.ts";
 import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
-import { CommandMessagePreparer, type QueuedInvocationSnapshot } from "./commands/message-preparer.ts";
 import { buildCommandRegistry, type CommandRegistry, type ExtensionCommandInfo } from "./commands/registry.ts";
 import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
 import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
@@ -130,8 +135,9 @@ import {
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
+import { computeDisallowedUnion, resolveActiveOverride } from "./skills/skill-overrides.ts";
 import { createSkillToolDefinition } from "./skills/skill-tool.ts";
-import { resolveToolRedirect } from "./skills/tool-redirects.ts";
+import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -454,7 +460,7 @@ export class AgentSession {
 	/** B.12/pairId entry metadata (+ synthetic event payload) per delivered message, by identity. */
 	private readonly _messageDeliveryMeta = new WeakMap<AgentMessage, DeliveryMeta>();
 	/** Tokenize → compose → render → activate → fallback coordinator (no session reference). */
-	private readonly _messagePreparer = new CommandMessagePreparer({
+	private readonly _invocationCoordinator = new InvocationCoordinator({
 		createSkillInvocation: (skill, rawArgs) => this._skillRuntime.createInvocation(skill, rawArgs),
 		renderSkill: (skill, invocation, signal) => this._renderSkill(skill, invocation, signal),
 		renderCommand: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
@@ -485,6 +491,15 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	/**
+	 * C3a per-request `disallowed-tools` union snapshot (redirect-canonicalized,
+	 * lowercased). Rebuilt where each request's tools are built so a skill
+	 * activated mid-batch only restricts the NEXT request; backs both schema
+	 * removal and the `isToolCallDisallowed` pre-lookup block. Reset at turn end.
+	 */
+	private _currentRequestDisallowedUnion: Set<string> = new Set();
+	/** Invocations whose model/effort/disallowed diagnostics were already surfaced this turn. */
+	private _overrideDiagnosedInvocations: Set<string> = new Set();
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -514,7 +529,17 @@ export class AgentSession {
 		// C1c consumption seam: queued application-defined messages carrying a
 		// skill invocation are converted to their A.4 delivery form (message
 		// block or synthetic pair) just before the loop emits and inserts them.
-		this.agent.transformInjectedMessages = (messages, signal) => this._deliverQueuedSkillMessages(messages, signal);
+		// Compose over any option/instance-provided transform instead of clobbering
+		// it: queued skill delivery runs first, then its output feeds the captured
+		// transform. The constructor assignment (Agent) runs before this, so
+		// composition must happen here, not in the Agent constructor.
+		const previousTransformInjectedMessages = this.agent.transformInjectedMessages;
+		this.agent.transformInjectedMessages = async (messages, signal) => {
+			const delivered = await this._deliverQueuedSkillMessages(messages, signal);
+			return previousTransformInjectedMessages
+				? await previousTransformInjectedMessages(delivered, signal)
+				: delivered;
+		};
 		// ADR-0006 unknown-tool redirect (C1d): corrective text only, never
 		// execution. The agent loop supplies the live active registry on every
 		// miss, so reload/tool deactivation is respected without caching here.
@@ -525,6 +550,13 @@ export class AgentSession {
 				redirects: this.settingsManager.getToolRedirects(),
 				disabled: this.settingsManager.getDisableToolRedirects(),
 			});
+		// C3a application point (b): a queued invocation activates inside the
+		// transform above, after the loop config was built, so re-resolve
+		// model/effort/tools for the consuming request.
+		this.agent.refreshTurnAfterInjection = () => this._resolveInjectedTurnOverride();
+		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call
+		// to a disallowed tool returns a policy block naming the tool.
+		this.agent.isToolCallDisallowed = (name) => this._resolveDisallowedToolBlock(name);
 		// Skill runtime (C1b): records activate on consumption and expire at the
 		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
 		// composer reaches EVERY active bash execution (built-in or extension/SDK
@@ -537,6 +569,8 @@ export class AgentSession {
 			sessionId: this.sessionManager.getSessionId(),
 			getThinkingLevel: () => this.agent.state.thinkingLevel,
 			getSkillInterop: () => this.settingsManager.getSkillInterop(),
+			getModel: () => this.model,
+			getAvailableModels: () => this._modelRuntime.getAvailableSnapshot(),
 			eventBus: this._resourceLoader.getEventBus?.(),
 		});
 		this._unregisterSkillSpawnComposer = registerBashSpawnContextComposer((context, ctx) => {
@@ -707,15 +741,21 @@ export class AgentSession {
 			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
 			const previousContext = previousSnapshot?.context ?? turn.context;
 
+			// C3a application point (c): compose the recomputed override AFTER this
+			// wrapper (which otherwise overwrites snapshots with persistent state,
+			// B.4). Tools already have the disallowed union removed; model/effort
+			// override the persistent state only while an invocation is active.
+			const active = this._skillRuntime.getActiveInvocation();
+			const override = this._computeTurnRequestOverride();
 			return {
 				...previousSnapshot,
 				context: {
 					...previousContext,
 					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
-					tools: this.agent.state.tools.slice(),
+					tools: override.tools,
 				},
-				model: this.agent.state.model,
-				thinkingLevel: this.agent.state.thinkingLevel,
+				model: active && override.model ? override.model : this.agent.state.model,
+				thinkingLevel: active && override.thinkingLevel ? override.thinkingLevel : this.agent.state.thinkingLevel,
 			};
 		};
 	}
@@ -1415,12 +1455,20 @@ export class AgentSession {
 		return this.runInDefaultStreamScope(async () => {
 			this._isAgentRunActive = true;
 			try {
+				// C3a application point (a): resolve the ephemeral override for the
+				// first request from the now-active invocation (direct/mid-prompt
+				// both activate before this). Retries/continuations rebuild config
+				// and read it too; it is cleared once in the finally below.
+				this._applyFirstRequestOverride();
 				await this.agent.prompt(messages);
 				while (await this._handlePostAgentRun()) {
 					await this.agent.continue();
 				}
 			} finally {
 				this._systemPromptOverride = undefined;
+				this.agent.pendingTurnOverride = undefined;
+				this._currentRequestDisallowedUnion = new Set();
+				this._overrideDiagnosedInvocations = new Set();
 				// Logical-turn boundary (agent_settled): turn-scoped skill env and
 				// overrides expire here, after the full retry+continuation loop,
 				// never on the per-run agent_end or the turn_end event.
@@ -1604,17 +1652,16 @@ export class AgentSession {
 			// A message-initial single skill keeps the C1 synthetic-pair / message-block
 			// delivery; everything else composes one user message (commands splice text,
 			// mid-prompt skills splice `<skill>` blocks with B.12 offsets).
-			const prepared = await this._messagePreparer.prepareDirect({
+			const prepared = await this._invocationCoordinator.prepareDirect({
 				tokenized,
 				text: currentText,
 				images: currentImages,
 				signal: this._sessionAbortController?.signal,
 			});
 			if (prepared.kind === "sole-skill") {
-				const invocation = this._skillRuntime.createInvocation(prepared.skill, prepared.rawArgs);
 				const delivery = await this._buildSkillDelivery(
 					prepared.skill,
-					invocation,
+					prepared.rawArgs,
 					currentImages,
 					this._sessionAbortController?.signal,
 				);
@@ -1669,6 +1716,14 @@ export class AgentSession {
 			}
 		} catch (error) {
 			preflightResult?.(false);
+			// Pre-run rollback (fork #5): a throw after a skill activated (e.g. in
+			// before_agent_start) must not leak the active invocation or its
+			// override/restriction into the next prompt, since _runAgentPrompt's
+			// finally never ran.
+			this._skillRuntime.expireTurn();
+			this.agent.pendingTurnOverride = undefined;
+			this._currentRequestDisallowedUnion = new Set();
+			this._overrideDiagnosedInvocations = new Set();
 			throw error;
 		}
 
@@ -1743,7 +1798,7 @@ export class AgentSession {
 		signal?: AbortSignal,
 	): Promise<RenderedSkillInvocation> {
 		const context: RenderSkillContext = {
-			...this._skillRuntime.interopContext(),
+			...this._skillRuntime.interopContext(invocation),
 			activeToolNames: this.getActiveToolNames(),
 			shellSettings: {
 				disabled: this.settingsManager.getDisableSkillShellExecution(),
@@ -1822,7 +1877,7 @@ export class AgentSession {
 
 	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
 	private _spansPlainText(spans: MessageSpan[]): string {
-		return this._messagePreparer.plainText(spans);
+		return this._invocationCoordinator.plainText(spans);
 	}
 
 	/** Build a plain literal user message (whole-message fallback). */
@@ -1851,12 +1906,7 @@ export class AgentSession {
 	private _createSkillTool(): ToolDefinition {
 		return createSkillToolDefinition({
 			getSkills: () => this._getModelVisibleSkills(),
-			render: async (skill, rawArgs, signal) => {
-				const invocation = this._skillRuntime.createInvocation(skill, rawArgs);
-				const rendered = await this._renderSkill(skill, invocation, signal);
-				this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
-				return rendered;
-			},
+			render: (skill, rawArgs, signal) => this._invocationCoordinator.prepareSkillTool(skill, rawArgs, signal),
 			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
 		}) as ToolDefinition;
 	}
@@ -1872,6 +1922,126 @@ export class AgentSession {
 		}
 	}
 
+	/** Merged redirect map (ADR-0006): user settings over the built-in defaults. */
+	private _mergedToolRedirects(): Record<string, string> {
+		return { ...DEFAULT_TOOL_REDIRECTS, ...this.settingsManager.getToolRedirects() };
+	}
+
+	/**
+	 * Recompute the per-request override for the currently-active invocations:
+	 * the newest invocation's model/effort (A.5) plus the stacked disallowed-tools
+	 * union. Refreshes the per-request union snapshot, returns the tool set with
+	 * the union removed, and surfaces each newly-active invocation's resolution
+	 * diagnostics exactly once.
+	 */
+	private _computeTurnRequestOverride(): {
+		model?: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+		tools: AgentTool<any>[];
+	} {
+		this._emitPendingOverrideDiagnostics();
+		const redirects = this._mergedToolRedirects();
+		const { union } = computeDisallowedUnion(this._skillRuntime.getActiveInvocations(), redirects);
+		this._currentRequestDisallowedUnion = union;
+		const baseTools = this.agent.state.tools.slice();
+		const tools =
+			union.size > 0
+				? baseTools.filter((tool) => !union.has(canonicalizeToolName(tool.name, redirects).toLowerCase()))
+				: baseTools;
+		const active = this._skillRuntime.getActiveInvocation();
+		const currentModel = this.model;
+		if (!active || !currentModel) {
+			return { tools };
+		}
+		const resolved = resolveActiveOverride(active, {
+			available: this._modelRuntime.getAvailableSnapshot(),
+			current: currentModel,
+		});
+		return {
+			...(resolved.model ? { model: resolved.model } : {}),
+			...(resolved.thinkingLevel ? { thinkingLevel: resolved.thinkingLevel } : {}),
+			tools,
+		};
+	}
+
+	/** Emit each newly-active invocation's override/disallowed resolution diagnostics once per turn. */
+	private _emitPendingOverrideDiagnostics(): void {
+		const currentModel = this.model;
+		const redirects = this._mergedToolRedirects();
+		for (const record of this._skillRuntime.getActiveInvocations()) {
+			if (this._overrideDiagnosedInvocations.has(record.invocationId)) {
+				continue;
+			}
+			this._overrideDiagnosedInvocations.add(record.invocationId);
+			const diagnostics: ResourceDiagnostic[] = [];
+			if (currentModel) {
+				diagnostics.push(
+					...resolveActiveOverride(record, {
+						available: this._modelRuntime.getAvailableSnapshot(),
+						current: currentModel,
+					}).diagnostics,
+				);
+			}
+			diagnostics.push(...computeDisallowedUnion([record], redirects).diagnostics);
+			if (diagnostics.length > 0) {
+				this._emitSkillDiagnostics(diagnostics);
+			}
+		}
+	}
+
+	/**
+	 * C3a application point (a): set the ephemeral per-turn override before the
+	 * first request streams. Left undefined when no invocation is active or it
+	 * declares nothing, so the session defaults are used.
+	 */
+	private _applyFirstRequestOverride(): void {
+		const active = this._skillRuntime.getActiveInvocation();
+		const { model, thinkingLevel, tools } = this._computeTurnRequestOverride();
+		if (active && (model || thinkingLevel || this._currentRequestDisallowedUnion.size > 0)) {
+			this.agent.pendingTurnOverride = {
+				...(model ? { model } : {}),
+				...(thinkingLevel ? { thinkingLevel } : {}),
+				tools,
+			};
+		} else {
+			this.agent.pendingTurnOverride = undefined;
+		}
+	}
+
+	/**
+	 * C3a application point (b): re-resolve the override for a request whose
+	 * triggering messages were just injected (a queued invocation activates only
+	 * then). Returns undefined when no invocation is active.
+	 */
+	private _resolveInjectedTurnOverride(): AgentLoopTurnUpdate | undefined {
+		const active = this._skillRuntime.getActiveInvocation();
+		const { model, thinkingLevel, tools } = this._computeTurnRequestOverride();
+		if (!active) {
+			return undefined;
+		}
+		return {
+			...(model ? { model } : {}),
+			...(thinkingLevel ? { thinkingLevel } : {}),
+			context: {
+				systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
+				messages: this.agent.state.messages.slice(),
+				tools,
+			},
+		};
+	}
+
+	/** C3a A.2 pre-lookup block: the reason a tool call is blocked by the active disallowed union, else undefined. */
+	private _resolveDisallowedToolBlock(name: string): string | undefined {
+		if (this._currentRequestDisallowedUnion.size === 0) {
+			return undefined;
+		}
+		const canonical = canonicalizeToolName(name, this._mergedToolRedirects()).toLowerCase();
+		if (!this._currentRequestDisallowedUnion.has(canonical)) {
+			return undefined;
+		}
+		return `Tool "${name}" is blocked by an active skill's disallowed-tools policy and cannot be called during this turn.`;
+	}
+
 	/**
 	 * Render + activate one invocation and build its A.4 delivery. Returns
 	 * undefined after emitting a diagnostic when rendering fails; callers fall
@@ -1879,14 +2049,14 @@ export class AgentSession {
 	 */
 	private async _buildSkillDelivery(
 		skill: LoadedSkill,
-		invocation: SkillInvocation,
+		rawArgs: string,
 		images: ImageContent[] | undefined,
 		signal?: AbortSignal,
 	): Promise<SkillDelivery | undefined> {
-		let rendered: RenderedSkillInvocation;
+		let prepared: PreparedSkillInvocation;
 		try {
-			rendered = await this._renderSkill(skill, invocation, signal);
-			this._emitSkillDiagnostics(rendered.diagnostics);
+			prepared = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
+			this._emitSkillDiagnostics(prepared.rendered.diagnostics);
 		} catch (err) {
 			this._extensionRunner.emitError({
 				extensionPath: skill.filePath,
@@ -1898,12 +2068,12 @@ export class AgentSession {
 		const transport = selectSkillTransport(this.model, {
 			forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
 		});
-		const delivery = buildSkillDelivery(rendered, transport, { model: this.model, images });
+		const delivery = buildSkillDelivery(prepared.rendered, transport, { model: this.model, images });
 		// Activate only after delivery is fully constructed. Render (not active
 		// state) drives the pipeline, so deferring activation to the last
 		// fallible step means a delivery-construction failure leaves no stale
 		// active invocation behind (A.5 activation-on-consumption).
-		this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
+		this._emitSkillDiagnostics(this._invocationCoordinator.activate(prepared.record));
 		for (const [message, metadata] of delivery.metadata) {
 			this._messageDeliveryMeta.set(message, metadata);
 		}
@@ -2000,11 +2170,10 @@ export class AgentSession {
 			}
 			this._queuedSkillInvocations.delete(message);
 			try {
-				const prepared = await this._messagePreparer.prepareQueued(queued, signal);
+				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
 				if (prepared.kind === "sole-skill") {
 					// Message-initial single skill: preserve C1 synthetic-pair delivery.
-					const invocation = this._skillRuntime.createInvocation(prepared.skill, prepared.rawArgs);
-					const delivery = await this._buildSkillDelivery(prepared.skill, invocation, queued.images, signal);
+					const delivery = await this._buildSkillDelivery(prepared.skill, prepared.rawArgs, queued.images, signal);
 					delivered.push(
 						...(delivery?.messages ?? [this._literalUserMessage(queued.originalText, queued.images)]),
 					);

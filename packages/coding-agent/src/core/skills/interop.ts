@@ -11,6 +11,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { type Api, clampThinkingLevel, type Model, type ThinkingLevel } from "@earendil-works/pi-ai/compat";
 import { buildSpawnShellEnv } from "../../utils/shell.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { SkillInvocation } from "./runtime.ts";
@@ -31,6 +32,12 @@ export interface SkillInteropContext {
 	sessionId: string;
 	/** Session thinking level, used when the invocation carries no effort. */
 	thinkingLevel: string;
+	/**
+	 * Effective (possibly overridden) model for the invocation being rendered.
+	 * When present, PI_EFFORT/CLAUDE_EFFORT are clamped to this model's supported
+	 * levels so the env/substitution value equals the provider override (A.8).
+	 */
+	model?: Model<Api>;
 	/** `skillInterop` setting: when false, CLAUDE_* aliases are dropped. */
 	skillInterop: boolean;
 	/** Optional sink for substitution diagnostics (A.2 effort clamp-map note). */
@@ -67,11 +74,25 @@ export function resolveProjectRoot(cwd: string): string {
 	return result;
 }
 
+/** A.2 integer-budget clamp-map: ≤2k→low, ≤8k→medium, ≤24k→high, >24k→xhigh. */
+export function effortBudgetToLevel(budget: number): "low" | "medium" | "high" | "xhigh" {
+	if (budget <= 2048) {
+		return "low";
+	}
+	if (budget <= 8192) {
+		return "medium";
+	}
+	if (budget <= 24576) {
+		return "high";
+	}
+	return "xhigh";
+}
+
 /**
  * Effective effort for an invocation: the invocation's own `effort` when
- * present (integer budgets clamp-map per A.2: ≤2k→low, ≤8k→medium,
- * ≤24k→high, >24k→xhigh, with a diagnostic noting the mapping), otherwise
- * the session thinking level.
+ * present (integer budgets clamp-map per A.2, with a diagnostic noting the
+ * mapping), otherwise the session thinking level. Pre-model-clamp; callers that
+ * know the effective model clamp the result (A.8, in buildSkillVariableValues).
  */
 export function resolveEffectiveEffort(
 	invocationEffort: string | number | undefined,
@@ -79,14 +100,7 @@ export function resolveEffectiveEffort(
 	diagnostics?: ResourceDiagnostic[],
 ): string {
 	if (typeof invocationEffort === "number") {
-		let mapped = "xhigh";
-		if (invocationEffort <= 2048) {
-			mapped = "low";
-		} else if (invocationEffort <= 8192) {
-			mapped = "medium";
-		} else if (invocationEffort <= 24576) {
-			mapped = "high";
-		}
+		const mapped = effortBudgetToLevel(invocationEffort);
 		diagnostics?.push({
 			type: "warning",
 			message: `effort budget ${invocationEffort} clamp-maps to "${mapped}" (A.2)`,
@@ -104,11 +118,14 @@ export function buildSkillVariableValues(
 	invocation: SkillInvocation,
 	context: SkillInteropContext,
 ): Record<string, string> {
+	const effort = resolveEffectiveEffort(invocation.effort, context.thinkingLevel, context.diagnostics);
+	// A.8: clamp to the effective model so PI_EFFORT matches the provider override.
+	const clampedEffort = context.model ? clampThinkingLevel(context.model, effort as ThinkingLevel) : effort;
 	const values: Record<string, string> = {
 		PI_SKILL_DIR: invocation.baseDir,
 		PI_PROJECT_DIR: resolveProjectRoot(context.cwd),
 		PI_SESSION_ID: context.sessionId,
-		PI_EFFORT: resolveEffectiveEffort(invocation.effort, context.thinkingLevel, context.diagnostics),
+		PI_EFFORT: clampedEffort,
 	};
 	if (context.skillInterop) {
 		for (const { pi, claude } of SKILL_VARIABLES) {

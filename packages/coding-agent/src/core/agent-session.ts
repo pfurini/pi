@@ -124,6 +124,7 @@ import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
 import { createSkillToolDefinition } from "./skills/skill-tool.ts";
+import { resolveToolRedirect } from "./skills/tool-redirects.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -495,6 +496,16 @@ export class AgentSession {
 		// skill invocation are converted to their A.4 delivery form (message
 		// block or synthetic pair) just before the loop emits and inserts them.
 		this.agent.transformInjectedMessages = (messages, signal) => this._deliverQueuedSkillMessages(messages, signal);
+		// ADR-0006 unknown-tool redirect (C1d): corrective text only, never
+		// execution. The agent loop supplies the live active registry on every
+		// miss, so reload/tool deactivation is respected without caching here.
+		this.agent.resolveToolRedirect = ({ attemptedName, registeredToolNames }) =>
+			resolveToolRedirect({
+				attemptedName,
+				registeredToolNames,
+				redirects: this.settingsManager.getToolRedirects(),
+				disabled: this.settingsManager.getDisableToolRedirects(),
+			});
 		// Skill runtime (C1b): records activate on consumption and expire at the
 		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
 		// composer reaches EVERY active bash execution (built-in or extension/SDK

@@ -23,6 +23,7 @@ import type {
 	BeforeToolCallResult,
 	PrepareNextTurnContext,
 	QueueMode,
+	ResolveToolRedirectContext,
 	ShouldStopAfterTurnContext,
 	StreamFn,
 	ToolExecutionMode,
@@ -120,6 +121,7 @@ export interface AgentOptions {
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
+	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
 }
 
 class PendingMessageQueue {
@@ -213,6 +215,12 @@ export class Agent {
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
 	/**
+	 * Optional corrective-text resolver consulted only when a tool call names an
+	 * unregistered tool. Advisory and synchronous; a throw falls back to the
+	 * default not-found error. See AgentLoopConfig.
+	 */
+	public resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
+	/**
 	 * Optional transform applied to application-supplied messages (initial
 	 * prompt batch and drained queue batches) immediately before they are
 	 * emitted and appended to the transcript. See AgentLoopConfig.
@@ -241,6 +249,7 @@ export class Agent {
 		this.transport = runtimeOptions.transport ?? "auto";
 		this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
 		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
+		this.resolveToolRedirect = runtimeOptions.resolveToolRedirect;
 	}
 
 	/**
@@ -487,6 +496,7 @@ export class Agent {
 			},
 			getFollowUpMessages: async () => this.followUpQueue.drain(),
 			transformInjectedMessages: this.transformInjectedMessages,
+			resolveToolRedirect: this.resolveToolRedirect,
 		};
 	}
 

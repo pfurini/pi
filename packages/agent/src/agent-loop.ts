@@ -611,9 +611,23 @@ async function prepareToolCall(
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
+		let errorText = `Tool ${toolCall.name} not found`;
+		if (config.resolveToolRedirect) {
+			try {
+				// Advisory correction only: returned text replaces the error message;
+				// the loop still returns an immediate error and never executes a target.
+				errorText =
+					config.resolveToolRedirect({
+						attemptedName: toolCall.name,
+						registeredToolNames: (currentContext.tools ?? []).map((t) => t.name),
+					}) ?? errorText;
+			} catch {
+				// A throwing resolver falls back to the default not-found error.
+			}
+		}
 		return {
 			kind: "immediate",
-			result: createErrorToolResult(`Tool ${toolCall.name} not found`),
+			result: createErrorToolResult(errorText),
 			isError: true,
 		};
 	}

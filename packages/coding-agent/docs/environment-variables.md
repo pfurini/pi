@@ -67,6 +67,21 @@ const bashTool = createBashTool(cwd, {
 
 When disabled, Pi removes inherited values for these variables so nested Pi processes do not expose stale parent-session metadata.
 
+## Skill Execution Environment
+
+While a skill invocation is active, bash tool executions receive an additional turn-scoped overlay of the skill's variables (see [skills.md](skills.md#skill-variables)):
+
+| Variable | Claude Code alias | Value |
+|----------|-------------------|-------|
+| `PI_SKILL_DIR` | `CLAUDE_SKILL_DIR` | The skill's base directory |
+| `PI_PROJECT_DIR` | `CLAUDE_PROJECT_DIR` | Project root (nearest `.git` ancestor), else `cwd` |
+| `PI_SESSION_ID` | `CLAUDE_SESSION_ID` | Current session ID (same value as the session variable above) |
+| `PI_EFFORT` | `CLAUDE_EFFORT` | The invocation's `effort` frontmatter, else the session thinking level |
+
+Scope and lifetime: the overlay activates when the message carrying the invocation is consumed (a direct `/skill:name` prompt, a queued steer/follow-up at consumption, or a genuine `skill` tool call) and expires when the logical turn settles. It applies to every bash execution in that window, including extension/SDK replacement bash tools, because injection happens in the shared bash spawn path. The overlay is copied per execution; `process.env` and the user's shell environment are never mutated. The `CLAUDE_*` aliases are included only while `skillInterop` is on.
+
+Set `disableSkillEnvInjection: true` to bypass this overlay entirely. The switch gates only the bash spawn seam: `` !` `` shell injection inside a rendering skill (see [skills.md](skills.md#shell-command-injection)) always carries the rendering skill's own variables regardless of this setting.
+
 ## Pi Process Configuration
 
 These variables are read by Pi itself:

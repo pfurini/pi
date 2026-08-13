@@ -5,6 +5,7 @@
 ### Added
 
 - Added the optional `transformInjectedMessages` hook (`Agent` property and `AgentLoopConfig` callback): application-supplied messages — the initial prompt batch and each drained steering/follow-up batch — may be rewritten, expanded, or split immediately before they are emitted and appended to the transcript.
+- Added the optional `resolveToolRedirect` callback (`Agent` option/property and `AgentLoopConfig` field): when a tool call names an unregistered tool, the synchronous resolver receives the attempted name and the currently registered tool names and may return corrective text for the immediate error result. Returning `undefined` — or throwing — keeps the default `Tool <name> not found` error; the loop never executes another tool or invokes tool hooks for an unknown call.
 
 ### Fixed
 

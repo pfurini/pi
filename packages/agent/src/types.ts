@@ -122,6 +122,14 @@ export interface AfterToolCallContext {
 	context: AgentContext;
 }
 
+/** Context passed to `resolveToolRedirect` when a tool call names an unregistered tool. */
+export interface ResolveToolRedirectContext {
+	/** The tool name the model attempted to call. */
+	attemptedName: string;
+	/** Names of tools registered in the current context. */
+	registeredToolNames: string[];
+}
+
 /** Context passed to `shouldStopAfterTurn`. */
 export interface ShouldStopAfterTurnContext {
 	/** The assistant message that completed the turn. */
@@ -300,6 +308,19 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * The hook receives the agent abort signal and is responsible for honoring it.
 	 */
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+
+	/**
+	 * Called only when a tool call names a tool that is not registered in the current context.
+	 *
+	 * Return corrective text to replace the default `Tool <name> not found` error result,
+	 * or undefined to keep the default. The returned text is the entire error message —
+	 * the loop never executes another tool or invokes tool hooks for an unknown call.
+	 *
+	 * Contract: synchronous and advisory. A throw is swallowed and the default
+	 * not-found error is returned instead, so a faulty resolver can never
+	 * interrupt the low-level loop.
+	 */
+	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
 }
 
 /**

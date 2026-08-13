@@ -1,7 +1,7 @@
 # Skill Support: Pi vs Claude Code — Gap Analysis and Feature-Parity Roadmap
 
 **Version 5** (2026-08-02). Scope: **the skill system only**, framed to drive a multi-phase implementation plan. v5 changes the skill-bundled agents plan: the fragile materialize-into-discovery-dirs approach is dropped in favor of **forking pi-subagents and folding native support into it as a follow-up feature** — with v1 of the extension shipping the seams the fork will consume (§7.2, roadmap items 10–11, OQ-4). v4 added §7 (**implementation vehicle: extension-first feasibility**). Out of scope per direction: CC's plugin system, the general hook system, statusline, bundled skills, marketplaces (§3.8).
-
+> **Status (2026-08-13, Phase C1 shipped):** this report is a pre-C1 snapshot. Since it was written, Pi shipped the C1 skill system: the full frontmatter contract is parsed and preserved (roadmap Phase 0), every invocation path renders through the A.3 pipeline (argument grammar, `${PI_*}`/`${CLAUDE_*}` variables, `@path` absolutization, tool-policy-gated `` !` `` shell injection), a dedicated `skill` tool gives reliable model invocation, and delivery uses the A.4 message-block/synthetic-pair transports with structured entry metadata. The "no dedicated `Skill` tool" and "the model must `read` the file" gap claims below are therefore retired, and the §2 `_expandSkillCommand`/`input`-hook description is historical. What remains open matches the later phases: turn-scoped `disallowed-tools`/`allowed-tools` enforcement, per-skill `model`/`effort` request overrides, `context: fork`/`agent`/`background`, `paths` activation, and hooks. Current behavior is documented in `packages/coding-agent/docs/skills.md`.
 **Sources:**
 
 - Pi: this repository (`packages/coding-agent/src/core/skills.ts`, `agent-session.ts`, `resource-loader.ts`, `settings-manager.ts`, `core/extensions/types.ts`, `packages/agent/src/harness/{skills,system-prompt,types}.ts`, `docs/skills.md`, CHANGELOG), plus the installed `@tintinweb/pi-subagents` extension source
@@ -17,7 +17,7 @@ Both harnesses implement the Agent Skills standard (SKILL.md + YAML frontmatter 
 
 Claude Code treats a skill as a **first-class executable capability**: a dedicated `Skill` tool with structured arguments, per-turn tool grants, model/effort overrides, forked-subagent execution, dynamic shell injection, a 7-stage content-substitution pipeline, and full lifecycle management (live reload, listing budgets, compaction carry-forward, visibility states).
 
-Pi treats a skill as **prompt expansion**: the model is told to `read` the SKILL.md file itself; `/skill:name` expands inline into the outgoing message. Pi's frontmatter parser reads exactly **three fields** (`name`, `description`, `disable-model-invocation`). `allowed-tools` is documented in `docs/skills.md` as experimental but is **not implemented anywhere in the code**.
+Pi treats a skill as **prompt expansion**: the model is told to `read` the SKILL.md file itself; `/skill:name` expands inline into the outgoing message. Pi's frontmatter parser reads exactly **three fields** (`name`, `description`, `disable-model-invocation`). `allowed-tools` is documented in `docs/skills.md` as experimental but is **not implemented anywhere in the code**. *(Pre-C1; see the status note at the top — the `skill` tool, full frontmatter parsing, and the render pipeline shipped in C1.)*
 
 The ASE case study quantifies the consequence: dropped into `~/.pi/agent/skills/` as-is, **all 47 ASE skills are inert in Pi** — every one depends on `${CLAUDE_SKILL_DIR}` substitution, `$ARGUMENTS`, and CC's include-file convention.
 
@@ -25,7 +25,7 @@ The ASE case study quantifies the consequence: dropped into `~/.pi/agent/skills/
 
 ---
 
-## 2. What Pi has today (verified in source)
+## 2. What Pi had pre-C1 (verified in source; historical — see the status note at the top)
 
 ### Discovery & locations
 
@@ -312,10 +312,11 @@ Design questions for the follow-up fork (§7.2): (a) **discovery scope** — ski
 - **`@file` in skills:** the first version of this report implied CC inlines `@path` at render time. It does not (§3.7.3) — the gap for pi is real but shaped as *convention + auto-approval*, or solvable by load-time inlining.
 - **Upstream status (2026-08-02):** pi upstream has 151 commits since the local merge-base, zero touching skills machinery (verified by path + message scan). Claude Code `2.1.220` remains the latest release — the analyzed binary is current.
 - **Docs caveat:** several behaviors described here are binary-only (pipeline ordering, `` !` `` permission-gating via the skill's own `allowed-tools`, `user_config` masking, hook wire details); the rest is documented but scattered across at least six doc pages.
+- **C1 shipped (2026-08-13):** the "no dedicated `Skill` tool" and model-read-delivery gaps are retired (the `skill` tool plus the A.4 message-block/synthetic-pair delivery landed), and the `_expandSkillCommand` expansion described in §2 no longer exists. "Pi (pre-C1)" columns and §2/§7.1 statements to that effect are historical; the pre-C1 `input`-hook-fires-before-expansion observation is likewise superseded by the C1 consumption seam. Open items are the C2+ semantics listed in the status note at the top.
 
 ## 10. Appendix A — frontmatter field support
 
-| Field | Spec | Claude Code | Pi (today) | Pi (Phase 0 target) |
+| Field | Spec | Claude Code | Pi (pre-C1) | Pi (Phase 0 target) |
 | --- | --- | --- | --- | --- |
 | `name` | required, == dir | optional display label; command = dir | optional; command name; needn't match dir | unchanged (deliberate) |
 | `description` | required ≤1024 | optional (first-paragraph fallback); ≤1536 w/ `when_to_use` | required; ≤1024 warn | unchanged (deliberate) |

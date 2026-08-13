@@ -383,7 +383,7 @@ describe("injectShellCommands", () => {
 
 	it("enforces the aggregate injection budget with an explicit marker", async () => {
 		const blockCount = MAX_SHELL_INJECTIONS_PER_RENDER + 2;
-		const body = Array.from({ length: blockCount }, (_, i) => `!` + `\`cmd${i}\``).join("\n");
+		const body = Array.from({ length: blockCount }, (_, i) => `!\`cmd${i}\``).join("\n");
 		const { operations, calls } = fakeOperations([{ output: "x" }]);
 		const result = await injectShellCommands(body, injectionOptions({ operations }));
 		expect(calls).toHaveLength(MAX_SHELL_INJECTIONS_PER_RENDER);

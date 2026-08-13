@@ -938,6 +938,21 @@ describe("command visibility", () => {
 		}
 	}
 
+	// A.1 / ADR-0005: the unified `getCommands()` listing exposes uncontested
+	// skills under their bare winner name, not the `skill:` qualifier. (The
+	// interactive autocomplete provider still emits `skill:` names until c2b.)
+	const VISIBLE_BARE_COMMANDS = ["valid-skill", "dmi-skill", "Upper.Name"];
+	const GATED_BARE_COMMANDS = ["hidden-skill", "trailing.", "skill:reserved"];
+
+	function expectBareVisibility(names: string[]): void {
+		for (const visible of VISIBLE_BARE_COMMANDS) {
+			expect(names).toContain(visible);
+		}
+		for (const gated of GATED_BARE_COMMANDS) {
+			expect(names).not.toContain(gated);
+		}
+	}
+
 	it("gates the extension getCommands enumerator", async () => {
 		let api: ExtensionAPI | undefined;
 		const extensionsResult = await createTestExtensionsResult(
@@ -955,7 +970,7 @@ describe("command visibility", () => {
 		try {
 			expect(api).toBeDefined();
 			const names = (api as ExtensionAPI).getCommands().map((command) => command.name);
-			expectVisibility(names);
+			expectBareVisibility(names);
 		} finally {
 			harness.cleanup();
 		}
@@ -967,7 +982,7 @@ describe("command visibility", () => {
 			const names = buildRpcSlashCommands(harness.session)
 				.filter((command) => command.source === "skill")
 				.map((command) => command.name);
-			expectVisibility(names);
+			expectBareVisibility(names);
 		} finally {
 			harness.cleanup();
 		}

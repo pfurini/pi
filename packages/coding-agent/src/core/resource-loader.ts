@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { adaptPromptTemplates, type LoadedCommand, loadCommandsFromDir } from "./commands/loader.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -41,6 +42,8 @@ export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: SkillInput[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
+	/** A.7 command snapshot (native commands + adapted templates). Optional so lightweight test doubles can omit it. */
+	getCommands?(): { commands: LoadedCommand[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
@@ -238,6 +241,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private skillDiagnostics: ResourceDiagnostic[];
 	private prompts: PromptTemplate[];
 	private promptDiagnostics: ResourceDiagnostic[];
+	private commands: LoadedCommand[];
+	private commandDiagnostics: ResourceDiagnostic[];
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
 	private agentsFiles: Array<{ path: string; content: string }>;
@@ -290,6 +295,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillDiagnostics = [];
 		this.prompts = [];
 		this.promptDiagnostics = [];
+		this.commands = [];
+		this.commandDiagnostics = [];
 		this.themes = [];
 		this.themeDiagnostics = [];
 		this.agentsFiles = [];
@@ -319,6 +326,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
 		return { prompts: this.prompts, diagnostics: this.promptDiagnostics };
+	}
+
+	getCommands(): { commands: LoadedCommand[]; diagnostics: ResourceDiagnostic[] } {
+		return { commands: this.commands, diagnostics: this.commandDiagnostics };
 	}
 
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
@@ -374,6 +385,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 				promptPaths.map((entry) => entry.path),
 			);
 			this.updatePromptsFromPaths(this.lastPromptPaths, this.resourceMetadataByPath);
+			// Keep the grandfathered-command snapshot in sync with extension-added prompts.
+			this.updateCommands(this.resourceMetadataByPath);
 		}
 
 		if (themePaths.length > 0) {
@@ -506,6 +519,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 				}
 			}
 		}
+
+		// Commands depend on the resolved prompt set and project trust, both settled above.
+		this.updateCommands(metadataByPath);
 
 		const themePaths = this.noThemes
 			? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
@@ -734,6 +750,37 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.promptDiagnostics = resolvedPrompts.diagnostics;
 	}
 
+	/**
+	 * Rebuild the atomic command snapshot (A.7): user commands (always),
+	 * project commands (only while the project is trusted), and the final
+	 * resolved prompt templates adapted as grandfathered command sources. Called
+	 * after prompts are resolved so a trust change or `/reload` refreshes the
+	 * whole set at once; project commands disappear when trust is revoked.
+	 */
+	private updateCommands(metadataByPath?: Map<string, PathMetadata>): void {
+		const commands: LoadedCommand[] = [];
+		const diagnostics: ResourceDiagnostic[] = [];
+		const sourceFor = (filePath: string): SourceInfo =>
+			this.findSourceInfoForPath(filePath, undefined, metadataByPath) ?? this.getDefaultSourceInfoForPath(filePath);
+
+		const userResult = loadCommandsFromDir(join(this.agentDir, "commands"), sourceFor);
+		commands.push(...userResult.commands);
+		diagnostics.push(...userResult.diagnostics);
+
+		if (this.settingsManager.isProjectTrusted()) {
+			const projectResult = loadCommandsFromDir(join(this.cwd, CONFIG_DIR_NAME, "commands"), sourceFor);
+			commands.push(...projectResult.commands);
+			diagnostics.push(...projectResult.diagnostics);
+		}
+
+		const adapted = adaptPromptTemplates(this.prompts);
+		commands.push(...adapted.commands);
+		diagnostics.push(...adapted.diagnostics);
+
+		this.commands = commands;
+		this.commandDiagnostics = diagnostics;
+	}
+
 	private updateThemesFromPaths(themePaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
 		let themesResult: { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noThemes && themePaths.length === 0) {
@@ -830,12 +877,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const agentRoots = [
 			join(this.agentDir, "skills"),
 			join(this.agentDir, "prompts"),
+			join(this.agentDir, "commands"),
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
 		];
 		const projectRoots = [
 			join(this.cwd, CONFIG_DIR_NAME, "skills"),
 			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
+			join(this.cwd, CONFIG_DIR_NAME, "commands"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
 		];

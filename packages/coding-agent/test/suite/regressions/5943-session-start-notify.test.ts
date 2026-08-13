@@ -54,6 +54,7 @@ type LoadedResourcesContext = {
 	sessionManager: { getCwd: () => string };
 	session: {
 		promptTemplates: [];
+		getCommandCollisionDiagnostic: () => undefined;
 		resourceLoader: {
 			getAgentsFiles: () => LoadedResourcesResult<{ agentsFiles: Array<{ path: string }> }>;
 			getSystemPromptSource: () => { path: string } | undefined;
@@ -72,7 +73,6 @@ type LoadedResourcesContext = {
 	getStartupExpansionState: () => boolean;
 	formatDisplayPath: (resourcePath: string) => string;
 	formatContextPath: (resourcePath: string) => string;
-	getBuiltInCommandConflictDiagnostics: (extensionRunner: LoadedResourcesContext["session"]["extensionRunner"]) => [];
 };
 
 type RebindContext = {
@@ -234,6 +234,7 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		sessionManager: { getCwd: () => "/repo" },
 		session: {
 			promptTemplates: [],
+			getCommandCollisionDiagnostic: () => undefined,
 			resourceLoader: {
 				getAgentsFiles: () => ({ agentsFiles: [{ path: "/repo/AGENTS.md" }], diagnostics: [] }),
 				getSystemPromptSource: () => undefined,
@@ -252,7 +253,6 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		getStartupExpansionState: () => false,
 		formatDisplayPath: (resourcePath) => resourcePath,
 		formatContextPath: (resourcePath) => resourcePath.replace("/repo/", ""),
-		getBuiltInCommandConflictDiagnostics: () => [],
 	};
 }
 

@@ -53,6 +53,11 @@ import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
+import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
+import { buildCommandRegistry, type CommandRegistry, type ExtensionCommandInfo } from "./commands/registry.ts";
+import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
+import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
+import { type InvocationSpan, type MessageSpan, type TokenizeResult, tokenizeMessage } from "./commands/tokenizer.ts";
 import {
 	type CompactionResult,
 	calculateContextTokens,
@@ -100,7 +105,7 @@ import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
-import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
+import type { PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type {
 	BranchSummaryEntry,
@@ -114,6 +119,7 @@ import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader }
 import type { SettingsManager } from "./settings-manager.ts";
 import {
 	buildSkillDelivery,
+	buildSkillMessageBlock,
 	SKILL_TOOL_NAME,
 	type SkillDelivery,
 	type SkillToolResultDetails,
@@ -125,7 +131,7 @@ import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvoc
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
 import { createSkillToolDefinition } from "./skills/skill-tool.ts";
 import { resolveToolRedirect } from "./skills/tool-redirects.ts";
-import type { SlashCommandInfo } from "./slash-commands.ts";
+import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { applyToolOutputPolicy } from "./tool-output-policy.ts";
@@ -161,13 +167,19 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 	};
 }
 
-/** A queued `/skill:` invocation awaiting consumption by the agent loop (C1c). */
-interface QueuedSkillInvocation {
-	skill: LoadedSkill;
-	invocation: SkillInvocation;
-	/** Literal `/skill:name args` text shown in the queue UI. */
+/** A queued invocation-bearing message awaiting consumption by the agent loop (C1c). */
+interface QueuedInvocation {
+	/** Immutable resolved span snapshot captured at queue time; rendered only on consumption. */
+	spans: MessageSpan[];
+	/** True when the queued message began with an invocation (single-skill synthetic-pair path). */
+	messageInitial: boolean;
+	/** Whole original message text, delivered literally on any render/abort failure. */
+	originalText: string;
+	/** Literal text shown in the queue UI. */
 	displayText: string;
 	queue: "steer" | "followUp";
+	/** Images attached to the composed message. */
+	images?: ImageContent[];
 }
 
 /** Entry metadata plus the pending synthetic tool_result notification payload. */
@@ -447,7 +459,7 @@ export class AgentSession {
 	 * structured record. The message carries the literal `/skill:` text for the
 	 * queue UI; rendering and activation happen when the agent loop consumes it.
 	 */
-	private readonly _queuedSkillInvocations = new WeakMap<AgentMessage, QueuedSkillInvocation>();
+	private readonly _queuedSkillInvocations = new WeakMap<AgentMessage, QueuedInvocation>();
 	/** B.12/pairId entry metadata (+ synthetic event payload) per delivered message, by identity. */
 	private readonly _messageDeliveryMeta = new WeakMap<AgentMessage, DeliveryMeta>();
 	/** Synthetic-pair messages: immutable against message_end replacement (A.4). */
@@ -1292,31 +1304,27 @@ export class AgentSession {
 		return this._resourceLoader.getPrompts().prompts;
 	}
 
-	/** Commands exposed by extensions, prompt templates, and invocable skills. */
+	/**
+	 * Complete A.1 command listing: built-ins (exactly once), extension commands,
+	 * commands/templates, and invocable skills, folded through the unified
+	 * namespace registry with winner bare names and qualified fallbacks. This is
+	 * the sole complete listing — downstream consumers must not prepend built-ins.
+	 */
 	getCommands(): SlashCommandInfo[] {
-		const extensionCommands: SlashCommandInfo[] = this._extensionRunner.getRegisteredCommands().map((command) => ({
-			name: command.invocationName,
-			description: command.description,
-			source: "extension",
-			sourceInfo: command.sourceInfo,
-		}));
-		const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
-			name: template.name,
-			description: template.description,
-			source: "prompt",
-			sourceInfo: template.sourceInfo,
-		}));
-		const skills: SlashCommandInfo[] = this._resourceLoader
-			.getSkills()
-			.skills.map((skill) => normalizeSkillInput(skill).skill)
-			.filter((skill) => skill.commandNameValid && skill.userInvocable)
-			.map((skill) => ({
-				name: `skill:${skill.name}`,
-				description: skill.description,
-				source: "skill",
-				sourceInfo: skill.sourceInfo,
+		return this._buildCommandRegistry()
+			.getListing()
+			.map((entry) => ({
+				name: entry.name,
+				...(entry.description !== undefined && { description: entry.description }),
+				...(entry.argumentHint !== undefined && { argumentHint: entry.argumentHint }),
+				source: entry.source,
+				...(entry.sourceInfo !== undefined && { sourceInfo: entry.sourceInfo }),
 			}));
-		return [...extensionCommands, ...templates, ...skills];
+	}
+
+	/** The unified namespace registry's aggregated one-line collision diagnostic, if any. */
+	getCommandCollisionDiagnostic(): ResourceDiagnostic | undefined {
+		return this._buildCommandRegistry().collisionDiagnostic;
 	}
 
 	private _normalizePromptSnippet(text: string | undefined): string | undefined {
@@ -1504,16 +1512,20 @@ export class AgentSession {
 				}
 			}
 
-			// Resolve skill commands (/skill:name args); prompt templates (/template args) expand below.
-			// Skill resolution is side-effect free; rendering happens only once the
-			// message is actually sent (direct) or consumed (queued).
-			const skillCommand = expandPromptTemplates ? this._resolveSkillCommand(currentText) : undefined;
-			let expandedText = currentText;
-			if (!skillCommand && expandPromptTemplates) {
-				expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+			// A.1 tokenization: resolve prompt-producing invocations (skills + commands),
+			// bare / mid-prompt / stacked. Replay bypass (expandPromptTemplates:false) keeps
+			// the text literal; rendering happens only at send (direct) or consumption (queued).
+			const tokenized = expandPromptTemplates
+				? tokenizeMessage(currentText, this._buildCommandRegistry())
+				: undefined;
+			if (tokenized && tokenized.diagnostics.length > 0) {
+				this._emitSkillDiagnostics(tokenized.diagnostics);
 			}
+			const invocationSpans = tokenized
+				? tokenized.spans.filter((span): span is InvocationSpan => span.kind === "invocation")
+				: [];
 
-			// If streaming, queue via steer() or followUp() based on option
+			// If streaming, queue via steer() or followUp(); rendering is deferred to consumption.
 			if (this.isStreaming) {
 				if (!options?.streamingBehavior) {
 					throw new Error(
@@ -1521,13 +1533,15 @@ export class AgentSession {
 					);
 				}
 				const queue = options.streamingBehavior === "followUp" ? "followUp" : "steer";
-				if (skillCommand) {
-					// Structured record: literal text in the queue UI, render on consumption.
-					await this._queueSkillInvocation(queue, currentText, skillCommand, currentImages);
-				} else if (queue === "followUp") {
-					await this._queueFollowUp(expandedText, currentImages);
+				if (tokenized && invocationSpans.length > 0) {
+					await this._queueInvocation(queue, currentText, tokenized, currentImages);
 				} else {
-					await this._queueSteer(expandedText, currentImages);
+					const queuedText = tokenized ? this._spansPlainText(tokenized.spans) : currentText;
+					if (queue === "followUp") {
+						await this._queueFollowUp(queuedText, currentImages);
+					} else {
+						await this._queueSteer(queuedText, currentImages);
+					}
 				}
 				preflightResult?.(true);
 				return;
@@ -1568,14 +1582,22 @@ export class AgentSession {
 
 			// Text form reported to before_agent_start; for skill deliveries this
 			// is always the A.4 message-block text, whichever transport delivered.
-			let promptText = expandedText;
+			let promptText = currentText;
 
-			if (skillCommand) {
-				// Direct invocation: render after input transformation/validation and
-				// before before_agent_start; activate for this logical turn.
-				const invocation = this._skillRuntime.createInvocation(skillCommand.skill, skillCommand.rawArgs);
+			// A message-initial single skill keeps the C1 synthetic-pair / message-block
+			// delivery; everything else composes one user message (commands splice text,
+			// mid-prompt skills splice `<skill>` blocks with B.12 offsets).
+			const soleSkill =
+				tokenized?.messageInitial &&
+				invocationSpans.length === 1 &&
+				invocationSpans[0].invocation.source === "skill"
+					? invocationSpans[0].invocation.skill
+					: undefined;
+
+			if (soleSkill) {
+				const invocation = this._skillRuntime.createInvocation(soleSkill, invocationSpans[0].rawArgs);
 				const delivery = await this._buildSkillDelivery(
-					skillCommand.skill,
+					soleSkill,
 					invocation,
 					currentImages,
 					this._sessionAbortController?.signal,
@@ -1585,24 +1607,27 @@ export class AgentSession {
 					promptText = delivery.textForm;
 				} else {
 					// Render failed (diagnostic already emitted): send the literal text.
-					const fallbackContent: (TextContent | ImageContent)[] = [{ type: "text", text: currentText }];
-					if (currentImages) {
-						fallbackContent.push(...currentImages);
-					}
-					messages.push({ role: "user", content: fallbackContent, timestamp: Date.now() });
+					messages.push(this._literalUserMessage(currentText, currentImages));
+					promptText = currentText;
+				}
+			} else if (tokenized && invocationSpans.length > 0) {
+				const composed = await this._composeSpans(
+					tokenized.spans,
+					currentImages,
+					this._sessionAbortController?.signal,
+				);
+				if (composed) {
+					messages.push(composed.message);
+					promptText = composed.textForm;
+				} else {
+					messages.push(this._literalUserMessage(currentText, currentImages));
 					promptText = currentText;
 				}
 			} else {
-				// Add user message
-				const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-				if (currentImages) {
-					userContent.push(...currentImages);
-				}
-				messages.push({
-					role: "user",
-					content: userContent,
-					timestamp: Date.now(),
-				});
+				// No invocations (or replay bypass): plain user message with escape-processed text.
+				const finalText = tokenized ? this._spansPlainText(tokenized.spans) : currentText;
+				messages.push(this._literalUserMessage(finalText, currentImages));
+				promptText = finalText;
 			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
@@ -1683,26 +1708,6 @@ export class AgentSession {
 		}
 	}
 
-	/**
-	 * Resolve a `/skill:name args` command to its skill and raw args.
-	 * Returns undefined for unknown, user-hidden, or command-ineligible skills
-	 * (the text stays literal — A.1) and for non-skill text.
-	 */
-	private _resolveSkillCommand(text: string): { skill: LoadedSkill; rawArgs: string } | undefined {
-		if (!text.startsWith("/skill:")) return undefined;
-
-		const spaceIndex = text.indexOf(" ");
-		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-		const rawArgs = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
-		if (!skillName) return undefined;
-
-		const skill = this.resourceLoader
-			.getSkills()
-			.skills.map((s) => normalizeSkillInput(s).skill)
-			.find((s) => s.name === skillName && s.commandNameValid && s.userInvocable);
-		return skill ? { skill, rawArgs } : undefined;
-	}
-
 	/** Render one invocation through the C1b pipeline with the session's live context. */
 	private async _renderSkill(
 		skill: LoadedSkill,
@@ -1722,6 +1727,154 @@ export class AgentSession {
 			rewriteMap: this._skillRuntime.getRewriteMap(skill.id),
 		};
 		return renderSkillInvocation(skill, invocation, context);
+	}
+
+	/** Loaded commands (native + adapted templates); falls back to adapting prompts for lightweight loaders. */
+	private _getLoadedCommands(): LoadedCommand[] {
+		const loader = this._resourceLoader;
+		if (loader.getCommands) {
+			return loader.getCommands().commands;
+		}
+		return adaptPromptTemplates([...this.promptTemplates]).commands;
+	}
+
+	/** Commands visible to the model (A.7: `disable-model-invocation` excludes). */
+	private _getModelVisibleCommands(): LoadedCommand[] {
+		return this._getLoadedCommands().filter((command) => !command.disableModelInvocation);
+	}
+
+	/** Build the A.1 namespace registry from the current resource, extension, and built-in sources. */
+	private _buildCommandRegistry(): CommandRegistry {
+		const skills = this._resourceLoader.getSkills().skills.map((skill) => normalizeSkillInput(skill).skill);
+		const extensionCommands: ExtensionCommandInfo[] = this._extensionRunner
+			.getRegisteredCommands()
+			.map((command) => ({
+				name: command.name,
+				invocationName: command.invocationName,
+				...(command.description !== undefined && { description: command.description }),
+				sourceInfo: command.sourceInfo,
+			}));
+		return buildCommandRegistry({
+			builtins: BUILTIN_SLASH_COMMANDS,
+			extensionCommands,
+			commands: this._getLoadedCommands(),
+			skills,
+			enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+		});
+	}
+
+	/** Render one command invocation through the A.7 pipeline with the session's live context. */
+	private async _renderCommand(
+		command: LoadedCommand,
+		rawArgs: string,
+		signal?: AbortSignal,
+	): Promise<RenderedCommand> {
+		const context: RenderCommandContext = {
+			...this._skillRuntime.interopContext(),
+			activeToolNames: this.getActiveToolNames(),
+			shellSettings: {
+				disabled: this.settingsManager.getDisableSkillShellExecution(),
+				timeoutMs: this.settingsManager.getSkillShellTimeoutMs(),
+				outputLimitBytes: this.settingsManager.getSkillShellOutputLimitBytes(),
+			},
+			shellPath: this.settingsManager.getShellPath(),
+			signal,
+		};
+		return renderCommand(command, rawArgs, context);
+	}
+
+	/** The canonical `slash_command` tool backed by this session (A.7). */
+	private _createSlashCommandTool(): ToolDefinition {
+		return createSlashCommandToolDefinition({
+			getCommands: () => this._getLoadedCommands(),
+			render: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
+			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		}) as ToolDefinition;
+	}
+
+	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
+	private _spansPlainText(spans: MessageSpan[]): string {
+		return spans.map((span) => (span.kind === "text" ? span.text : "")).join("");
+	}
+
+	/** Build a plain literal user message (whole-message fallback). */
+	private _literalUserMessage(text: string, images?: ImageContent[]): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		return { role: "user", content, timestamp: Date.now() };
+	}
+
+	/**
+	 * Compose tokenized spans (mid-prompt / mixed) into one user message: command
+	 * spans splice rendered text, skill spans splice `<skill>` blocks with B.12
+	 * UTF-16 offsets. Skill records activate only after the whole composition
+	 * succeeds (A.5). Returns undefined after emitting a diagnostic on any render
+	 * failure, so the caller falls back to the whole original literal message.
+	 */
+	private async _composeSpans(
+		spans: MessageSpan[],
+		images: ImageContent[] | undefined,
+		signal?: AbortSignal,
+	): Promise<{ message: AgentMessage; textForm: string } | undefined> {
+		let text = "";
+		const invocations: SkillInvocationEntry[] = [];
+		const activations: SkillInvocation[] = [];
+		for (const span of spans) {
+			if (span.kind === "text") {
+				text += span.text;
+				continue;
+			}
+			if (span.invocation.source === "skill" && span.invocation.skill) {
+				const skill = span.invocation.skill;
+				const invocation = this._skillRuntime.createInvocation(skill, span.rawArgs);
+				let rendered: RenderedSkillInvocation;
+				try {
+					rendered = await this._renderSkill(skill, invocation, signal);
+					this._emitSkillDiagnostics(rendered.diagnostics);
+				} catch (err) {
+					this._extensionRunner.emitError({
+						extensionPath: skill.filePath,
+						event: "skill_expansion",
+						error: err instanceof Error ? err.message : String(err),
+					});
+					return undefined;
+				}
+				const block = buildSkillMessageBlock(rendered.invocation, rendered.body);
+				const blockStart = text.length;
+				text += block.text;
+				invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
+				activations.push(invocation);
+			} else if (span.invocation.command) {
+				const command = span.invocation.command;
+				let rendered: RenderedCommand;
+				try {
+					rendered = await this._renderCommand(command, span.rawArgs, signal);
+					this._emitSkillDiagnostics(rendered.diagnostics);
+				} catch (err) {
+					this._extensionRunner.emitError({
+						extensionPath: command.filePath,
+						event: "command_expansion",
+						error: err instanceof Error ? err.message : String(err),
+					});
+					return undefined;
+				}
+				text += rendered.text;
+			}
+		}
+		for (const invocation of activations) {
+			this._emitSkillDiagnostics(this._skillRuntime.activate(invocation));
+		}
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		if (invocations.length > 0) {
+			this._messageDeliveryMeta.set(message, { invocations });
+		}
+		return { message, textForm: text };
 	}
 
 	/** Loaded skills visible to the model (A.1: `disable-model-invocation` excludes). */
@@ -1840,20 +1993,31 @@ export class AgentSession {
 		}
 	}
 
-	private async _queueSkillInvocation(
+	/**
+	 * Enqueue a tokenized message (A.5): the queue message carries the original
+	 * literal text for the queue UI; the immutable resolved span snapshot renders
+	 * and activates only when the agent loop consumes it, never at queue time.
+	 */
+	private async _queueInvocation(
 		queue: "steer" | "followUp",
-		literalText: string,
-		command: { skill: LoadedSkill; rawArgs: string },
+		originalText: string,
+		tokenized: TokenizeResult,
 		images?: ImageContent[],
 	): Promise<void> {
-		const invocation = this._skillRuntime.createInvocation(command.skill, command.rawArgs);
-		const message = this._buildQueueMessage(literalText, images);
-		this._queuedSkillInvocations.set(message, { skill: command.skill, invocation, displayText: literalText, queue });
-		this._dispatchQueue(queue, literalText, message);
+		const message = this._buildQueueMessage(originalText, images);
+		this._queuedSkillInvocations.set(message, {
+			spans: tokenized.spans,
+			messageInitial: tokenized.messageInitial,
+			originalText,
+			displayText: originalText,
+			queue,
+			...(images && { images }),
+		});
+		this._dispatchQueue(queue, originalText, message);
 	}
 
 	/** Remove a consumed queued invocation's display text from the queue UI. */
-	private _removeQueuedDisplayText(queued: QueuedSkillInvocation): void {
+	private _removeQueuedDisplayText(queued: QueuedInvocation): void {
 		const list = queued.queue === "steer" ? this._steeringMessages : this._followUpMessages;
 		const index = list.indexOf(queued.displayText);
 		if (index !== -1) {
@@ -1881,21 +2045,31 @@ export class AgentSession {
 			}
 			this._queuedSkillInvocations.delete(message);
 			try {
-				const images =
-					message.role === "user" && Array.isArray(message.content)
-						? message.content.filter((part): part is ImageContent => part.type === "image")
+				const invocationSpans = queued.spans.filter((span): span is InvocationSpan => span.kind === "invocation");
+				const soleSkill =
+					queued.messageInitial && invocationSpans.length === 1 && invocationSpans[0].invocation.source === "skill"
+						? invocationSpans[0].invocation.skill
 						: undefined;
-				const delivery = await this._buildSkillDelivery(queued.skill, queued.invocation, images, signal);
-				delivered.push(...(delivery?.messages ?? [message]));
+				if (soleSkill) {
+					// Message-initial single skill: preserve C1 synthetic-pair delivery.
+					const invocation = this._skillRuntime.createInvocation(soleSkill, invocationSpans[0].rawArgs);
+					const delivery = await this._buildSkillDelivery(soleSkill, invocation, queued.images, signal);
+					delivered.push(
+						...(delivery?.messages ?? [this._literalUserMessage(queued.originalText, queued.images)]),
+					);
+				} else {
+					// Mid-prompt / mixed / command: compose at consumption time.
+					const composed = await this._composeSpans(queued.spans, queued.images, signal);
+					delivered.push(composed?.message ?? this._literalUserMessage(queued.originalText, queued.images));
+				}
 			} catch (err) {
-				// Defensive: _buildSkillDelivery already reports and returns
-				// undefined on render failure; never lose the message.
+				// Defensive: render helpers already report and fall back; never lose the message.
 				this._extensionRunner.emitError({
-					extensionPath: queued.skill.filePath,
-					event: "skill_expansion",
+					extensionPath: "<command>",
+					event: "command_expansion",
 					error: err instanceof Error ? err.message : String(err),
 				});
-				delivered.push(message);
+				delivered.push(this._literalUserMessage(queued.originalText, queued.images));
 			} finally {
 				this._removeQueuedDisplayText(queued);
 			}
@@ -1917,16 +2091,14 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Skill commands queue as structured records (rendered on consumption);
-		// everything else expands prompt templates at queue time as before.
-		const skillCommand = this._resolveSkillCommand(text);
-		if (skillCommand) {
-			await this._queueSkillInvocation("steer", text, skillCommand, images);
+		// Tokenize once: invocation-bearing messages queue as immutable resolved
+		// snapshots (rendered on consumption); plain text queues directly.
+		const tokenized = tokenizeMessage(text, this._buildCommandRegistry());
+		if (tokenized.spans.some((span) => span.kind === "invocation")) {
+			await this._queueInvocation("steer", text, tokenized, images);
 			return;
 		}
-		const expandedText = expandPromptTemplate(text, [...this.promptTemplates]);
-
-		await this._queueSteer(expandedText, images);
+		await this._queueSteer(this._spansPlainText(tokenized.spans), images);
 	}
 
 	/**
@@ -1942,16 +2114,14 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Skill commands queue as structured records (rendered on consumption);
-		// everything else expands prompt templates at queue time as before.
-		const skillCommand = this._resolveSkillCommand(text);
-		if (skillCommand) {
-			await this._queueSkillInvocation("followUp", text, skillCommand, images);
+		// Tokenize once: invocation-bearing messages queue as immutable resolved
+		// snapshots (rendered on consumption); plain text queues directly.
+		const tokenized = tokenizeMessage(text, this._buildCommandRegistry());
+		if (tokenized.spans.some((span) => span.kind === "invocation")) {
+			await this._queueInvocation("followUp", text, tokenized, images);
 			return;
 		}
-		const expandedText = expandPromptTemplate(text, [...this.promptTemplates]);
-
-		await this._queueFollowUp(expandedText, images);
+		await this._queueFollowUp(this._spansPlainText(tokenized.spans), images);
 	}
 
 	/**
@@ -3120,6 +3290,12 @@ export class AgentSession {
 			this._baseToolDefinitions.set(SKILL_TOOL_NAME, this._createSkillTool());
 		}
 
+		// A.7 slash_command tool: a base tool registered only when a model-visible
+		// command exists. CC's `SlashCommand` reaches it through the redirect map.
+		if (this._getModelVisibleCommands().length > 0) {
+			this._baseToolDefinitions.set(SLASH_COMMAND_TOOL_NAME, this._createSlashCommandTool());
+		}
+
 		const extensionsResult = this._resourceLoader.getExtensions();
 		if (options.flagValues) {
 			for (const [name, value] of options.flagValues) {
@@ -3152,6 +3328,7 @@ export class AgentSession {
 					"edit",
 					"write",
 					...(this._baseToolDefinitions.has(SKILL_TOOL_NAME) ? [SKILL_TOOL_NAME] : []),
+					...(this._baseToolDefinitions.has(SLASH_COMMAND_TOOL_NAME) ? [SLASH_COMMAND_TOOL_NAME] : []),
 				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({

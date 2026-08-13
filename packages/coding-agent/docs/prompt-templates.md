@@ -94,3 +94,24 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 - Template discovery in `prompts/` is non-recursive.
 - If you want templates in subdirectories, add them explicitly via `prompts` settings or a package manifest.
+
+## Migration to the Commands system
+
+Prompt templates are now a source of the unified **Commands system**. Nothing in the layout above changes, but two behaviors are worth knowing.
+
+### Commands directories
+
+Alongside `prompts/`, Pi loads first-class commands from `~/.pi/agent/commands/` (user) and `.pi/commands/` (project, only after the project is trusted). Commands use the same Markdown + frontmatter format and the same argument grammar as templates, plus `@path` include inlining (the referenced file's text is spliced in at expansion time, with recursion/cycle/size guards). Existing prompt templates are **grandfathered** as command sources: a `/name` template still works exactly as before its filename dictates.
+
+### Rendering now uses the A.3.2 argument engine
+
+Template arguments previously ran through a legacy substitution. They now render through the shared **A.3.2** engine (the same one skills use). The grammar is a superset of the old one, so `$1`, `$@`/`$ARGUMENTS`, `${@:N}`/`${@:N:L}` slicing, and `${…:-default}` behave as documented above. The differences to be aware of:
+
+- **Backslash escaping is now honored.** In the raw argument string, `\` escapes the next character during tokenization (so `\"` is a literal quote inside a token, and an unterminated quote runs to end of input). On the template side, `\$1`, `\$@`, `\$ARGUMENTS`, and `\$name` render literally with the backslash removed. Templates that previously relied on a literal backslash immediately before a `$`-placeholder will now see it consumed.
+- **`$ARGUMENTS`/`$@` substitute the raw string verbatim** (quotes and spacing preserved), matching the prior behavior.
+- **No-placeholder append.** If arguments are supplied but the template contains no placeholder that consumes them, the raw argument string is appended as `\n\nARGUMENTS: <raw>` (skill parity). A template with no placeholders that was previously invoked with trailing text now gains this appended line.
+- **Named arguments** (`arguments:` frontmatter) bind `name=value` tokens and remove them from the positional sequence.
+
+### Compatibility and rollback
+
+There is **no persistent migration** and no on-disk change: your template files are untouched. Reverting this release restores the legacy rendering for the same files. Bare `/name` invocation, mid-prompt expansion, and the `slash_command` model tool are additive; the `enableSkillCommands` setting (unchanged) still governs whether skills join the bare namespace.

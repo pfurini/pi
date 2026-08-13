@@ -1,13 +1,15 @@
 import { APP_NAME } from "../config.ts";
 import type { SourceInfo } from "./source-info.ts";
 
-export type SlashCommandSource = "extension" | "prompt" | "skill";
+export type SlashCommandSource = "builtin" | "extension" | "command" | "prompt" | "skill";
 
 export interface SlashCommandInfo {
 	name: string;
 	description?: string;
+	argumentHint?: string;
 	source: SlashCommandSource;
-	sourceInfo: SourceInfo;
+	/** Absent for built-in commands, which have no source file. */
+	sourceInfo?: SourceInfo;
 }
 
 export interface BuiltinSlashCommand {

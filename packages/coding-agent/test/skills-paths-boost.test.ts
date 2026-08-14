@@ -102,7 +102,6 @@ describe("boostSkillsByPaths", () => {
 	it("does not throw and skips a non-string paths scalar", () => {
 		const bad = makeSkill({ id: "bad", listingName: "bad-skill" });
 		bad.frontmatter.paths = 42 as unknown as string;
-		expect(() => boostSkillsByPaths([bad], ["src/api/handler.ts"], CWD)).not.toThrow();
 		const result = boostSkillsByPaths([bad], ["src/api/handler.ts"], CWD);
 		expect(result.exemptIds.size).toBe(0);
 	});
@@ -110,14 +109,12 @@ describe("boostSkillsByPaths", () => {
 	it("does not throw and skips non-string entries in a mixed paths array", () => {
 		const mixed = makeSkill({ id: "mixed", listingName: "mixed-skill" });
 		mixed.frontmatter.paths = [123, "src/api/**"] as unknown as string[];
-		expect(() => boostSkillsByPaths([mixed], ["src/api/handler.ts"], CWD)).not.toThrow();
 		const result = boostSkillsByPaths([mixed], ["src/api/handler.ts"], CWD);
 		expect(result.exemptIds.has("mixed")).toBe(true);
 	});
 
 	it("does not throw and skips a pattern longer than 65536 characters", () => {
 		const huge = makeSkill({ id: "huge", listingName: "huge-skill", paths: ["a".repeat(70_000)] });
-		expect(() => boostSkillsByPaths([huge], ["src/api/handler.ts"], CWD)).not.toThrow();
 		const result = boostSkillsByPaths([huge], ["src/api/handler.ts"], CWD);
 		expect(result.exemptIds.size).toBe(0);
 	});

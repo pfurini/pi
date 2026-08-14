@@ -33,14 +33,23 @@ function safeMinimatch(target: string, pattern: string): boolean {
 	}
 }
 
-function skillMatchesTouchedPath(patterns: string[], touchedPath: string, cwd: string): boolean {
+interface NormalizedTouchedPath {
+	relPosix: string;
+	absPosix: string;
+}
+
+function normalizeTouchedPath(touchedPath: string, cwd: string): NormalizedTouchedPath {
 	const absoluteTouched = isAbsolute(touchedPath) ? touchedPath : `${cwd}/${touchedPath}`;
-	const relPosix = toPosix(relative(cwd, absoluteTouched));
-	const absPosix = toPosix(absoluteTouched);
+	return { relPosix: toPosix(relative(cwd, absoluteTouched)), absPosix: toPosix(absoluteTouched) };
+}
+
+function patternsMatchTouched(patterns: string[], touched: readonly NormalizedTouchedPath[]): boolean {
 	for (const pattern of patterns) {
 		const normalizedPattern = toPosix(pattern);
-		if (safeMinimatch(relPosix, normalizedPattern) || safeMinimatch(absPosix, normalizedPattern)) {
-			return true;
+		for (const { relPosix, absPosix } of touched) {
+			if (safeMinimatch(relPosix, normalizedPattern) || safeMinimatch(absPosix, normalizedPattern)) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -71,11 +80,11 @@ export function boostSkillsByPaths(
 	const boosted: LoadedSkill[] = [];
 	const rest: LoadedSkill[] = [];
 	const exemptIds = new Set<string>();
+	const normalizedTouched = touchedPaths.map((touchedPath) => normalizeTouchedPath(touchedPath, cwd));
 
 	for (const skill of skills) {
 		const patterns = normalizePathList(skill.frontmatter.paths);
-		const isBoosted =
-			patterns.length > 0 && touchedPaths.some((touchedPath) => skillMatchesTouchedPath(patterns, touchedPath, cwd));
+		const isBoosted = patterns.length > 0 && patternsMatchTouched(patterns, normalizedTouched);
 		if (isBoosted) {
 			boosted.push(skill);
 			exemptIds.add(skill.id);

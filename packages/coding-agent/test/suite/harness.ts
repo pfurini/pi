@@ -17,6 +17,7 @@ import type {
 import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import type { EventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
@@ -70,8 +71,16 @@ export interface HarnessOptions {
 	excludedToolNames?: string[];
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
+	/**
+	 * Shared cross-extension event bus. When provided, loaded extensions and the
+	 * session's `resourceLoader.getEventBus()` use the SAME bus, so a stub subagents
+	 * extension is reachable by the session's `SkillForkClient` (C3b fork tests).
+	 */
+	eventBus?: EventBus;
 	withConfiguredAuth?: boolean;
 	modelsJson?: Record<string, unknown>;
+	/** C3b fork client timeout overrides (spawn-reply / foreground cap) for fast timeout tests. */
+	skillForkTimeouts?: { spawnReplyTimeoutMs?: number; foregroundCapMs?: number; pingTimeoutMs?: number };
 }
 
 export interface Harness {
@@ -174,11 +183,16 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			return runner.emitContext(messages);
 		},
 	});
+	const eventBus = options.eventBus;
 	const extensionsResult = options.extensionFactories
-		? await createTestExtensionsResult(options.extensionFactories, tempDir)
+		? await createTestExtensionsResult(options.extensionFactories, tempDir, eventBus)
 		: undefined;
 	const resourceLoader =
-		options.resourceLoader ?? createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
+		options.resourceLoader ??
+		createTestResourceLoader({
+			...(extensionsResult && { extensionsResult }),
+			...(eventBus && { eventBus }),
+		});
 
 	const session = new AgentSession({
 		agent,
@@ -193,6 +207,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
+		...(options.skillForkTimeouts && { skillForkTimeouts: options.skillForkTimeouts }),
 	});
 
 	const events: AgentSessionEvent[] = [];

@@ -40,6 +40,12 @@ export interface CustomMessage<T = unknown> {
 	content: string | (TextContent | ImageContent)[];
 	display: boolean;
 	details?: T;
+	/**
+	 * True when this message is display-only and excluded from LLM context. Mirrors the
+	 * coding-agent declaration: both packages merge this interface into the same
+	 * `CustomAgentMessages["custom"]` slot, so the two must stay structurally identical.
+	 */
+	excludeFromContext?: boolean;
 	timestamp: number;
 }
 
@@ -141,6 +147,9 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						timestamp: m.timestamp,
 					};
 				case "custom": {
+					if (m.excludeFromContext) {
+						return undefined;
+					}
 					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 					return {
 						role: "user",

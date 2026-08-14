@@ -135,8 +135,9 @@ import {
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
-import { computeDisallowedUnion, resolveActiveOverride } from "./skills/skill-overrides.ts";
-import { createSkillToolDefinition } from "./skills/skill-tool.ts";
+import { type ForkOutcome, type NormalizedCompletion, SkillForkClient } from "./skills/skill-fork.ts";
+import { computeDisallowedUnion, resolveActiveOverride, resolveModelOverride } from "./skills/skill-overrides.ts";
+import { createSkillToolDefinition, type SkillToolForkResult } from "./skills/skill-tool.ts";
 import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -293,6 +294,12 @@ export interface AgentSessionConfig {
 	 * this public interface are not forced to supply one.
 	 */
 	sessionAbortController?: AbortController;
+	/**
+	 * C3b fork client timeout overrides (tests only): shorten the spawn-reply cap and
+	 * the foreground completion cap so timeout paths do not stall the suite. Production
+	 * omits it and uses the client defaults (10s spawn reply, 15min foreground).
+	 */
+	skillForkTimeouts?: { spawnReplyTimeoutMs?: number; foregroundCapMs?: number; pingTimeoutMs?: number };
 }
 
 export interface ExtensionBindings {
@@ -451,6 +458,12 @@ export class AgentSession {
 
 	/** Session-owned skill invocation runtime (C1b): activation-on-consumption, turn-scoped A.8 env. */
 	private readonly _skillRuntime: SkillRuntime;
+	/** C3b fork spawn client (over the cross-extension event bus); absent bus === no subagents present. */
+	private readonly _skillForkClient: SkillForkClient;
+	/** Foreground-fork completion cap passed per spawn (test override; default 15 min). */
+	private readonly _skillForkForegroundCapMs: number | undefined;
+	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
+	private _pendingForkNotices: CustomMessage[] = [];
 	/**
 	 * Queued skill invocations (C1c): application-defined queue message → its
 	 * structured record. The message carries the literal `/skill:` text for the
@@ -575,6 +588,21 @@ export class AgentSession {
 			getAvailableModels: () => this._modelRuntime.getAvailableSnapshot(),
 			eventBus: this._resourceLoader.getEventBus?.(),
 		});
+		// C3b fork client shares the same cross-extension bus the subagents RPC
+		// registers on (the rewrite-map seam above already relies on this identity);
+		// an absent bus makes detectPresence() false so fork routing degrades to inline.
+		this._skillForkClient = new SkillForkClient(this._resourceLoader.getEventBus?.(), {
+			...(config.skillForkTimeouts?.spawnReplyTimeoutMs !== undefined && {
+				spawnReplyTimeoutMs: config.skillForkTimeouts.spawnReplyTimeoutMs,
+			}),
+			...(config.skillForkTimeouts?.foregroundCapMs !== undefined && {
+				foregroundCapMs: config.skillForkTimeouts.foregroundCapMs,
+			}),
+			...(config.skillForkTimeouts?.pingTimeoutMs !== undefined && {
+				pingTimeoutMs: config.skillForkTimeouts.pingTimeoutMs,
+			}),
+		});
+		this._skillForkForegroundCapMs = config.skillForkTimeouts?.foregroundCapMs;
 		this._unregisterSkillSpawnComposer = registerBashSpawnContextComposer((context, ctx) => {
 			if (this.settingsManager.getDisableSkillEnvInjection()) return context;
 			if (!ctx || ctx.sessionManager !== this.sessionManager) return context;
@@ -1209,6 +1237,7 @@ export class AgentSession {
 		this._disconnectFromAgent();
 		this._unregisterSkillSpawnComposer();
 		this._skillRuntime.dispose();
+		this._skillForkClient.dispose();
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
 	}
@@ -1475,6 +1504,7 @@ export class AgentSession {
 				// never on the per-run agent_end or the turn_end event.
 				this._expireTurnOverrideState();
 				this._flushPendingBashMessages();
+				this._flushPendingForkNotices();
 				await this._emitAgentSettled();
 			}
 		});
@@ -1613,8 +1643,9 @@ export class AgentSession {
 				return;
 			}
 
-			// Flush any pending bash messages before the new prompt
+			// Flush any pending bash messages / fork notices before the new prompt
 			this._flushPendingBashMessages();
+			this._flushPendingForkNotices();
 
 			// Validate model
 			if (!this.model) {
@@ -1660,21 +1691,31 @@ export class AgentSession {
 				signal: this._sessionAbortController?.signal,
 			});
 			if (prepared.kind === "sole-skill") {
-				const delivery = await this._buildSkillDelivery(
+				const forkResult = await this._forkOrBuildSoleSkillDelivery(
 					prepared.skill,
 					prepared.rawArgs,
 					currentImages,
 					this._sessionAbortController?.signal,
 				);
-				if (delivery) {
-					messages.push(...delivery.messages);
-					promptText = delivery.textForm;
+				if (forkResult.forked) {
+					// A sole `context: fork` skill spawned a subagent (A.5): the body
+					// went only to the subagent, so no parent turn runs over it. The
+					// spawn/completion notices were already recorded in the transcript.
+					preflightResult?.(true);
+					return;
+				}
+				if (forkResult.delivery) {
+					messages.push(...forkResult.delivery.messages);
+					promptText = forkResult.delivery.textForm;
 				} else {
 					// Render failed (diagnostic already emitted): send the literal text.
 					messages.push(this._literalUserMessage(currentText, currentImages));
 					promptText = currentText;
 				}
 			} else {
+				// A non-sole mid-prompt fork is not one of the two A.5 invocation paths:
+				// it renders inline (composed), but warn so its fork intent is not silently lost.
+				this._warnMidPromptForks(tokenized?.spans);
 				messages.push(prepared.message);
 				promptText = prepared.textForm;
 			}
@@ -1904,9 +1945,156 @@ export class AgentSession {
 	private _createSkillTool(): ToolDefinition {
 		return createSkillToolDefinition({
 			getSkills: () => this._getModelVisibleSkills(),
-			render: (skill, rawArgs, signal) => this._invocationCoordinator.prepareSkillTool(skill, rawArgs, signal),
+			render: (skill, rawArgs, signal) => this._renderSkillToolInvocation(skill, rawArgs, signal),
 			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
 		}) as ToolDefinition;
+	}
+
+	/**
+	 * The `skill` tool render binding (C3b fork-aware). An inline record renders,
+	 * activates, and returns its body (c3a behavior). A `context: fork` record does
+	 * NOT activate in the parent runtime (A.5: its content never enters the parent
+	 * context / never governs the parent turn's override union); it spawns a subagent
+	 * and returns the fork tool result, or degrades to inline delivery + one diagnostic.
+	 */
+	private async _renderSkillToolInvocation(
+		skill: LoadedSkill,
+		rawArgs: string,
+		signal?: AbortSignal,
+	): Promise<RenderedSkillInvocation | SkillToolForkResult> {
+		const { record, rendered } = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
+		if (record.context !== "fork") {
+			this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
+			return rendered;
+		}
+		// Fork render diagnostics are surfaced here (execute returns the fork branch
+		// and never sees them).
+		this._emitSkillDiagnostics(rendered.diagnostics);
+		if (await this._shouldDegradeFork()) {
+			return this._degradeForkToInline(skill, record, rendered, "no subagents extension available");
+		}
+		const outcome = await this._skillForkClient.spawn(this._buildForkSpawnParams(record, rendered, signal));
+		switch (outcome.kind) {
+			case "repeat-blocked":
+				return this._forkToolResult(
+					rendered,
+					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
+					{ isError: true },
+				);
+			case "spawn-failed":
+				return this._degradeForkToInline(skill, record, rendered, `fork spawn failed: ${outcome.error}`);
+			case "spawned-background":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" is running in a background subagent (agent ${outcome.agentId}). ` +
+						`Its result is reported when it completes.\n{"agentId":"${outcome.agentId}","background":true}`,
+				);
+			case "completed":
+				return this._forkToolResult(rendered, this._forkCompletionText(skill, outcome), {
+					isError: !outcome.ok,
+				});
+			case "foreground-timeout":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
+					{ isError: true },
+				);
+			case "aborted":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`,
+					{ isError: true },
+				);
+		}
+	}
+
+	/** Build the fork tool result carrying the invocation metadata (persistence/UI read it). */
+	private _forkToolResult(
+		rendered: RenderedSkillInvocation,
+		text: string,
+		options: { isError?: boolean } = {},
+	): SkillToolForkResult {
+		return {
+			fork: true,
+			content: [{ type: "text", text }],
+			details: { invocation: rendered.invocation },
+			...(options.isError !== undefined && { isError: options.isError }),
+		};
+	}
+
+	/**
+	 * Degrade a fork to inline delivery (no subagents / spawn failure / headless): the
+	 * record activates and its body is returned as a normal inline result, plus ONE
+	 * diagnostic. This is the c3a inline path; the fork governs the parent turn only here.
+	 */
+	private _degradeForkToInline(
+		skill: LoadedSkill,
+		record: SkillInvocation,
+		rendered: RenderedSkillInvocation,
+		reason: string,
+	): RenderedSkillInvocation {
+		this._emitSkillDiagnostics([
+			{
+				type: "warning",
+				message: `skill "${skill.name}": ${reason}; running inline instead of forking`,
+				path: skill.filePath,
+			},
+		]);
+		this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
+		return rendered;
+	}
+
+	/** True when the fork must degrade to inline: headless-print mode or no subagents extension. */
+	private async _shouldDegradeFork(): Promise<boolean> {
+		if (this._extensionMode === "print" || this._extensionMode === "json") {
+			return true;
+		}
+		return !(await this._skillForkClient.detectPresence());
+	}
+
+	/**
+	 * Resolve the fork spawn parameters: the `agent` type and the spawn `options`
+	 * carrying only the resolved `model` (string form) — NO env (A.8 values are
+	 * already rendered into the prompt in the parent). `isBackground` is added by
+	 * the client. Background defaults to true for fork (A.2).
+	 */
+	private _buildForkSpawnParams(
+		record: SkillInvocation,
+		rendered: RenderedSkillInvocation,
+		signal?: AbortSignal,
+	): Parameters<SkillForkClient["spawn"]>[0] {
+		const options: Record<string, unknown> = {};
+		const currentModel = this.model;
+		if (record.model !== undefined && currentModel) {
+			const resolved = resolveModelOverride(record.model, {
+				available: this._modelRuntime.getAvailableSnapshot(),
+				current: currentModel,
+			});
+			this._emitSkillDiagnostics(resolved.diagnostics);
+			if (resolved.model) {
+				options.model = `${resolved.model.provider}/${resolved.model.id}`;
+			}
+		}
+		const background = record.background ?? true;
+		return {
+			skillId: record.skillId,
+			agentType: record.agent,
+			prompt: rendered.body,
+			options,
+			background,
+			signal: signal ?? this._sessionAbortController?.signal,
+			...(this._skillForkForegroundCapMs !== undefined && { foregroundCapMs: this._skillForkForegroundCapMs }),
+			onBackgroundComplete: (completion) => this._recordForkCompletionNotice(record, completion),
+		};
+	}
+
+	/** One-line text describing a terminal fork completion (result on success, error/status otherwise). */
+	private _forkCompletionText(skill: LoadedSkill, completion: ForkOutcome & { kind: "completed" }): string {
+		if (completion.ok) {
+			return completion.result ?? `Forked skill "${skill.name}" (agent ${completion.agentId}) completed.`;
+		}
+		const detail = completion.error ?? completion.status ?? "unknown error";
+		return `Forked skill "${skill.name}" (agent ${completion.agentId}) failed (${completion.status ?? "error"}): ${detail}`;
 	}
 
 	/** Surface render/activation diagnostics through the extension error channel (never swallowed). */
@@ -2069,29 +2257,8 @@ export class AgentSession {
 		return `Tool "${name}" is blocked by an active skill's disallowed-tools policy and cannot be called during this turn.`;
 	}
 
-	/**
-	 * Render + activate one invocation and build its A.4 delivery. Returns
-	 * undefined after emitting a diagnostic when rendering fails; callers fall
-	 * back to the original literal prompt (never silently drop the message).
-	 */
-	private async _buildSkillDelivery(
-		skill: LoadedSkill,
-		rawArgs: string,
-		images: ImageContent[] | undefined,
-		signal?: AbortSignal,
-	): Promise<SkillDelivery | undefined> {
-		let prepared: PreparedSkillInvocation;
-		try {
-			prepared = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
-			this._emitSkillDiagnostics(prepared.rendered.diagnostics);
-		} catch (err) {
-			this._extensionRunner.emitError({
-				extensionPath: skill.filePath,
-				event: "skill_expansion",
-				error: err instanceof Error ? err.message : String(err),
-			});
-			return undefined;
-		}
+	/** Build the A.4 delivery for an already-prepared invocation, then activate it. */
+	private _finishSkillDelivery(prepared: PreparedSkillInvocation, images: ImageContent[] | undefined): SkillDelivery {
 		const transport = selectSkillTransport(this.model, {
 			forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
 		});
@@ -2120,6 +2287,186 @@ export class AgentSession {
 			}
 		}
 		return delivery;
+	}
+
+	/**
+	 * User/synthetic sole-skill routing (C3b, A.5). An inline record builds its
+	 * A.4 delivery. A `context: fork` record spawns a subagent and reports via
+	 * transcript notices WITHOUT delivering the body to the parent turn (`forked:
+	 * true`); it degrades to inline delivery + one diagnostic when no subagents
+	 * extension is present, on spawn failure, or in headless-print mode. Renders
+	 * exactly once (shell injection must not run twice).
+	 */
+	private async _forkOrBuildSoleSkillDelivery(
+		skill: LoadedSkill,
+		rawArgs: string,
+		images: ImageContent[] | undefined,
+		signal?: AbortSignal,
+	): Promise<{ forked: true } | { forked: false; delivery: SkillDelivery | undefined }> {
+		let prepared: PreparedSkillInvocation;
+		try {
+			prepared = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
+			this._emitSkillDiagnostics(prepared.rendered.diagnostics);
+		} catch (err) {
+			this._extensionRunner.emitError({
+				extensionPath: skill.filePath,
+				event: "skill_expansion",
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return { forked: false, delivery: undefined };
+		}
+		if (prepared.record.context !== "fork") {
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		if (await this._shouldDegradeFork()) {
+			this._emitForkDegradeDiagnostic(skill, "no subagents extension available");
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		const outcome = await this._skillForkClient.spawn(
+			this._buildForkSpawnParams(prepared.record, prepared.rendered, signal),
+		);
+		if (outcome.kind === "spawn-failed") {
+			this._emitForkDegradeDiagnostic(skill, `fork spawn failed: ${outcome.error}`);
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		if (outcome.kind === "repeat-blocked") {
+			this._recordForkNotice(
+				this._forkNoticeMessage(
+					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
+				),
+			);
+			return { forked: true };
+		}
+		// A subagent was spawned: the spawn notice enters the transcript; the body
+		// went only to the subagent (never to the parent turn).
+		const background = prepared.record.background ?? true;
+		this._recordForkNotice(this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background));
+		if (outcome.kind === "completed") {
+			this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, this._completionFromOutcome(outcome)));
+		} else if (outcome.kind === "foreground-timeout") {
+			this._recordForkNotice(
+				this._forkNoticeMessage(
+					`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
+				),
+			);
+		} else if (outcome.kind === "aborted") {
+			this._recordForkNotice(
+				this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
+			);
+		}
+		return { forked: true };
+	}
+
+	/** Emit the single degrade diagnostic (no subagents / spawn failure / headless). */
+	private _emitForkDegradeDiagnostic(skill: LoadedSkill, reason: string): void {
+		this._emitSkillDiagnostics([
+			{
+				type: "warning",
+				message: `skill "${skill.name}": ${reason}; running inline instead of forking`,
+				path: skill.filePath,
+			},
+		]);
+	}
+
+	/** Narrow a "completed" fork outcome to the normalized-completion shape the notice builder reads. */
+	private _completionFromOutcome(outcome: ForkOutcome & { kind: "completed" }): NormalizedCompletion {
+		return {
+			agentId: outcome.agentId,
+			ok: outcome.ok,
+			...(outcome.result !== undefined && { result: outcome.result }),
+			...(outcome.error !== undefined && { error: outcome.error }),
+			...(outcome.status !== undefined && { status: outcome.status }),
+		};
+	}
+
+	/** Background fork completion (async): record a display-only follow-up notice. */
+	private _recordForkCompletionNotice(record: SkillInvocation, completion: NormalizedCompletion): void {
+		this._recordForkNotice(this._forkCompletionNoticeMessage(record.name, completion));
+	}
+
+	/** Build a fork spawn notice (display-only; never enters LLM context). */
+	private _forkSpawnNoticeMessage(name: string, agentId: string, background: boolean): CustomMessage {
+		return this._forkNoticeMessage(
+			`Skill "${name}" is running in a ${background ? "background" : "foreground"} subagent (agent ${agentId}).`,
+		);
+	}
+
+	/** Build a fork completion follow-up notice (display-only). */
+	private _forkCompletionNoticeMessage(name: string, completion: NormalizedCompletion): CustomMessage {
+		const text = completion.ok
+			? `Skill "${name}" (agent ${completion.agentId}) completed: ${completion.result ?? "(no result)"}`
+			: `Skill "${name}" (agent ${completion.agentId}) failed (${completion.status ?? "error"}): ${completion.error ?? completion.status ?? "unknown error"}`;
+		return this._forkNoticeMessage(text);
+	}
+
+	/** Build a display-only fork notice message (excluded from LLM context; surfaced in the transcript). */
+	private _forkNoticeMessage(text: string): CustomMessage {
+		return {
+			role: "custom",
+			customType: "skill_fork",
+			content: text,
+			display: true,
+			excludeFromContext: true,
+			timestamp: Date.now(),
+		};
+	}
+
+	/**
+	 * Record a fork notice: append immediately (with message events) when idle, or
+	 * defer to the next turn boundary when streaming (mirrors the pending-bash
+	 * injection precedent so a completion that lands mid-turn is not lost).
+	 */
+	private _recordForkNotice(notice: CustomMessage): void {
+		if (this.isStreaming) {
+			this._pendingForkNotices.push(notice);
+			return;
+		}
+		this._appendForkNotice(notice);
+	}
+
+	private _appendForkNotice(notice: CustomMessage): void {
+		this.agent.state.messages.push(notice);
+		this.sessionManager.appendCustomMessageEntry(notice.customType, notice.content, notice.display, notice.details);
+		this._emit({ type: "message_start", message: notice });
+		this._emit({ type: "message_end", message: notice });
+	}
+
+	/** Flush deferred fork notices to state + session at a turn boundary (mirrors pending bash flush). */
+	private _flushPendingForkNotices(): void {
+		if (this._pendingForkNotices.length === 0) {
+			return;
+		}
+		const notices = this._pendingForkNotices;
+		this._pendingForkNotices = [];
+		for (const notice of notices) {
+			this._appendForkNotice(notice);
+		}
+	}
+
+	/**
+	 * Warn once per mid-prompt (non-sole) `context: fork` skill: it is not one of the
+	 * two A.5 invocation paths, so it renders inline. The diagnostic keeps that from
+	 * being a silent leak of fork-only content into the parent (Problem Statement).
+	 */
+	private _warnMidPromptForks(spans: MessageSpan[] | undefined): void {
+		if (!spans) {
+			return;
+		}
+		for (const span of spans) {
+			if (span.kind !== "invocation" || span.invocation.source !== "skill") {
+				continue;
+			}
+			const skill = span.invocation.skill;
+			if (skill.frontmatter?.context === "fork") {
+				this._emitSkillDiagnostics([
+					{
+						type: "warning",
+						message: `skill "${skill.name}": context: fork is honored only for a sole message-initial skill; running it inline here.`,
+						path: skill.filePath,
+					},
+				]);
+			}
+		}
 	}
 
 	/**
@@ -2199,13 +2546,24 @@ export class AgentSession {
 			try {
 				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
 				if (prepared.kind === "sole-skill") {
-					// Message-initial single skill: preserve C1 synthetic-pair delivery.
-					const delivery = await this._buildSkillDelivery(prepared.skill, prepared.rawArgs, queued.images, signal);
-					delivered.push(
-						...(delivery?.messages ?? [this._literalUserMessage(queued.originalText, queued.images)]),
+					// Message-initial single skill: fork spawns a subagent (the body is
+					// not delivered to the parent), otherwise preserve C1 delivery.
+					const forkResult = await this._forkOrBuildSoleSkillDelivery(
+						prepared.skill,
+						prepared.rawArgs,
+						queued.images,
+						signal,
 					);
+					if (!forkResult.forked) {
+						delivered.push(
+							...(forkResult.delivery?.messages ?? [
+								this._literalUserMessage(queued.originalText, queued.images),
+							]),
+						);
+					}
 				} else {
 					// Mid-prompt / mixed / command: composed at consumption time.
+					this._warnMidPromptForks(queued.snapshot.spans);
 					delivered.push(prepared.message);
 				}
 			} catch (err) {
@@ -2433,6 +2791,9 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		// Settle any in-flight foreground fork wait promptly (it is not tied to the
+		// agent run's abort signal on the direct sole-skill path).
+		this._skillForkClient.cancelForegroundWaits();
 		this.agent.abort();
 		await this.waitForIdle();
 	}

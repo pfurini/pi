@@ -8,12 +8,27 @@
  */
 
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { TextContent } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SkillToolResultDetails } from "./delivery.ts";
 import type { LoadedSkill } from "./frontmatter.ts";
 import type { RenderedSkillInvocation } from "./render.ts";
+
+/**
+ * C3b fork tool result: when a `context: fork` skill runs as a subagent, the
+ * `skill` tool returns an acknowledgment (background) or the subagent's result /
+ * a tool error (foreground) instead of the rendered body. The AgentSession
+ * render binding produces this; `execute` only unwraps it.
+ */
+export interface SkillToolForkResult {
+	fork: true;
+	content: TextContent[];
+	isError?: boolean;
+	/** The fork invocation metadata (persistence/UI read it; same shape as an inline result). */
+	details: SkillToolResultDetails;
+}
 
 export const skillToolSchema = Type.Object({
 	name: Type.String({ description: "Skill name from the <available_skills> listing." }),
@@ -28,7 +43,12 @@ export interface SkillToolDeps {
 	 * session's SkillRuntime (A.5: the record governs the continuation
 	 * requests after this tool result, expiring at logical-turn end).
 	 */
-	render: (skill: LoadedSkill, rawArgs: string, signal?: AbortSignal) => Promise<RenderedSkillInvocation>;
+	render: (
+		skill: LoadedSkill,
+		rawArgs: string,
+		signal?: AbortSignal,
+	) => Promise<RenderedSkillInvocation | SkillToolForkResult>;
+
 	/** Sink for render/activation diagnostics; must not swallow them. */
 	onDiagnostics?: (diagnostics: ResourceDiagnostic[]) => void;
 }
@@ -73,6 +93,19 @@ export function createSkillToolDefinition(
 			}
 
 			const rendered = await deps.render(skill, params.args ?? "", signal);
+			// A `context: fork` skill spawned a subagent: return its ack/result
+			// (the AgentSession binding built it), never the rendered body. A foreground
+			// failure/timeout is surfaced as a real tool error by throwing (the agent
+			// loop marks the tool result isError), matching A.5. The binding already
+			// emitted any diagnostics on the fork path.
+			if ("fork" in rendered) {
+				const text = rendered.content.map((part) => part.text).join("\n");
+				if (rendered.isError) {
+					throw new Error(text);
+				}
+				return { content: rendered.content, details: rendered.details };
+			}
+
 			if (rendered.diagnostics.length > 0) {
 				deps.onDiagnostics?.(rendered.diagnostics);
 			}

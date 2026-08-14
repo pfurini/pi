@@ -123,7 +123,7 @@ into consideration before Phase 1 of `prp-plan`; violations are plan defects.
 | 1   | C0 — contract surface                   | Full frontmatter contract, listing v2 + helper, skill-set event seam           | complete | -        | -       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0a-frontmatter-listing.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0b-events-visibility.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0c-fixtures-docs.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c0-contract-surface.plan.md`) |
 | 2   | C1 — render pipeline, skill tool, delivery | A.3 pipeline, interop subset, `skill` tool, A.4 transports, redirect map    | complete | -        | 1       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1a-provider-replay.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1b-render-interop.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1c-tool-delivery.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1d-redirects-closeout.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c1-render-delivery.plan.md`) |
 | 3   | C2 — commands, tokenizer, namespace     | Commands system, A.7.1 includes, mid-prompt tokenizer, TUI autocomplete        | complete | with 4   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2a-commands-namespace.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2b-tui-autocomplete.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c2-commands-tokenizer.plan.md`) |
-| 4   | C3 — execution semantics                | Ephemeral model/effort overrides, `disallowed-tools`, fork via subagents RPC   | in-progress | with 3   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c3a-overrides-disallowed.plan.md` → c3b fork (to be created) → c3c paths/closeout (to be created) (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c3-execution-semantics.plan.md`) |
+| 4   | C3 — execution semantics                | Ephemeral model/effort overrides, `disallowed-tools`, fork via subagents RPC   | in-progress | with 3   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3a-overrides-disallowed.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c3b-fork.plan.md` → c3c paths/closeout (to be created) (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c3-execution-semantics.plan.md`) |
 | 5   | C4 — lifecycle & management             | Dedup, listing budget, carry-forward, `/skills` UI, watching + nested discovery | pending | -        | 3, 4    | -        |
 
 Phases 3 and 4 both build only on C1 and touch disjoint areas (commands/tokenizer/TUI vs
@@ -243,6 +243,12 @@ the wording there is authoritative; on any doubt, read the plan section, not thi
   in the fork repo with its own PRP store. Needs the A.9 skill-set seam and ships the
   protocol v3 bump + `subagents:agent-ended` that Phase 4 (C3) consumes — coordinate: C3's
   stub-extension fixtures encode the A.9 contract WS2 must satisfy.
+  - **C3 fork integration decision (approved 2026-08-13):** the C3 **fork** loop (c3b) integrates against
+    pi-subagents **v0.15.1 as shipped** (`PROTOCOL_VERSION = 2`, consuming `subagents:completed`/`subagents:failed`),
+    deliberately NOT depending on the WS2 v3 bump / `subagents:agent-ended`, to avoid forking the extension only
+    to land C3. A later WS2 v3/`agent-ended` is absorbed at the single `normalizeSubagentCompletion()` seam in the
+    fork client — no routing change. This supersedes the "Phase 4 consumes v3" wording above for the fork wire
+    contract; the A.9 skill-set seam dependency is unchanged.
 - **Workstream 3 — claude-bridge companion** (plan §5): item-level milestones tied to C0
   (listing contract + peer-dep bump) and C1 (`rewriteReadTool` deletion, provider-path
   harness line); runs in the pi-claude-bridge repo with its own PRP store.

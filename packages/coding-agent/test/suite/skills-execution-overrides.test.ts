@@ -24,9 +24,10 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import type { LoadExtensionsResult } from "../../src/core/extensions/index.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
-import { createTestResourceLoader } from "../utilities.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 const MODELS: FauxModelDefinition[] = [
@@ -59,7 +60,11 @@ function makeTempDir(): string {
 	return tempDir;
 }
 
-function createSkillsLoader(tempDir: string, fixtures: SkillFixture[]): ResourceLoader {
+function createSkillsLoader(
+	tempDir: string,
+	fixtures: SkillFixture[],
+	extensionsResult?: LoadExtensionsResult,
+): ResourceLoader {
 	const skills = fixtures.map((fixture) => {
 		const baseDir = join(tempDir, fixture.name);
 		mkdirSync(baseDir, { recursive: true });
@@ -82,7 +87,7 @@ function createSkillsLoader(tempDir: string, fixtures: SkillFixture[]): Resource
 		};
 	});
 	return {
-		...createTestResourceLoader(),
+		...createTestResourceLoader({ ...(extensionsResult && { extensionsResult }) }),
 		getSkills: () => ({ skills, diagnostics: [] }),
 	};
 }
@@ -229,6 +234,51 @@ describe("C3a overrides: ephemeral expiry", () => {
 		// The subsequent turn reaches the provider on the original session defaults.
 		expect(requests[1].modelId).toBe("session-model");
 		expect(requests[1].reasoning).toBeUndefined();
+	});
+
+	it("does not resurrect an expired override across compaction (A.5)", async () => {
+		const tempDir = makeTempDir();
+		const extensionsResult = await createTestExtensionsResult([
+			(pi) => {
+				pi.on("session_before_compact", async (event) => ({
+					compaction: {
+						summary: "compacted",
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						tokensBefore: event.preparation.tokensBefore,
+						details: {},
+					},
+				}));
+			},
+		]);
+		const harness = await createHarness({
+			models: MODELS,
+			resourceLoader: createSkillsLoader(
+				tempDir,
+				[{ name: "both", frontmatter: { model: "opus-model", effort: "high" }, body: "body" }],
+				extensionsResult,
+			),
+			settings: { compaction: { keepRecentTokens: 1 } },
+		});
+		harnesses.push(harness);
+		const requests: CapturedRequest[] = [];
+		harness.setResponses([captureRequest(requests, "first"), captureRequest(requests, "second")]);
+
+		// Seed enough history for compact() to have something to compact (mirrors
+		// agent-session-compaction.test.ts's two-prompt setup).
+		await harness.session.prompt("/skill:both");
+		await harness.session.prompt("plain follow-up");
+		expect(harness.session.agent.pendingTurnOverride).toBeUndefined();
+
+		await harness.session.compact();
+
+		const postCompactionRequests: CapturedRequest[] = [];
+		harness.setResponses([captureRequest(postCompactionRequests, "after compaction")]);
+		await harness.session.prompt("post-compaction prompt");
+
+		// The expired override is not resurrected by compaction: the post-compaction
+		// request runs under the session default, not the skill's opus-model/high.
+		expect(postCompactionRequests[0].modelId).toBe("session-model");
+		expect(postCompactionRequests[0].reasoning).toBeUndefined();
 	});
 });
 

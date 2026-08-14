@@ -286,6 +286,11 @@ export {
 	substituteSkillVariables,
 } from "./core/skills/interop.ts";
 export {
+	boostSkillsByPaths,
+	type SkillPathsBoostResult,
+	skillPathTouchFromToolCall,
+} from "./core/skills/paths-boost.ts";
+export {
 	absolutizeSkillPaths,
 	type RenderedSkillInvocation,
 	type RenderSkillContext,
@@ -338,6 +343,7 @@ export {
 	skillsQueryReplyChannel,
 } from "./core/skills/skill-set-events.ts";
 export { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS } from "./core/skills/tool-redirects.ts";
+
 // Skills
 
 export {

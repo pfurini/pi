@@ -133,6 +133,7 @@ import {
 	selectSkillTransport,
 } from "./skills/delivery.ts";
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
+import { skillPathTouchFromToolCall } from "./skills/paths-boost.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
 import {
@@ -507,6 +508,10 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	/** Bounded, chronological, no-dedup window of recently tool-touched paths for the A.6 `paths` listing boost. */
+	private readonly _skillPathsWindow: string[] = [];
+	/** Set whenever `_skillPathsWindow` changes; consumed by the `_promptInScope` rebuild boundary. */
+	private _skillPathsWindowDirty = false;
 	/**
 	 * C3a per-request `disallowed-tools` union snapshot (redirect-canonicalized,
 	 * lowercased). Rebuilt where each request's tools are built so a skill
@@ -697,6 +702,29 @@ export class AgentSession {
 	 * registered tool execution to the extension context. Tool call and tool result interception now
 	 * happens here instead of in wrappers.
 	 */
+	/**
+	 * Record a successful file-touch tool call into the A.6 `paths` boost window. Total and
+	 * never throws: it runs inside `afterToolCall`, and an exception thrown from that hook is
+	 * converted by the agent loop into an `isError` result, which would report an
+	 * already-applied edit/write as failed and invite a duplicate retry.
+	 */
+	private _recordSkillPathTouches(toolName: string, args: unknown): void {
+		try {
+			const touchedPath = skillPathTouchFromToolCall(toolName, args);
+			if (touchedPath === undefined) {
+				return;
+			}
+			this._skillPathsWindow.push(touchedPath);
+			const cap = this.settingsManager.getSkillPathsWindow();
+			while (this._skillPathsWindow.length > cap) {
+				this._skillPathsWindow.shift();
+			}
+			this._skillPathsWindowDirty = true;
+		} catch {
+			// Best-effort: a bad skillPathsWindow setting must not fail the tool call.
+		}
+	}
+
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
 			const runner = this._extensionRunner;
@@ -721,6 +749,9 @@ export class AgentSession {
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
+			if (!isError) {
+				this._recordSkillPathTouches(toolCall.name, args);
+			}
 
 			let hookResult: Awaited<ReturnType<typeof runner.emitToolResult>> | undefined;
 			if (runner.hasHandlers("tool_result")) {
@@ -1465,6 +1496,7 @@ export class AgentSession {
 			selectedTools: validToolNames,
 			toolSnippets,
 			promptGuidelines,
+			skillPathsBoost: { touchedPaths: [...this._skillPathsWindow], cwd: this._cwd },
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
 	}
@@ -1644,6 +1676,14 @@ export class AgentSession {
 				}
 				preflightResult?.(true);
 				return;
+			}
+
+			// A6 paths listing boost: recompute the base prompt once per user turn, only when the
+			// touched-path window moved since the last rebuild. This is the "next listing build"
+			// boundary the boost needs to become observable (setModel does not rebuild it).
+			if (this._skillPathsWindowDirty) {
+				this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+				this._skillPathsWindowDirty = false;
 			}
 
 			// Flush any pending bash messages / fork notices before the new prompt

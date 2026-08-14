@@ -1,5 +1,6 @@
 import type { LoadedSkill, SkillInput } from "../skills.ts";
 import { normalizeSkillInput } from "./frontmatter.ts";
+import { boostSkillsByPaths, byListingName } from "./paths-boost.ts";
 
 export const SKILL_LISTING_VERSION = "2";
 export const SKILL_LISTING_START_DELIMITER = `<available_skills version="${SKILL_LISTING_VERSION}">`;
@@ -30,7 +31,11 @@ function getListingDescription(skill: LoadedSkill): string {
  * is active (the model invokes skills through it), "read" otherwise (legacy
  * model-read convention for consumers without the tool, e.g. AskClaude).
  */
-export function formatSkillsForPrompt(skills: SkillInput[], invocation: "read" | "tool" = "read"): string {
+export function formatSkillsForPrompt(
+	skills: SkillInput[],
+	invocation: "read" | "tool" = "read",
+	boost?: { touchedPaths: readonly string[]; cwd: string },
+): string {
 	const visibleSkills = skills
 		.map((skill) => normalizeSkillInput(skill).skill)
 		.filter((skill) => !skill.disableModelInvocation);
@@ -49,7 +54,11 @@ export function formatSkillsForPrompt(skills: SkillInput[], invocation: "read" |
 		SKILL_LISTING_START_DELIMITER,
 	];
 
-	for (const skill of visibleSkills) {
+	const ordered = boost
+		? boostSkillsByPaths(visibleSkills, boost.touchedPaths, boost.cwd).ordered
+		: [...visibleSkills].sort(byListingName);
+
+	for (const skill of ordered) {
 		lines.push("  <skill>");
 		lines.push(`    <name>${escapeXml(skill.listingName)}</name>`);
 		lines.push(`    <description>${escapeXml(getListingDescription(skill))}</description>`);

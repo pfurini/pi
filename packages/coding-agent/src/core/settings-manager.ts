@@ -137,6 +137,7 @@ export interface Settings {
 	skillShellOutputLimitBytes?: number; // default: 16384 - per-command skill shell injection output cap in bytes
 	skillInterop?: boolean; // default: true - accept CLAUDE_* aliases alongside PI_* skill variables (A.8)
 	disableSkillEnvInjection?: boolean; // default: false - bypass ALL skill PI_/CLAUDE_ env composition in the bash spawn seam (independent of skillInterop). Scope note: A.3.5 shell injection is unaffected; it always carries the rendering skill's own A.8 variables.
+	skillPathsWindow?: number; // default: 50 - sliding window of recently tool-touched paths for the A.6 skill listing boost
 	forceSkillMessageBlock?: boolean; // default: false - force the A.4 message-block transport for new skill invocations even when the model is flagged syntheticToolResultReplay (forward-only rollback switch; does not downgrade pairs already persisted)
 	toolRedirects?: Record<string, string>; // default: {} - user/project overrides merged per-key over the A.8 redirect defaults (ADR-0006); a target is suggested only while registered and active
 	disableToolRedirects?: boolean; // default: false - C1 rollback switch beyond Appendix B.8: unknown tools get the plain not-found error (no mapped target, no nearest-name suggestion)
@@ -1104,6 +1105,10 @@ export class SettingsManager {
 
 	getSkillShellTimeoutMs(): number {
 		return parsePositiveIntSetting(this.settings.skillShellTimeoutMs, "skillShellTimeoutMs") ?? 30000;
+	}
+
+	getSkillPathsWindow(): number {
+		return parsePositiveIntSetting(this.settings.skillPathsWindow, "skillPathsWindow") ?? 50;
 	}
 
 	getSkillShellOutputLimitBytes(): number {

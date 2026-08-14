@@ -677,6 +677,7 @@ describe("SettingsManager", () => {
 			expect(manager.getSkillShellOutputLimitBytes()).toBe(16384);
 			expect(manager.getSkillInterop()).toBe(true);
 			expect(manager.getDisableSkillEnvInjection()).toBe(false);
+			expect(manager.getSkillPathsWindow()).toBe(50);
 		});
 
 		it("returns configured values", () => {
@@ -686,12 +687,14 @@ describe("SettingsManager", () => {
 				skillShellOutputLimitBytes: 4096,
 				skillInterop: false,
 				disableSkillEnvInjection: true,
+				skillPathsWindow: 5,
 			});
 			expect(manager.getDisableSkillShellExecution()).toBe(true);
 			expect(manager.getSkillShellTimeoutMs()).toBe(5000);
 			expect(manager.getSkillShellOutputLimitBytes()).toBe(4096);
 			expect(manager.getSkillInterop()).toBe(false);
 			expect(manager.getDisableSkillEnvInjection()).toBe(true);
+			expect(manager.getSkillPathsWindow()).toBe(5);
 		});
 
 		it("rejects non-positive-integer timeout and cap", () => {
@@ -704,6 +707,12 @@ describe("SettingsManager", () => {
 			expect(() =>
 				SettingsManager.inMemory({ skillShellOutputLimitBytes: -1 }).getSkillShellOutputLimitBytes(),
 			).toThrow(/Invalid skillShellOutputLimitBytes/);
+			expect(() => SettingsManager.inMemory({ skillPathsWindow: 0 }).getSkillPathsWindow()).toThrow(
+				/Invalid skillPathsWindow/,
+			);
+			expect(() => SettingsManager.inMemory({ skillPathsWindow: 1.5 }).getSkillPathsWindow()).toThrow(
+				/Invalid skillPathsWindow/,
+			);
 		});
 	});
 });

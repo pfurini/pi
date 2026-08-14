@@ -252,9 +252,12 @@ export class SkillForkClient {
 
 		if (background) {
 			this.liveBackgroundBySkillId.set(skillId, agentId);
+			// Capture only the callback, not `params`, so the long-lived waiter does
+			// not retain the rendered prompt for the fork's whole lifetime.
+			const { onBackgroundComplete } = params;
 			this.waiters.set(agentId, (completion) => {
 				this.liveBackgroundBySkillId.delete(skillId);
-				params.onBackgroundComplete?.(completion);
+				onBackgroundComplete?.(completion);
 			});
 			this.drainBuffered(agentId);
 			this.maybeEvictBuffer();

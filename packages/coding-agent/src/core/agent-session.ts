@@ -460,8 +460,6 @@ export class AgentSession {
 	private readonly _skillRuntime: SkillRuntime;
 	/** C3b fork spawn client (over the cross-extension event bus); absent bus === no subagents present. */
 	private readonly _skillForkClient: SkillForkClient;
-	/** Foreground-fork completion cap passed per spawn (test override; default 15 min). */
-	private readonly _skillForkForegroundCapMs: number | undefined;
 	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
 	private _pendingForkNotices: CustomMessage[] = [];
 	/**
@@ -602,7 +600,6 @@ export class AgentSession {
 				pingTimeoutMs: config.skillForkTimeouts.pingTimeoutMs,
 			}),
 		});
-		this._skillForkForegroundCapMs = config.skillForkTimeouts?.foregroundCapMs;
 		this._unregisterSkillSpawnComposer = registerBashSpawnContextComposer((context, ctx) => {
 			if (this.settingsManager.getDisableSkillEnvInjection()) return context;
 			if (!ctx || ctx.sessionManager !== this.sessionManager) return context;
@@ -2033,13 +2030,7 @@ export class AgentSession {
 		rendered: RenderedSkillInvocation,
 		reason: string,
 	): RenderedSkillInvocation {
-		this._emitSkillDiagnostics([
-			{
-				type: "warning",
-				message: `skill "${skill.name}": ${reason}; running inline instead of forking`,
-				path: skill.filePath,
-			},
-		]);
+		this._emitForkDegradeDiagnostic(skill, reason);
 		this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
 		return rendered;
 	}
@@ -2083,7 +2074,6 @@ export class AgentSession {
 			options,
 			background,
 			signal: signal ?? this._sessionAbortController?.signal,
-			...(this._skillForkForegroundCapMs !== undefined && { foregroundCapMs: this._skillForkForegroundCapMs }),
 			onBackgroundComplete: (completion) => this._recordForkCompletionNotice(record, completion),
 		};
 	}
@@ -2342,7 +2332,7 @@ export class AgentSession {
 		const background = prepared.record.background ?? true;
 		this._recordForkNotice(this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background));
 		if (outcome.kind === "completed") {
-			this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, this._completionFromOutcome(outcome)));
+			this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, outcome));
 		} else if (outcome.kind === "foreground-timeout") {
 			this._recordForkNotice(
 				this._forkNoticeMessage(
@@ -2366,17 +2356,6 @@ export class AgentSession {
 				path: skill.filePath,
 			},
 		]);
-	}
-
-	/** Narrow a "completed" fork outcome to the normalized-completion shape the notice builder reads. */
-	private _completionFromOutcome(outcome: ForkOutcome & { kind: "completed" }): NormalizedCompletion {
-		return {
-			agentId: outcome.agentId,
-			ok: outcome.ok,
-			...(outcome.result !== undefined && { result: outcome.result }),
-			...(outcome.error !== undefined && { error: outcome.error }),
-			...(outcome.status !== undefined && { status: outcome.status }),
-		};
 	}
 
 	/** Background fork completion (async): record a display-only follow-up notice. */

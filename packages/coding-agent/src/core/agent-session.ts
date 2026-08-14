@@ -714,8 +714,11 @@ export class AgentSession {
 			if (touchedPath === undefined) {
 				return;
 			}
-			this._skillPathsWindow.push(touchedPath);
+			// Read the cap before mutating: getSkillPathsWindow() throws on an invalid
+			// setting, and a throw after push (but before trim) would leave the window
+			// growing unbounded across the session with the boost never re-firing.
 			const cap = this.settingsManager.getSkillPathsWindow();
+			this._skillPathsWindow.push(touchedPath);
 			while (this._skillPathsWindow.length > cap) {
 				this._skillPathsWindow.shift();
 			}
@@ -723,6 +726,22 @@ export class AgentSession {
 		} catch {
 			// Best-effort: a bad skillPathsWindow setting must not fail the tool call.
 		}
+	}
+
+	/**
+	 * Whether any model-visible skill declares a non-empty `paths` glob. Gates the A.6 boost
+	 * rebuild: with no such skill the listing reorder is a no-op, so the per-turn base-prompt
+	 * rebuild would be wasted work.
+	 */
+	private _anyVisibleSkillDeclaresPaths(): boolean {
+		return this._resourceLoader.getSkills().skills.some((input) => {
+			const skill = normalizeSkillInput(input).skill;
+			if (skill.disableModelInvocation) {
+				return false;
+			}
+			const { paths } = skill.frontmatter;
+			return typeof paths === "string" ? paths.length > 0 : Array.isArray(paths) && paths.length > 0;
+		});
 	}
 
 	private _installAgentToolHooks(): void {
@@ -1682,7 +1701,13 @@ export class AgentSession {
 			// touched-path window moved since the last rebuild. This is the "next listing build"
 			// boundary the boost needs to become observable (setModel does not rebuild it).
 			if (this._skillPathsWindowDirty) {
-				this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+				// Skip the rebuild when no visible skill declares `paths`: the reorder would be a
+				// no-op, so rebuilding the whole base prompt every turn is pure waste. Clear the
+				// flag either way (a later touch re-dirties it, re-evaluating against any newly
+				// loaded skills).
+				if (this._anyVisibleSkillDeclaresPaths()) {
+					this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+				}
 				this._skillPathsWindowDirty = false;
 			}
 

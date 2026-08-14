@@ -159,6 +159,10 @@ git pull --rebase origin {base-branch} 2>/dev/null || true
 - **Simplicity**: derive values from existing state rather than storing copies; extract shared logic the moment a second variant of a block appears; keep nesting shallow with early returns; delete code your change obsoletes.
 - **Efficiency**: compute once and pass the result down; run independent I/O concurrently or batched; keep blocking work out of startup and hot paths; build long-lived objects from copied fields rather than captured scopes (a closure keeps the entire enclosing scope alive for the object's lifetime).
 - **Altitude**: implement each change at the depth where the problem lives; when a special case on shared infrastructure seems needed, generalize the underlying mechanism instead.
+- **Contracts**: model state so invalid combinations cannot be constructed (a discriminated union or enum instead of boolean-flag combinations); validate in the constructor or factory so the type enforces its own invariants rather than relying on callers or comments; keep one source of truth and derive the rest.
+- **Failure visibility**: make every failure path observable; catch only the error types you expect, log with enough context to debug months later, and surface actionable feedback to the caller or user; a fallback logs the original cause it replaces.
+- **Boundaries** (when the change accepts external input, authenticates, or persists data): validate with a schema at the entry point, parameterize every query, allow-list the fields written to storage, resolve the acting user from the session rather than from request parameters, and read secrets from the environment.
+- **Comments**: write comments only for why or for a constraint the code cannot show, and leave every comment in a file you touch true after your change.
 
 ### 3.3 Validate Immediately
 
@@ -194,7 +198,7 @@ If you must deviate from the plan:
 
 - [ ] All tasks executed in order
 - [ ] Each task passed type-check
-- [ ] New code written to the forward rules (reuse, simplicity, efficiency, altitude)
+- [ ] New code written to the forward rules from 3.2
 - [ ] Deviations documented
 
 ---

@@ -97,17 +97,6 @@ export class InvocationCoordinator {
 		return this.deps.activateSkill(record);
 	}
 
-	/**
-	 * The genuine `skill` tool path: render, activate (emitting activation
-	 * diagnostics), and return the rendered body. Render diagnostics stay on the
-	 * returned value for the tool to surface, matching the other sites.
-	 */
-	async prepareSkillTool(skill: LoadedSkill, rawArgs: string, signal?: AbortSignal): Promise<RenderedSkillInvocation> {
-		const { record, rendered } = await this.prepare(skill, rawArgs, signal);
-		this.deps.emitDiagnostics(this.activate(record));
-		return rendered;
-	}
-
 	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
 	plainText(spans: MessageSpan[]): string {
 		return spans.map((span) => (span.kind === "text" ? span.text : "")).join("");

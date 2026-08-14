@@ -135,7 +135,12 @@ import {
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
-import { type ForkOutcome, type NormalizedCompletion, SkillForkClient } from "./skills/skill-fork.ts";
+import {
+	type ForkOutcome,
+	type NormalizedCompletion,
+	SkillForkClient,
+	type SubagentSpawnOptions,
+} from "./skills/skill-fork.ts";
 import { computeDisallowedUnion, resolveActiveOverride, resolveModelOverride } from "./skills/skill-overrides.ts";
 import { createSkillToolDefinition, type SkillToolForkResult } from "./skills/skill-tool.ts";
 import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
@@ -879,6 +884,7 @@ export class AgentSession {
 					event.message.content,
 					event.message.display,
 					event.message.details,
+					event.message.excludeFromContext,
 				);
 			} else if (
 				event.message.role === "user" ||
@@ -1967,8 +1973,9 @@ export class AgentSession {
 		// Fork render diagnostics are surfaced here (execute returns the fork branch
 		// and never sees them).
 		this._emitSkillDiagnostics(rendered.diagnostics);
-		if (await this._shouldDegradeFork()) {
-			return this._degradeForkToInline(skill, record, rendered, "no subagents extension available");
+		const degradeReason = await this._shouldDegradeFork();
+		if (degradeReason) {
+			return this._degradeForkToInline(skill, record, rendered, degradeReason);
 		}
 		const outcome = await this._skillForkClient.spawn(this._buildForkSpawnParams(record, rendered, signal));
 		switch (outcome.kind) {
@@ -2002,6 +2009,8 @@ export class AgentSession {
 					`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`,
 					{ isError: true },
 				);
+			default:
+				return this._unreachableForkOutcome(outcome);
 		}
 	}
 
@@ -2035,12 +2044,20 @@ export class AgentSession {
 		return rendered;
 	}
 
-	/** True when the fork must degrade to inline: headless-print mode or no subagents extension. */
-	private async _shouldDegradeFork(): Promise<boolean> {
+	/** The degrade reason when a fork must run inline (headless mode or no subagents extension), else undefined. */
+	private async _shouldDegradeFork(): Promise<string | undefined> {
 		if (this._extensionMode === "print" || this._extensionMode === "json") {
-			return true;
+			return "headless mode does not support forking";
 		}
-		return !(await this._skillForkClient.detectPresence());
+		if (!(await this._skillForkClient.detectPresence())) {
+			return "no subagents extension available";
+		}
+		return undefined;
+	}
+
+	/** Compile-time exhaustiveness guard for `ForkOutcome` routing: a new variant fails to compile here. */
+	private _unreachableForkOutcome(outcome: never): never {
+		throw new Error(`unhandled fork outcome: ${JSON.stringify(outcome)}`);
 	}
 
 	/**
@@ -2054,7 +2071,7 @@ export class AgentSession {
 		rendered: RenderedSkillInvocation,
 		signal?: AbortSignal,
 	): Parameters<SkillForkClient["spawn"]>[0] {
-		const options: Record<string, unknown> = {};
+		const options: SubagentSpawnOptions = {};
 		const currentModel = this.model;
 		if (record.model !== undefined && currentModel) {
 			const resolved = resolveModelOverride(record.model, {
@@ -2308,8 +2325,9 @@ export class AgentSession {
 		if (prepared.record.context !== "fork") {
 			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
 		}
-		if (await this._shouldDegradeFork()) {
-			this._emitForkDegradeDiagnostic(skill, "no subagents extension available");
+		const degradeReason = await this._shouldDegradeFork();
+		if (degradeReason) {
+			this._emitForkDegradeDiagnostic(skill, degradeReason);
 			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
 		}
 		const outcome = await this._skillForkClient.spawn(
@@ -2331,18 +2349,26 @@ export class AgentSession {
 		// went only to the subagent (never to the parent turn).
 		const background = prepared.record.background ?? true;
 		this._recordForkNotice(this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background));
-		if (outcome.kind === "completed") {
-			this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, outcome));
-		} else if (outcome.kind === "foreground-timeout") {
-			this._recordForkNotice(
-				this._forkNoticeMessage(
-					`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
-				),
-			);
-		} else if (outcome.kind === "aborted") {
-			this._recordForkNotice(
-				this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
-			);
+		switch (outcome.kind) {
+			case "spawned-background":
+				break;
+			case "completed":
+				this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, outcome));
+				break;
+			case "foreground-timeout":
+				this._recordForkNotice(
+					this._forkNoticeMessage(
+						`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
+					),
+				);
+				break;
+			case "aborted":
+				this._recordForkNotice(
+					this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
+				);
+				break;
+			default:
+				return this._unreachableForkOutcome(outcome);
 		}
 		return { forked: true };
 	}
@@ -2405,7 +2431,13 @@ export class AgentSession {
 
 	private _appendForkNotice(notice: CustomMessage): void {
 		this.agent.state.messages.push(notice);
-		this.sessionManager.appendCustomMessageEntry(notice.customType, notice.content, notice.display, notice.details);
+		this.sessionManager.appendCustomMessageEntry(
+			notice.customType,
+			notice.content,
+			notice.display,
+			notice.details,
+			notice.excludeFromContext,
+		);
 		this._emit({ type: "message_start", message: notice });
 		this._emit({ type: "message_end", message: notice });
 	}

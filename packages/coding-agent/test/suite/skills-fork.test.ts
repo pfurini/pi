@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type Context,
 	type FauxResponseFactory,
@@ -16,9 +17,12 @@ import {
 	fauxToolCall,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createEventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionAPI } from "../../src/core/extensions/index.ts";
+import { convertToLlm } from "../../src/core/messages.ts";
+import { sessionEntryToContextMessages } from "../../src/core/session-manager.ts";
 import { normalizeSubagentCompletion, SkillForkClient } from "../../src/core/skills/skill-fork.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
@@ -95,6 +99,7 @@ function createSkillsLoader(
 interface ForkHarnessOptions {
 	stub?: StubSubagentsController;
 	mode?: "tui" | "print";
+	tools?: AgentTool[];
 }
 
 const MODELS = [
@@ -111,6 +116,7 @@ async function createForkHarness(fixtures: SkillFixture[], options: ForkHarnessO
 		resourceLoader,
 		eventBus,
 		skillForkTimeouts: FAST_TIMEOUTS,
+		...(options.tools && { tools: options.tools }),
 		...(options.stub && { extensionFactories: [{ factory: options.stub.factory }] }),
 	});
 	harnesses.push(harness);
@@ -623,6 +629,28 @@ describe("C3b fork routing: spawn options + parent isolation", () => {
 		expect(harness.session.agent.pendingTurnOverride).toBeUndefined();
 	});
 
+	it("keeps a persisted fork notice out of LLM context after reconstruction (excludeFromContext round-trip)", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkBg], { stub });
+		harness.setResponses([]);
+
+		await harness.session.prompt("/skill:forkbg");
+		stub.complete(stub.spawns[0].agentId, { result: "secret-bg-result" });
+
+		// The completion notice was recorded and persisted as a skill_fork custom_message entry.
+		expect(forkNotices(harness).some((text) => text.includes("secret-bg-result"))).toBe(true);
+		const persisted = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "custom_message" && entry.customType === "skill_fork");
+		expect(persisted.length).toBeGreaterThan(0);
+
+		// Reconstructing the session (the reload path) must not leak the notice into LLM context.
+		const contextMessages = harness.sessionManager.getEntries().flatMap(sessionEntryToContextMessages);
+		const llmText = JSON.stringify(convertToLlm(contextMessages));
+		expect(llmText).not.toContain("secret-bg-result");
+		expect(llmText).not.toContain("running in a background subagent");
+	});
+
 	it("warns (not silently inline) for a non-sole mid-prompt fork", async () => {
 		const stub = createStubSubagentsExtension();
 		const harness = await createForkHarness([forkBg], { stub });
@@ -633,6 +661,90 @@ describe("C3b fork routing: spawn options + parent isolation", () => {
 
 		expect(stub.spawns.length).toBe(0);
 		expect(errors.some((message) => message.includes("only for a sole message-initial skill"))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Fork routing through the queued (steer/followUp) sole-skill path
+// ---------------------------------------------------------------------------
+
+/** A tool that blocks until released, holding the turn streaming so a queued message is consumed. */
+function waitTool(): { tool: AgentTool; release: () => void } {
+	let releaseExecution: (() => void) | undefined;
+	const gate = new Promise<void>((resolve) => {
+		releaseExecution = resolve;
+	});
+	const tool: AgentTool = {
+		name: "wait",
+		label: "Wait",
+		description: "Wait for release",
+		parameters: Type.Object({}),
+		execute: async () => {
+			await gate;
+			return { content: [{ type: "text", text: "released" }], details: {} };
+		},
+	};
+	return { tool, release: () => releaseExecution?.() };
+}
+
+function waitForWaitToolStart(harness: Harness): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const unsubscribe = harness.session.subscribe((event) => {
+			if (event.type === "tool_execution_start" && event.toolName === "wait") {
+				unsubscribe();
+				resolve();
+			}
+		});
+	});
+}
+
+describe("C3b fork routing: queued (steer/followUp) sole-skill delivery", () => {
+	it("background: a queued fork spawns without delivering the body to the parent", async () => {
+		const stub = createStubSubagentsExtension();
+		const { tool, release } = waitTool();
+		const harness = await createForkHarness([forkBg], { stub, tools: [tool] });
+		const requests: CapturedRequest[] = [];
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			captureRequest(requests, "done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.followUp("/skill:forkbg");
+		release();
+		await promptPromise;
+
+		expect(stub.spawns.length).toBe(1);
+		expect(stub.spawns[0].options.isBackground).toBe(true);
+		expect(forkNotices(harness).some((text) => text.includes("running in a background subagent"))).toBe(true);
+		// The queued fork body reaches neither the transcript nor the continuation request.
+		expect(allTranscriptText(harness)).not.toContain(SENTINEL);
+		expect(requests.every((request) => !request.text.includes(SENTINEL))).toBe(true);
+	});
+
+	it("foreground: a queued fork awaits and stays foreground (not narrowed to background)", async () => {
+		const stub = createStubSubagentsExtension({ autoComplete: { when: "after-reply", result: "queued fg" } });
+		const { tool, release } = waitTool();
+		const harness = await createForkHarness([forkFg], { stub, tools: [tool] });
+		const requests: CapturedRequest[] = [];
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			captureRequest(requests, "done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.steer("/skill:forkfg");
+		release();
+		await promptPromise;
+
+		expect(stub.spawns.length).toBe(1);
+		// The acceptance criterion: a queued foreground fork is NOT narrowed to background.
+		expect(stub.spawns[0].options.isBackground).toBe(false);
+		expect(forkNotices(harness).some((text) => text.includes("completed: queued fg"))).toBe(true);
+		expect(allTranscriptText(harness)).not.toContain(SENTINEL);
+		expect(requests.every((request) => !request.text.includes(SENTINEL))).toBe(true);
 	});
 });
 

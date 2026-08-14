@@ -175,6 +175,7 @@ Pi supports a deliberate subset of Claude Code skill semantics (ADR-0007). The b
 - The argument grammar, `${CLAUDE_*}` variable aliases, and `` !` `` shell injection (gated by tool policy)
 - Per-invocation `model`/`effort` overrides (ephemeral, non-persistent per-turn; CC aliases `opus`/`sonnet`/`haiku`/`fable` resolve best-effort against available models) and turn-scoped `disallowed-tools` enforcement
 - CC tool-name correction: the redirect map above plus the stage-7 steering note in rendered bodies
+- Per-invocation `context: fork` execution: a sole message-initial skill (user-invoked or via the model `skill` tool) runs in a pi-subagents subagent instead of inline. `agent` selects the subagent type; `background` (default `true`) chooses background delivery (an acknowledgment plus a post-turn completion notice) vs foreground (awaits the subagent under a 15-minute cap). The fork body never enters the parent context. Falls back to inline delivery (with a diagnostic) when no subagents extension is present, on spawn failure, or in headless mode
 
 **Not supported (no translation, by design):**
 
@@ -183,7 +184,7 @@ Pi supports a deliberate subset of Claude Code skill semantics (ADR-0007). The b
 - Hook execution (`hooks` frontmatter is parsed and preserved, never executed)
 - `allowed-tools` enforcement (parsed and preserved, advisory only)
 - `Skill(name)` permission rules
-- Per-invocation `context: fork`, `agent`, `background`, and `paths` activation (parsed and preserved; consumed by later phases)
+- Per-invocation `paths` listing-boost activation (parsed and preserved; not yet implemented)
 
 ## Skill Structure
 
@@ -250,9 +251,9 @@ Booleans accept `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` (case-insens
 | `disallowed-tools` (alias `disallowedTools`) | No | Tool names as a comma-separated string or a YAML list. Turn-scoped: while the invocation is active, matching tools are removed from the model's request schema and a matching tool call is blocked before lookup (case-insensitive after redirect canonicalization, so `Bash`, `bash`, and `Task` map to the registered `bash`/`Agent`); the same list also gates [shell command injection](#shell-command-injection). Stacked invocations union their lists; same-batch siblings of an invoking `skill` call are exempt (restriction starts with the next request). `Tool(pattern)` entries reduce to the bare name with a diagnostic; wildcards are unsupported (diagnostic, entry skipped). |
 | `model` | No | A model id, `inherit`, or a CC alias (`opus`/`sonnet`/`haiku`/`fable`, best-effort against available models). Applied as an ephemeral, non-persistent per-turn override on the invocation's provider requests; `inherit`/empty keeps the session model; an unmatched value is a diagnostic + ignore. Session defaults are untouched. |
 | `effort` | No | A `ThinkingLevel` string (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) or an integer token budget. Applied as an ephemeral per-turn thinking-level override, clamped to the effective (possibly `model`-overridden) model's supported levels; integer budgets clamp-map with a diagnostic. Exposed as `${PI_EFFORT}` at the same clamped value. |
-| `context` | No | `inline` (default) or `fork`. Parsed and preserved; fork execution is not yet implemented. |
-| `agent` | No | Subagent type name for `context: fork`. Parsed and preserved; not yet consumed. |
-| `background` | No | Fork-only; default `true`. Parsed and preserved; not yet consumed. |
+| `context` | No | `inline` (default) or `fork`. `fork` runs a sole message-initial skill (user-invoked or via the model `skill` tool) in a pi-subagents subagent instead of inline; its body never enters the parent context. Falls back to inline delivery (with a diagnostic) when no subagents extension is present, on spawn failure, or in headless mode. |
+| `agent` | No | Subagent type name for `context: fork` (an unknown type still spawns, defaulting to `general-purpose` on the wire). Ignored for `inline`. |
+| `background` | No | Fork-only; default `true`. `true` returns an acknowledgment and reports completion as a post-turn notice; `false` awaits the subagent under a 15-minute foreground cap. |
 | `paths` | No | Glob list. Parsed and preserved; listing-boost activation is not yet implemented. |
 | `shell` | No | `bash` (default) or `powershell`. Selects the interpreter for [shell command injection](#shell-command-injection). |
 | `hooks` | No | Arbitrary nested hook configuration. **Parsed and preserved, never executed.** |

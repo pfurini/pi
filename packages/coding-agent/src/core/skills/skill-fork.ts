@@ -58,6 +58,12 @@ export type ForkOutcome =
 	| { kind: "spawn-failed"; error: string }
 	| { kind: "repeat-blocked" };
 
+/** Subagent spawn options carried on the wire: only the resolved model (no env — A.8 is baked into the prompt). */
+export interface SubagentSpawnOptions {
+	/** Resolved model in `provider/id` string form; omitted keeps the subagent's default. */
+	model?: string;
+}
+
 export interface SkillForkSpawnParams {
 	/** Canonical skill id: keys the repeat-while-running guard. */
 	skillId: string;
@@ -66,7 +72,7 @@ export interface SkillForkSpawnParams {
 	/** Rendered skill body (A.8 substitutions + shell injection already baked in). */
 	prompt: string;
 	/** Resolved spawn options (`model` string only); the client adds `isBackground`. */
-	options: Record<string, unknown>;
+	options: SubagentSpawnOptions;
 	background: boolean;
 	/** Background completion callback (success and failure); clears the guard upstream. */
 	onBackgroundComplete?: (completion: NormalizedCompletion) => void;
@@ -270,7 +276,7 @@ export class SkillForkClient {
 		bus: EventBus,
 		agentType: string | undefined,
 		prompt: string,
-		options: Record<string, unknown>,
+		options: SubagentSpawnOptions & { isBackground: boolean },
 		timeoutMs: number | undefined,
 	): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
 		return new Promise((resolve) => {
@@ -360,7 +366,11 @@ export class SkillForkClient {
 
 	/** Emit `subagents:rpc:stop` (fire-and-forget) and settle any outstanding wait once. */
 	stop(agentId: string): void {
-		this.eventBus?.emit(SUBAGENTS_STOP, { requestId: randomUUID(), agentId });
+		try {
+			this.eventBus?.emit(SUBAGENTS_STOP, { requestId: randomUUID(), agentId });
+		} catch {
+			// Fire-and-forget: a stale/throwing bus must never prevent settling the wait.
+		}
 		const settler = this.foregroundSettlers.get(agentId);
 		if (settler) {
 			settler();
@@ -407,10 +417,14 @@ export class SkillForkClient {
 		return this.liveBackgroundBySkillId.has(skillId);
 	}
 
-	/** Settle every pending foreground wait as aborted (session abort); keeps subscriptions. */
+	/**
+	 * Stop and settle every pending foreground wait as aborted (session abort); keeps
+	 * subscriptions. Emits `subagents:rpc:stop` per agent so an aborted foreground fork
+	 * does not leave its subagent running (`stop()` also settles the wait, idempotently).
+	 */
 	cancelForegroundWaits(): void {
-		for (const settler of [...this.foregroundSettlers.values()]) {
-			settler();
+		for (const agentId of [...this.foregroundSettlers.keys()]) {
+			this.stop(agentId);
 		}
 		this.foregroundSettlers.clear();
 	}

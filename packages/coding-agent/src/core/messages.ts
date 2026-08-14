@@ -132,6 +132,7 @@ export function createCustomMessage(
 	display: boolean,
 	details: unknown | undefined,
 	timestamp: string,
+	excludeFromContext?: boolean,
 ): CustomMessage {
 	return {
 		role: "custom",
@@ -139,6 +140,7 @@ export function createCustomMessage(
 		content,
 		display,
 		details,
+		...(excludeFromContext && { excludeFromContext }),
 		timestamp: new Date(timestamp).getTime(),
 	};
 }

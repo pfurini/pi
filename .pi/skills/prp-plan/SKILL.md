@@ -37,6 +37,7 @@ Discover the actual structure before proceeding.
 Before planning, check intent:
 
 - **Link / connect two existing plans** — the request is to wire a back/forward reference between plans (e.g. "link plan A to plan B", "this plan builds on that one", `update-references <plan> <related> [back|forward]`). → Follow `workflows/update-references.md` and stop. Do NOT run the planning phases below.
+- **Revise from a review report** — the input contains or references a `/prp-plan-review` report (a `reviews/*-review.md` path or pasted review findings) against an existing plan. → Follow `workflows/revise-from-review.md` and stop. Do NOT regenerate the plan through the phases below.
 - **Create / update a plan** (the default) — anything that describes a feature, hands over a PRD, or otherwise asks for an implementation plan. → Continue with Phase 0 below.
 
 ---
@@ -375,3 +376,4 @@ Create directory if needed: `mkdir -p "$PRP_DIR/plans"`
 - `references/task-block-format.md` — task-block field detail and worked examples (mandatory read in Phase 6, before writing Step-by-Step Tasks)
 - `references/validation-commands.md` — per-language validation command catalog (mandatory read in Phase 6, before filling Validation Commands)
 - `workflows/update-references.md` — the update-references mode (read only when Mode Select routes there)
+- `workflows/revise-from-review.md` — the revise-from-review mode for folding review findings into a plan (read only when Mode Select routes there)

@@ -17,6 +17,10 @@ Each task is a bullet list under a `### `[ ]` Task N: {ACTION} `{file}`` header.
 
 Every task MUST have at least MIRROR (or PATTERN) and VALIDATE. GOTCHA entries come from real research findings, not invented warnings.
 
+## Altitude
+
+A task pins WHAT must hold, not HOW to build it: the invariant, the seam to touch (verified symbol + `file:line`), and the falsifying test. The implementer designs the mechanism against real code — they have the compiler and the test suite; the plan has neither, so every mechanism the plan scripts in prose (branching logic, buffer or flush lifecycles, private helper bodies) is unverified code that reviews must attack and that drifts stale. Reserve mechanism internals for designs several components must agree on, and verify every seam and pattern such a design cites in source first.
+
 ## Worked example sequence
 
 Illustrative examples from one TypeScript project — replace their content entirely with the target project's real files, patterns, and commands. Note the dependency order: schema → types → validation → errors → repository → service → public API → tests.

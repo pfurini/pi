@@ -13,12 +13,13 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 | Traceability | RAN / **SKIPPED — no source PRD found** |
 | Angles run | {comma-separated list} |
 | Reviewed | {ISO-8601 date} |
+| Pass | {first review / re-review verifying the {date} dispositions} |
 
 ## Verdict: {READY / REVISE}
 
 {One-line rationale: what tipped the verdict. REVISE names the blocking findings by title; READY states what was checked and held.}
 
-**Findings**: {N} blocking · {N} important · {N} suggestions
+**Findings**: {N} blocking · {N} decision · {N} important · {N} suggestions
 
 | Angle | Verdict |
 |-------|---------|
@@ -35,6 +36,10 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 **Unjustified plan tasks (provenance)**: {list of task numbers with no PRD justification, each with a one-line note, or "none"}
 
 **Fidelity drift**: {list: PRD commitment → plan wording, weakened or strengthened, or "none"}
+
+## Decisions Required
+
+{Finding blocks whose resolution is a user choice (class DECISION): unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` items, scope or slice ownership, spec interpretations. Each names the decision, the options, and what it gates. "None" when empty.}
 
 ## Blocking Findings
 
@@ -54,5 +59,5 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 
 ## Next Step
 
-{REVISE: `/prp-plan` revision with this report as input — paste this file's path and address the Blocking Findings; re-run `/prp-plan-review` after.
+{REVISE: answer the Decisions Required items, then `/prp-plan` revise-from-review with this report as input — paste this file's path and address the Blocking Findings; re-run `/prp-plan-review` after (it will run as a re-review against the plan's dispositions).
 READY: `/prp-implement {plan path}`.}

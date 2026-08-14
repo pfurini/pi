@@ -23,7 +23,7 @@ mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "n
 ## Phase 1: RESOLVE — the plan under review
 
 1. If `$ARGUMENTS` contains a path to a `.md` file, use it. Otherwise list `$PRP_DIR/plans/*.plan.md` by modification time and propose the most recent; if several are plausible candidates for "the" plan, ask the user which one — do not guess.
-2. Read the plan **in full**. Note its Metadata, Lifecycle (Back refs), NOT Building, Step-by-Step Tasks, Validation Commands, and Acceptance Criteria sections — the attack briefs reference them.
+2. Read the plan **in full**. Note its Metadata, Lifecycle (Back refs), NOT Building, Step-by-Step Tasks, Validation Commands, and Acceptance Criteria sections — the attack briefs reference them. Note the Amendments section too: a disposition table from a prior review there makes this pass a **re-review** (see Re-review passes).
 3. If the plan does not exist or is empty, stop: `Error: no plan found. Create one first: /prp-plan "<feature>"`.
 
 ## Phase 2: SOURCE — locate the PRD
@@ -49,6 +49,16 @@ If a PRD is found, read it in full before dispatching.
 
 **If `$ARGUMENTS` names angles, they ARE the list — run exactly those and nothing else.** A caller naming angles has already decided how much review this plan is worth. `all` is the only keyword that means "apply the table above". Naming `traceability` with no resolvable PRD is an error to surface, not a silent skip.
 
+## Re-review passes
+
+A re-review is any pass after findings were folded: the plan's Amendments carry a disposition table from a prior review, or the caller says so. A fresh full-depth attack on every section would re-litigate settled ground and keep the finding count high forever; a re-review instead:
+
+1. **Verifies dispositions.** Every prior finding folded into the plan is checked as actually closed; every rejected finding's disproving evidence is checked as still holding. A disposition that does not hold is a finding.
+2. **Attacks only new ground at full depth**: sections changed since the prior pass (named in the Amendments entry) and areas the prior pass did not reach. Unchanged, previously-verified sections are re-opened only on new evidence.
+3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is not review quality.
+
+At dispatch (Phase 4), prepend this line to every brief (this is scoping, not rewording): "Re-review pass: prior findings and their dispositions are in the plan's Amendments. Verify the dispositions relevant to your angle, attack changed sections and previously unreached areas at full depth, and re-open closed findings only on new evidence."
+
 ## Phase 4: DISPATCH — parallel adversarial fan-out
 
 Read `references/agent-prompts.md` now (mandatory) — it is the exact attack brief for every angle.
@@ -61,10 +71,11 @@ Wait for all agents to return.
 
 1. Collect every agent's finding blocks and `ANGLE_VERDICT` line.
 2. Deduplicate: when two angles surface the same defect (common between completeness and validation), keep the finding under the angle with the stronger evidence and note the overlap.
-3. Compute the overall verdict:
-   - Any BLOCKING finding, or any `ANGLE_VERDICT: FAIL` → **REVISE**.
+3. Reclassify decisions: a finding whose resolution is a user choice — an unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` item, scope or slice ownership, a spec interpretation only the user can settle — is class **DECISION**, reported and counted separately from plan defects. It still forces REVISE (an undecided plan cannot be implemented), but the Next Step tells the user to decide, not the planner to fix.
+4. Compute the overall verdict:
+   - Any BLOCKING or DECISION finding, or any `ANGLE_VERDICT: FAIL` → **REVISE**.
    - Otherwise → **READY** (findings, if any, are advisory).
-4. Read `templates/review-report.md` now (mandatory) and write the aggregated report in exactly that structure to:
+5. Read `templates/review-report.md` now (mandatory) and write the aggregated report in exactly that structure to:
 
 ```bash
 mkdir -p "$PRP_DIR/reviews"
@@ -79,8 +90,8 @@ Report to the user:
 - The expanded absolute report path.
 - The verdict (READY / REVISE) with the one-line rationale.
 - The traceability headline when it ran (N covered / N partial / N uncovered / N contradicted), or the loud SKIPPED note when it did not.
-- Finding counts by severity.
-- Next step: **REVISE** → `/prp-plan` with the report's blocking findings as revision input (paste the report path); **READY** → `/prp-implement <plan path>`.
+- Finding counts by class (blocking / decision / important / suggestion).
+- Next step: **REVISE** → answer any Decisions Required, then `/prp-plan` revise-from-review with the report path; **READY** → `/prp-implement <plan path>`.
 
 ## Gotchas
 

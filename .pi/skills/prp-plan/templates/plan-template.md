@@ -90,6 +90,8 @@ So that {benefit}
 
 ## Patterns to Mirror
 
+_Anchor every SOURCE on the enclosing symbol plus `file:line` — symbol names survive line drift; bare line numbers don't._
+
 **NAMING_CONVENTION:**
 
 ```typescript
@@ -194,11 +196,16 @@ Execute in order. Each task is atomic and independently verifiable.
 
 ### Edge Cases Checklist
 
-- [ ] Empty string inputs
-- [ ] Missing required fields
-- [ ] Unauthorized access attempts
-- [ ] Not found scenarios
-- [ ] Duplicate creation attempts
+_Trace every seam the plan hooks through its full lifecycle — plans fail review on these paths, not on happy paths:_
+
+- [ ] Queued/deferred entry: the behavior holds when input arrives via a queue, steer, or deferred path, not only the direct call
+- [ ] Retry/continuation: state survives (or deliberately resets across) retries and continuations
+- [ ] Abort mid-operation: cancellation between activation and completion leaves no stale state
+- [ ] Error-path rollback: a failure after partial state activation reverts what was activated
+- [ ] Teardown/dispose: listeners, timers, buffers, and registrations are released
+- [ ] Persistence/reload: state written now reads back after restart; reload does not resurrect expired state
+- [ ] Concurrent duplicate entry: two simultaneous triggers do not double-apply
+- [ ] Invalid/malformed input at every public boundary
 - [ ] {feature-specific edge case}
 
 ---
@@ -257,12 +264,15 @@ Use Browser MCP to verify:
 
 ## Acceptance Criteria
 
-- [ ] All specified functionality implemented per user story
-- [ ] Level 1-3 validation commands pass with exit 0
-- [ ] Unit tests cover >= 80% of new code
-- [ ] Code mirrors existing patterns exactly (naming, structure, logging)
-- [ ] No regressions in existing tests
-- [ ] UX matches "After State" diagram
+_Every criterion names the check that fails if it is violated — a criterion no planned check can falsify is unverifiable, not done. Scope each criterion to what its named check exercises: a broad negative ("no deferred behavior introduced") is only as wide as its fixtures, so narrow the wording to the tested fields. A criterion verifiable only outside this repository is a coordination item for the Completion Checklist, not a criterion here. A criterion about prose (docs, changelog) names the file and the manual step that confirms it._
+
+| # | Criterion | Falsified by |
+|---|-----------|--------------|
+| 1 | {Specific behavior per user story} | {test file / command that fails if violated} |
+| 2 | Level 1-3 validation commands pass with exit 0 | The commands themselves |
+| 3 | Code mirrors existing patterns (naming, structure, logging) | {lint command / review step} |
+| 4 | No regressions in existing tests | Level 3 full suite |
+| 5 | UX matches "After State" diagram | {Level 5 or 6 step} |
 
 ---
 

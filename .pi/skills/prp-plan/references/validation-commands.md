@@ -1,6 +1,6 @@
 # Validation Commands — Per-Language Catalog
 
-Concrete commands to substitute for the `{runner}` placeholders in the plan's "Validation Commands" section (see the level structure in `templates/plan-template.md`). Always replace placeholders with actual commands from the project's package.json/config — verify the script names exist before embedding them.
+Concrete commands to substitute for the `{runner}` placeholders in the plan's "Validation Commands" section (see the level structure in `templates/plan-template.md`). Verify every command against the project and the host before saving the plan: the script exists in package.json/config, the tool is installed here (`command -v`), the working directory is stated when the command is directory-sensitive, and any network access the command needs is flagged in the plan. Manual validation (Level 6) steps name exact commands, environment variables, and flags confirmed to exist — a paraphrase of how launching "should" work fails at implementation time.
 
 ## Level 1: STATIC_ANALYSIS
 

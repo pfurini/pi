@@ -36,6 +36,8 @@ TRACE:
 3. State changes - side effects in related functions
 4. Contracts - interfaces and expectations between components
 5. Patterns in use - design patterns and architectural decisions
+6. Execution timing - for each seam the feature will hook, when it runs relative to: initial entry, queued/deferred delivery, retry, error/abort, teardown (cite the call order with file:line)
+7. Surface enumeration - every surface that reads or exposes the state being changed (all enumerators, caches, mirrors, public listings)
 
 Document what exists with precise file:line references. No suggestions or improvements.
 ```
@@ -80,6 +82,7 @@ ANALYZE:
 2. What contracts exist between components
 3. What side effects occur at each stage
 4. What error handling patterns are in place
+5. When each integration point executes relative to queued/deferred paths, retries, aborts, and teardown - cite the call order
 
 Document what exists with precise file:line references. No suggestions.
 ```

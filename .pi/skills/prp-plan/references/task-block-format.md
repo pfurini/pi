@@ -8,8 +8,8 @@ Each task is a bullet list under a `### `[ ]` Task N: {ACTION} `{file}`` header.
 
 - **ACTION** — what to do to the file (CREATE / UPDATE / ADD ...)
 - **IMPLEMENT** — the specific content to implement (functions, columns, schemas)
-- **MIRROR** — `file:line` of the existing codebase pattern to copy exactly
-- **IMPORTS** — exact import statements the new code needs
+- **MIRROR** — the existing codebase pattern to copy exactly, anchored on its enclosing symbol plus `file:line` (symbol names survive line drift)
+- **IMPORTS** — exact import statements the new code needs, each path resolved against the actual tree (a wrong relative depth fails compilation)
 - **TYPES** — type definitions or inference patterns to use
 - **PATTERN** — the design pattern or structural rule to follow
 - **GOTCHA** — known issue to avoid, discovered in Phase 2/3 research

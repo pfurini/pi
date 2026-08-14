@@ -1,6 +1,6 @@
 ---
 name: prp-plan
-description: Create comprehensive feature implementation plan with codebase analysis and research. Also wires bidirectional back/forward references between existing plans (the update-references workflow). Use when the user wants to plan a feature, turn a PRD into an implementation plan, "link two plans", "add a back/forward reference", "connect related plans", or invokes /prp-plan.
+description: Create a comprehensive, context-rich feature implementation plan. Also wires bidirectional back/forward references between existing plans (the update-references workflow). Use when the user wants to plan a feature, turn a PRD into an implementation plan, "link two plans", "add a back/forward reference", "connect related plans", or invokes /prp-plan.
 argument-hint: <feature description | path/to/prd.md> | update-references <plan-path> <related-plan-path> [back|forward]
 ---
 
@@ -11,17 +11,10 @@ Transform "$ARGUMENTS" into a battle-tested implementation plan through systemat
 
 **Execution Order**: CODEBASE FIRST, RESEARCH SECOND. Solutions must fit existing patterns before introducing new ones.
 
-**Agent Strategy**: Use specialized agents for intelligence gathering:
-- `codebase-explorer` — finds WHERE code lives and extracts implementation patterns
-- `codebase-analyst` — analyzes HOW integration points work and traces data flow
-- `web-researcher` — strategic web research with citations and gap analysis
-
-Launch codebase agents in parallel first, then research agent second.
+**Agent Strategy**: specialized subagents gather intelligence in Phases 2, 3, and 5; their roles and exact prompts live in `references/agent-prompts.md`.
 </objective>
 
 <context>
-CLAUDE.md rules: @CLAUDE.md
-
 **Directory Discovery** (run these to understand project structure):
 - List root contents: `ls -la`
 - Find main source directories: `ls -la */ 2>/dev/null | head -50`
@@ -155,6 +148,7 @@ Combine findings from both agents into a unified discovery table:
 - [ ] At least 3 similar implementations found with file:line refs
 - [ ] Code snippets are ACTUAL (copy-pasted from codebase, not invented)
 - [ ] Integration points mapped with data flow traces
+- [ ] Every surface that reads or exposes the changed state is enumerated (all enumerators, caches, mirrors)
 - [ ] Dependencies cataloged with versions from package.json
 
 ---
@@ -174,6 +168,8 @@ Combine findings from both agents into a unified discovery table:
   - GOTCHA: {potential pitfall and how to avoid}
 ```
 
+**External capability check**: when a planned behavior or acceptance criterion depends on a capability of an external package or companion repository, verify the capability exists at the pinned version by reading its actual source (node_modules or the checked-out repo) — documentation and memory of the API do not count. A capability you cannot verify is a decision-required item for Phase 5.5, not an assumption to build on.
+
 **PHASE_3_CHECKPOINT:**
 
 - [ ] `web-researcher` agent launched and completed
@@ -181,6 +177,7 @@ Combine findings from both agents into a unified discovery table:
 - [ ] URLs include specific section anchors (not just homepage)
 - [ ] Gotchas documented with mitigation strategies
 - [ ] No conflicting patterns between external docs and existing codebase
+- [ ] Every external capability the plan depends on was verified in the pinned version's source
 
 ---
 
@@ -232,6 +229,7 @@ NOT_BUILDING (explicit scope limits):
 - [ ] Approach aligns with existing architecture and patterns
 - [ ] Dependencies ordered correctly (types → repository → service → routes)
 - [ ] Edge cases identified with specific mitigation strategies
+- [ ] Each hooked seam's execution timing verified from source across initial, queued/deferred, retry, abort, and teardown paths
 - [ ] Scope boundaries are explicit and justified
 
 ---
@@ -242,8 +240,10 @@ Phases 2-5 discover ambiguities the Phase 1 gate could not see. Before generatin
 
 | Class | Criteria | Action |
 |-------|----------|--------|
-| **decision-required** | Public API/wire-contract shape; scope or phase placement; behavior change or compatibility break; security/isolation policy interpretation; expensive or hard-to-reverse choices | Must be confirmed by the user before the plan is implementation-ready |
+| **decision-required** | Public API/wire-contract shape; scope or phase placement; behavior change or compatibility break; any weakening, strengthening, or omission of a behavior the source input commits to; any new or changed public setting; security/isolation policy interpretation; expensive or hard-to-reverse choices | Must be confirmed by the user before the plan is implementation-ready |
 | **planner-default** | Reversible implementation detail with a clear, evidence-backed default | Decide it; disclose it under Questionables — no prompt |
+
+A task block states exactly one design. Alternatives left in task text ("or …", "if needed", "choose one") are unclassified assumptions — resolve each through this checkpoint before generating the plan.
 
 **If decision-required items exist, batch them into ONE interaction** — never drip questions one at a time. Present each item with the assumption taken, the rationale, and the alternatives. Then:
 
@@ -259,6 +259,7 @@ If the input fully settles behavior and placement (e.g. an explicit PRD decision
 - [ ] All post-Phase-1 assumptions collected and classified
 - [ ] Decision-required items either confirmed (with provenance) or marked `[DECISION REQUIRED]`
 - [ ] No question asked that the source input already answers
+- [ ] Every task states exactly one design — no alternatives left in task text
 
 ---
 
@@ -306,7 +307,6 @@ Create directory if needed: `mkdir -p "$PRP_DIR/plans"`
 - [ ] External docs versioned to match package.json
 - [ ] Integration points mapped with specific file paths
 - [ ] Gotchas captured with mitigation strategies
-- [ ] Every task has at least one executable validation command
 
 **IMPLEMENTATION_READINESS:**
 
@@ -329,6 +329,23 @@ Create directory if needed: `mkdir -p "$PRP_DIR/plans"`
 - [ ] Every task has executable validation command
 - [ ] All 6 validation levels defined where applicable
 - [ ] Edge cases enumerated with test plans
+- [ ] Every acceptance criterion's "Falsified by" entry names a check that fails when that criterion is violated
+- [ ] Every planned diagnostic or warning names its concrete channel (event, sink, or return value) and has an assertion
+
+**INTERNAL_CONSISTENCY:**
+
+- [ ] Every file named in any task, test table, or validation command appears in Files to Change with the matching action
+- [ ] Every task consumes only artifacts (files, exports, types) created by earlier tasks
+- [ ] Every IMPORTS path resolves against the current tree and the imported symbol exists
+- [ ] Every "already handled by X" claim was verified at a file:line
+- [ ] Citations anchor on symbol names, with line numbers as secondary detail
+
+**SOURCE_TRACEABILITY** (when the input was a PRD or spec):
+
+- [ ] Every in-scope source commitment maps to a delivering task — including committed docs and migration-note deliverables
+- [ ] Every task traces back to a source commitment or necessary plumbing
+- [ ] Every deviation from a committed behavior (weakened, strengthened, or dropped) went through Phase 5.5
+- [ ] No task edits the source document itself
 
 **UX_CLARITY:**
 

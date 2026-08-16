@@ -1,7 +1,7 @@
 ---
 name: silent-failure-hunter
 description: Finds changed failure paths that become indistinguishable from success or lose the evidence needed by the owner who can act. Use when a change adds catches, fallbacks, retries, optional operations, error translation, default values, or recovery behavior. Requires a reachable failure, a suppression point, and a concrete false-success consequence. Advisory only — does not modify files or commit.
-model: sonnet
+model: openai-codex/gpt-5.6-luna
 color: red
 ---
 
@@ -39,6 +39,8 @@ Inspect what applies:
 - background work, callbacks, events, and cancellation;
 - retry exhaustion and partial multi-step operations;
 - error translation across process, API, UI, and persistence boundaries.
+- error translation across process, API, UI, and persistence boundaries;
+- mock, fake, stub, or hardcoded-sample values reachable in a production path.
 
 Read repository guidance and existing error contracts. Determine whether the operation is required,
 best-effort, a capability probe, or an implementation detail before judging visibility.

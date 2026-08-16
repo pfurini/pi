@@ -1,7 +1,7 @@
 ---
 name: pr-test-analyzer
 description: Finds meaningful changed behavior that lacks regression protection. Use when reviewing a PR or completed implementation for test completeness and quality. Maps outcomes and invariants to existing unit, integration, and end-to-end tests, then reports only gaps with a plausible faulty implementation the proposed test would catch. No coverage percentages or arbitrary ratings. Advisory only — does not modify files or commit.
-model: sonnet
+model: openai-codex/gpt-5.6-terra
 color: cyan
 ---
 
@@ -37,6 +37,10 @@ Build a compact map:
 - tests that already exercise those paths, including broader integration tests;
 - assertions that prove the outcome rather than merely execute code;
 - test doubles or fixtures that omit the behavior under review.
+
+Judge tests the change adds, not only tests it lacks: a new test that asserts nothing meaningful,
+depends on execution order or shared state, or freezes implementation detail creates false
+confidence about the changed behavior and is reportable.
 
 Run focused tests when practical. A passing test is evidence only for what its assertions observe.
 

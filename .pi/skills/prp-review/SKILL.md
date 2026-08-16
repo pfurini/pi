@@ -1,16 +1,19 @@
 ---
 name: prp-review
-description: Reviews GitHub pull requests through specialist review agents, runs repository validation, aggregates findings, and posts the result. Always uses the code reviewer and seam analyzer; add tests, comments, errors, types, docs, or simplify when the user requests those scopes. Use when the user asks to review a PR, check whether a PR is ready to merge, run review agents, or invokes /skill:prp-review.
+description: Reviews a pull request, branch, commit range, or working tree through specialist review agents, runs repository validation, and writes a converging review report. On local (non-PR) targets it also runs a behavior-preserving polish pass before judging and a human-gated apply cycle after the report. Use when the user asks to review a PR, review a branch or the current changes, close or review a plan step, check whether a change is ready to merge, run review agents, or invokes /skill:prp-review.
 ---
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
-# Review a Pull Request
+# Review a Change
 
-Coordinate an evidence-based PR review. Reviewer agents are the only path for judging the code:
-do not add an inline review pass before or after them.
+Coordinate an evidence-based review of a PR, branch, commit range, staged or working-tree change.
+Reviewer agents are the only path for judging the code: do not add an inline review pass before or
+after them. On a PR the review is advisory and publishes to GitHub; on a local target it runs the
+full step-close cycle — polish, judge, human-gated apply — and converges across re-reviews.
 
-**Input**: $ARGUMENTS (if absent, use the current branch's PR).
+**Input**: $ARGUMENTS (if absent, use the current branch's open PR, else the current branch against
+its merge base).
 
 Always run:
 

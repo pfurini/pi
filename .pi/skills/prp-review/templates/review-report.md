@@ -7,7 +7,7 @@ Severity bars — the aggregation maps every agent finding onto exactly one of t
 agent's own wording, decides the class:
 
 - **Critical** — a reachable defect that breaks behavior, data, or security in real usage, or a
-  PR-caused failure of required validation.
+  change-caused failure of required validation.
 - **Important** — a violated repository rule, missing protection, or likely-rework gap with a
   concrete consequence that does not break the main path.
 - **Decision** — the resolution is a product or scope choice only a human can make (contract shape,
@@ -17,17 +17,19 @@ agent's own wording, decides the class:
 
 ```markdown
 ---
-pr: <number>
-base: <base branch>
-head: <head branch>
+target: <pr #N | branch X vs base Y | range A..B | staged | working tree | files>
+mode: <pr | local>
+key: <review key, e.g. pr-123 or step label>
+base: <base ref or SHA>
+head: <head ref or SHA>
 reviewed: <ISO timestamp>
 verdict: <READY TO MERGE | NEEDS FIXES | REVIEW INCOMPLETE>
 pass: <first review | re-review of <ISO date>>
 scopes: [code, seams, ...]
-publication: <verified GitHub comment/review URL | pending>
+publication: <verified GitHub comment/review URL | local | pending>
 ---
 
-# PR Review: #<number> — <title>
+# Review: <target> — <title or step name>
 
 ## Outcome
 
@@ -38,6 +40,14 @@ publication: <verified GitHub comment/review URL | pending>
 | Command | Result | Evidence |
 |---|---|---|
 | `<actual command>` | PASS / FAIL / NOT RUN | <decisive detail> |
+
+## Polish Log
+
+<!-- Local mode only, when the polish phase ran. One row per polish finding. -->
+
+| Angle | Finding | Disposition |
+|---|---|---|
+| <reuse/machinery/efficiency/altitude> | <`path:line` — what disappeared> | APPLIED in <commit> / SKIPPED — <why> / CARRIED to review — <behavior-changing> |
 
 ## Prior Findings Resolution
 
@@ -77,7 +87,15 @@ publication: <verified GitHub comment/review URL | pending>
 
 **<READY TO MERGE | NEEDS FIXES | REVIEW INCOMPLETE>**
 
-<What must happen next, or why the PR is ready.>
+<What must happen next, or why the change is ready.>
+
+## Resolution Log
+
+<!-- Local mode only; appended by the apply cycle. One row per Critical/Important/Decision finding. -->
+
+| Finding | Resolution | Evidence |
+|---|---|---|
+| <finding title> | APPLIED / SKIPPED / DISPUTED / DEFERRED | <commit, user choice and why, disproving `path:line`, or tracking link> |
 ```
 
 Rules:
@@ -87,4 +105,5 @@ Rules:
 - Attribute findings to the agent that produced them; validation failures use `validation`.
 - Keep suggestions genuinely optional. Never disguise a blocker as a suggestion or vice versa.
 - Do not add generic praise, boilerplate checklists, confidence scores, or AI attribution.
-- Write `publication: pending` before posting. After GitHub verification, replace it in the local report with the stable comment or review URL; downstream automation treats that URL as required delivery evidence.
+- Omit the Polish Log and Resolution Log outside local mode; in local mode the Resolution Log is appended by the apply cycle and verified by the next re-review.
+- PR mode: write `publication: pending` before posting; after GitHub verification, replace it with the stable comment or review URL — downstream automation treats that URL as required delivery evidence. Local mode: `publication: local`, nothing is posted.

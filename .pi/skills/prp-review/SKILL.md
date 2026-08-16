@@ -18,7 +18,7 @@ Always run:
 - `seam-analyzer` for missing types, counterpart drift, and bypassed boundaries.
 
 Named scopes are additive. Run their specialist agents only when explicitly requested; `all` adds
-every specialist. Accept the old `--agents` token as a no-op compatibility alias.
+every specialist.
 
 Resolve the canonical store before starting:
 

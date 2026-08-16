@@ -12,7 +12,13 @@ title, body, author, state, base, head, files, reviews, comments, and complete d
 - Check out the PR branch with `gh pr checkout` unless it is already checked out.
 - Read repository guidance, the full changed files, and directly relevant tests and precedents.
 - Read matching implementation reports, completed plans, or issue artifacts under `$PRP_DIR` when
-  they exist. Treat documented deviations as context, not automatic defects.
+  they exist. Treat documented deviations as context, not automatic defects. When a matching plan
+  exists, verify delivery against its Acceptance section: every criterion is delivered by the PR or
+  explained by a documented deviation. Unexplained missing scope is a finding attributed to `plan` —
+  Important by default, Critical when the PR or report claims that criterion complete.
+- If `$PRP_DIR/reviews/pr-{NUMBER}-review.md` already exists, this pass is a **re-review**: read
+  that report and the implementation report's finding dispositions, then apply the Re-reviews
+  section below.
 - If the only matching artifact is under a legacy `.claude/PRPs/` path, stop and tell the user to
   run the PRP home-store migration.
 
@@ -46,10 +52,34 @@ Always select `code` and `seams`. Add only scopes explicitly named by the user o
 `all` adds all six optional scopes. Explicit `code` or `seams` is redundant but valid. Ignore
 `--agents`; it exists only so older callers still receive the new default review.
 
+## Re-reviews
+
+A re-review is any pass where the canonical report already exists for this PR. A fresh full-depth
+attack on the whole PR would re-litigate settled ground and keep the finding count high forever; a
+re-review instead:
+
+1. **Verifies prior findings.** Every prior Critical, Important, and Decision finding gets a
+   resolution: RESOLVED (cite the commit and evidence), DISPUTED-UPHELD (the implementer recorded an
+   evidence-backed disagreement — judge that evidence; it stands unless new evidence defeats it), or
+   STILL OPEN. Do not re-flag a disputed finding without new evidence.
+2. **Attacks only new ground at full depth**: commits since the previously reviewed head and areas
+   the prior pass did not reach. Re-open settled findings only on new evidence.
+3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is
+   not review quality.
+
+Prepend this line to every agent brief: "Re-review pass: prior findings and their dispositions are
+in the prior review report and the implementation report. Verify the ones relevant to your focus,
+attack commits after <previously reviewed head SHA> and previously unreached areas at full depth,
+and re-open settled findings only on new evidence."
+
 ## 4. Launch reviewers
 
 Dispatch every selected agent in parallel when capacity permits, or sequentially when it does not. Every selected role remains required; wait for all of them before aggregation.
 All agents are advisory and must not modify files or post their own PR comments.
+
+Prepend to every brief: the PR's base and head, and a one-line validation summary that names any
+pre-existing failure — agents must be able to distinguish a broken baseline from PR-caused breakage.
+On a re-review, also prepend the scoping line from the Re-reviews section.
 
 When spawning each subagent:
 
@@ -80,17 +110,24 @@ When spawning each subagent:
 ## 5. Aggregate without re-reviewing
 
 Read `../templates/review-report.md` before writing. Merge duplicate findings, preserve meaningful
-disagreement, and map agent language into the canonical severity categories. Do not invent findings,
-raise severity without evidence, or perform another code review during aggregation.
+disagreement, and classify every finding against the template's severity bars — the bar decides, not
+the agent's wording. A finding whose resolution is a product or scope choice only a human can make
+is a Decision: list it under Decisions Required as a question for the user, not a correction for the
+implementer. Do not invent findings, raise severity without evidence, or perform another code review
+during aggregation.
 
 Verdict rules:
 
-- `READY TO MERGE`: no Critical or Important findings and all required validation passed.
+- `READY TO MERGE`: no Critical, Important, or open Decision findings, and all required validation passed.
 - `NEEDS FIXES`: at least one Critical or Important finding, or a PR-caused required validation failure.
-- `REVIEW INCOMPLETE`: required validation or decisive evidence could not be obtained.
+- `REVIEW INCOMPLETE`: required validation or decisive evidence could not be obtained, or only open
+  Decisions remain — there is nothing to fix, but a human choice gates the judgment.
 - Suggestions, including every `simplify` finding, never block by themselves.
 
-Write the report to the expanded absolute path `$PRP_DIR/reviews/pr-{NUMBER}-review.md`.
+Write the report to the expanded absolute path `$PRP_DIR/reviews/pr-{NUMBER}-review.md`. If that
+path already exists, archive it first: move it to `pr-{NUMBER}-review.{reviewed-date}.md` in the
+same directory, taking the date from the old report's `reviewed` field. Per-pass history is what
+convergence across review rounds is measured against — never delete or overwrite a prior pass.
 
 ## 6. Publish and report
 
@@ -100,4 +137,4 @@ when explicitly requested or when the user explicitly asked the skill to submit 
 as a formal review. Never formally approve or request changes on a draft.
 
 Read the PR back to verify the comment or review exists and capture its stable URL. Replace `publication: pending` in the local canonical report with that URL, then re-read the report and GitHub state to verify both point to the same publication. Return the PR URL,
-verdict, finding counts, validation summary, selected scopes, absolute report path, and comment URL.
+verdict, finding counts by class (critical / decision / important / suggestion), validation summary, selected scopes, absolute report path, and comment URL. Name the next step: open Decisions go to the user; `NEEDS FIXES` goes to `/skill:prp-implement review` with this report.

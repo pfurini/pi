@@ -2,8 +2,24 @@ import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
-import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.ts";
+import { escapeXml as escapeXmlFromListing } from "../src/core/skills/listing.ts";
+import { escapeXml as escapeXmlFromListingBudget } from "../src/core/skills/listing-budget.ts";
+import {
+	extractSkillListingBlock,
+	formatSkillsForPrompt,
+	loadSkills,
+	loadSkillsFromDir,
+	SKILL_LISTING_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER,
+	SKILL_LISTING_VERSION,
+	type Skill,
+} from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import {
+	SKILL_LISTING_END_DELIMITER as INDEX_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER as INDEX_START_DELIMITER,
+	SKILL_LISTING_VERSION as INDEX_VERSION,
+} from "../src/index.ts";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
@@ -342,6 +358,93 @@ describe("skills", () => {
 
 			const result = formatSkillsForPrompt(skills);
 			expect(result).toBe("");
+		});
+
+		it("produces byte-identical output with no budget (C4a rewire regression)", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "beta-skill",
+					description: "Beta desc with <special> & chars.",
+					filePath: "/path/beta/SKILL.md",
+					baseDir: "/path/beta",
+				}),
+				createTestSkill({
+					name: "alpha-skill",
+					description: "Alpha description.",
+					filePath: "/path/alpha/SKILL.md",
+					baseDir: "/path/alpha",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			const expected =
+				"\n\nThe following skills provide specialized instructions for specific tasks.\n" +
+				"Use the read tool to load a skill's file when the task matches its description.\n" +
+				"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n" +
+				"\n" +
+				'<available_skills version="2">\n' +
+				"  <skill>\n" +
+				"    <name>alpha-skill</name>\n" +
+				"    <description>Alpha description.</description>\n" +
+				"    <location>/path/alpha/SKILL.md</location>\n" +
+				"  </skill>\n" +
+				"  <skill>\n" +
+				"    <name>beta-skill</name>\n" +
+				"    <description>Beta desc with &lt;special&gt; &amp; chars.</description>\n" +
+				"    <location>/path/beta/SKILL.md</location>\n" +
+				"  </skill>\n" +
+				"</available_skills>";
+
+			expect(result).toBe(expected);
+			expect(extractSkillListingBlock(result)).toBe(
+				'<available_skills version="2">\n' +
+					"  <skill>\n" +
+					"    <name>alpha-skill</name>\n" +
+					"    <description>Alpha description.</description>\n" +
+					"    <location>/path/alpha/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"  <skill>\n" +
+					"    <name>beta-skill</name>\n" +
+					"    <description>Beta desc with &lt;special&gt; &amp; chars.</description>\n" +
+					"    <location>/path/beta/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"</available_skills>",
+			);
+		});
+
+		it("keeps an empty-description skill's <description></description> tag byte-identical with no budget", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "empty-desc-skill",
+					description: "",
+					filePath: "/path/empty/SKILL.md",
+					baseDir: "/path/empty",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			expect(result).toContain("<description></description>");
+			expect(extractSkillListingBlock(result)).toBe(
+				'<available_skills version="2">\n' +
+					"  <skill>\n" +
+					"    <name>empty-desc-skill</name>\n" +
+					"    <description></description>\n" +
+					"    <location>/path/empty/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"</available_skills>",
+			);
+		});
+
+		it("resolves escapeXml and the SKILL_LISTING_* delimiters from every legacy import path", () => {
+			expect(typeof escapeXmlFromListing).toBe("function");
+			expect(escapeXmlFromListing).toBe(escapeXmlFromListingBudget);
+			expect(escapeXmlFromListing("<x>")).toBe("&lt;x&gt;");
+
+			expect(SKILL_LISTING_VERSION).toBe(INDEX_VERSION);
+			expect(SKILL_LISTING_START_DELIMITER).toBe(INDEX_START_DELIMITER);
+			expect(SKILL_LISTING_END_DELIMITER).toBe(INDEX_END_DELIMITER);
 		});
 	});
 

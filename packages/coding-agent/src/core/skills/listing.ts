@@ -1,21 +1,18 @@
+import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { LoadedSkill, SkillInput } from "../skills.ts";
 import { normalizeSkillInput } from "./frontmatter.ts";
+import {
+	buildBudgetedListingBlock,
+	escapeXml,
+	type ListingBudgetEntry,
+	MAX_LISTING_DESCRIPTION_LENGTH,
+	SKILL_LISTING_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER,
+	SKILL_LISTING_VERSION,
+} from "./listing-budget.ts";
 import { boostSkillsByPaths, byListingName } from "./paths-boost.ts";
 
-export const SKILL_LISTING_VERSION = "2";
-export const SKILL_LISTING_START_DELIMITER = `<available_skills version="${SKILL_LISTING_VERSION}">`;
-export const SKILL_LISTING_END_DELIMITER = "</available_skills>";
-
-const MAX_LISTING_DESCRIPTION_LENGTH = 1536;
-
-export function escapeXml(value: string): string {
-	return value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&apos;");
-}
+export { escapeXml, SKILL_LISTING_END_DELIMITER, SKILL_LISTING_START_DELIMITER, SKILL_LISTING_VERSION };
 
 function getListingDescription(skill: LoadedSkill): string {
 	const whenToUse = skill.frontmatter.when_to_use;
@@ -35,6 +32,11 @@ export function formatSkillsForPrompt(
 	skills: SkillInput[],
 	invocation: "read" | "tool" = "read",
 	boost?: { touchedPaths: readonly string[]; cwd: string },
+	budget?: {
+		budgetCodeUnits: number | undefined;
+		invocationCounts: ReadonlyMap<string, number>;
+		diagnostics?: ResourceDiagnostic[];
+	},
 ): string {
 	const visibleSkills = skills
 		.map((skill) => normalizeSkillInput(skill).skill)
@@ -51,23 +53,26 @@ export function formatSkillsForPrompt(
 			: "Use the read tool to load a skill's file when the task matches its description.",
 		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"",
-		SKILL_LISTING_START_DELIMITER,
 	];
 
-	const ordered = boost
-		? boostSkillsByPaths(visibleSkills, boost.touchedPaths, boost.cwd).ordered
-		: [...visibleSkills].sort(byListingName);
+	const { ordered, exemptIds } = boost
+		? boostSkillsByPaths(visibleSkills, boost.touchedPaths, boost.cwd)
+		: { ordered: [...visibleSkills].sort(byListingName), exemptIds: new Set<string>() };
 
-	for (const skill of ordered) {
-		lines.push("  <skill>");
-		lines.push(`    <name>${escapeXml(skill.listingName)}</name>`);
-		lines.push(`    <description>${escapeXml(getListingDescription(skill))}</description>`);
-		lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
-		lines.push("  </skill>");
+	const entries: ListingBudgetEntry[] = ordered.map((skill) => ({
+		listingName: skill.listingName,
+		description: getListingDescription(skill),
+		location: skill.filePath,
+		isExempt: exemptIds.has(skill.id),
+		invocationCount: budget?.invocationCounts.get(skill.id) ?? 0,
+	}));
+
+	const { block, diagnostics } = buildBudgetedListingBlock(entries, budget?.budgetCodeUnits);
+	if (budget?.diagnostics) {
+		budget.diagnostics.push(...diagnostics);
 	}
 
-	lines.push(SKILL_LISTING_END_DELIMITER);
-	return lines.join("\n");
+	return [...lines, block].join("\n");
 }
 
 /** Return the first complete v2 listing block, including its delimiters. */

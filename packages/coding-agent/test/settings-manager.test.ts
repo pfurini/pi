@@ -678,6 +678,7 @@ describe("SettingsManager", () => {
 			expect(manager.getSkillInterop()).toBe(true);
 			expect(manager.getDisableSkillEnvInjection()).toBe(false);
 			expect(manager.getSkillPathsWindow()).toBe(50);
+			expect(manager.getSkillListingBudgetFraction()).toBe(0.01);
 		});
 
 		it("returns configured values", () => {
@@ -688,6 +689,7 @@ describe("SettingsManager", () => {
 				skillInterop: false,
 				disableSkillEnvInjection: true,
 				skillPathsWindow: 5,
+				skillListingBudgetFraction: 0.02,
 			});
 			expect(manager.getDisableSkillShellExecution()).toBe(true);
 			expect(manager.getSkillShellTimeoutMs()).toBe(5000);
@@ -695,6 +697,7 @@ describe("SettingsManager", () => {
 			expect(manager.getSkillInterop()).toBe(false);
 			expect(manager.getDisableSkillEnvInjection()).toBe(true);
 			expect(manager.getSkillPathsWindow()).toBe(5);
+			expect(manager.getSkillListingBudgetFraction()).toBe(0.02);
 		});
 
 		it("rejects non-positive-integer timeout and cap", () => {
@@ -713,6 +716,20 @@ describe("SettingsManager", () => {
 			expect(() => SettingsManager.inMemory({ skillPathsWindow: 1.5 }).getSkillPathsWindow()).toThrow(
 				/Invalid skillPathsWindow/,
 			);
+		});
+
+		it("rejects an out-of-range or non-numeric skillListingBudgetFraction", () => {
+			expect(() =>
+				SettingsManager.inMemory({ skillListingBudgetFraction: 0 }).getSkillListingBudgetFraction(),
+			).toThrow(/Invalid skillListingBudgetFraction/);
+			expect(() =>
+				SettingsManager.inMemory({ skillListingBudgetFraction: 1.5 }).getSkillListingBudgetFraction(),
+			).toThrow(/Invalid skillListingBudgetFraction/);
+			expect(() =>
+				SettingsManager.inMemory({
+					skillListingBudgetFraction: "x" as unknown as number,
+				}).getSkillListingBudgetFraction(),
+			).toThrow(/Invalid skillListingBudgetFraction/);
 		});
 	});
 });

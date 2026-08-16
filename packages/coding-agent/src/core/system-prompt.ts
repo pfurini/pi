@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -24,6 +25,12 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 	/** Recently tool-touched paths for the A.6 `paths` listing boost. */
 	skillPathsBoost?: { touchedPaths: readonly string[]; cwd: string };
+	/** A.6 listing-budget input: `B` (code units) and per-skill logical invocation counts. */
+	skillListingBudget?: {
+		budgetCodeUnits: number | undefined;
+		invocationCounts: ReadonlyMap<string, number>;
+		diagnostics?: ResourceDiagnostic[];
+	};
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -38,6 +45,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
 		skillPathsBoost,
+		skillListingBudget,
 	} = options;
 	const promptCwd = cwd.replace(/\\/g, "/");
 
@@ -68,7 +76,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
 		const customPromptHasSkillTool = selectedTools?.includes("skill") ?? false;
 		if ((customPromptHasRead || customPromptHasSkillTool) && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills, customPromptHasSkillTool ? "tool" : "read", skillPathsBoost);
+			prompt += formatSkillsForPrompt(
+				skills,
+				customPromptHasSkillTool ? "tool" : "read",
+				skillPathsBoost,
+				skillListingBudget,
+			);
 		}
 		prompt += `\nCurrent working directory: ${promptCwd}`;
 
@@ -159,7 +172,7 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	// read tool, or the A.1 skill tool when it is active)
 	const hasSkillTool = tools.includes("skill");
 	if ((hasRead || hasSkillTool) && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills, hasSkillTool ? "tool" : "read", skillPathsBoost);
+		prompt += formatSkillsForPrompt(skills, hasSkillTool ? "tool" : "read", skillPathsBoost, skillListingBudget);
 	}
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 

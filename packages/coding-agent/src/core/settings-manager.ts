@@ -138,6 +138,7 @@ export interface Settings {
 	skillInterop?: boolean; // default: true - accept CLAUDE_* aliases alongside PI_* skill variables (A.8)
 	disableSkillEnvInjection?: boolean; // default: false - bypass ALL skill PI_/CLAUDE_ env composition in the bash spawn seam (independent of skillInterop). Scope note: A.3.5 shell injection is unaffected; it always carries the rendering skill's own A.8 variables.
 	skillPathsWindow?: number; // default: 50 - sliding window of recently tool-touched paths for the A.6 skill listing boost
+	skillListingBudgetFraction?: number; // default: 0.01 - fraction of the model context window budgeted for the A.6 skill listing
 	forceSkillMessageBlock?: boolean; // default: false - force the A.4 message-block transport for new skill invocations even when the model is flagged syntheticToolResultReplay (forward-only rollback switch; does not downgrade pairs already persisted)
 	toolRedirects?: Record<string, string>; // default: {} - user/project overrides merged per-key over the A.8 redirect defaults (ADR-0006); a target is suggested only while registered and active
 	disableToolRedirects?: boolean; // default: false - C1 rollback switch beyond Appendix B.8: unknown tools get the plain not-found error (no mapped target, no nearest-name suggestion)
@@ -208,6 +209,17 @@ function parsePositiveIntSetting(value: unknown, settingName: string): number | 
 		return undefined;
 	}
 	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
+	}
+	return value;
+}
+
+/** Fraction settings in (0, 1] (skill listing budget); invalid values throw, matching parsePositiveIntSetting. */
+function parseFractionSetting(value: unknown, settingName: string): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 1) {
 		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
 	}
 	return value;
@@ -1109,6 +1121,10 @@ export class SettingsManager {
 
 	getSkillPathsWindow(): number {
 		return parsePositiveIntSetting(this.settings.skillPathsWindow, "skillPathsWindow") ?? 50;
+	}
+
+	getSkillListingBudgetFraction(): number {
+		return parseFractionSetting(this.settings.skillListingBudgetFraction, "skillListingBudgetFraction") ?? 0.01;
 	}
 
 	getSkillShellOutputLimitBytes(): number {

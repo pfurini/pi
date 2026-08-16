@@ -133,6 +133,7 @@ import {
 	selectSkillTransport,
 } from "./skills/delivery.ts";
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
+import { computeSkillInvocationCounts, skillListingBudgetCodeUnits } from "./skills/listing-budget.ts";
 import { skillPathTouchFromToolCall } from "./skills/paths-boost.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
@@ -481,7 +482,10 @@ export class AgentSession {
 		createSkillInvocation: (skill, rawArgs) => this._skillRuntime.createInvocation(skill, rawArgs),
 		renderSkill: (skill, invocation, signal) => this._renderSkill(skill, invocation, signal),
 		renderCommand: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
-		activateSkill: (invocation) => this._skillRuntime.activate(invocation),
+		activateSkill: (invocation) => {
+			this._markSkillListingBudgetDirty();
+			return this._skillRuntime.activate(invocation);
+		},
 		emitDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
 		emitRenderError: (extensionPath, event, err) =>
 			this._extensionRunner.emitError({
@@ -512,6 +516,12 @@ export class AgentSession {
 	private readonly _skillPathsWindow: string[] = [];
 	/** Set whenever `_skillPathsWindow` changes; consumed by the `_promptInScope` rebuild boundary. */
 	private _skillPathsWindowDirty = false;
+	/** Set on any model-assignment path, `activateSkill`, a persisting fork delivery, or a branch-leaf change; consumed by the `_promptInScope` rebuild boundary. */
+	private _skillListingBudgetDirty = false;
+	/** Whether the most recently rebuilt listing hit the A.6 skeleton floor; used to deliver the overflow diagnostic once per continuous episode and re-arm on recovery. */
+	private _skillListingSkeletonOverflowing = false;
+	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
+	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
 	/**
 	 * C3a per-request `disallowed-tools` union snapshot (redirect-canonicalized,
 	 * lowercased). Rebuilt where each request's tools are built so a skill
@@ -742,6 +752,11 @@ export class AgentSession {
 			const { paths } = skill.frontmatter;
 			return typeof paths === "string" ? paths.length > 0 : Array.isArray(paths) && paths.length > 0;
 		});
+	}
+
+	/** Single dirty seam for the C4a listing-budget rebuild: called on every model-assignment path, `activateSkill`, a persisting fork delivery, and a branch-leaf change. */
+	private _markSkillListingBudgetDirty(): void {
+		this._skillListingBudgetDirty = true;
 	}
 
 	private _installAgentToolHooks(): void {
@@ -1506,6 +1521,20 @@ export class AgentSession {
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
+		// Best-effort: an invalid skillListingBudgetFraction setting must not fail
+		// session construction/reload (this runs on the synchronous construction
+		// path). Mirrors _recordSkillPathTouches's getSkillPathsWindow() wrap.
+		const listingDiagnostics: ResourceDiagnostic[] = [];
+		let listingBudgetFraction = 0.01;
+		try {
+			listingBudgetFraction = this.settingsManager.getSkillListingBudgetFraction();
+		} catch {
+			listingDiagnostics.push({
+				type: "warning",
+				message: "invalid skillListingBudgetFraction setting; falling back to the 0.01 default",
+			});
+		}
+
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			skills: loadedSkills,
@@ -1516,8 +1545,26 @@ export class AgentSession {
 			toolSnippets,
 			promptGuidelines,
 			skillPathsBoost: { touchedPaths: [...this._skillPathsWindow], cwd: this._cwd },
+			skillListingBudget: {
+				budgetCodeUnits: skillListingBudgetCodeUnits(this.model?.contextWindow ?? 0, listingBudgetFraction),
+				invocationCounts: computeSkillInvocationCounts(this.sessionManager.getBranch()),
+				diagnostics: listingDiagnostics,
+			},
 		};
-		return buildSystemPrompt(this._baseSystemPromptOptions);
+		const preSkeletonCount = listingDiagnostics.length;
+		const prompt = buildSystemPrompt(this._baseSystemPromptOptions);
+		const skeletonOverflowed = listingDiagnostics.length > preSkeletonCount;
+
+		const toDeliver = listingDiagnostics.slice(0, preSkeletonCount);
+		if (skeletonOverflowed && !this._skillListingSkeletonOverflowing) {
+			// New overflow episode: deliver once. A continuing episode (already
+			// delivered) and a within-budget rebuild both suppress redelivery.
+			toDeliver.push(...listingDiagnostics.slice(preSkeletonCount));
+		}
+		this._skillListingSkeletonOverflowing = skeletonOverflowed;
+		this._deliverSkillListingDiagnostics(toDeliver);
+
+		return prompt;
 	}
 
 	// =========================================================================
@@ -1700,15 +1747,23 @@ export class AgentSession {
 			// A6 paths listing boost: recompute the base prompt once per user turn, only when the
 			// touched-path window moved since the last rebuild. This is the "next listing build"
 			// boundary the boost needs to become observable (setModel does not rebuild it).
-			if (this._skillPathsWindowDirty) {
-				// Skip the rebuild when no visible skill declares `paths`: the reorder would be a
-				// no-op, so rebuilding the whole base prompt every turn is pure waste. Clear the
-				// flag either way (a later touch re-dirties it, re-evaluating against any newly
-				// loaded skills).
-				if (this._anyVisibleSkillDeclaresPaths()) {
-					this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
-				}
+			// C4a generalizes this to also cover model-switch (contextWindow → B),
+			// invocation-count (activation/fork), and branch-nav (navigateTree)
+			// triggers, which the paths-only gate above never observed. Rebuild once
+			// when either is dirty and applicable; clear each flag only after a
+			// successful rebuild (or a genuine no-op) so a throwing rebuild retries.
+			let listingRebuilt = false;
+			const pathsDirty = this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths();
+			const budgetDirty = this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0;
+			if (pathsDirty || budgetDirty) {
+				this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+				listingRebuilt = true;
+			}
+			if (this._skillPathsWindowDirty && (listingRebuilt || !this._anyVisibleSkillDeclaresPaths())) {
 				this._skillPathsWindowDirty = false;
+			}
+			if (this._skillListingBudgetDirty && (listingRebuilt || this._getModelVisibleSkills().length === 0)) {
+				this._skillListingBudgetDirty = false;
 			}
 
 			// Flush any pending bash messages / fork notices before the new prompt
@@ -2085,6 +2140,7 @@ export class AgentSession {
 		text: string,
 		options: { isError?: boolean } = {},
 	): SkillToolForkResult {
+		this._markSkillListingBudgetDirty();
 		return {
 			fork: true,
 			content: [{ type: "text", text }],
@@ -2177,6 +2233,44 @@ export class AgentSession {
 				event: "skill_render",
 				error: diagnostic.message,
 			});
+		}
+	}
+
+	/**
+	 * Deliver C4a listing-budget diagnostics (skeleton overflow / invalid fraction),
+	 * isolated from the caller's control flow: a throwing extension `onError`
+	 * listener must not abort `_rebuildSystemPrompt`'s caller (would fail the
+	 * whole prompt) or leave the dirty flag set (would deadlock the next one).
+	 * Buffered until a real listener is bound (construction runs before
+	 * `bindExtensions`), flushed from there.
+	 */
+	private _deliverSkillListingDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void {
+		if (diagnostics.length === 0) {
+			return;
+		}
+		if (this._extensionErrorListener === undefined) {
+			this._pendingSkillListingDiagnostics.push(...diagnostics);
+			return;
+		}
+		try {
+			this._emitSkillDiagnostics(diagnostics);
+		} catch {
+			// A throwing onError listener degrades to "diagnostic lost for this
+			// episode", never a prompt abort/deadlock.
+		}
+	}
+
+	/** Flush skill-listing diagnostics buffered before an extension error listener was bound. */
+	private _flushPendingSkillListingDiagnostics(): void {
+		if (this._pendingSkillListingDiagnostics.length === 0 || this._extensionErrorListener === undefined) {
+			return;
+		}
+		const pending = this._pendingSkillListingDiagnostics;
+		this._pendingSkillListingDiagnostics = [];
+		try {
+			this._emitSkillDiagnostics(pending);
+		} catch {
+			// See _deliverSkillListingDiagnostics.
 		}
 	}
 
@@ -2912,6 +3006,7 @@ export class AgentSession {
 		const previousModel = this.model;
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.state.model = model;
+		this._markSkillListingBudgetDirty();
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
@@ -2954,6 +3049,7 @@ export class AgentSession {
 
 		// Apply model
 		this.agent.state.model = next.model;
+		this._markSkillListingBudgetDirty();
 		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
@@ -2982,6 +3078,7 @@ export class AgentSession {
 
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.state.model = nextModel;
+		this._markSkillListingBudgetDirty();
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
@@ -3576,6 +3673,7 @@ export class AgentSession {
 		}
 
 		this._applyExtensionBindings(this._extensionRunner);
+		this._flushPendingSkillListingDiagnostics();
 		await this._extensionRunner.emit(this._sessionStartEvent);
 		await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
 	}
@@ -3655,6 +3753,7 @@ export class AgentSession {
 		}
 
 		this.agent.state.model = refreshedModel;
+		this._markSkillListingBudgetDirty();
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
@@ -4387,6 +4486,10 @@ export class AgentSession {
 			} else {
 				// No summary, navigating to non-root
 				this.sessionManager.branch(newLeafId);
+			}
+
+			if (this.sessionManager.getLeafId() !== oldLeafId) {
+				this._markSkillListingBudgetDirty();
 			}
 
 			// Attach label to target entry when not summarizing (no summary entry to label)

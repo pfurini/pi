@@ -9,12 +9,15 @@ import { join } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	type CustomMessageEntry,
 	type FileEntry,
 	loadEntriesFromFile,
 	repairTornSkillPairs,
 	SessionManager,
 	type SessionMessageEntry,
 } from "../../src/core/session-manager.ts";
+import { recoverDeliveredBody } from "../../src/core/skills/delivery.ts";
+import { computeSkillInvocationCounts } from "../../src/core/skills/listing-budget.ts";
 
 const tempDirs: string[] = [];
 
@@ -146,6 +149,76 @@ describe("SessionManager skill invocation entries (B.12)", () => {
 			),
 		).toThrow("Synthetic skill pair metadata must use one shared pairId");
 		expect(sm.getEntries()).toHaveLength(0);
+	});
+
+	it("round-trips fork:true on a SkillInvocationEntry", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(
+			{ role: "toolResult", toolCallId: "t1", toolName: "skill", content: [], isError: false, timestamp: 1 },
+			{ invocations: [{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0, fork: true }] },
+		);
+		const entry = sm.getEntries().find((e) => e.type === "message") as SessionMessageEntry;
+		expect(entry.invocations?.[0]?.fork).toBe(true);
+	});
+
+	it("round-trips a CustomMessageEntry with invocations, counted by computeSkillInvocationCounts", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendCustomMessageEntry("skill_fork", "Skill is running in a background subagent.", true, undefined, true, [
+			{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0, fork: true },
+		]);
+		const entry = sm.getEntries().find((e) => e.type === "custom_message") as CustomMessageEntry;
+		expect(entry.invocations).toEqual([
+			{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0, fork: true },
+		]);
+		expect(computeSkillInvocationCounts(sm.getEntries()).get("/s/SKILL.md")).toBe(1);
+	});
+
+	it("counts a dedup-hit note's counting-only (0/0) entry, but recoverDeliveredBody treats it as empty (never an anchor)", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(
+			{
+				role: "user",
+				content: 'Skill "test" is already loaded; its instructions remain in context above.',
+				timestamp: 1,
+			},
+			{ invocations: [{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0 }] },
+		);
+		const entry = sm.getEntries().find((e) => e.type === "message") as SessionMessageEntry;
+		expect(computeSkillInvocationCounts(sm.getEntries()).get("/s/SKILL.md")).toBe(1);
+		const invocation = entry.invocations?.[0];
+		expect(invocation).toBeDefined();
+		if (!invocation) throw new Error("unreachable");
+		expect(recoverDeliveredBody(entry.message as UserMessage, invocation)).toEqual({ kind: "empty" });
+	});
+
+	it("rollback compat: a pre-c4b-shaped reader loads a c4b-written entry (extra fork/invocations) without error", () => {
+		const dir = makeTempDir();
+		const sm = SessionManager.create(dir);
+		const sessionFile = sm.getSessionFile();
+		// The session file is not flushed until an assistant message exists (lazy-flush).
+		sm.appendMessage(pairAssistant("rollback"));
+		sm.appendMessage(
+			{ role: "toolResult", toolCallId: "t1", toolName: "skill", content: [], isError: false, timestamp: 1 },
+			{ invocations: [{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0, fork: true }] },
+		);
+		sm.appendCustomMessageEntry("skill_fork", "notice", true, undefined, true, [
+			{ skillId: "/s/SKILL.md", name: "test", args: "x", blockStart: 0, blockEnd: 0, fork: true },
+		]);
+		const lines = readFileSync(sessionFile!, "utf-8").trim().split("\n");
+		// A pre-c4b reader only knows the base shape (no `fork`/`invocations` awareness on
+		// CustomMessageEntry); parsing the raw lines and reading only the fields it expects
+		// must not throw, and counts stay changed (behaviorally irreversible, documented).
+		expect(() => {
+			for (const line of lines) {
+				const parsed = JSON.parse(line) as { type?: string; customType?: string; display?: boolean };
+				if (parsed.type === "custom_message") {
+					expect(typeof parsed.customType).toBe("string");
+					expect(typeof parsed.display).toBe("boolean");
+				}
+			}
+		}).not.toThrow();
+		const reloaded = SessionManager.open(sessionFile!);
+		expect(computeSkillInvocationCounts(reloaded.getEntries()).get("/s/SKILL.md")).toBe(2);
 	});
 });
 

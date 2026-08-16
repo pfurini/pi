@@ -44,6 +44,8 @@ export interface InvocationCoordinatorDeps {
 	renderCommand(command: LoadedCommand, rawArgs: string, signal?: AbortSignal): Promise<RenderedCommand>;
 	/** Activate a rendered invocation for the rest of the logical turn; returns diagnostics. */
 	activateSkill(invocation: SkillInvocation): readonly ResourceDiagnostic[];
+	/** A.6 re-invocation dedup (c4b): a hit returns the short "already loaded" note to splice in place of the full block. */
+	checkDedup(rendered: RenderedSkillInvocation): { note: string } | undefined;
 	emitDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void;
 	emitRenderError(extensionPath: string, event: "skill_expansion" | "command_expansion", error: unknown): void;
 	/** Build a plain literal user message (whole-message fallback). */
@@ -204,10 +206,23 @@ export class InvocationCoordinator {
 					this.deps.emitRenderError(skill.filePath, "skill_expansion", err);
 					return undefined;
 				}
-				const block = buildSkillMessageBlock(prepared.rendered.invocation, prepared.rendered.body);
-				const blockStart = text.length;
-				text += block.text;
-				invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
+				const dedup = this.deps.checkDedup(prepared.rendered);
+				const metadata = prepared.rendered.invocation;
+				if (dedup) {
+					text += dedup.note;
+					invocations.push({
+						skillId: metadata.skillId,
+						name: metadata.name,
+						args: metadata.args,
+						blockStart: 0,
+						blockEnd: 0,
+					});
+				} else {
+					const block = buildSkillMessageBlock(metadata, prepared.rendered.body);
+					const blockStart = text.length;
+					text += block.text;
+					invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
+				}
 				activations.push(prepared.record);
 			} else if (span.invocation.source === "command" || span.invocation.source === "prompt") {
 				const command = span.invocation.command;

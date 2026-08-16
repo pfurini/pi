@@ -31,6 +31,7 @@ import type {
 	Usage,
 	UserMessage,
 } from "@earendil-works/pi-ai/compat";
+import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { SessionMessageMetadata, SkillInvocationEntry } from "../session-manager.ts";
 import { escapeXml } from "./listing.ts";
 import type { RenderedSkillInvocation } from "./render.ts";
@@ -68,13 +69,17 @@ export interface SkillMessageBlock {
 	invocation: SkillInvocationEntry;
 }
 
+function skillWrapperText(name: string, args: string, body: string): string {
+	return `<skill name="${escapeXml(name)}" args="${escapeXml(args)}">\n${body}\n</skill>`;
+}
+
 /**
  * Wrap a rendered body as `<skill name="…" args="…">…</skill>`: attribute
  * values XML-escaped, body verbatim. The `args` attribute is always present so
  * empty args encode consistently across block, tool arguments, and metadata.
  */
 export function buildSkillMessageBlock(metadata: SkillInvocationMetadata, body: string): SkillMessageBlock {
-	const text = `<skill name="${escapeXml(metadata.name)}" args="${escapeXml(metadata.args)}">\n${body}\n</skill>`;
+	const text = skillWrapperText(metadata.name, metadata.args, body);
 	return {
 		text,
 		invocation: {
@@ -88,6 +93,17 @@ export function buildSkillMessageBlock(metadata: SkillInvocationMetadata, body: 
 }
 
 /**
+ * Ephemeral re-wrap for a compaction carry-forward re-attachment (c4b): the
+ * same wrapper shape as `buildSkillMessageBlock`, without requiring the full
+ * `SkillInvocationMetadata` — a `CarryForwardEntry` carries only `skillId`,
+ * `args`, and the already-unwrapped `body`. Never persisted (ephemeral core
+ * seam), so it has no B.12 invocation metadata to return.
+ */
+export function buildCarriedSkillBlock(name: string, args: string, body: string): { text: string } {
+	return { text: skillWrapperText(name, args, body) };
+}
+
+/**
  * Pre-request fallback primitive: the message-block form for the same
  * rendered invocation. Used when the synthetic transport was never selected
  * (unflagged model, excluded provider, `forceSkillMessageBlock`). Runtime
@@ -97,9 +113,108 @@ export function downgradeToMessageBlock(rendered: RenderedSkillInvocation): Skil
 	return buildSkillMessageBlock(rendered.invocation, rendered.body);
 }
 
-/** `details` payload carried by genuine and synthetic `skill` tool results. */
+function flattenMessageContentText(content: unknown): string {
+	if (typeof content === "string") {
+		return content;
+	}
+	if (Array.isArray(content)) {
+		return content
+			.map((part) =>
+				part && typeof part === "object" && (part as { type?: unknown }).type === "text"
+					? String((part as { text?: unknown }).text ?? "")
+					: "",
+			)
+			.join("");
+	}
+	return "";
+}
+
+const MESSAGE_BLOCK_SUFFIX = "\n</skill>";
+
+export type RecoveredBody =
+	| { kind: "body"; body: string }
+	| { kind: "empty" }
+	| { kind: "malformed"; diagnostic: ResourceDiagnostic };
+
+/**
+ * A.6 transport-aware bare-body recovery: dedup and carry-forward both need
+ * the exact bare rendered body of a prior delivery, but persisted offsets are
+ * not uniform across transports (a sole-skill message-block spans the whole
+ * `<skill>…</skill>` wrapper; a mid-prompt composed block spans a non-zero
+ * per-block offset; a synthetic-pair tool-result spans the bare body).
+ * `text.slice(blockStart, blockEnd)` is correct at any offset; only a
+ * message-block entry (`role !== "toolResult"`) then needs its wrapper
+ * stripped. `blockEnd <= blockStart` (a dedup note or a 0/0 fork marker) is
+ * "empty", never a malformed slice. Never re-renders — shell injection must
+ * not run twice.
+ */
+export function recoverDeliveredBody(
+	message: { role?: string; content: unknown },
+	invocation: { blockStart: number; blockEnd: number },
+): RecoveredBody {
+	const { blockStart, blockEnd } = invocation;
+	if (blockEnd <= blockStart) {
+		return { kind: "empty" };
+	}
+	const text = flattenMessageContentText(message.content);
+	if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd) || blockStart < 0 || blockEnd > text.length) {
+		return {
+			kind: "malformed",
+			diagnostic: {
+				type: "warning",
+				message: `skill invocation metadata malformed: offsets [${blockStart}, ${blockEnd}) out of range for a ${text.length}-code-unit message`,
+			},
+		};
+	}
+	const slice = text.slice(blockStart, blockEnd);
+	if (message.role === "toolResult") {
+		return { kind: "body", body: slice };
+	}
+	const prefixMatch = slice.match(/^<skill name="[^"]*" args="[^"]*">\n/);
+	if (!prefixMatch || !slice.endsWith(MESSAGE_BLOCK_SUFFIX)) {
+		return {
+			kind: "malformed",
+			diagnostic: {
+				type: "warning",
+				message: "skill invocation metadata malformed: message-block wrapper prefix/suffix does not match",
+			},
+		};
+	}
+	return { kind: "body", body: slice.slice(prefixMatch[0].length, slice.length - MESSAGE_BLOCK_SUFFIX.length) };
+}
+
+/**
+ * A.6 dedup-hit delivery (resolved decision): a short plain note replacing
+ * the full body. Its 0/0 empty-offset invocation (built by the caller, not
+ * here) makes `recoverDeliveredBody` classify it "empty", so it counts once
+ * but is never a dedup anchor and never carried forward — the anchor stays on
+ * the last full delivery, preserving the note chain on repeated identical
+ * invocations.
+ */
+export function buildAlreadyLoadedNote(metadata: SkillInvocationMetadata): { text: string } {
+	const argsSuffix = metadata.args ? ` (args: ${metadata.args})` : "";
+	return {
+		text: `Skill "${metadata.name}"${argsSuffix} is already loaded; its instructions remain in context above.`,
+	};
+}
+
+/**
+ * `details` payload carried by genuine and synthetic `skill` tool results.
+ *
+ * `fork`/`emptyBody`/`forkError` are transient discriminators (c4b): they
+ * disambiguate an otherwise-identical `{ invocation }` shape between inline
+ * and fork tool results at the point `agent-session.ts` persists B.12
+ * metadata or marks a result erroneous, but are not themselves the
+ * authoritative persisted flag (that is `SkillInvocationEntry.fork`).
+ */
 export interface SkillToolResultDetails {
 	invocation: SkillInvocationMetadata;
+	/** Set on a genuine model `context: fork` tool result only; read by `_genuineSkillResultMeta` to mark the persisted entry `fork: true` (A.5 dedup/carry-forward exemption). */
+	fork?: true;
+	/** Set on a genuine inline `skill`-tool dedup note only; requests `blockStart:0, blockEnd:0` on the persisted entry so the note counts but is never a dedup anchor. */
+	emptyBody?: true;
+	/** Set when a foreground fork outcome must be reported as a tool error while retaining `fork`/`invocation` (a thrown error would replace `details` with `{}`); consumed by `agent.afterToolCall` to mark the result `isError: true`. */
+	forkError?: true;
 }
 
 export interface SkillSyntheticPair {

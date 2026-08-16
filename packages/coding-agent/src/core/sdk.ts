@@ -457,6 +457,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			releaseDefaultStreamRuntime,
 			sessionAbortController,
 		});
+		// A.6 compaction carry-forward (c4b): the message restore above (`agent.state.messages =
+		// existingSession.messages`) runs before this session exists, so the reattach seam runs here
+		// instead — before `bindExtensions` binds a diagnostic listener; `_deliverSkillListingDiagnostics`
+		// buffers until then. Also covers `switchSession` (routes through `createRuntime` → this function).
+		if (hasExistingSession) {
+			session.reattachCarriedSkills();
+		}
 		const extensionsResult = resourceLoader.getExtensions();
 
 		return {

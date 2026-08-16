@@ -197,22 +197,27 @@ describe("AgentSession prompt characterization", () => {
 		const tempDir = join(tmpdir(), `pi-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		tempDirs.push(tempDir);
-		const skillPath = join(tempDir, "skills.md");
-		writeFileSync(skillPath, "# Skill\n\nShared body.");
-		const makeSkill = (name: string, frontmatter?: Record<string, unknown>) => ({
-			name,
-			description: `${name} description`,
-			filePath: skillPath,
-			disableModelInvocation: false,
-			baseDir: tempDir,
-			sourceInfo: createSyntheticSourceInfo(skillPath, {
-				source: "local",
-				scope: "project",
-				origin: "top-level",
+		const makeSkill = (name: string, frontmatter?: Record<string, unknown>) => {
+			// A distinct file per skill: skillId is the canonicalized filePath (A.9), so
+			// aliasing one file across differently-named fixtures would make them the same
+			// skill for A.6 dedup identity purposes.
+			const skillPath = join(tempDir, `${name.replace(/[^a-zA-Z0-9.-]/g, "_")}.md`);
+			writeFileSync(skillPath, "# Skill\n\nShared body.");
+			return {
+				name,
+				description: `${name} description`,
+				filePath: skillPath,
+				disableModelInvocation: false,
 				baseDir: tempDir,
-			}),
-			...(frontmatter && { frontmatter }),
-		});
+				sourceInfo: createSyntheticSourceInfo(skillPath, {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: tempDir,
+				}),
+				...(frontmatter && { frontmatter }),
+			};
+		};
 		const resourceLoader = {
 			...createTestResourceLoader(),
 			getSkills: () => ({

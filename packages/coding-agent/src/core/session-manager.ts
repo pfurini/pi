@@ -63,6 +63,8 @@ export interface SkillInvocationEntry {
 	args: string;
 	blockStart: number;
 	blockEnd: number;
+	/** True for a genuine model or user `context: fork` spawn (A.5): excluded from A.6 dedup anchoring and carry-forward. */
+	fork?: true;
 }
 
 /** Optional metadata accepted by appendMessage/appendSkillMessagePair. */
@@ -163,6 +165,8 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	display: boolean;
 	/** If true, this message is display-only and excluded from LLM context (e.g. C3b fork notices). */
 	excludeFromContext?: boolean;
+	/** B.12 invocation metadata (c4b): a user `/name context: fork` spawn notice counts once, symmetric with a model fork's toolResult entry. */
+	invocations?: SkillInvocationEntry[];
 }
 
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
@@ -1346,6 +1350,7 @@ export class SessionManager {
 	 * @param display Whether to show in TUI (true = styled display, false = hidden)
 	 * @param details Optional extension-specific metadata (not sent to LLM)
 	 * @param excludeFromContext When true, the entry is display-only and excluded from LLM context on reload
+	 * @param invocations B.12 invocation metadata (c4b): counted by `computeSkillInvocationCounts` like any other entry
 	 * @returns Entry id
 	 */
 	appendCustomMessageEntry<T = unknown>(
@@ -1354,6 +1359,7 @@ export class SessionManager {
 		display: boolean,
 		details?: T,
 		excludeFromContext?: boolean,
+		invocations?: SkillInvocationEntry[],
 	): string {
 		const entry: CustomMessageEntry<T> = {
 			type: "custom_message",
@@ -1362,6 +1368,7 @@ export class SessionManager {
 			display,
 			details,
 			...(excludeFromContext && { excludeFromContext }),
+			...(invocations && { invocations }),
 			id: generateId(this.byId),
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
@@ -1369,7 +1376,6 @@ export class SessionManager {
 		this._appendEntry(entry);
 		return entry.id;
 	}
-
 	// =========================================================================
 	// Tree Traversal
 	// =========================================================================

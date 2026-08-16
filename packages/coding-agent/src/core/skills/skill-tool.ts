@@ -30,6 +30,19 @@ export interface SkillToolForkResult {
 	details: SkillToolResultDetails;
 }
 
+/**
+ * A.6 re-invocation dedup (c4b): a genuine inline `skill` tool call whose
+ * `(skillId, args, rendered body)` matches its last full inline delivery
+ * still present in context. The AgentSession render binding decides the hit
+ * (`details.emptyBody: true` requests 0/0 offsets so the note counts but is
+ * never a dedup anchor); `execute` only unwraps it, mirroring the fork variant.
+ */
+export interface SkillToolDedupNoteResult {
+	dedupNote: true;
+	content: TextContent[];
+	details: SkillToolResultDetails;
+}
+
 export const skillToolSchema = Type.Object({
 	name: Type.String({ description: "Skill name from the <available_skills> listing." }),
 	args: Type.Optional(Type.String({ description: "Raw argument string passed to the skill." })),
@@ -47,7 +60,7 @@ export interface SkillToolDeps {
 		skill: LoadedSkill,
 		rawArgs: string,
 		signal?: AbortSignal,
-	) => Promise<RenderedSkillInvocation | SkillToolForkResult>;
+	) => Promise<RenderedSkillInvocation | SkillToolForkResult | SkillToolDedupNoteResult>;
 
 	/** Sink for render/activation diagnostics; must not swallow them. */
 	onDiagnostics?: (diagnostics: ResourceDiagnostic[]) => void;
@@ -94,18 +107,25 @@ export function createSkillToolDefinition(
 
 			const rendered = await deps.render(skill, params.args ?? "", signal);
 			// A `context: fork` skill spawned a subagent: return its ack/result
-			// (the AgentSession binding built it), never the rendered body. A foreground
-			// failure/timeout is surfaced as a real tool error by throwing (the agent
-			// loop marks the tool result isError), matching A.5. The binding already
-			// emitted any diagnostics on the fork path.
+			// (the AgentSession binding built it), never the rendered body. A
+			// foreground failure/timeout must be reported as a tool error while
+			// keeping `details.fork` (c4b, A.5/A.6): a thrown error would be
+			// replaced by the agent loop's empty-`details` error result, losing
+			// the fork discriminator dedup/carry-forward need. `details.forkError`
+			// asks `agent.afterToolCall` (agent-session.ts) to mark the finalized
+			// result `isError: true` while the merge keeps `details` intact. The
+			// binding already emitted any diagnostics on the fork path.
 			if ("fork" in rendered) {
-				const text = rendered.content.map((part) => part.text).join("\n");
-				if (rendered.isError) {
-					throw new Error(text);
-				}
+				return {
+					content: rendered.content,
+					details: rendered.isError ? { ...rendered.details, forkError: true } : rendered.details,
+				};
+			}
+			// A.6 dedup hit (c4b): the AgentSession binding already substituted the
+			// note for the full body and set `details.emptyBody`.
+			if ("dedupNote" in rendered) {
 				return { content: rendered.content, details: rendered.details };
 			}
-
 			if (rendered.diagnostics.length > 0) {
 				deps.onDiagnostics?.(rendered.diagnostics);
 			}

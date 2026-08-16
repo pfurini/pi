@@ -124,7 +124,11 @@ import type {
 } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
+import { deriveCarriedSkills } from "./skills/carry-forward.ts";
+import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
 import {
+	buildAlreadyLoadedNote,
+	buildCarriedSkillBlock,
 	buildSkillDelivery,
 	SKILL_TOOL_NAME,
 	type SkillDelivery,
@@ -144,7 +148,11 @@ import {
 	type SubagentSpawnOptions,
 } from "./skills/skill-fork.ts";
 import { computeDisallowedUnion, resolveActiveOverride, resolveModelOverride } from "./skills/skill-overrides.ts";
-import { createSkillToolDefinition, type SkillToolForkResult } from "./skills/skill-tool.ts";
+import {
+	createSkillToolDefinition,
+	type SkillToolDedupNoteResult,
+	type SkillToolForkResult,
+} from "./skills/skill-tool.ts";
 import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -189,6 +197,12 @@ interface QueuedInvocation extends QueuedInvocationSnapshot {
 
 /** Entry metadata plus the pending synthetic tool_result notification payload. */
 type DeliveryMeta = SessionMessageMetadata & { syntheticNotification?: SyntheticToolResultNotification };
+
+/** A fork notice plus its optional B.12 counting metadata (c4b): only the spawn notice carries one `fork: true` invocation. */
+interface ForkNoticeEnvelope {
+	notice: CustomMessage;
+	invocations?: SkillInvocationEntry[];
+}
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -468,7 +482,7 @@ export class AgentSession {
 	/** C3b fork spawn client (over the cross-extension event bus); absent bus === no subagents present. */
 	private readonly _skillForkClient: SkillForkClient;
 	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
-	private _pendingForkNotices: CustomMessage[] = [];
+	private _pendingForkNotices: ForkNoticeEnvelope[] = [];
 	/**
 	 * Queued skill invocations (C1c): application-defined queue message → its
 	 * structured record. The message carries the literal `/skill:` text for the
@@ -486,6 +500,7 @@ export class AgentSession {
 			this._markSkillListingBudgetDirty();
 			return this._skillRuntime.activate(invocation);
 		},
+		checkDedup: (rendered) => this._checkDedup(rendered),
 		emitDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
 		emitRenderError: (extensionPath, event, err) =>
 			this._extensionRunner.emitError({
@@ -522,6 +537,8 @@ export class AgentSession {
 	private _skillListingSkeletonOverflowing = false;
 	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
+	/** A.6 compaction carry-forward (c4b): the currently re-attached skills' `{args, body}`, keyed by `skillId`. Ephemeral — recomputed on every rebuild, never persisted. Consulted by dedup to treat a carried-forward body as "still present". */
+	private _carriedForward: Map<string, { args: string; body: string }> = new Map();
 	/**
 	 * C3a per-request `disallowed-tools` union snapshot (redirect-canonicalized,
 	 * lowercased). Rebuilt where each request's tools are built so a skill
@@ -810,7 +827,14 @@ export class AgentSession {
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
-			if (!isError) {
+			// A foreground fork error is reported without throwing (skill-tool.ts) so
+			// `details.fork` survives; `details.forkError` asks this hook to mark the
+			// finalized result erroneous instead (c4b, A.5/A.6 fork-count symmetry).
+			const forkError =
+				toolCall.name === SKILL_TOOL_NAME &&
+				(result.details as SkillToolResultDetails | undefined)?.forkError === true;
+			const effectiveIsError = isError || forkError;
+			if (!effectiveIsError) {
 				this._recordSkillPathTouches(toolCall.name, args);
 			}
 
@@ -823,7 +847,7 @@ export class AgentSession {
 					input: args as Record<string, unknown>,
 					content: result.content,
 					details: result.details,
-					isError,
+					isError: effectiveIsError,
 					usage: result.usage,
 				});
 			}
@@ -842,14 +866,14 @@ export class AgentSession {
 			// replacing per-tool marker phrasing.
 			const policy = applyToolOutputPolicy(normalizedContent);
 
-			if (!hookResult && normalizedContent === mergedContent && !policy.truncated) {
+			if (!hookResult && normalizedContent === mergedContent && !policy.truncated && effectiveIsError === isError) {
 				return undefined;
 			}
 
 			return {
 				content: policy.truncated ? policy.content : normalizedContent,
 				details: hookResult?.details,
-				isError: hookResult?.isError ?? isError,
+				isError: hookResult?.isError ?? effectiveIsError,
 				usage: hookResult?.usage,
 			};
 		};
@@ -1063,11 +1087,14 @@ export class AgentSession {
 		if (message.role !== "toolResult" || message.toolName !== SKILL_TOOL_NAME) {
 			return undefined;
 		}
-		const invocation = (message as ToolResultMessage<SkillToolResultDetails>).details?.invocation;
+		const details = (message as ToolResultMessage<SkillToolResultDetails>).details;
+		const invocation = details?.invocation;
 		if (!invocation) {
 			return undefined;
 		}
-		const text = contentText(message.content, "");
+		// `emptyBody` (a genuine inline dedup note) requests 0/0 offsets so the
+		// note counts (c4b A.6) but is never a dedup anchor or carried forward.
+		const blockEnd = details.emptyBody ? 0 : contentText(message.content, "").length;
 		return {
 			invocations: [
 				{
@@ -1075,12 +1102,12 @@ export class AgentSession {
 					name: invocation.name,
 					args: invocation.args,
 					blockStart: 0,
-					blockEnd: text.length,
+					blockEnd,
+					...(details.fork && { fork: true as const }),
 				},
 			],
 		};
 	}
-
 	/** B.12 invocation metadata of a freshly delivered message (live TUI rendering path). */
 	getMessageSkillInvocations(message: AgentMessage): SkillInvocationEntry[] | undefined {
 		return this._messageDeliveryMeta.get(message)?.invocations;
@@ -2093,10 +2120,18 @@ export class AgentSession {
 		skill: LoadedSkill,
 		rawArgs: string,
 		signal?: AbortSignal,
-	): Promise<RenderedSkillInvocation | SkillToolForkResult> {
+	): Promise<RenderedSkillInvocation | SkillToolForkResult | SkillToolDedupNoteResult> {
 		const { record, rendered } = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
 		if (record.context !== "fork") {
 			this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
+			const dedup = this._checkDedup(rendered);
+			if (dedup) {
+				return {
+					dedupNote: true,
+					content: [{ type: "text", text: dedup.note }],
+					details: { invocation: rendered.invocation, emptyBody: true },
+				};
+			}
 			return rendered;
 		}
 		// Fork render diagnostics are surfaced here (execute returns the fork branch
@@ -2153,7 +2188,7 @@ export class AgentSession {
 		return {
 			fork: true,
 			content: [{ type: "text", text }],
-			details: { invocation: rendered.invocation },
+			details: { invocation: rendered.invocation, fork: true },
 			...(options.isError !== undefined && { isError: options.isError }),
 		};
 	}
@@ -2277,6 +2312,82 @@ export class AgentSession {
 		const pending = this._pendingSkillListingDiagnostics;
 		this._pendingSkillListingDiagnostics = [];
 		this._deliverSkillListingDiagnostics(pending);
+	}
+
+	/**
+	 * A.6 compaction carry-forward (c4b): recompute `deriveCarriedSkills` from
+	 * the persisted branch and inject the re-wrapped, most-recent inline body
+	 * of each carried skill into `agent.state.messages`, MRU-first, right after
+	 * the compaction summary message (`buildContextEntries` always puts the
+	 * compaction entry first, so `messages[0]` is that summary whenever there
+	 * is anything to carry). Ephemeral: never persisted, so `prepareCompaction`
+	 * (which reads the persisted branch) never re-compacts or double-carries
+	 * them; `_carriedForward` is reset (including to empty on a no-boundary
+	 * rebuild, clearing stale keys after a compacted→non-compacted switch).
+	 * Called after every `agent.state.messages` rebuild from the branch:
+	 * `compact()`, `_runAutoCompaction`, `navigateTree`, and the public
+	 * `reattachCarriedSkills()` resume/switchSession seam (`sdk.ts`).
+	 */
+	private _reattachCarriedSkills(): void {
+		const branch = this.sessionManager.getBranch();
+		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
+		const { entries, diagnostics } = deriveCarriedSkills(branch, boundary);
+		this._carriedForward = new Map(entries.map((entry) => [entry.skillId, { args: entry.args, body: entry.body }]));
+		this._deliverSkillListingDiagnostics(diagnostics);
+		if (entries.length === 0) {
+			return;
+		}
+		const skillNames = new Map(
+			this.resourceLoader.getSkills().skills.map((skill) => {
+				const normalized = normalizeSkillInput(skill).skill;
+				return [normalized.id, normalized.name] as const;
+			}),
+		);
+		const carriedMessages: AgentMessage[] = entries.map((entry) => {
+			const name = skillNames.get(entry.skillId) ?? entry.skillId;
+			const block = buildCarriedSkillBlock(name, entry.args, entry.body);
+			return { role: "user", content: [{ type: "text", text: block.text }], timestamp: Date.now() };
+		});
+		const messages = this.agent.state.messages;
+		this.agent.state.messages = [messages[0]!, ...carriedMessages, ...messages.slice(1)];
+	}
+
+	/**
+	 * Public resume/switchSession reattach seam (c4b): `sdk.ts`'s
+	 * `createAgentSession` restores `agent.state.messages` from the persisted
+	 * branch before this session exists, so it calls this once construction
+	 * completes. Also covers `switchSession` (routes through
+	 * `createRuntime` → `createAgentSession`). Runs before `bindExtensions`
+	 * binds a real diagnostic listener, so any diagnostic is buffered by
+	 * `_deliverSkillListingDiagnostics` and flushed later, never lost.
+	 */
+	reattachCarriedSkills(): void {
+		this._reattachCarriedSkills();
+	}
+
+	/**
+	 * A.6 re-invocation dedup (c4b): resolve the anchor from the discriminated
+	 * scan result — `found` -> that delivery; `absent` with a carried entry ->
+	 * the carried `{args, body}` (compaction dropped the last full delivery,
+	 * but carry-forward restored it in full, so the skill is still "present");
+	 * `absent` with no carried entry, or `malformed`, -> no anchor (miss, full
+	 * re-delivery). A `malformed` most-recent candidate never falls back to a
+	 * carried body — a torn newer delivery must never produce a false note.
+	 * Fork paths never call this (A.5 exemption).
+	 */
+	private _checkDedup(rendered: RenderedSkillInvocation): { note: string } | undefined {
+		const branch = this.sessionManager.getBranch();
+		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
+		const skillId = rendered.invocation.skillId;
+		const result = findLastFullInlineDelivery(branch, boundary, skillId, (diagnostic) =>
+			this._deliverSkillListingDiagnostics([diagnostic]),
+		);
+		const anchor =
+			result.kind === "found" ? result : result.kind === "absent" ? this._carriedForward.get(skillId) : undefined;
+		if (!anchor || anchor.args !== rendered.invocation.args || !isDedupHit(rendered.body, anchor.body)) {
+			return undefined;
+		}
+		return { note: buildAlreadyLoadedNote(rendered.invocation).text };
 	}
 
 	/** Merged redirect map (ADR-0006): user settings over the built-in defaults. */
@@ -2426,12 +2537,44 @@ export class AgentSession {
 		return `Tool "${name}" is blocked by an active skill's disallowed-tools policy and cannot be called during this turn.`;
 	}
 
+	/** A.6 dedup-hit delivery (c4b): a single plain message carrying the "already loaded" note, with a counting-only (0/0) invocation entry so it counts but is never a dedup anchor or carried forward. */
+	private _buildDedupNoteDelivery(
+		metadata: RenderedSkillInvocation["invocation"],
+		note: string,
+		images: ImageContent[] | undefined,
+	): SkillDelivery {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text: note }];
+		if (images) {
+			content.push(...images);
+		}
+		const userMessage: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		const invocation: SkillInvocationEntry = {
+			skillId: metadata.skillId,
+			name: metadata.name,
+			args: metadata.args,
+			blockStart: 0,
+			blockEnd: 0,
+		};
+		return {
+			transport: "message-block",
+			messages: [userMessage],
+			textForm: note,
+			metadata: new Map([[userMessage, { invocations: [invocation] }]]),
+		};
+	}
+
 	/** Build the A.4 delivery for an already-prepared invocation, then activate it. */
 	private _finishSkillDelivery(prepared: PreparedSkillInvocation, images: ImageContent[] | undefined): SkillDelivery {
-		const transport = selectSkillTransport(this.model, {
-			forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
-		});
-		const delivery = buildSkillDelivery(prepared.rendered, transport, { model: this.model, images });
+		const dedup = this._checkDedup(prepared.rendered);
+		const delivery = dedup
+			? this._buildDedupNoteDelivery(prepared.rendered.invocation, dedup.note, images)
+			: buildSkillDelivery(
+					prepared.rendered,
+					selectSkillTransport(this.model, {
+						forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
+					}),
+					{ model: this.model, images },
+				);
 		// Activate only after delivery is fully constructed. Render (not active
 		// state) drives the pipeline, so deferring activation to the last
 		// fallible step means a delivery-construction failure leaves no stale
@@ -2500,34 +2643,37 @@ export class AgentSession {
 			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
 		}
 		if (outcome.kind === "repeat-blocked") {
-			this._recordForkNotice(
-				this._forkNoticeMessage(
+			this._recordForkNotice({
+				notice: this._forkNoticeMessage(
 					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
 				),
-			);
+			});
 			return { forked: true };
 		}
 		// A subagent was spawned: the spawn notice enters the transcript; the body
 		// went only to the subagent (never to the parent turn).
 		const background = prepared.record.background ?? true;
-		this._recordForkNotice(this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background));
+		this._recordForkNotice({
+			notice: this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background),
+			invocations: [this._forkSpawnInvocationEntry(prepared.record, skill.name)],
+		});
 		switch (outcome.kind) {
 			case "spawned-background":
 				break;
 			case "completed":
-				this._recordForkNotice(this._forkCompletionNoticeMessage(skill.name, outcome));
+				this._recordForkNotice({ notice: this._forkCompletionNoticeMessage(skill.name, outcome) });
 				break;
 			case "foreground-timeout":
-				this._recordForkNotice(
-					this._forkNoticeMessage(
+				this._recordForkNotice({
+					notice: this._forkNoticeMessage(
 						`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
 					),
-				);
+				});
 				break;
 			case "aborted":
-				this._recordForkNotice(
-					this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
-				);
+				this._recordForkNotice({
+					notice: this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
+				});
 				break;
 			default:
 				return this._unreachableForkOutcome(outcome);
@@ -2548,7 +2694,7 @@ export class AgentSession {
 
 	/** Background fork completion (async): record a display-only follow-up notice. */
 	private _recordForkCompletionNotice(record: SkillInvocation, completion: NormalizedCompletion): void {
-		this._recordForkNotice(this._forkCompletionNoticeMessage(record.name, completion));
+		this._recordForkNotice({ notice: this._forkCompletionNoticeMessage(record.name, completion) });
 	}
 
 	/** Build a fork spawn notice (display-only; never enters LLM context). */
@@ -2556,6 +2702,17 @@ export class AgentSession {
 		return this._forkNoticeMessage(
 			`Skill "${name}" is running in a ${background ? "background" : "foreground"} subagent (agent ${agentId}).`,
 		);
+	}
+
+	/**
+	 * B.12 counting metadata for a user `/name context: fork` spawn (B.12/c4b): the
+	 * same shape a model fork's toolResult entry carries (`fork: true`, 0/0
+	 * offsets — no in-context body), so the spawn counts once regardless of
+	 * transport (A.6 fork-count symmetry). Only the spawn notice carries this;
+	 * completion / repeat-blocked / timeout / aborted notices carry none.
+	 */
+	private _forkSpawnInvocationEntry(record: SkillInvocation, name: string): SkillInvocationEntry {
+		return { skillId: record.skillId, name, args: record.rawArgs, blockStart: 0, blockEnd: 0, fork: true };
 	}
 
 	/** Build a fork completion follow-up notice (display-only). */
@@ -2583,15 +2740,16 @@ export class AgentSession {
 	 * defer to the next turn boundary when streaming (mirrors the pending-bash
 	 * injection precedent so a completion that lands mid-turn is not lost).
 	 */
-	private _recordForkNotice(notice: CustomMessage): void {
+	private _recordForkNotice(envelope: ForkNoticeEnvelope): void {
 		if (this.isStreaming) {
-			this._pendingForkNotices.push(notice);
+			this._pendingForkNotices.push(envelope);
 			return;
 		}
-		this._appendForkNotice(notice);
+		this._appendForkNotice(envelope);
 	}
 
-	private _appendForkNotice(notice: CustomMessage): void {
+	private _appendForkNotice(envelope: ForkNoticeEnvelope): void {
+		const { notice, invocations } = envelope;
 		this.agent.state.messages.push(notice);
 		this.sessionManager.appendCustomMessageEntry(
 			notice.customType,
@@ -2599,7 +2757,11 @@ export class AgentSession {
 			notice.display,
 			notice.details,
 			notice.excludeFromContext,
+			invocations,
 		);
+		if (invocations) {
+			this._markSkillListingBudgetDirty();
+		}
 		this._emit({ type: "message_start", message: notice });
 		this._emit({ type: "message_end", message: notice });
 	}
@@ -2611,8 +2773,8 @@ export class AgentSession {
 		}
 		const notices = this._pendingForkNotices;
 		this._pendingForkNotices = [];
-		for (const notice of notices) {
-			this._appendForkNotice(notice);
+		for (const envelope of notices) {
+			this._appendForkNotice(envelope);
 		}
 	}
 
@@ -3297,6 +3459,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 			const estimatedTokensAfter = estimateMessagesTokens(sessionContext.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -3576,6 +3739,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 			const estimatedTokensAfter = estimateMessagesTokens(sessionContext.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -4499,6 +4663,7 @@ export class AgentSession {
 			// Update agent state
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 
 			// Emit session_tree event
 			await this._extensionRunner.emit({

@@ -2,6 +2,8 @@
 
 One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (absolute), `{PRD_PATH}` (absolute, traceability only), `{PHASE_ROW}` (the PRD Implementation Phases row that links to this plan, e.g. `Phase 3: Export pipeline`, or `the whole PRD` when the plan maps to no single phase). Dispatch each brief to one `plan-reviewer` agent. Do not reword the briefs; they encode the checks.
 
+All angles share one altitude rule: a plan owes an invariant, a verified seam, and a falsifying test per task — not mechanism internals. Verify the plan's claims about the codebase, but do not demand code-level consistency from the plan's own prose; mechanism prose beyond that contract (scripted lifecycles, branch logic, helper bodies) is itself a SUGGESTION-class finding with the recommendation to strip it to altitude, because plan pseudo-code is unverified code the implementer's compiler will replace anyway.
+
 ## traceability
 
 > Your angle: **traceability**. Grade the implementation plan at `{PLAN_PATH}` against its source PRD at `{PRD_PATH}`. The plan implements {PHASE_ROW}; grade against that phase's Goal, Scope, and Success signal in Phase Details, plus the PRD-wide sections: Problem Statement, Key Hypothesis, Success Metrics, Core Capabilities (MoSCoW — Must/Should in scope for this phase), User Flow, What We're NOT Building, and Decisions Log.

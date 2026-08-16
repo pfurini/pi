@@ -56,7 +56,15 @@ A re-review is any pass after findings were folded: the plan's Amendments carry 
 
 1. **Verifies dispositions.** Every prior finding folded into the plan is checked as actually closed; every rejected finding's disproving evidence is checked as still holding. A disposition that does not hold is a finding.
 2. **Attacks only new ground at full depth**: sections changed since the prior pass (named in the Amendments entry) and areas the prior pass did not reach. Unchanged, previously-verified sections are re-opened only on new evidence.
-3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is not review quality.
+3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is
+   not review quality.
+
+**The loop is capped at one re-review.** Zero blocking findings is not the termination condition —
+"no blocker that implementation resolves cheaper than another review round" is. Each fold answers
+findings with new plan surface, so a plan this loop keeps attacking converges on the reviewers'
+imagination running out, not on truth; code review downstream has the compiler and tests this loop
+lacks. After the re-review, remaining findings fold mechanically and the plan proceeds to
+implementation. Run further review rounds only when the user explicitly asks.
 
 At dispatch (Phase 4), prepend this line to every brief (this is scoping, not rewording): "Re-review pass: prior findings and their dispositions are in the plan's Amendments. Verify the dispositions relevant to your angle, attack changed sections and previously unreached areas at full depth, and re-open closed findings only on new evidence."
 
@@ -72,11 +80,12 @@ Wait for all agents to return.
 
 1. Collect every agent's finding blocks and `ANGLE_VERDICT` line.
 2. Deduplicate: when two angles surface the same defect (common between completeness and validation), keep the finding under the angle with the stronger evidence and note the overlap.
-3. Reclassify decisions: a finding whose resolution is a user choice — an unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` item, scope or slice ownership, a spec interpretation only the user can settle — is class **DECISION**, reported and counted separately from plan defects. It still forces REVISE (an undecided plan cannot be implemented), but the Next Step tells the user to decide, not the planner to fix.
-4. Compute the overall verdict:
+3. Downgrade implementation-resolvable defects: a finding whose defect would surface within minutes of implementation — plan pseudo-code that would not compile, a mechanism detail a direct test settles, a trivial mechanical inconsistency between plan sections — is IMPORTANT at most, never BLOCKING. Plan review blocks on building the wrong thing or wasting major work; details the implementer's compiler and tests resolve for free do not gate a plan.
+4. Reclassify decisions: a finding whose resolution is a user choice — an unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` item, scope or slice ownership, a spec interpretation only the user can settle — is class **DECISION**, reported and counted separately from plan defects. It still forces REVISE (an undecided plan cannot be implemented), but the Next Step tells the user to decide, not the planner to fix.
+5. Compute the overall verdict:
    - Any BLOCKING or DECISION finding, or any `ANGLE_VERDICT: FAIL` → **REVISE**.
    - Otherwise → **READY** (findings, if any, are advisory).
-5. Read `templates/review-report.md` now (mandatory) and write the aggregated report in exactly that structure to:
+6. Read `templates/review-report.md` now (mandatory) and write the aggregated report in exactly that structure to:
 
 ```bash
 mkdir -p "$PRP_DIR/reviews"
@@ -92,14 +101,14 @@ Report to the user:
 - The verdict (READY / REVISE) with the one-line rationale.
 - The traceability headline when it ran (N covered / N partial / N uncovered / N contradicted), or the loud SKIPPED note when it did not.
 - Finding counts by class (blocking / decision / important / suggestion).
-- Next step: **REVISE** → answer any Decisions Required, then `/skill:prp-plan` revise-from-review with the report path; **READY** → `/skill:prp-implement <plan path>`.
+- Next step: **REVISE on a first review** → answer any Decisions Required, then `/skill:prp-plan` revise-from-review with the report path, then one re-review. **REVISE on a re-review** → the loop is capped: fold remaining findings mechanically (raising altitude where a finding demands more mechanism) and proceed to `/skill:prp-implement` — no further verification round unless the user explicitly asks. **READY** → `/skill:prp-implement <plan path>`.
 
 ## Gotchas
 
 - **Advisory only.** Never edit the plan, the PRD, or code, and never commit — findings feed a human or a `/skill:prp-plan` revision pass.
 - **Traceability is directional both ways.** Coverage (PRD→plan) alone is half the check; provenance (plan→PRD) catches scope creep the other direction. The brief encodes both — do not drop provenance to save tokens.
 - **Feasibility findings require a codebase check.** A cited pattern flagged as missing without actually looking is worse than no review; the agent brief enforces this, hold the aggregate to it.
-- **Do not soften on aggregation.** If an agent reports BLOCKING with solid evidence, it stays BLOCKING in the report even when the overall picture is positive.
+- **Do not soften on aggregation** beyond the step-3 implementation-resolvable filter. A BLOCKING finding with solid evidence that plan review must own — wrong thing built, major rework, an unsettled contract — stays BLOCKING even when the overall picture is positive.
 
 ## Resources
 

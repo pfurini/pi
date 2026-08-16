@@ -93,9 +93,7 @@ Good targets remove meaningful maintenance burden:
 - a generic extension point built for a caller or variation that does not exist;
 - a subsystem whose only job is recreating behavior already supplied by configuration or composition;
 - nested policy whose required behavior is one fixed decision;
-- validation repeated after an earlier boundary already makes the invalid state unreachable;
-- a re-implementation of a helper the codebase already ships;
-- repeated I/O or computation whose result is already in hand.
+- validation repeated after an earlier boundary already makes the invalid state unreachable.
 
 ## Preserve the right thing
 

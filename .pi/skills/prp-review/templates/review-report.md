@@ -33,7 +33,7 @@ publication: <verified GitHub comment/review URL | local | pending>
 
 ## Outcome
 
-<One concise paragraph explaining what the PR changes and the review result.>
+<One concise paragraph explaining what the change does and the review result.>
 
 ## Validation
 
@@ -102,7 +102,7 @@ Rules:
 
 - Every Critical or Important finding needs a concrete impact and file:line evidence.
 - Omit the Prior Findings Resolution section on a first review; on a re-review it is mandatory and covers every prior Critical, Important, and Decision finding.
-- Attribute findings to the agent that produced them; validation failures use `validation`.
+- Attribute findings to the agent that produced them; validation failures use `validation`, plan-fidelity checks use `plan`.
 - Keep suggestions genuinely optional. Never disguise a blocker as a suggestion or vice versa.
 - Do not add generic praise, boilerplate checklists, confidence scores, or AI attribution.
 - Omit the Polish Log and Resolution Log outside local mode; in local mode the Resolution Log is appended by the apply cycle and verified by the next re-review.

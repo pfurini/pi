@@ -1,6 +1,6 @@
 ---
 name: prp-review
-description: Reviews a pull request, branch, commit range, or working tree through specialist review agents, runs repository validation, and writes a converging review report. On local (non-PR) targets it also runs a behavior-preserving polish pass before judging and a human-gated apply cycle after the report. Use when the user asks to review a PR, review a branch or the current changes, close or review a plan step, check whether a change is ready to merge, run review agents, or invokes /skill:prp-review.
+description: Reviews a pull request, branch, commit range, or working tree through specialist review agents and repository validation, converging to a merge-ready verdict across re-review passes; local (non-PR) targets also get behavior-preserving cleanup and human-approved finding application. Use when the user asks to review a PR, review a branch or the current changes, close or review a plan step, check whether a change is ready to merge, run review agents, or invokes /skill:prp-review.
 ---
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
@@ -14,14 +14,6 @@ full step-close cycle — polish, judge, human-gated apply — and converges acr
 
 **Input**: $ARGUMENTS (if absent, use the current branch's open PR, else the current branch against
 its merge base).
-
-Always run:
-
-- `code-reviewer` for correctness, project rules, and high-confidence defects;
-- `seam-analyzer` for missing types, counterpart drift, and bypassed boundaries.
-
-Named scopes are additive. Run their specialist agents only when explicitly requested; `all` adds
-every specialist.
 
 Resolve the canonical store before starting:
 
@@ -40,5 +32,5 @@ Read `workflows/agents.md` and execute it end-to-end. Before producing the repor
 
 ## Resources
 
-- `workflows/agents.md` — PR resolution, validation, agent scopes, aggregation, and publication
+- `workflows/agents.md` — target resolution, polish, validation, scopes, fan-out, aggregation, delivery, and the apply cycle
 - `templates/review-report.md` — canonical local and GitHub review format

@@ -50,8 +50,7 @@ Capture the diff for the resolved scope (`gh pr diff`, `git diff <base>...HEAD`,
 ## 3. Polish (local mode only)
 
 Behavior-preserving cleanup before judgment, so the review fan-out sees the final shape instead of
-noise that is about to change. Skip when in PR mode, when the user says skip, or when the diff is
-trivial.
+noise that is about to change. Skip when the user says skip or the diff is trivial.
 
 1. Dispatch `code-simplifier` on the diff: one instance covering all four angles for a small or
    medium diff; for a large diff (roughly 400+ changed lines), four parallel instances, one assigned
@@ -79,7 +78,8 @@ evidence allows; otherwise report the uncertainty.
 
 ## 5. Select scopes
 
-Always select `code` and `seams`. Add only scopes explicitly named by the user or calling workflow:
+Always select `code` and `seams`. Add other scopes when the user or calling workflow names them,
+plus the one stakes exception below:
 
 | Scope | Agent | Focus |
 | --- | --- | --- |

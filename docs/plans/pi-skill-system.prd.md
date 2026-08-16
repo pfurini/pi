@@ -102,6 +102,12 @@ into consideration before Phase 1 of `prp-plan`; violations are plan defects.
   `packages/ai`; tokenizer/pipeline/lifecycle → coding-agent vitest under
   `packages/coding-agent/test/suite/`; TUI completion/editor behavior → `packages/tui`
   `node:test`; bridge path → pi-claude-bridge repo (out of scope here).
+  - **Approved exception (c4a, 2026-08-16):** a *pure unit test with no faux harness*
+    may live outside `test/suite/` beside its peers — specifically the byte-exact A.6
+    listing-budget oracle at `packages/coding-agent/test/skills-listing-budget.test.ts`,
+    mirroring `packages/coding-agent/test/skills-paths-boost.test.ts`. The `test/suite/`
+    mandate targets harness-driven lifecycle tests; c4a's lifecycle end-to-end coverage
+    (`test/suite/skills-listing-budget-session.test.ts`) stays under `test/suite/`.
 
 ### D5 — Repo working rules
 
@@ -124,7 +130,7 @@ into consideration before Phase 1 of `prp-plan`; violations are plan defects.
 | 2   | C1 — render pipeline, skill tool, delivery | A.3 pipeline, interop subset, `skill` tool, A.4 transports, redirect map    | complete | -        | 1       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1a-provider-replay.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1b-render-interop.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1c-tool-delivery.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1d-redirects-closeout.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c1-render-delivery.plan.md`) |
 | 3   | C2 — commands, tokenizer, namespace     | Commands system, A.7.1 includes, mid-prompt tokenizer, TUI autocomplete        | complete | with 4   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2a-commands-namespace.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2b-tui-autocomplete.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c2-commands-tokenizer.plan.md`) |
 | 4   | C3 — execution semantics                | Ephemeral model/effort overrides, `disallowed-tools`, fork via subagents RPC   | complete | with 3   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3a-overrides-disallowed.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3b-fork.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3c-paths-closeout.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3-execution-semantics.plan.md`) |
-| 5   | C4 — lifecycle & management             | Dedup, listing budget, carry-forward, `/skills` UI, watching + nested discovery | pending | -        | 3, 4    | -        |
+| 5   | C4 — lifecycle & management             | Dedup, listing budget, carry-forward, `/skills` UI, watching + nested discovery | in-progress | -        | 3, 4    | Split per D3 (5 slices): c4a `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c4a-listing-budget.plan.md` (invocation-count derivation + A.6 listing-budget engine + generalized model-switch/invocation-count rebuild triggers + `skillListingBudgetFraction`) → c4b dedup + carry-forward → c4c `/skills` UI + visibility → c4d watching + nested discovery + harness listing budget (plumb a model/context source into `packages/agent`'s harness system-prompt, then reuse `buildBudgetedListingBlock` — the one first-party listing surface c4a leaves unbudgeted) → c4e ADR-0005 dispatch-precedence carry-in (route control-command dispatch through `CommandRegistry.resolve()`; §3 C4 *Implementation carry-in*) (to be created). Phase closes `complete` only when c4d and c4e land and the full §3 C4 acceptance (plus the dispatch-precedence carry-in and the harness listing budget) is green. |
 
 Phases 3 and 4 both build only on C1 and touch disjoint areas (commands/tokenizer/TUI vs
 agent-loop overrides/subagents RPC); they can run in parallel in separate git worktrees.

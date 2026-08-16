@@ -21,7 +21,7 @@ Use `codebase-analyst`:
 ```text
 Trace how [current behavior related to the invariant] actually works.
 
-Follow control flow, data flow, state ownership, side effects, configuration, and boundaries from [known entry point, if any] to the observable result. Distinguish behavior proved at each layer from assumptions or behavior owned by an external tool.
+Follow control flow, data flow, state ownership, side effects, configuration, and boundaries from [known entry point, if any] to the observable result. Distinguish behavior proved at each layer from assumptions or behavior owned by an external tool. For each seam the change would hook, establish when it executes relative to initial entry, queued or deferred delivery, retry, error/abort, and teardown — cite the call order — and enumerate every surface that reads or exposes the state being changed (enumerators, caches, mirrors, listings).
 
 Return the decisive path with precise file:line references, contracts, and observation points. Document what exists; do not recommend a future design.
 ```

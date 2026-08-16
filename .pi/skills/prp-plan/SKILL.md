@@ -1,6 +1,6 @@
 ---
 name: prp-plan
-description: Creates an implementation-ready plan for a feature, bug fix, refactor, or chore from a PRD, issue, document, or description using codebase evidence, first-principles reasoning, and conditional root-cause analysis, research, or spikes. Publishes issue-derived plans back to their source issue. Use when the user asks to "plan this feature", "plan this bug fix", "plan issue X", "create an implementation plan", "turn this PRD into a plan", investigate how a change should be built, revise a plan from a plan-review report, link related plans, or invokes /skill:prp-plan.
+description: Creates an implementation-ready plan for a feature, bug fix, refactor, or chore from a PRD, issue, document, or description, grounded in codebase evidence. Publishes issue-derived plans back to their source issue. Use when the user asks to "plan this feature", "plan this bug fix", "plan issue X", "create an implementation plan", "turn this PRD into a plan", investigate how a change should be built, revise a plan from a plan-review report, link related plans, or invokes /skill:prp-plan.
 ---
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
@@ -104,6 +104,8 @@ Prefer the smallest valuable vertical slice: it must deliver or directly unlock 
 
 External research is conditional. Use `web-researcher` when current documentation, dependency versions, platform behavior, security guidance, or an unfamiliar tool affects the design. Ask a narrow question tied to the architectural decision and prefer primary sources.
 
+When a planned behavior or acceptance criterion depends on a capability of an external package or companion repository, verify the capability exists at the pinned version by reading its actual source (node_modules or the checked-out repo) — documentation and API memory do not count. An unverifiable capability is a decision-required item for the design gate, not an assumption to build on.
+
 Delegate `/skill:prp-spike` to a separate agent before finalizing when an uncertain, falsifiable claim materially changes the architecture, especially when:
 
 - a new subsystem exists only because external behavior is uncertain;
@@ -130,6 +132,8 @@ Classify every assumption not settled by the source input or verified codebase f
 
 - **decision-required** — public API or wire-contract shape, scope or phase placement, a behavior change or compatibility break, any weakening or omission of a behavior the source input commits to, a new or changed public setting, security or isolation policy interpretation, or an expensive hard-to-reverse choice. Confirm these with the user before the plan is implementation-ready, batched into one interaction — never drip questions.
 - **planner-default** — a reversible implementation detail with a clear evidence-backed default. Decide it and disclose it under Risks and Decisions without prompting.
+
+A task states exactly one design. Alternatives left in task text ("or …", "if needed", "choose one") are unclassified assumptions — classify each here before writing the plan.
 
 Record confirmed answers with their provenance; a confirmed item does not reappear as an open decision. If the user defers, or the run is non-interactive, do not guess: keep the item under Risks and Decisions prefixed `[DECISION REQUIRED]` and mark the plan a `DRAFT`. A non-interactive run ends its final reply with `PLAN: BLOCKED` followed by the open items, or `PLAN: READY` when none remain. Ask nothing the source input already answers — a redundant question is a defect too.
 

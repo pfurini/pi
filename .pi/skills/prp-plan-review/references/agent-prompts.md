@@ -33,7 +33,7 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 > - **State transitions**: migrations (forward AND backward), cache invalidation, backfill, feature-flag states, partially-deployed states.
 > - **Rollback**: if this ships broken, what is the undo? Flag one-way doors the plan does not label as such.
 > - **Observability**: will anyone know it broke? Logs/metrics for the new failure surface, consistent with how the codebase observes comparable features (check how, don't assume).
-> - **Edge population**: empty states, limits, concurrency, permissions boundaries — against the plan's own Edge Cases Checklist if present; its absence for a risky feature is itself a finding.
+> - **Edge population**: empty states, limits, concurrency, permissions boundaries, and lifecycle paths (queued/deferred entry, retry, abort mid-operation, teardown, reload) — judged against each task's Tests and boundary notes; a risky task whose tests never name its failure paths is itself a finding.
 > - **Unresolved decisions**: read the plan's Risks and Decisions section. Any `[DECISION REQUIRED]` entry — or any open item that is consequential (public contract, scope/phase placement, behavior break, security-policy interpretation) but was silently finalized into tasks — is BLOCKING: the plan is claiming readiness it does not have.
 >
 > A missing element with a plausible production-incident path is BLOCKING; likely-rework is IMPORTANT. Finding blocks per the output format, then `ANGLE_VERDICT`.
@@ -44,9 +44,9 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 >
 > - **Every `file:line` reference**: open it. Does the file exist, and do those lines contain what the plan claims?
 > - **Every "mirror this pattern" claim**: does the cited pattern actually work the way the plan says (same signature, same error handling, same registration mechanism)?
-> - **Every UPDATE target in Files to Change**: does the file exist and contain the structure the task plans to modify? Every CREATE target: does it *not* already exist?
+> - **Every file target in each task's Files and integration points**: an UPDATE target exists and contains the structure the task plans to modify; a CREATE target does *not* already exist.
 > - **Snippets**: are quoted snippets real (copy-pasted) or paraphrased-from-imagination? Diff them against the source.
-> - **Task ordering**: walk the Step-by-Step Tasks and check each task's dependencies were produced by an earlier task or already exist.
+> - **Task ordering**: walk the Implementation tasks and check each task's dependencies were produced by an earlier task or already exist.
 >
 > Report the tally (N references checked, N verified, N wrong, N missing). A reference that is wrong-or-missing AND load-bearing for a task is BLOCKING; cosmetic drift (line numbers moved, content matches nearby) is SUGGESTION with corrected locations. Finding blocks per the output format, then `ANGLE_VERDICT`.
 

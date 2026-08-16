@@ -55,7 +55,7 @@ publication: <verified GitHub comment/review URL | local | pending>
 
 | Prior finding | Resolution | Evidence |
 |---|---|---|
-| <finding title> | RESOLVED / DISPUTED-UPHELD / STILL OPEN | <commit, `path:line`, or the disagreement evidence judged> |
+| <finding title> | RESOLVED / UPHELD / STILL OPEN | <commit, `path:line`, or the recorded human disposition judged> |
 
 ## Decisions Required (<count>)
 
@@ -95,7 +95,7 @@ publication: <verified GitHub comment/review URL | local | pending>
 
 | Finding | Resolution | Evidence |
 |---|---|---|
-| <finding title> | APPLIED / SKIPPED / DISPUTED / DEFERRED | <commit, user choice and why, disproving `path:line`, or tracking link> |
+| <finding title> | APPLIED / ACCEPTED / DISPUTED / DEFERRED | <commit, accepted-risk rationale, disproving `path:line`, or tracking link> |
 ```
 
 Rules:

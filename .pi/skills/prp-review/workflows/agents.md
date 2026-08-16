@@ -110,9 +110,9 @@ attack on the whole target would re-litigate settled ground and keep the finding
 a re-review instead:
 
 1. **Verifies prior findings.** Every prior Critical, Important, and Decision finding gets a
-   resolution: RESOLVED (cite the commit and evidence), DISPUTED-UPHELD (the implementer or apply
-   phase recorded an evidence-backed disagreement — judge that evidence; it stands unless new
-   evidence defeats it), or STILL OPEN. Do not re-flag a disputed finding without new evidence.
+   resolution: RESOLVED (cite the commit and evidence), UPHELD (a recorded human disposition —
+   accepted risk, deferred with tracking, or an evidence-backed dispute — stands; judge the record,
+   and re-open only when new evidence defeats it), or STILL OPEN.
 2. **Attacks only new ground at full depth**: commits since the previously reviewed head and areas
    the prior pass did not reach. Re-open settled findings only on new evidence.
 3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is
@@ -188,7 +188,7 @@ material, not the report:
 
 Verdict rules:
 
-- `READY TO MERGE`: no Critical, Important, or open Decision findings, and all required validation passed.
+- `READY TO MERGE`: no Critical, Important, or open Decision findings, and all required validation passed. A prior finding verified RESOLVED or UPHELD in Prior Findings Resolution is not open.
 - `NEEDS FIXES`: at least one Critical or Important finding, or a change-caused required validation failure.
 - `REVIEW INCOMPLETE`: required validation or decisive evidence could not be obtained, or only open
   Decisions remain — there is nothing to fix, but a human choice gates the judgment.
@@ -218,7 +218,8 @@ GitHub state to verify both point to the same publication. Corrections flow thro
 
 Set `publication: local`. Present the report summary inline: verdict, validation, and every finding
 as one line (severity, agent, `file:line`, what and why). The user decides per finding — apply,
-skip, or dispute; propose applying every Critical and Important finding as the default. Decisions
+accept the risk, defer to a tracked follow-up, or dispute; propose applying every Critical and
+Important finding as the default. Decisions
 Required go to the user as questions first; their answers may reclassify or dismiss findings.
 
 For each approved finding, in severity order:
@@ -232,8 +233,10 @@ A finding that fails re-verification is recorded as disputed with the disproving
 applied. After all edits, re-run the project gate from step 4, then commit via `/skill:prp-commit`.
 
 Append a **Resolution Log** to the canonical report — one row per Critical/Important/Decision
-finding: APPLIED (commit), SKIPPED (user choice, why), DISPUTED (evidence), or DEFERRED (where it is
-tracked). The next re-review verifies this log.
+finding: APPLIED (commit), ACCEPTED (the user accepts the risk — record why), DEFERRED (where it is
+tracked), or DISPUTED (disproving evidence). ACCEPTED, DEFERRED, and DISPUTED are settled human
+dispositions: the next re-review verifies they were recorded and they no longer block the verdict
+unless new evidence re-opens them.
 
 Non-interactive runs stop after the report — never apply without the human gate.
 

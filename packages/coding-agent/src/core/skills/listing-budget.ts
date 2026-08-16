@@ -71,8 +71,9 @@ export function buildBudgetedListingBlock(
 	}
 
 	const B = Math.max(0, budgetCodeUnits);
-	if (est(render()) <= B) {
-		return { block: render(), diagnostics: [] };
+	const fullBlock = render();
+	if (est(fullBlock) <= B) {
+		return { block: fullBlock, diagnostics: [] };
 	}
 
 	const truncationOrder = entries

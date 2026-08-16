@@ -754,9 +754,15 @@ export class AgentSession {
 		});
 	}
 
-	/** Single dirty seam for the C4a listing-budget rebuild: called on every model-assignment path, `activateSkill`, a persisting fork delivery, and a branch-leaf change. */
+	/** Mark the C4a listing budget stale after an invocation, persisting fork delivery, or branch-leaf change. */
 	private _markSkillListingBudgetDirty(): void {
 		this._skillListingBudgetDirty = true;
+	}
+
+	/** Assign the active model and preserve the listing-budget invalidation invariant. */
+	private _assignModel(model: Model<any>): void {
+		this.agent.state.model = model;
+		this._markSkillListingBudgetDirty();
 	}
 
 	private _installAgentToolHooks(): void {
@@ -2267,11 +2273,7 @@ export class AgentSession {
 		}
 		const pending = this._pendingSkillListingDiagnostics;
 		this._pendingSkillListingDiagnostics = [];
-		try {
-			this._emitSkillDiagnostics(pending);
-		} catch {
-			// See _deliverSkillListingDiagnostics.
-		}
+		this._deliverSkillListingDiagnostics(pending);
 	}
 
 	/** Merged redirect map (ADR-0006): user settings over the built-in defaults. */
@@ -3005,8 +3007,7 @@ export class AgentSession {
 
 		const previousModel = this.model;
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
-		this.agent.state.model = model;
-		this._markSkillListingBudgetDirty();
+		this._assignModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
@@ -3048,8 +3049,7 @@ export class AgentSession {
 		const thinkingLevel = this._getThinkingLevelForModelSwitch(next.thinkingLevel);
 
 		// Apply model
-		this.agent.state.model = next.model;
-		this._markSkillListingBudgetDirty();
+		this._assignModel(next.model);
 		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
@@ -3077,8 +3077,7 @@ export class AgentSession {
 		const nextModel = availableModels[nextIndex];
 
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
-		this.agent.state.model = nextModel;
-		this._markSkillListingBudgetDirty();
+		this._assignModel(nextModel);
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
@@ -3752,8 +3751,7 @@ export class AgentSession {
 			return;
 		}
 
-		this.agent.state.model = refreshedModel;
-		this._markSkillListingBudgetDirty();
+		this._assignModel(refreshedModel);
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {

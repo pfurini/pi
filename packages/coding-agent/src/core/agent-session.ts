@@ -765,6 +765,27 @@ export class AgentSession {
 		this._markSkillListingBudgetDirty();
 	}
 
+	/** Rebuild and clear any applicable skill-listing invalidation. */
+	private _refreshSkillListingIfDirty(): void {
+		let listingRebuilt = false;
+		const pathsDirty = this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths();
+		const budgetDirty = this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0;
+		if (pathsDirty || budgetDirty) {
+			const previousBasePrompt = this._baseSystemPrompt;
+			this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+			if (this._systemPromptOverride === previousBasePrompt) {
+				this._systemPromptOverride = this._baseSystemPrompt;
+			}
+			listingRebuilt = true;
+		}
+		if (this._skillPathsWindowDirty && (listingRebuilt || !this._anyVisibleSkillDeclaresPaths())) {
+			this._skillPathsWindowDirty = false;
+		}
+		if (this._skillListingBudgetDirty && (listingRebuilt || this._getModelVisibleSkills().length === 0)) {
+			this._skillListingBudgetDirty = false;
+		}
+	}
+
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
 			const runner = this._extensionRunner;
@@ -1750,27 +1771,9 @@ export class AgentSession {
 				return;
 			}
 
-			// A6 paths listing boost: recompute the base prompt once per user turn, only when the
-			// touched-path window moved since the last rebuild. This is the "next listing build"
-			// boundary the boost needs to become observable (setModel does not rebuild it).
-			// C4a generalizes this to also cover model-switch (contextWindow → B),
-			// invocation-count (activation/fork), and branch-nav (navigateTree)
-			// triggers, which the paths-only gate above never observed. Rebuild once
-			// when either is dirty and applicable; clear each flag only after a
-			// successful rebuild (or a genuine no-op) so a throwing rebuild retries.
-			let listingRebuilt = false;
-			const pathsDirty = this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths();
-			const budgetDirty = this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0;
-			if (pathsDirty || budgetDirty) {
-				this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
-				listingRebuilt = true;
-			}
-			if (this._skillPathsWindowDirty && (listingRebuilt || !this._anyVisibleSkillDeclaresPaths())) {
-				this._skillPathsWindowDirty = false;
-			}
-			if (this._skillListingBudgetDirty && (listingRebuilt || this._getModelVisibleSkills().length === 0)) {
-				this._skillListingBudgetDirty = false;
-			}
+			// Apply path, model, invocation-count, and branch-navigation invalidations
+			// before the next request observes the skill listing.
+			this._refreshSkillListingIfDirty();
 
 			// Flush any pending bash messages / fork notices before the new prompt
 			this._flushPendingBashMessages();
@@ -2387,24 +2390,22 @@ export class AgentSession {
 	}
 
 	/**
-	 * C3a application point (b): re-resolve the override for a request whose
+	 * C3a application point (b): re-resolve runtime state for a request whose
 	 * triggering messages were just injected (a queued invocation activates only
-	 * then). Persists the override to `pendingTurnOverride` (so a subsequent
-	 * continuation/retry keeps it) and returns the tools-only turn update the
-	 * agent loop consumes post-injection. Returns undefined when no invocation is
-	 * active.
+	 * then). Persists the override and refreshes any listing invalidation before
+	 * returning the turn update consumed by the agent loop.
 	 */
 	private _resolveInjectedTurnOverride(): AgentLoopTurnUpdate | undefined {
 		const { active, model, thinkingLevel, tools } = this._syncPendingTurnOverride();
 		if (!active) {
 			return undefined;
 		}
+		this._refreshSkillListingIfDirty();
 		return {
 			...(model ? { model } : {}),
 			...(thinkingLevel ? { thinkingLevel } : {}),
-			// Post-injection the agent loop applies only `context.tools` (plus
-			// model/thinkingLevel); it never reads messages/systemPrompt here, so
-			// alias the live transcript rather than copying it.
+			// The loop applies the refreshed prompt and tools while retaining its live
+			// transcript, so alias messages rather than copying them.
 			context: {
 				systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
 				messages: this.agent.state.messages,

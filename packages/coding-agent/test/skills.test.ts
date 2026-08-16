@@ -2,6 +2,7 @@ import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
+import type { SkillFrontmatter } from "../src/core/skills/frontmatter.ts";
 import { escapeXml as escapeXmlFromListing } from "../src/core/skills/listing.ts";
 import { escapeXml as escapeXmlFromListingBudget } from "../src/core/skills/listing-budget.ts";
 import {
@@ -30,6 +31,7 @@ function createTestSkill(options: {
 	filePath: string;
 	baseDir: string;
 	disableModelInvocation?: boolean;
+	frontmatter?: SkillFrontmatter;
 	source?: string;
 }): Skill {
 	return {
@@ -38,6 +40,7 @@ function createTestSkill(options: {
 		filePath: options.filePath,
 		baseDir: options.baseDir,
 		sourceInfo: createSyntheticSourceInfo(options.filePath, { source: options.source ?? "test" }),
+		...(options.frontmatter ? { frontmatter: options.frontmatter } : {}),
 		disableModelInvocation: options.disableModelInvocation ?? false,
 	};
 }
@@ -319,6 +322,39 @@ describe("skills", () => {
 			expect(result).toContain("<name>skill-one</name>");
 			expect(result).toContain("<name>skill-two</name>");
 			expect((result.match(/<skill>/g) || []).length).toBe(2);
+		});
+
+		it("keeps a paths-matched description ahead of an unmatched skill under a tight budget", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "matched-skill",
+					description: "M".repeat(600),
+					filePath: "/repo/matched/SKILL.md",
+					baseDir: "/repo/matched",
+					frontmatter: { paths: ["src/api/**"] },
+				}),
+				createTestSkill({
+					name: "unmatched-skill",
+					description: "U".repeat(600),
+					filePath: "/repo/unmatched/SKILL.md",
+					baseDir: "/repo/unmatched",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(
+				skills,
+				"read",
+				{ touchedPaths: ["/repo/src/api/file.ts"], cwd: "/repo" },
+				{ budgetCodeUnits: 210, invocationCounts: new Map() },
+			);
+			const block = extractSkillListingBlock(result);
+			expect(block).toBeDefined();
+			const matchedStart = block!.indexOf("<name>matched-skill</name>");
+			const unmatchedStart = block!.indexOf("<name>unmatched-skill</name>");
+			const matchedEntry = block!.slice(matchedStart, block!.indexOf("</skill>", matchedStart));
+			const unmatchedEntry = block!.slice(unmatchedStart, block!.indexOf("</skill>", unmatchedStart));
+			expect(matchedEntry).toContain("<description>");
+			expect(unmatchedEntry).not.toContain("<description>");
 		});
 
 		it("should exclude skills with disableModelInvocation from prompt", () => {

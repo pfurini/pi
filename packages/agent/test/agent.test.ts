@@ -902,17 +902,22 @@ describe("Agent C3a seams", () => {
 
 	it("fires refreshTurnAfterInjection for the injected request but not the tool continuation", async () => {
 		const overrideModel = getModel("openai", "gpt-4o-mini");
+		const noopTool = toolNamed("noop");
 		let refreshCalls = 0;
-		const requests: string[] = [];
+		const requests: Array<{ modelId: string; systemPrompt: string | undefined }> = [];
 		let requestCount = 0;
 		const agent = new Agent({
-			initialState: { tools: [toolNamed("noop")], thinkingLevel: "off" },
+			initialState: { systemPrompt: "base", tools: [noopTool], thinkingLevel: "off" },
 			refreshTurnAfterInjection: () => {
 				refreshCalls++;
-				return { model: overrideModel, thinkingLevel: "high" };
+				return {
+					model: overrideModel,
+					thinkingLevel: "high",
+					context: { systemPrompt: "refreshed", messages: [], tools: [noopTool] },
+				};
 			},
-			streamFn: (model, _context, _options) => {
-				requests.push(model.id);
+			streamFn: (model, context, _options) => {
+				requests.push({ modelId: model.id, systemPrompt: context.systemPrompt });
 				requestCount++;
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
@@ -934,13 +939,13 @@ describe("Agent C3a seams", () => {
 
 		await agent.prompt("start");
 
-		// Fired once — for the injected first request only, not the tool-result
-		// continuation (which rebuilds via prepareNextTurn in production, point c).
+		// Fired once for the injected first request, not the tool-result
+		// continuation (which retains the refreshed context).
 		expect(refreshCalls).toBe(1);
 		expect(requests).toHaveLength(2);
-		expect(requests[0]).toBe(overrideModel.id);
+		expect(requests[0]).toEqual({ modelId: overrideModel.id, systemPrompt: "refreshed" });
+		expect(requests[1]?.systemPrompt).toBe("refreshed");
 	});
-
 	it("blocks a disallowed tool call by name even when the tool is absent from the schema", async () => {
 		let requestCount = 0;
 		const agent = new Agent({

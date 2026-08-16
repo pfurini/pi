@@ -14,8 +14,8 @@ Two modes follow from the target:
 - **PR mode** — the subject is a pull request. Resolve it with `gh pr view` / `gh pr list`; read its
   title, body, author, state, base, head, files, reviews, comments, and complete diff. Stop when the
   PR is merged; warn before reviewing a closed PR; review a draft normally but post a comment rather
-  than approving or requesting changes. Check out the PR branch with `gh pr checkout` unless it is
-  already checked out. The review never edits anything in PR mode.
+  than approving or requesting changes. Never move the current worktree for review: inspect PR refs with
+  `gh pr diff`, `gh api`, and `git show <ref>:<path>`. The review never edits anything in PR mode.
 - **Local mode** — everything else: the step-close flow. The working tree is the user's own work;
   the polish phase and apply phase are available.
 

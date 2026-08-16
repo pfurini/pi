@@ -9,7 +9,7 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 > Build the traceability matrix in three passes:
 >
 > 1. **Coverage (PRD → plan).** Enumerate every in-scope PRD item: each acceptance-criterion-like commitment (Success Metrics, phase Success signal), each user story / User Flow step, each Must/Should capability, each Decisions Log entry that constrains implementation. For each, find the plan task(s) or section that delivers it. Verdict per item: `covered` (a specific task delivers it), `partial` (mechanism planned but the observable outcome is not — say what is missing), `uncovered` (nothing in the plan delivers it), `contradicted` (the plan does something the PRD decided against). Cite the plan task numbers.
-> 2. **Provenance (plan → PRD).** For every task in the plan's Step-by-Step Tasks, name the PRD item that justifies it. A task with no justification is a finding (IMPORTANT, or BLOCKING when it expands user-visible scope) unless it is plumbing an in-scope item obviously requires — say so when it is.
+> 2. **Provenance (plan → PRD).** For every task under the plan's Implementation section, name the PRD item that justifies it. A task with no justification is a finding (IMPORTANT, or BLOCKING when it expands user-visible scope) unless it is plumbing an in-scope item obviously requires — say so when it is.
 > 3. **Fidelity.** For every `covered`/`partial` item, compare the *strength* of the commitment. Flag weakening: quantitative → qualitative ("under 200ms" → "performant"), universal → scoped ("all users" → "admins"), guaranteed → best-effort. Flag silent strengthening too — it is scope creep wearing a halo. Check the plan's NOT Building section against the PRD's What We're NOT Building: exclusions the PRD never made are findings.
 >
 > Emit the matrix first (one row per PRD item: item, PRD section, verdict, plan location, note), then finding blocks per the output format. An `uncovered` Must item or a `contradicted` item is BLOCKING. Then `ANGLE_VERDICT`.
@@ -56,7 +56,7 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 >
 > - **Executability**: is each command runnable in this repo as written (script exists in the manifest, tool installed, paths real)? Verify against the project's manifest — do not trust the plan.
 > - **Criterion mapping**: for each Acceptance Criterion, name the validation command or test that would fail if the criterion were unmet. This check cuts both ways: an acceptance criterion no command can falsify is a hole; a validation command that maps to no acceptance criterion is ceremony. Flag both.
-> - **Test intent**: do the planned unit tests in Testing Strategy assert the *behavior* the criteria commit to, or just that code runs? Flag tautological tests.
+> - **Test intent**: do the Tests subsections of the plan's Implementation tasks assert the *behavior* the criteria commit to, or just that code runs? Flag tautological tests.
 > - **Level coverage**: levels the plan skips (DB validation with schema changes, browser validation with UI changes) — justified or forgotten?
 >
 > An unfalsifiable Acceptance Criterion or a non-executable Level 1–3 command is BLOCKING. Finding blocks per the output format, then `ANGLE_VERDICT`.

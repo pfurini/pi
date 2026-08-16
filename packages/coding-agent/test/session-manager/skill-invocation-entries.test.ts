@@ -133,6 +133,20 @@ describe("SessionManager skill invocation entries (B.12)", () => {
 			expect(JSON.stringify((line as SessionMessageEntry).message)).not.toContain("pairId");
 		}
 	});
+
+	it("rejects mismatched synthetic-pair identities before persisting either entry", () => {
+		const sm = SessionManager.create(makeTempDir());
+
+		expect(() =>
+			sm.appendSkillMessagePair(
+				pairAssistant("p1"),
+				pairToolResult("p1"),
+				{ pairId: "pair-a" },
+				{ pairId: "pair-b" },
+			),
+		).toThrow("Synthetic skill pair metadata must use one shared pairId");
+		expect(sm.getEntries()).toHaveLength(0);
+	});
 });
 
 describe("repairTornSkillPairs", () => {

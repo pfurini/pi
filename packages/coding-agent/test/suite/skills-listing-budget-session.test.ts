@@ -10,8 +10,9 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall, streamSimple } from "@earendil-works/pi-ai/compat";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../../src/core/agent-session.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
@@ -84,12 +85,14 @@ async function createBudgetHarness(
 		models?: Array<{ id: string; contextWindow: number }>;
 		settings?: Partial<Settings>;
 		systemPrompt?: string;
+		tools?: AgentTool[];
 	},
 ): Promise<Harness> {
 	const tempDir = makeTempDir();
 	const resourceLoader = createSkillsLoader(tempDir, fixtures);
 	const harness = await createHarness({
 		models: options.models ?? [{ id: "session-model", contextWindow: 60_000 }],
+		tools: options.tools,
 		resourceLoader:
 			options.systemPrompt === undefined
 				? resourceLoader
@@ -242,6 +245,75 @@ describe("C4a listing budget: invocation-count reorder", () => {
 		// aaa-skill is now count 1: least-invoked-first flips priority to zzz-skill.
 		expect(skillHasDescription(harness.session.systemPrompt, "aaa-skill")).toBe(true);
 		expect(skillHasDescription(harness.session.systemPrompt, "zzz-skill")).toBe(false);
+	});
+
+	it("refreshes the listing after a queued skill before a later queued prompt", async () => {
+		let releaseWait: (() => void) | undefined;
+		const waitRelease = new Promise<void>((resolve) => {
+			releaseWait = resolve;
+		});
+		const waitTool: AgentTool = {
+			name: "wait",
+			label: "Wait",
+			description: "Wait for release",
+			parameters: Type.Object({}),
+			execute: async () => {
+				await waitRelease;
+				return { content: [{ type: "text", text: "released" }], details: {} };
+			},
+		};
+		const readTool: AgentTool = {
+			name: "read",
+			label: "Read",
+			description: "Read a file",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text", text: "unused" }], details: {} }),
+		};
+		const harness = await createBudgetHarness(TIGHT_PAIR, {
+			models: TIGHT_MODELS,
+			tools: [waitTool, readTool],
+		});
+		harness.session.setFollowUpMode("one-at-a-time");
+		const waitForToolStart = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "tool_execution_start" && event.toolName === "wait") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+		let laterPromptSystemPrompt = "";
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("initial turn done"),
+			(context) => {
+				if (
+					context.messages.some(
+						(message) => message.role === "user" && JSON.stringify(message.content).includes("check listing"),
+					)
+				) {
+					laterPromptSystemPrompt = context.systemPrompt ?? "";
+				}
+				return fauxAssistantMessage("skill follow-up done");
+			},
+			(context) => {
+				laterPromptSystemPrompt = context.systemPrompt ?? "";
+				return fauxAssistantMessage("plain follow-up done");
+			},
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForToolStart;
+		await harness.session.followUp("/skill:aaa-skill queued");
+		await harness.session.followUp("check listing");
+		releaseWait?.();
+		await promptPromise;
+
+		expect(laterPromptSystemPrompt).toContain("<available_skills");
+		expect({
+			aaa: skillHasDescription(laterPromptSystemPrompt, "aaa-skill"),
+			zzz: skillHasDescription(laterPromptSystemPrompt, "zzz-skill"),
+		}).toEqual({ aaa: true, zzz: false });
 	});
 });
 

@@ -225,7 +225,8 @@ async function runLoop(
 
 			// A just-injected request may activate an override (e.g. a queued
 			// skill) only now, after the loop config was already built. Re-resolve
-			// model/reasoning/tools for the consuming request. Skipped for retries.
+			// model, reasoning, tools, and the system prompt for the consuming request.
+			// Skipped for retries.
 			if (injectionPending) {
 				injectionPending = false;
 				// The callback is contracted not to throw, but it is application
@@ -238,8 +239,12 @@ async function runLoop(
 					injectionSnapshot = undefined;
 				}
 				if (injectionSnapshot) {
-					if (injectionSnapshot.context?.tools !== undefined) {
-						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
+					if (injectionSnapshot.context !== undefined) {
+						currentContext = {
+							...currentContext,
+							systemPrompt: injectionSnapshot.context.systemPrompt,
+							tools: injectionSnapshot.context.tools,
+						};
 					}
 					config = applyTurnUpdateToConfig(config, injectionSnapshot);
 				}

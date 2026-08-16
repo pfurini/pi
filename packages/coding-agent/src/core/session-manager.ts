@@ -1200,10 +1200,11 @@ export class SessionManager {
 	}
 
 	/**
-	 * Append a synthetic skill pair (A.4) as one batched unit: both entries are
-	 * serialized into a single file write so a crash cannot persist one without
-	 * the other through this path. A pair torn by other means is detected and
-	 * downgraded at load (see repairTornSkillPairs).
+	 * Append a synthetic skill pair (A.4) as one batched unit. The method owns
+	 * one shared pair identity and serializes both entries in a single file write,
+	 * so callers cannot persist mismatched or crash-torn halves through this path.
+	 * A pair torn by other means is detected and downgraded at load (see
+	 * repairTornSkillPairs).
 	 */
 	appendSkillMessagePair(
 		assistant: Message,
@@ -1211,6 +1212,14 @@ export class SessionManager {
 		assistantMetadata?: SessionMessageMetadata,
 		toolResultMetadata?: SessionMessageMetadata,
 	): string {
+		if (
+			assistantMetadata?.pairId !== undefined &&
+			toolResultMetadata?.pairId !== undefined &&
+			assistantMetadata.pairId !== toolResultMetadata.pairId
+		) {
+			throw new Error("Synthetic skill pair metadata must use one shared pairId");
+		}
+		const pairId = assistantMetadata?.pairId ?? toolResultMetadata?.pairId ?? randomUUID();
 		const assistantEntry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),
@@ -1221,9 +1230,7 @@ export class SessionManager {
 		if (assistantMetadata?.invocations) {
 			assistantEntry.invocations = assistantMetadata.invocations;
 		}
-		if (assistantMetadata?.pairId) {
-			assistantEntry.pairId = assistantMetadata.pairId;
-		}
+		assistantEntry.pairId = pairId;
 		const toolResultEntry: SessionMessageEntry = {
 			type: "message",
 			id: generateId({ has: (id) => id === assistantEntry.id || this.byId.has(id) }),
@@ -1234,9 +1241,7 @@ export class SessionManager {
 		if (toolResultMetadata?.invocations) {
 			toolResultEntry.invocations = toolResultMetadata.invocations;
 		}
-		if (toolResultMetadata?.pairId) {
-			toolResultEntry.pairId = toolResultMetadata.pairId;
-		}
+		toolResultEntry.pairId = pairId;
 		this._appendEntriesBatched([assistantEntry, toolResultEntry]);
 		return toolResultEntry.id;
 	}

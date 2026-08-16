@@ -1,286 +1,25 @@
 ---
 name: prp-implement
-description: Executes an implementation plan end-to-end with validation loops. Use when the user wants to implement or execute a plan file, build a planned feature, or invokes /prp-implement.
-argument-hint: <path/to/plan.md> [--base <branch>]
+description: Implements and validates existing PRP plans and corrects reviewed or failing-CI pull requests. Always use when executing an implementation plan, implementing an issue that already has a local or published plan, correcting a PR from a PRP review report or CI failure, when another PRP workflow reaches its implementation or correction step, or when the user invokes /skill:prp-implement.
 ---
+
+> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Implement Plan
 
-**Plan**: $ARGUMENTS
+Execute the supplied implementation plan through a validated commit and pull request, or apply review findings to that pull request. Keep implementation, commit, and PR delivery in this context; leave review judgment to its own context.
 
----
+**Input**: $ARGUMENTS
 
-## Your Mission
+## Mode
 
-Execute the plan end-to-end with rigorous self-validation. You are autonomous.
+- A plan path starts the initial implementation.
+- `review` plus a review report, PR, or finding decisions starts a correction pass. Resolve and read the original plan, implementation report, live PR diff and comments, complete canonical review report, and any explicit finding dispositions before editing. Human dispositions are binding when supplied. Otherwise Critical or Important findings require correction or an evidence-backed disagreement; suggestions remain optional.
+- `ci` plus a PR and failing-check evidence starts a correction pass. Resolve the original plan, implementation report, live PR diff, complete check status and logs, and reproduce the failure before editing. Correct only PR-caused failures; preserve evidence when the failure is external or pre-existing.
 
-**Core Philosophy**: Validation loops catch mistakes early. Run checks after every change. Fix issues immediately. The goal is a working implementation, not just code that exists.
+Resume the original implementation context for corrections when it is available. In a fresh context, reconstruct the complete contract from those durable artifacts rather than from an abbreviated findings summary.
 
-**Golden Rule**: If a validation fails, fix it before moving on. Never accumulate broken state.
-
----
-
-## Phase 0: DETECT - Project Environment
-
-### 0.1 Identify Package Manager
-
-Check for these files to determine the project's toolchain:
-
-| File Found | Package Manager | Runner |
-|------------|-----------------|--------|
-| `bun.lockb` | bun | `bun` / `bun run` |
-| `pnpm-lock.yaml` | pnpm | `pnpm` / `pnpm run` |
-| `yarn.lock` | yarn | `yarn` / `yarn run` |
-| `package-lock.json` | npm | `npm run` |
-| `pyproject.toml` | uv/pip | `uv run` / `python` |
-| `Cargo.toml` | cargo | `cargo` |
-| `go.mod` | go | `go` |
-
-**Store the detected runner** - use it for all subsequent commands.
-
-### 0.2 Detect Base Branch
-
-Determine the base branch for branching and syncing:
-
-1. **Check arguments**: If `$ARGUMENTS` contains `--base <branch>`, extract that value and remove the flag from the plan path argument
-2. **Auto-detect from remote**:
-   ```bash
-   git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'
-   ```
-3. **Fallback if detection fails**:
-   ```bash
-   git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'
-   ```
-4. **Last resort**: `main`
-
-**Store as `{base-branch}`** — use this value for ALL branch comparisons, rebasing, and syncing. Never hardcode `main` or `master`.
-
-### 0.3 Identify Validation Scripts
-
-Check `package.json` (or equivalent) for available scripts:
-- Type checking: `type-check`, `typecheck`, `tsc`
-- Linting: `lint`, `lint:fix`
-- Testing: `test`, `test:unit`, `test:integration`
-- Building: `build`, `compile`
-
-**Use the plan's "Validation Commands" section** - it should specify exact commands for this project. When the plan lacks a command, fall back to the detected toolchain's standard one (`{runner} run type-check`, `{runner} test`, `mypy .` / `pytest`, `cargo check` / `cargo clippy` / `cargo test`, `go vet` / `go build` / `go test ./...`).
-
----
-
-## Phase 1: LOAD - Read the Plan
-
-### 1.1 Load Plan File
-
-```bash
-cat $ARGUMENTS
-```
-
-**If the file does not exist**, stop and tell the user:
-
-```
-Error: Plan not found at $ARGUMENTS
-
-Create a plan first: /prp-plan "feature description"
-```
-
-### 1.2 Extract Key Sections
-
-Locate and understand:
-
-- **Summary** - What we're building
-- **Patterns to Mirror** - Code to copy from
-- **Files to Change** - CREATE/UPDATE list
-- **Step-by-Step Tasks** - Implementation order
-- **Validation Commands** - How to verify
-- **Acceptance Criteria** - Definition of done
-
-**PHASE_1_CHECKPOINT:**
-
-- [ ] Plan file loaded
-- [ ] Key sections identified
-- [ ] Tasks list extracted
-
----
-
-## Phase 2: PREPARE - Git State
-
-### 2.1 Check Current State
-
-```bash
-git branch --show-current
-git status --porcelain
-git worktree list
-```
-
-### 2.2 Branch Decision
-
-| Current State              | Action                                               |
-| -------------------------- | ---------------------------------------------------- |
-| In worktree                | Use it (log: "Using worktree")                       |
-| On {base-branch}, clean    | Create branch: `git checkout -b feature/{plan-slug}` |
-| On {base-branch}, dirty    | STOP: "Stash or commit changes first"                |
-| On feature branch          | Use it (log: "Using existing branch")                |
-
-### 2.3 Sync with Remote
-
-```bash
-git fetch origin
-git pull --rebase origin {base-branch} 2>/dev/null || true
-```
-
-**PHASE_2_CHECKPOINT:**
-
-- [ ] On correct branch (not {base-branch} with uncommitted work)
-- [ ] Working directory ready
-- [ ] Up to date with remote
-
----
-
-## Phase 3: EXECUTE - Implement Tasks
-
-**For each task in the plan's Step-by-Step Tasks section:**
-
-### 3.1 Read Context
-
-1. Read the **MIRROR** file reference from the task
-2. Understand the pattern to follow
-3. Read any **IMPORTS** specified
-
-### 3.2 Implement
-
-1. Make the change exactly as specified
-2. Follow the pattern from MIRROR reference
-3. Handle any **GOTCHA** warnings
-4. Write new code to the **forward rules** below
-
-**Forward rules** (quality is built in at write time, not restored by refactoring later). Apply them to every line you add:
-
-- **Reuse**: before writing a helper, grep shared/utility modules and the files adjacent to the change for an existing one; call what exists.
-- **Simplicity**: derive values from existing state rather than storing copies; extract shared logic the moment a second variant of a block appears; keep nesting shallow with early returns; delete code your change obsoletes.
-- **Efficiency**: compute once and pass the result down; run independent I/O concurrently or batched; keep blocking work out of startup and hot paths; build long-lived objects from copied fields rather than captured scopes (a closure keeps the entire enclosing scope alive for the object's lifetime).
-- **Altitude**: implement each change at the depth where the problem lives; when a special case on shared infrastructure seems needed, generalize the underlying mechanism instead.
-- **Contracts**: model state so invalid combinations cannot be constructed (a discriminated union or enum instead of boolean-flag combinations); validate in the constructor or factory so the type enforces its own invariants rather than relying on callers or comments; keep one source of truth and derive the rest.
-- **Failure visibility**: make every failure path observable; catch only the error types you expect, log with enough context to debug months later, and surface actionable feedback to the caller or user; a fallback logs the original cause it replaces.
-- **Boundaries** (when the change accepts external input, authenticates, or persists data): validate with a schema at the entry point, parameterize every query, allow-list the fields written to storage, resolve the acting user from the session rather than from request parameters, and read secrets from the environment.
-- **Comments**: write comments only for why or for a constraint the code cannot show, and leave every comment in a file you touch true after your change.
-
-### 3.3 Validate Immediately
-
-**After EVERY file change, run the type-check command from the plan's Validation Commands section.**
-
-**If types fail:**
-
-1. Read the error
-2. Fix the issue
-3. Re-run type-check
-4. Only proceed when passing
-
-### 3.4 Track Progress
-
-Log each task as you complete it:
-
-```
-Task 1: CREATE src/features/x/models.ts ✅
-Task 2: CREATE src/features/x/service.ts ✅
-Task 3: UPDATE src/routes/index.ts ✅
-```
-
-**Update the plan's status markers as you go** (newer templates use `[ ] / [wip] / [x] / [f]`): set a task to `[wip]` when you start it and `[x]` when its validation passes — or `[f]` if it cannot be made to pass (record why in the plan's Agent Notes and continue). Save the plan file after each change so progress survives an interruption. Plans without markers: skip this.
-
-**Deviation Handling:**
-If you must deviate from the plan:
-
-- Note WHAT changed
-- Note WHY it changed
-- Continue with the deviation documented
-
-**PHASE_3_CHECKPOINT:**
-
-- [ ] All tasks executed in order
-- [ ] Each task passed type-check
-- [ ] New code written to the forward rules from 3.2
-- [ ] Deviations documented
-
----
-
-## Phase 4: VALIDATE - Full Verification
-
-### 4.0 Forward-Rules Pass
-
-Re-read the full diff (`git diff {base-branch}...HEAD`, plus `git diff HEAD` for uncommitted work) against the forward rules from 3.2. Per-task focus lets violations accumulate across tasks (a helper written in task 2 and re-implemented in task 5, state duplicated between files), and this is the moment they are cheapest to fix: the code is untested, so reshaping it breaks nothing. Fix each violation, re-run the type-check command, and proceed when a pass over the diff yields no new findings.
-
-### 4.1 Static Analysis
-
-**Run the type-check and lint commands from the plan's Validation Commands section.**
-
-**Must pass with zero errors.**
-
-If lint errors:
-
-1. Run the lint fix command (e.g., `{runner} run lint:fix`, `ruff check --fix .`)
-2. Re-check
-3. Manual fix remaining issues
-
-### 4.2 Unit Tests
-
-**Write or update tests for every piece of new code.** A task without tests is not complete.
-
-**Test requirements:**
-
-1. Every new function/feature needs at least one test
-2. Edge cases identified in the plan need tests
-3. Update existing tests if behavior changed
-
-**Write tests**, then run the test command from the plan.
-
-**If tests fail:**
-
-1. Read failure output
-2. Determine: bug in implementation or bug in test?
-3. Fix the actual issue
-4. Re-run tests
-5. Repeat until green
-
-### 4.3 Build Check
-
-**Run the build command from the plan's Validation Commands section.**
-
-**Must complete without errors.**
-
-### 4.4 Integration Testing (if applicable)
-
-**If the plan involves API/server changes, use the integration test commands from the plan.**
-
-Example pattern:
-```bash
-# Start server in background (command varies by project)
-{runner} run dev &
-SERVER_PID=$!
-sleep 3
-
-# Test endpoints (adjust URL/port per project config)
-curl -s http://localhost:{port}/health | jq
-
-# Stop server
-kill $SERVER_PID
-```
-
-If an integration test fails, check that the server started, the endpoint exists, and the request format is right, then fix and retry.
-
-**PHASE_4_CHECKPOINT:**
-
-- [ ] Forward-rules pass complete (diff yields no new findings)
-- [ ] Type-check passes (command from plan)
-- [ ] Lint passes (0 errors)
-- [ ] Tests pass (all green)
-- [ ] Build succeeds
-- [ ] Integration tests pass (if applicable)
-
----
-
-## Phase 5: REPORT - Create Implementation Report
-
-### 5.1 Create Report Directory
+Resolve the canonical project store before locating artifacts:
 
 ```bash
 # --- PRP store resolver (canonical; keep byte-identical across skills) ---
@@ -290,64 +29,80 @@ _root="$(cd "$_root" && pwd -P)"
 _name="$(basename "$_root" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
 PRP_DIR="${PRP_HOME:-$HOME/.prp}/${_name:-project}-$(printf %s "$_root" | git hash-object --stdin | cut -c1-8)"
 mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "name": "%s"}\n' "$_root" "${_name:-project}" > "$PRP_DIR/project.json"
-mkdir -p "$PRP_DIR/reports"
 ```
 
-### 5.2 Generate Report
+## 1. Establish context
 
-**Path**: `$PRP_DIR/reports/{plan-name}-report.md`
+Resolve the plan path from the arguments, linked implementation report, or conversation and read the entire file. When the input is an issue reference rather than a path, normalize number and URL forms to the same tracker item, search `$PRP_DIR/plans/` for matching `Source Issue` metadata, and select the single current plan. If several match, present the newest viable candidates and ask; never guess. If no local plan exists, retrieve the latest complete issue comment marked `<!-- prp-plan-id: ... -->`, persist that published plan under `$PRP_DIR/plans/`, and use it. Never substitute the issue body for a missing plan.
 
-Read [references/report-templates.md](references/report-templates.md) now and write the report following its **Implementation Report** template: every `{placeholder}` filled, section order kept.
+For an issue-derived plan, read comments added after `Plan Publication` before editing. If they correct or materially change the implementation contract, stop and invoke `/skill:prp-plan` to revise and republish the plan before implementation; do not implement a knowingly stale plan.
 
-### 5.3 Update Source PRD (if applicable)
+If `Source Issue` is non-empty but `Plan Publication` is empty or cannot be verified on that issue, invoke `/skill:prp-plan publish <absolute plan path>`, re-read the plan, and stop if publication remains unverified. Apply this gate whether the input was the issue or the plan path.
 
-**Check if plan was generated from a PRD:**
-- Look in the plan file for `Source PRD:` reference
-- Or check if plan filename matches a phase pattern
+Read the repository instructions, every plan reference needed for the work, relevant call sites, and existing tests before editing.
 
-**If PRD source exists:**
+Treat live source code as truth when it conflicts with plan assumptions, while preserving the plan's goal, acceptance criteria, and explicit scope. If reality makes the intended outcome ambiguous or materially changes product shape, stop and ask. If implementation would require working around a missing foundational primitive that should exist first, stop and explain the missing primitive, why it belongs earlier, and what it blocks. Otherwise record the necessary deviation and continue.
 
-1. Read the PRD file
-2. Find the phase row in the Implementation Phases table
-3. Update the phase:
-   - Change Status from `in-progress` to `complete`
-4. Save the PRD
+Use the current feature branch or assigned worktree when one exists. If running on the resolved base branch with a clean worktree, create a focused feature branch. Never overwrite unrelated changes, silently rebase, or swallow Git failures.
 
-### 5.4 Update Plan Lifecycle & Amendments
+## 2. Implement the plan
 
-**If the plan has a `## Lifecycle (append-only)` / `## Amendments` section (newer template), update it before archiving — append-only, never overwrite existing entries:**
+For initial implementation, execute tasks in dependency order and read each referenced pattern before changing its task. For a correction pass, change only what the blocking findings, failing checks, or explicit dispositions require and preserve the plan's outcome and invariant. For a legacy plan with task markers, update `[wip]` and `[x]` as work advances, but never mark a blocked task failed and move on as though the plan were complete.
 
-- Append today's ISO-8601 timestamp to **Modified**
-- Append the implementing commit SHA(s) to **Commits**
-- Append your agent/model + session id to **Agent / Session**
-- Append one **Amendments** entry (newest at bottom) summarizing what was built and any deviations
+Apply these implementation principles:
 
-Older plans without these sections: skip this step.
+- Prefer the simplest solution that solves the actual problem. Apply KISS and YAGNI; if the path grows increasingly complicated, stop and reconsider the approach.
+- Reproduce bugs before fixing them whenever reasonably possible. When reproduction is impossible, establish other concrete evidence and record it.
+- Existing code is evidence, not proof that its design is correct. Rewrite only when that clearly reduces complexity without widening scope or risk.
+- Use the type system to express meaningful invariants. Avoid unsound escape hatches when a practical sound type exists.
+- Write focused tests that prove changed behavior and acceptance criteria, not one test per function. For bug fixes, add a regression test that fails before the fix and passes after it when practical. Prefer behavioral contracts over snapshots or implementation-detail assertions. Do not add coverage theater, smoke-test volume, or tests whose only purpose is preserving removed behavior.
+- Reuse before writing: search shared and adjacent modules for an existing helper and call what exists; extract shared logic the moment a second variant appears; derive values from existing state rather than storing copies.
+- Implement each change at the depth where the problem lives; when a special case on shared infrastructure seems needed, generalize the underlying mechanism instead.
+- Compute once and pass the result down; run independent I/O concurrently or batched; keep blocking work out of startup and hot paths.
+- Make every failure path observable: catch only the error types you expect, log with enough context to debug later, surface actionable feedback to the caller or user, and have a fallback log the original cause it replaces.
+- At external boundaries (input, authentication, persistence): validate with a schema at the entry point, parameterize every query, allow-list the fields written to storage, resolve the acting user from the session rather than request parameters, and read secrets from the environment.
+- Keep comments and documentation accurate when behavior changes. Comment important intent and constraints, not every line.
 
-### 5.5 Archive Plan
+Never defer work required by the plan or its acceptance criteria: complete it now or mark the implementation `BLOCKED`. For actionable work discovered outside the agreed scope, avoid widening the implementation; create or link a human-visible GitHub issue before reporting green, and carry that issue into the report and PR description so normal repository triage and `/skill:prp-worklist` can pick it up. If durable tracking cannot be established, stop and ask the user where it belongs; do not bury it in the report or report green. Omit optional ideas that do not merit a commitment.
 
-Only archive a plan that already lives in the project's store; leave a plan supplied from any other path in place.
+Record deviations and implementation-only decisions in the implementation report. For a legacy plan that explicitly provides maintained Agent Notes or Amendments sections, keep those current as well. Do not move or archive the plan.
 
-```bash
-PLAN_PATH="$(cd "$(dirname "$ARGUMENTS")" && pwd -P)/$(basename "$ARGUMENTS")"
-case "$PLAN_PATH" in
-  "$PRP_DIR"/plans/*)
-    mkdir -p "$PRP_DIR/plans/completed"
-    mv "$PLAN_PATH" "$PRP_DIR/plans/completed/"
-    ;;
-  *) echo "Plan is outside the PRP store; leaving it in place: $PLAN_PATH" ;;
-esac
-```
+## 3. Validate to green
 
-**PHASE_5_CHECKPOINT:**
+Before the full validation run, re-read the complete diff (`git diff <base>...HEAD`, plus `git diff HEAD` for uncommitted work) against the implementation principles above. Per-task focus lets violations accumulate across tasks (a helper written in one task re-implemented in another, state duplicated between files), and this is the cheapest moment to fix them: the code is freshly written, so reshaping it breaks nothing. Fix each violation, re-run the type check, and proceed when a pass over the diff yields no new findings.
 
-- [ ] Report created at `$PRP_DIR/reports/`
-- [ ] PRD updated (if applicable) - phase marked complete
-- [ ] Plan Lifecycle/Amendments updated (if the plan uses them)
-- [ ] Plan moved to completed folder
+Run each task's specified validation after the coherent task, then run every applicable command or procedure in the plan's Validation section and verify every Acceptance criterion. A correction pass also reruns the focused check for each corrected finding or CI failure. For a legacy plan, honor its Validation Commands and Acceptance Criteria. Add or adapt a missing check only when repository evidence shows the plan's gate is incomplete.
 
----
+For an evidence-backed disagreement that requires no repository change, run the smallest decisive check that proves the finding invalid and record its output. Do not manufacture a code or documentation edit merely to create a correction commit.
 
-## Phase 6: OUTPUT - Report to User
+On failure, fix the cause and rerun the affected check before continuing. Do not trust the first passing suite blindly: inspect suspicious or weak tests and verify the behavior they claim to cover. Never report completion with a known failing required check.
 
-Fill the **Final user summary** template from [references/report-templates.md](references/report-templates.md) (read it now if you did not read it in Phase 5.2) and print the result as your closing message.
+## 4. Write the implementation report
+
+Create `$PRP_DIR/reports/` and write `$PRP_DIR/reports/{plan-name}-report.md`. Before writing it, read `templates/implementation-report.md` and follow that structure exactly. A correction pass updates this report to the current delivered truth, including review or CI decisions and new validation and commit evidence; it does not create a parallel correction artifact.
+
+The report is the durable handoff across context windows. Keep it concise and record only the outcome, validation evidence, deviations or decisions downstream agents need, completion-gate evidence, intended commit scope, and delivery evidence. Preserve the plan-based filename and include branch metadata in the report; downstream skills own discovering it.
+
+If implementation or required validation is blocked, mark the report `BLOCKED`, do not commit or open a PR, and return the concrete blocker.
+
+## 5. Commit, open the PR, and update linked context
+
+When initial implementation is green, or a correction changed repository files, invoke `/skill:prp-commit` for only the work completed from this plan or correction pass. Record the resulting commit SHA in the report and in a legacy plan's append-only Lifecycle section when present.
+
+For initial implementation, invoke `/skill:prp-pr`, passing the explicit `--base` argument when supplied, the plan's source issue and verified `Plan Publication` URL when present, and any tracked follow-up issue links as context for the PR description. Let that skill resolve the base otherwise. For a correction pass with repository changes, push the new commit without force and verify that the existing PR now contains it. For an evidence-only disagreement, skip commit and push, verify the PR head SHA is unchanged, and record that SHA with the decisive evidence. Record the PR URL, base, head, and all delivery commits in the report.
+
+If the plan has non-empty `Source PRD` and `PRD Phase` metadata, invoke `/skill:prp-prd-update implemented` with the PRD path, phase number, plan path, report path, and PR URL. Do not edit the PRD directly. If the plan is not based on a PRD, skip this step.
+
+If committing, pushing, PR creation, or the required PRD update fails, leave the recoverable state intact, mark the report `BLOCKED`, and return the concrete failure.
+
+## 6. Verify and hand off
+
+Re-read the branch diff, updated plan, report, and the correction input—the review report or CI evidence. Confirm the intended implementation or required corrections are complete, unrelated work remains untouched, every reported validation result is factual, the commit contains the intended scope, the PR targets the correct base, and the report exists at the stated absolute path.
+
+Fill the Final User Summary template at the end of `templates/implementation-report.md` and print it as the closing message. Return the implemented outcome, resolved absolute plan path, validation summary, deviations or blocker and recovery action, commit, PR URL, tracked follow-up issues, conditional PRD update, and absolute report path. Do not review, merge, move, or archive the plan.
+
+When every required validation and acceptance criterion passes and every required delivery step succeeds, end the response with exactly `VALIDATION: GREEN`. Otherwise end with `VALIDATION: FAILED` followed by the concrete blocker or failing output.
+
+## Resources
+
+- `templates/implementation-report.md` — mandatory format for the cross-context implementation handoff.

@@ -1,330 +1,152 @@
-# Implementation Plan Template
+# Adaptive Implementation Plan Template
 
-**MANDATORY**: This is the exact document to fill and save as `$PRP_DIR/plans/{kebab-case-feature-name}.plan.md`. Keep every section heading — downstream tooling (prp-implement, prp-loop, update-references) reads this structure. The task entries and code snippets are illustrative examples from one TypeScript project; replace their content entirely with the target project's real files, patterns, and commands.
-
----
-
-# Feature: {Feature Name}
-
-## Summary
-
-{One paragraph: What we're building and high-level approach}
-
-## User Story
-
-As a {user type}
-I want to {action}
-So that {benefit}
-
-## Problem Statement
-
-{Specific problem this solves - must be testable}
-
-## Solution Statement
-
-{How we're solving it - architecture overview}
-
-## Metadata
-
-| Field            | Value                                             |
-| ---------------- | ------------------------------------------------- |
-| Type             | NEW_CAPABILITY / ENHANCEMENT / REFACTOR / BUG_FIX |
-| Complexity       | LOW / MEDIUM / HIGH                               |
-| Systems Affected | {comma-separated list}                            |
-| Dependencies     | {external libs/services with versions}            |
-| Estimated Tasks  | {count}                                           |
+Keep every **required** section. Include a **conditional** section only when it adds decision or implementation value. Remove all instructional comments and unused placeholders from the saved plan.
 
 ---
 
-## Lifecycle (append-only)
+# {Outcome-oriented plan title}
 
-- **Created:** {ISO-8601 — set once, never changed}
-- **Modified:** {append-only ISO list — add one entry every time the plan is built or updated}
-- **Commits:** {append-only list of commit SHAs that implemented this plan}
-- **Agent / Session:** {append-only list of agent(model) + session id, one per work session}
-- **Back refs:** {plans/docs this plan builds on or depends on — `relative/path` + short label}
-- **Forward refs:** {plans/docs that build on or extend this plan — `relative/path` + short label}
+**Plan ID:** `{stable kebab-case identifier}`
+**Source PRD:** `{absolute path | None}`
+**PRD Phase:** `{phase number and name | None}`
+**Source Issue:** `{tracker reference or URL | None}`
+**Plan Publication:** `{verified issue comment URL | None}`
+**Status:** `{READY | DRAFT — [DECISION REQUIRED] items open}`
 
-> **Append-only:** `Created` is set once; every other field is a list you only ever add to — never overwrite or remove existing entries. Keep references bidirectional: when you add a back/forward ref here, add the reciprocal ref on the other plan.
+## Outcome
 
----
+**Problem:** {Specific problem and who experiences it.}
 
-## UX Design
+**Affected user:** {User, operator, team, or system experiencing the problem.}
 
-### Before State
+**User outcome:** {What becomes possible or reliably different.}
 
-```
-{ASCII diagram - current user experience with data flows}
-```
+**Invariant:** {Observable property every acceptable solution must preserve.}
 
-### After State
+**Success signal:** {Quantitative or qualitative evidence that the delivered change improved the outcome; or `Not measured separately — <why acceptance fully captures this internal outcome>`. Do not invent a metric.}
 
-```
-{ASCII diagram - new user experience with data flows}
-```
+**Approach:** {Concise description of the chosen solution.}
 
-### Interaction Changes
+## Recommendation
 
-| Location | Before | After | User Impact |
-|----------|--------|-------|-------------|
-| {path/component} | {old behavior} | {new behavior} | {what changes for user} |
+{Why this is the simplest coherent approach supported by the codebase. Name the existing primitives it uses and the assumption or evidence that rules out unnecessary machinery.}
 
----
+### Evidence
 
-## Mandatory Reading
+- `{file:line}` — {decisive existing behavior, primitive, or convention}
+- {Decision-relevant issue comment, linked issue, PR, or specification when the plan came from a tracker}
+- {Official source and version, when external behavior matters}
+- {Spike verdict and absolute report path, when a spike was run}
 
-**CRITICAL: Implementation agent MUST read these files before starting any task:**
+### Alternatives considered
 
-| Priority | File | Lines | Why Read This |
-|----------|------|-------|---------------|
-| P0 | `path/to/critical.ts` | 10-50 | Pattern to MIRROR exactly |
-| P1 | `path/to/types.ts` | 1-30 | Types to IMPORT |
-| P2 | `path/to/test.ts` | all | Test pattern to FOLLOW |
+<!-- CONDITIONAL: include only meaningful alternatives. -->
 
-**External Documentation:**
-| Source | Section | Why Needed |
-|--------|---------|------------|
-| [Lib Docs v{version}](url#anchor) | {section name} | {specific reason} |
+- **{Alternative}:** {Why it loses against the invariant, evidence, or ownership cost.}
 
----
+## Root Cause
 
-## Patterns to Mirror
+<!-- CONDITIONAL: include for a bug, regression, error, stack trace, or unexplained current behavior. -->
 
-_Anchor every SOURCE on the enclosing symbol plus `file:line` — symbol names survive line drift; bare line numbers don't._
+- **Observed failure:** {Reproduced symptom and decisive observation.}
+- **Causal chain:** {Shortest evidence-backed chain from symptom to cause.}
+- **Fix boundary:** `{path:line}` — {smallest responsible behavior to change.}
+- **Regression proof:** {Test or procedure that fails before the fix and passes after.}
+- **Remaining uncertainty:** {Named condition and resolution step, or `None`.}
 
-**NAMING_CONVENTION:**
+## Visuals
 
-```typescript
-// SOURCE: src/features/example/service.ts:10-15
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+<!-- CONDITIONAL: use a UX diagram for interaction changes and/or an architecture diagram for structural changes. Follow references/visuals.md. Omit this section when prose is clearer. -->
 
-**ERROR_HANDLING:**
+## Implementation Context
 
-```typescript
-// SOURCE: src/features/example/errors.ts:5-20
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+### Mandatory reading
 
-**LOGGING_PATTERN:**
+| File | Why it matters |
+|---|---|
+| `{path:lines}` | {Primitive, contract, integration point, or test precedent the implementer must understand} |
 
-```typescript
-// SOURCE: src/features/example/service.ts:25-30
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+### Existing patterns and primitives
 
-**REPOSITORY_PATTERN:**
+- **{Pattern or primitive}:** `{path:lines}` — {How it applies; include a short actual snippet only when the shape cannot be conveyed precisely in prose.}
 
-```typescript
-// SOURCE: src/features/example/repository.ts:10-40
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+### Integration points
 
-**SERVICE_PATTERN:**
+- `{path:line}` — {Current role and how the change connects.}
 
-```typescript
-// SOURCE: src/features/example/service.ts:40-80
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+## Scope
 
-**TEST_STRUCTURE:**
+### In scope
 
-```typescript
-// SOURCE: src/features/example/tests/service.test.ts:1-25
-// COPY THIS PATTERN:
-{actual code snippet from codebase}
-```
+- {Agreed outcome}
 
----
+### Not building
 
-## Files to Change
+- {Explicit exclusion and why it is outside the invariant or belongs later}
 
-| File                             | Action | Justification                            |
-| -------------------------------- | ------ | ---------------------------------------- |
-| `src/features/new/models.ts`     | CREATE | Type definitions - re-export from schema |
-| `src/features/new/schemas.ts`    | CREATE | Zod validation schemas                   |
-| `src/features/new/errors.ts`     | CREATE | Feature-specific errors                  |
-| `src/features/new/repository.ts` | CREATE | Database operations                      |
-| `src/features/new/service.ts`    | CREATE | Business logic                           |
-| `src/features/new/index.ts`      | CREATE | Public API exports                       |
-| `src/core/database/schema.ts`    | UPDATE | Add table definition                     |
+## Delivery Considerations
 
----
+<!-- CONDITIONAL: include only when existing users, behavior, or stored data may be affected. Keep only applicable rows. -->
 
-## NOT Building (Scope Limits)
+| Concern | Decision and owned work |
+|---|---|
+| Discoverability / adoption | {How affected users learn or adopt the change} |
+| Compatibility / migration | {Existing behavior or data transition} |
+| Rollout / reversibility | {Release posture and safe rollback} |
+| Observability | {How product or operational surprises become visible} |
+| Documentation / communication | {Required user-facing or operator material} |
 
-Explicit exclusions to prevent scope creep:
+## Implementation
 
-- {Item 1 - explicitly out of scope and why}
-- {Item 2 - explicitly out of scope and why}
+<!-- Follow references/task-format.md. Repeat in dependency order. -->
 
----
+### 1. {Outcome}
 
-## Step-by-Step Tasks
+**Files and integration points**
+- `{path:line}` — {CREATE / UPDATE and ownership rationale}
 
-Execute in order. Each task is atomic and independently verifiable.
+**Implementation**
+- {Concrete behavior and existing primitive or precedent to use.}
+- {Boundary, failure behavior, migration, or compatibility detail when relevant.}
 
-**Status markers** — prefix EVERY task header with one; the build agent updates it inline as it works: `[ ]` idle · `[wip]` in progress · `[x]` complete · `[f]` failed. All tasks start `[ ]`. If a task cannot be made to pass, mark it `[f]`, record why in Agent Notes, and move on if the rest of the plan can still proceed.
+**Tests**
+- {Behavior to prove at the appropriate test surface.}
 
-### `[ ]` Task {N}: {ACTION} `{path/to/file}`
+**Validation**
+- `{focused command}` — {Expected observable result.}
 
-- **ACTION**: {what to do to this file - CREATE / UPDATE / ADD ...}
-- **IMPLEMENT**: {the specific content to implement}
-- **MIRROR**: `{path/to/analogous/file:lines}` - {existing pattern to copy exactly}
-- **IMPORTS**: {exact import statements the new code needs}
-- **GOTCHA**: {known issue to avoid, from research findings}
-- **VALIDATE**: `{executable command proving the task is done}`
+## Acceptance
 
-{Repeat one block per task, in dependency order, numbered from 1.}
+State the completed behavioral contract once. Use stable identifiers so tasks and validation can refer to it without duplicating checklists.
 
----
+1. **AC1 — {Observable outcome}:** {Given/when/then behavior or externally verifiable result.}
+2. **AC2 — {Preserved invariant}:** {Behavior that must remain true across the change.}
 
-## Testing Strategy
+## Validation
 
-### Unit Tests to Write
+List the repository's authoritative integrated gates in execution order.
 
-| Test File                                | Test Cases                 | Validates      |
-| ---------------------------------------- | -------------------------- | -------------- |
-| `src/features/new/tests/schemas.test.ts` | valid input, invalid input | Zod schemas    |
-| `src/features/new/tests/errors.test.ts`  | error properties           | Error classes  |
-| `src/features/new/tests/service.test.ts` | CRUD ops, access control   | Business logic |
+| Gate | Command or procedure | Proves |
+|---|---|---|
+| Focused behavior | `{command}` | {AC1 and task-level behavior} |
+| Project gate | `{command}` | {AC2, types, lint, suite, build, or equivalent} |
+| Runtime / manual | {Concrete procedure, when automation cannot prove it} | {Acceptance criterion not otherwise observable} |
 
-### Edge Cases Checklist
+## Risks and Decisions
 
-_Trace every seam the plan hooks through its full lifecycle — plans fail review on these paths, not on happy paths:_
+<!-- CONDITIONAL: omit when none remain. Minor decisions only; resolve architectural forks with the user before finalizing. Items awaiting a user decision are prefixed [DECISION REQUIRED]; while any remain, Status is DRAFT. -->
 
-- [ ] Queued/deferred entry: the behavior holds when input arrives via a queue, steer, or deferred path, not only the direct call
-- [ ] Retry/continuation: state survives (or deliberately resets across) retries and continuations
-- [ ] Abort mid-operation: cancellation between activation and completion leaves no stale state
-- [ ] Error-path rollback: a failure after partial state activation reverts what was activated
-- [ ] Teardown/dispose: listeners, timers, buffers, and registrations are released
-- [ ] Persistence/reload: state written now reads back after restart; reload does not resurrect expired state
-- [ ] Concurrent duplicate entry: two simultaneous triggers do not double-apply
-- [ ] Invalid/malformed input at every public boundary
-- [ ] {feature-specific edge case}
+| Decision or risk | Recommendation | Evidence / mitigation | Consequence if different |
+|---|---|---|---|
+| {Question or risk} | {Planner's recommendation} | {Why} | {What changes} |
 
----
+## Related Plans
 
-## Validation Commands
+<!-- CONDITIONAL: maintained by the update-references workflow. Omit until links exist. -->
 
-**IMPORTANT**: Replace these placeholders with actual commands from the project's package.json/config.
-
-🔁 **Validation loop:** the plan is not complete until every command below passes (exit 0). On any failure, fix the cause and re-run — loop until all pass. If a check is genuinely impossible, mark it `[f]`, note why in Agent Notes, and move on.
-
-### Level 1: STATIC_ANALYSIS
-
-```bash
-{runner} run lint && {runner} run type-check
-```
-
-**EXPECT**: Exit 0, no errors or warnings
-
-### Level 2: UNIT_TESTS
-
-```bash
-{runner} test {path/to/feature/tests}
-```
-
-**EXPECT**: All tests pass, coverage >= 80%
-
-### Level 3: FULL_SUITE
-
-```bash
-{runner} test && {runner} run build
-```
-
-**EXPECT**: All tests pass, build succeeds
-
-### Level 4: DATABASE_VALIDATION (if schema changes)
-
-Use Supabase MCP to verify:
-
-- [ ] Table created with correct columns
-- [ ] RLS policies applied
-- [ ] Indexes created
-
-### Level 5: BROWSER_VALIDATION (if UI changes)
-
-Use Browser MCP to verify:
-
-- [ ] UI renders correctly
-- [ ] User flows work end-to-end
-- [ ] Error states display properly
-
-### Level 6: MANUAL_VALIDATION
-
-{Step-by-step manual testing specific to this feature}
-
----
-
-## Acceptance Criteria
-
-_Every criterion names the check that fails if it is violated — a criterion no planned check can falsify is unverifiable, not done. Scope each criterion to what its named check exercises: a broad negative ("no deferred behavior introduced") is only as wide as its fixtures, so narrow the wording to the tested fields. A criterion verifiable only outside this repository is a coordination item for the Completion Checklist, not a criterion here. A criterion about prose (docs, changelog) names the file and the manual step that confirms it._
-
-| # | Criterion | Falsified by |
-|---|-----------|--------------|
-| 1 | {Specific behavior per user story} | {test file / command that fails if violated} |
-| 2 | Level 1-3 validation commands pass with exit 0 | The commands themselves |
-| 3 | Code mirrors existing patterns (naming, structure, logging) | {lint command / review step} |
-| 4 | No regressions in existing tests | Level 3 full suite |
-| 5 | UX matches "After State" diagram | {Level 5 or 6 step} |
-
----
-
-## Completion Checklist
-
-- [ ] All tasks completed in dependency order
-- [ ] Each task validated immediately after completion
-- [ ] Level 1: Static analysis (lint + type-check) passes
-- [ ] Level 2: Unit tests pass
-- [ ] Level 3: Full test suite + build succeeds
-- [ ] Level 4: Database validation passes (if applicable)
-- [ ] Level 5: Browser validation passes (if applicable)
-- [ ] All acceptance criteria met
-
----
-
-## Risks and Mitigations
-
-| Risk               | Likelihood   | Impact       | Mitigation                              |
-| ------------------ | ------------ | ------------ | --------------------------------------- |
-| {Risk description} | LOW/MED/HIGH | LOW/MED/HIGH | {Specific prevention/handling strategy} |
-
----
-
-## Questionables
-
-_Include this section whenever a decision was assumed rather than certain (and whenever the confidence score is below 8). Surface open decisions here instead of silently deciding — one collapsible entry per open question, with the assumption you took so a human can confirm or correct it. Two kinds of entries live here: **planner-defaults** (reversible details decided with evidence — disclosure only) and **`[DECISION REQUIRED]`** items (consequential decisions the user has not yet confirmed — prefix the summary line). Decisions the user confirmed at the Phase 5.5 checkpoint do NOT appear here; they are recorded in the plan's decision documentation with provenance. A plan with any `[DECISION REQUIRED]` entry is a DRAFT: resolving those entries (via a `/prp-plan` revision after the user decides) is what clears the draft state._
-
-<details>
-<summary>{Open question / assumption / risk}</summary>
-
-{The assumption taken and the rationale behind it.}
-
-</details>
-
----
+- **Depends on:** {absolute plan path + label, or None}
+- **Followed by:** {absolute plan path + label, or None}
 
 ## Agent Notes
 
-_Open canvas — the planning agent runs free here. There is no fixed shape: capture anything the sections above did not template for — feature-parity matrices, tradeoffs weighed, approaches considered and rejected, new dependencies (added via the project's package manager), open threads, references, future work. Use whatever structure (prose, tables, lists, diagrams) best serves the reader. Prescription ends here — do not restrict yourself._
-
-{Free-form notes.}
-
----
-
-## Amendments
-
-_Append-only history of changes made **after** this plan was first built (newest at the bottom). The build and update steps add entries here; never edit or remove existing ones._
-
-<details>
-<summary>{ISO-8601 timestamp} — {short summary of what changed}</summary>
-
-{What changed and why.}
-
-</details>
+<!-- CONDITIONAL free-form canvas for useful material that does not fit above. Do not use it to hide blockers, scope, or decisions the user needs to see. -->

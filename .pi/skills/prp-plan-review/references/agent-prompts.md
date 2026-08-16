@@ -34,7 +34,7 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 > - **Rollback**: if this ships broken, what is the undo? Flag one-way doors the plan does not label as such.
 > - **Observability**: will anyone know it broke? Logs/metrics for the new failure surface, consistent with how the codebase observes comparable features (check how, don't assume).
 > - **Edge population**: empty states, limits, concurrency, permissions boundaries — against the plan's own Edge Cases Checklist if present; its absence for a risky feature is itself a finding.
-> - **Unresolved decisions**: read the plan's Questionables section. Any `[DECISION REQUIRED]` entry — or any questionable that is consequential (public contract, scope/phase placement, behavior break, security-policy interpretation) but was silently finalized into tasks — is BLOCKING: the plan is claiming readiness it does not have.
+> - **Unresolved decisions**: read the plan's Risks and Decisions section. Any `[DECISION REQUIRED]` entry — or any open item that is consequential (public contract, scope/phase placement, behavior break, security-policy interpretation) but was silently finalized into tasks — is BLOCKING: the plan is claiming readiness it does not have.
 >
 > A missing element with a plausible production-incident path is BLOCKING; likely-rework is IMPORTANT. Finding blocks per the output format, then `ANGLE_VERDICT`.
 
@@ -52,7 +52,7 @@ One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (
 
 ## validation
 
-> Your angle: **validation**. Read the plan at `{PLAN_PATH}` — its Validation Commands (all levels), per-task validations, and Acceptance Criteria — and judge whether the checks *prove* the criteria, not merely prove *something*:
+> Your angle: **validation**. Read the plan at `{PLAN_PATH}` — its Validation gates, per-task validations, and Acceptance criteria — and judge whether the checks *prove* the criteria, not merely prove *something*:
 >
 > - **Executability**: is each command runnable in this repo as written (script exists in the manifest, tool installed, paths real)? Verify against the project's manifest — do not trust the plan.
 > - **Criterion mapping**: for each Acceptance Criterion, name the validation command or test that would fail if the criterion were unmet. This check cuts both ways: an acceptance criterion no command can falsify is a hole; a validation command that maps to no acceptance criterion is ceremony. Flag both.

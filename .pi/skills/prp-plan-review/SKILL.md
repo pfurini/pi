@@ -1,12 +1,13 @@
 ---
 name: prp-plan-review
-description: Adversarial review of an implementation plan by parallel attack agents - grades the plan against its source PRD (coverage, provenance, fidelity of acceptance criteria and user stories) and attacks its assumptions, completeness, feasibility of cited patterns, and validation coverage. Use when the user wants to "review this plan", "grade the plan against the PRD", "adversarially review the plan", "attack this plan before implementing", "check the plan satisfies the acceptance criteria", "does the plan cover the PRD", or invokes /prp-plan-review.
-argument-hint: "[path/to/plan.md] [--prd <path/to/prd.md>] [--angles <traceability|assumptions|completeness|feasibility|validation|all>]"
+description: Adversarial review of an implementation plan by parallel attack agents - grades the plan against its source PRD (coverage, provenance, fidelity of acceptance criteria and user stories) and attacks its assumptions, completeness, feasibility of cited patterns, and validation coverage. Use when the user wants to "review this plan", "grade the plan against the PRD", "adversarially review the plan", "attack this plan before implementing", "check the plan satisfies the acceptance criteria", "does the plan cover the PRD", or invokes /skill:prp-plan-review.
 ---
+
+> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Plan Review — Adversarial Fan-out
 
-Attack an implementation plan before any code is written. Parallel `plan-reviewer` agents each take one angle — PRD traceability first, then assumptions, completeness, feasibility, validation — and their findings aggregate into a verdict artifact that feeds `/prp-plan` revision or clears the plan for `/prp-implement`.
+Attack an implementation plan before any code is written. Parallel `plan-reviewer` agents each take one angle — PRD traceability first, then assumptions, completeness, feasibility, validation — and their findings aggregate into a verdict artifact that feeds `/skill:prp-plan` revision or clears the plan for `/skill:prp-implement`.
 
 This skill is advisory: it never edits the plan, the PRD, or any code.
 
@@ -23,8 +24,8 @@ mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "n
 ## Phase 1: RESOLVE — the plan under review
 
 1. If `$ARGUMENTS` contains a path to a `.md` file, use it. Otherwise list `$PRP_DIR/plans/*.plan.md` by modification time and propose the most recent; if several are plausible candidates for "the" plan, ask the user which one — do not guess.
-2. Read the plan **in full**. Note its Metadata, Lifecycle (Back refs), NOT Building, Step-by-Step Tasks, Validation Commands, and Acceptance Criteria sections — the attack briefs reference them. Note the Amendments section too: a disposition table from a prior review there makes this pass a **re-review** (see Re-review passes).
-3. If the plan does not exist or is empty, stop: `Error: no plan found. Create one first: /prp-plan "<feature>"`.
+2. Read the plan **in full**. Note its header metadata, Related Plans, Not building, Implementation tasks, Validation gates, and Acceptance sections — the attack briefs reference them. Note the Amendments section too: a disposition table from a prior review there makes this pass a **re-review** (see Re-review passes).
+3. If the plan does not exist or is empty, stop: `Error: no plan found. Create one first: /skill:prp-plan "<feature>"`.
 
 ## Phase 2: SOURCE — locate the PRD
 
@@ -63,7 +64,7 @@ At dispatch (Phase 4), prepend this line to every brief (this is scoping, not re
 
 Read `references/agent-prompts.md` now (mandatory) — it is the exact attack brief for every angle.
 
-Launch **every selected angle** in a **single message with multiple Task tool calls**, one `plan-reviewer` agent per angle, each with its brief from the reference filled with the resolved plan path, PRD path, and phase row. Do not serialize: the angles are independent reads of the same artifacts. Run sequentially only if the user explicitly asks.
+Launch **every selected angle** as **parallel subagents spawned in one step**, one `plan-reviewer` agent per angle, each with its brief from the reference filled with the resolved plan path, PRD path, and phase row. Do not serialize: the angles are independent reads of the same artifacts. Run sequentially only if the user explicitly asks.
 
 Wait for all agents to return.
 
@@ -81,7 +82,7 @@ Wait for all agents to return.
 mkdir -p "$PRP_DIR/reviews"
 ```
 
-**Path**: `$PRP_DIR/reviews/plan-{plan-basename-without-extension}-review.md` — the canonical latest report; only this path gates `/prp-implement`. If the file already exists, archive it before writing: move it to `plan-{plan-basename-without-extension}-review.{reviewed-date}.md` in the same directory, taking the date from the old report's Reviewed field. Per-pass history is what convergence across review rounds is measured against — never delete or overwrite a prior pass.
+**Path**: `$PRP_DIR/reviews/plan-{plan-basename-without-extension}-review.md` — the canonical latest report; only this path gates `/skill:prp-implement`. If the file already exists, archive it before writing: move it to `plan-{plan-basename-without-extension}-review.{reviewed-date}.md` in the same directory, taking the date from the old report's Reviewed field. Per-pass history is what convergence across review rounds is measured against — never delete or overwrite a prior pass.
 
 ## Output
 
@@ -91,11 +92,11 @@ Report to the user:
 - The verdict (READY / REVISE) with the one-line rationale.
 - The traceability headline when it ran (N covered / N partial / N uncovered / N contradicted), or the loud SKIPPED note when it did not.
 - Finding counts by class (blocking / decision / important / suggestion).
-- Next step: **REVISE** → answer any Decisions Required, then `/prp-plan` revise-from-review with the report path; **READY** → `/prp-implement <plan path>`.
+- Next step: **REVISE** → answer any Decisions Required, then `/skill:prp-plan` revise-from-review with the report path; **READY** → `/skill:prp-implement <plan path>`.
 
 ## Gotchas
 
-- **Advisory only.** Never edit the plan, the PRD, or code, and never commit — findings feed a human or a `/prp-plan` revision pass.
+- **Advisory only.** Never edit the plan, the PRD, or code, and never commit — findings feed a human or a `/skill:prp-plan` revision pass.
 - **Traceability is directional both ways.** Coverage (PRD→plan) alone is half the check; provenance (plan→PRD) catches scope creep the other direction. The brief encodes both — do not drop provenance to save tokens.
 - **Feasibility findings require a codebase check.** A cited pattern flagged as missing without actually looking is worse than no review; the agent brief enforces this, hold the aggregate to it.
 - **Do not soften on aggregation.** If an agent reports BLOCKING with solid evidence, it stays BLOCKING in the report even when the overall picture is positive.

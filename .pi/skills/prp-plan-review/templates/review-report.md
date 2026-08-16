@@ -59,5 +59,5 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 
 ## Next Step
 
-{REVISE: answer the Decisions Required items, then `/prp-plan` revise-from-review with this report as input — paste this file's path and address the Blocking Findings; re-run `/prp-plan-review` after (it will run as a re-review against the plan's dispositions).
-READY: `/prp-implement {plan path}`.}
+{REVISE: answer the Decisions Required items, then `/skill:prp-plan` revise-from-review with this report as input — paste this file's path and address the Blocking Findings; re-run `/skill:prp-plan-review` after (it will run as a re-review against the plan's dispositions).
+READY: `/skill:prp-implement {plan path}`.}

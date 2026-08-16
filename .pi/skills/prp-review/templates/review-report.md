@@ -22,7 +22,7 @@ mode: <pr | local>
 key: <review key, e.g. pr-123 or step label>
 base: <base ref or SHA>
 head: <head ref or SHA>
-reviewed: <ISO timestamp>
+reviewed: <ISO-8601 timestamp with real time, never midnight-zeroed — archive suffixes derive from it>
 verdict: <READY TO MERGE | NEEDS FIXES | REVIEW INCOMPLETE>
 pass: <first review | re-review of <ISO date>>
 scopes: [code, seams, ...]

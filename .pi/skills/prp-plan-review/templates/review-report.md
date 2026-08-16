@@ -12,7 +12,7 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 | Source PRD | `{absolute PRD path}` + phase row, or `none found` |
 | Traceability | RAN / **SKIPPED — no source PRD found** |
 | Angles run | {comma-separated list} |
-| Reviewed | {ISO-8601 date} |
+| Reviewed | {ISO-8601 timestamp with real time — archive suffixes derive from it} |
 | Pass | {first review / re-review verifying the {date} dispositions} |
 
 ## Verdict: {READY / REVISE}

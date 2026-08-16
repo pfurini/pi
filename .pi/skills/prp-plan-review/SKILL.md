@@ -82,7 +82,7 @@ Wait for all agents to return.
 mkdir -p "$PRP_DIR/reviews"
 ```
 
-**Path**: `$PRP_DIR/reviews/plan-{plan-basename-without-extension}-review.md` — the canonical latest report; only this path gates `/skill:prp-implement`. If the file already exists, archive it before writing: move it to `plan-{plan-basename-without-extension}-review.{reviewed-date}.md` in the same directory, taking the date from the old report's Reviewed field. Per-pass history is what convergence across review rounds is measured against — never delete or overwrite a prior pass.
+**Path**: `$PRP_DIR/reviews/plan-{plan-basename-without-extension}-review.md` — the canonical latest report; only this path gates `/skill:prp-implement`. If the file already exists, archive it before writing: move it to `plan-{plan-basename-without-extension}-review.{reviewed-timestamp}.md` in the same directory, taking the full timestamp (date plus time) from the old report's Reviewed field — same-day passes must not collide. Per-pass history is what convergence across review rounds is measured against — never delete or overwrite a prior pass.
 
 ## Output
 

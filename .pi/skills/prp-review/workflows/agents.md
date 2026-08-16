@@ -195,9 +195,10 @@ Verdict rules:
 - Suggestions, including every `simplify` finding, never block by themselves.
 
 Write the report to the expanded absolute path `$PRP_DIR/reviews/{key}-review.md`. If that path
-already exists, archive it first: move it to `{key}-review.{reviewed-date}.md` in the same
-directory, taking the date from the old report's `reviewed` field. Per-pass history is what
-convergence across review rounds is measured against — never delete or overwrite a prior pass.
+already exists, archive it first: move it to `{key}-review.{reviewed-timestamp}.md` in the same
+directory, taking the full timestamp (date plus time) from the old report's `reviewed` field —
+same-day passes must not collide. Per-pass history is what convergence across review rounds is
+measured against — never delete or overwrite a prior pass.
 
 ## 8. Deliver
 

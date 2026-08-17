@@ -40,14 +40,42 @@ export interface InvocationSpan {
 	/** Raw argument string (non-empty only in argument-ownership mode). */
 	readonly rawArgs: string;
 }
+/**
+ * A.6 `off` tombstone hit (c4c): the token is recognized as a disabled skill
+ * name and CONSUMED — never an invocation span (not expanded) and never a
+ * text span (its literal `/name` is not forwarded to the model). It
+ * contributes only its diagnostic.
+ */
+export interface DisabledSpan {
+	readonly kind: "disabled";
+	/** The exact token name that resolved to the tombstone (bare or qualified). */
+	readonly name: string;
+	readonly skillName: string;
+	readonly skillId: string;
+}
 
-export type MessageSpan = TextSpan | InvocationSpan;
+export type MessageSpan = TextSpan | InvocationSpan | DisabledSpan;
 
 export interface TokenizeResult {
 	spans: MessageSpan[];
 	/** True when the message began with an invocation (argument-ownership mode). */
 	messageInitial: boolean;
 	diagnostics: ResourceDiagnostic[];
+}
+
+const SKILL_DISABLED_DIAGNOSTIC_MARKER = 'is disabled (visibility "off")';
+
+/** The single user-facing diagnostic emitted once per consumed `off` invocation. */
+export function skillDisabledDiagnostic(skillName: string): ResourceDiagnostic {
+	return {
+		type: "warning",
+		message: `skill "${skillName}" ${SKILL_DISABLED_DIAGNOSTIC_MARKER}; the invocation was ignored`,
+	};
+}
+
+/** True for a diagnostic produced by a consumed `off` invocation (used by the queued paths, which emit only these). */
+export function isSkillDisabledDiagnostic(diagnostic: ResourceDiagnostic): boolean {
+	return diagnostic.message.includes(SKILL_DISABLED_DIAGNOSTIC_MARKER);
 }
 
 const TRAILING_PUNCTUATION = /[.,;!?)]+$/;
@@ -169,6 +197,27 @@ export function tokenizeMessage(message: string, registry: CommandRegistry): Tok
 						spans.push({ kind: "invocation", invocation, rawArgs });
 						return { spans, messageInitial: true, diagnostics };
 					}
+					// A.6 `off`: the name is tombstoned — consume the token (never
+					// literal text) and emit the disabled diagnostic. The remainder
+					// is scanned in mid-prompt mode (no argument ownership).
+					const disabledAtStart = registry.resolveDisabled(name);
+					if (disabledAtStart) {
+						appendLiteral(literalBackslashes);
+						flush();
+						spans.push({
+							kind: "disabled",
+							name,
+							skillName: disabledAtStart.skillName,
+							skillId: disabledAtStart.skillId,
+						});
+						diagnostics.push(skillDisabledDiagnostic(disabledAtStart.skillName));
+						onlyWhitespaceSoFar = false;
+						if (trailing !== "") {
+							appendLiteral(trailing);
+						}
+						i = runEnd;
+						continue;
+					}
 					// A control or unregistered name at the start stays literal; the
 					// rest of the message is scanned in mid-prompt mode.
 					appendLiteral(`${literalBackslashes}/${run}`);
@@ -210,6 +259,26 @@ export function tokenizeMessage(message: string, registry: CommandRegistry): Tok
 						forkStopped = true;
 					}
 					// Stripped trailing punctuation stays as literal text.
+					if (trailing !== "") {
+						appendLiteral(trailing);
+					}
+					i = runEnd;
+					continue;
+				}
+
+				// A.6 `off`: mid-prompt tombstone hit — consume the token and emit
+				// the disabled diagnostic; the `/name` text is never forwarded.
+				const disabledHit = registry.resolveDisabled(name);
+				if (disabledHit) {
+					appendLiteral(literalBackslashes);
+					flush();
+					spans.push({
+						kind: "disabled",
+						name,
+						skillName: disabledHit.skillName,
+						skillId: disabledHit.skillId,
+					});
+					diagnostics.push(skillDisabledDiagnostic(disabledHit.skillName));
 					if (trailing !== "") {
 						appendLiteral(trailing);
 					}

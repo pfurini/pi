@@ -732,4 +732,116 @@ describe("SettingsManager", () => {
 			).toThrow(/Invalid skillListingBudgetFraction/);
 		});
 	});
+
+	describe("skillVisibility (A.6/B.8)", () => {
+		it("defaults to on for an absent entry and returns empty maps", () => {
+			const manager = SettingsManager.inMemory();
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			expect(manager.getSkillVisibility()).toEqual({});
+			expect(manager.getSkillVisibility("global")).toEqual({});
+			expect(manager.getSkillVisibility("project")).toEqual({});
+			expect(manager.getSkillVisibilityInfo("/skills/a/SKILL.md")).toEqual({
+				state: "on",
+				scope: undefined,
+				malformed: false,
+			});
+		});
+
+		it("falls back to on for a malformed value and emits exactly one deduplicated diagnostic", () => {
+			const manager = SettingsManager.inMemory({
+				skillVisibility: {
+					"/skills/a/SKILL.md": "garbage",
+					"/skills/b/SKILL.md": 42,
+				} as unknown as Record<string, "on">,
+			});
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			let diagnostics = manager.drainSkillVisibilityDiagnostics();
+			expect(diagnostics).toHaveLength(1);
+			expect(diagnostics[0]!.message).toContain("/skills/a/SKILL.md");
+			expect(diagnostics[0]!.message).toContain("global");
+			// Drained; further resolves stay deduped.
+			expect(manager.drainSkillVisibilityDiagnostics()).toEqual([]);
+			// A distinct malformed key reports its own diagnostic.
+			expect(manager.getSkillVisibilityState("/skills/b/SKILL.md")).toBe("on");
+			diagnostics = manager.drainSkillVisibilityDiagnostics();
+			expect(diagnostics).toHaveLength(1);
+			expect(diagnostics[0]!.message).toContain("/skills/b/SKILL.md");
+			expect(manager.getSkillVisibilityInfo("/skills/a/SKILL.md")).toEqual({
+				state: "on",
+				scope: "global",
+				malformed: true,
+			});
+		});
+
+		it("round-trips a global state and prunes the key when it returns to the on default", () => {
+			const manager = SettingsManager.inMemory();
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "off", "global");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("off");
+			expect(manager.getSkillVisibility("global")).toEqual({ "/skills/a/SKILL.md": "off" });
+			expect(manager.getSkillVisibilityInfo("/skills/a/SKILL.md")).toEqual({
+				state: "off",
+				scope: "global",
+				malformed: false,
+			});
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "on", "global");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			expect(manager.getSkillVisibility("global")).toEqual({});
+		});
+
+		it("resolves project over global, and writes an explicit project on over a global off", () => {
+			const manager = SettingsManager.inMemory();
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "off", "global");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("off");
+			// A project on must override the global off (not delete-and-re-expose).
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "on", "project");
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("on");
+			expect(manager.getSkillVisibility("project")).toEqual({ "/skills/a/SKILL.md": "on" });
+			expect(manager.getSkillVisibility("global")).toEqual({ "/skills/a/SKILL.md": "off" });
+			expect(manager.getSkillVisibilityInfo("/skills/a/SKILL.md")).toEqual({
+				state: "on",
+				scope: "project",
+				malformed: false,
+			});
+			// Removing the project override re-exposes the global off.
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "off", "project");
+			expect(manager.getSkillVisibility("project")).toEqual({});
+			expect(manager.getSkillVisibilityState("/skills/a/SKILL.md")).toBe("off");
+			expect(manager.getSkillVisibilityInfo("/skills/a/SKILL.md").scope).toBe("global");
+		});
+
+		it("persists both scopes to disk and merges per-key across concurrent writers", async () => {
+			// Existing store files: first-create atomicity is a deferred withLock limitation.
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
+			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({}));
+
+			const writerA = SettingsManager.create(projectDir, agentDir);
+			const writerB = SettingsManager.create(projectDir, agentDir);
+			writerA.setSkillVisibilityState("/skills/one/SKILL.md", "off", "global");
+			writerB.setSkillVisibilityState("/skills/two/SKILL.md", "name-only", "global");
+			writerA.setSkillVisibilityState("/skills/three/SKILL.md", "user-invocable-only", "project");
+			writerB.setSkillVisibilityState("/skills/four/SKILL.md", "off", "project");
+			await writerA.flush();
+			await writerB.flush();
+
+			const globalFile = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(globalFile.skillVisibility).toEqual({
+				"/skills/one/SKILL.md": "off",
+				"/skills/two/SKILL.md": "name-only",
+			});
+			const projectFile = JSON.parse(readFileSync(join(projectDir, ".pi", "settings.json"), "utf-8"));
+			expect(projectFile.skillVisibility).toEqual({
+				"/skills/three/SKILL.md": "user-invocable-only",
+				"/skills/four/SKILL.md": "off",
+			});
+
+			// A fresh manager sees the merged effective map with project precedence.
+			const reader = SettingsManager.create(projectDir, agentDir);
+			expect(reader.getSkillVisibilityState("/skills/one/SKILL.md")).toBe("off");
+			expect(reader.getSkillVisibilityState("/skills/two/SKILL.md")).toBe("name-only");
+			expect(reader.getSkillVisibilityState("/skills/three/SKILL.md")).toBe("user-invocable-only");
+			expect(reader.getSkillVisibilityState("/skills/four/SKILL.md")).toBe("off");
+		});
+	});
 });

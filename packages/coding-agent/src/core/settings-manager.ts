@@ -7,7 +7,9 @@ import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
+import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { isSkillVisibilityState, type SkillVisibilityState } from "./skills/visibility.ts";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -141,6 +143,7 @@ export interface Settings {
 	skillListingBudgetFraction?: number; // default: 0.01 - fraction of the model context window budgeted for the A.6 skill listing
 	forceSkillMessageBlock?: boolean; // default: false - force the A.4 message-block transport for new skill invocations even when the model is flagged syntheticToolResultReplay (forward-only rollback switch; does not downgrade pairs already persisted)
 	toolRedirects?: Record<string, string>; // default: {} - user/project overrides merged per-key over the A.8 redirect defaults (ADR-0006); a target is suggested only while registered and active
+	skillVisibility?: Record<string, SkillVisibilityState>; // default: {} - A.6/B.8 per-skill visibility states keyed by canonical skill ID, merged per-key with project precedence
 	disableToolRedirects?: boolean; // default: false - C1 rollback switch beyond Appendix B.8: unknown tools get the plain not-found error (no mapped target, no nearest-name suggestion)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -340,6 +343,8 @@ export class SettingsManager {
 	private projectSettingsLoadError: Error | null = null; // Track if project settings file had parse errors
 	private writeQueue: Promise<void> = Promise.resolve();
 	private errors: SettingsError[];
+	private skillVisibilityDiagnostics: ResourceDiagnostic[] = []; // malformed skillVisibility values, drained by the session's diagnostic channel
+	private reportedMalformedSkillVisibility = new Set<string>(); // `${scope}:${id}` dedup so a malformed value reports exactly once
 
 	private constructor(
 		storage: SettingsStorage,
@@ -694,14 +699,17 @@ export class SettingsManager {
 		});
 	}
 
-	private updateProjectSettings(field: keyof Settings, update: (settings: Settings) => void): void {
+	private updateProjectSettings(
+		field: keyof Settings,
+		update: (settings: Settings) => void,
+		nestedKey?: string,
+	): void {
 		this.assertProjectTrustedForWrite();
 		const projectSettings = structuredClone(this.projectSettings);
 		update(projectSettings);
-		this.markProjectModified(field);
+		this.markProjectModified(field, nestedKey);
 		this.saveProjectSettings(projectSettings);
 	}
-
 	async flush(): Promise<void> {
 		await this.writeQueue;
 	}
@@ -1146,6 +1154,118 @@ export class SettingsManager {
 	getToolRedirects(): Record<string, string> | undefined {
 		const redirects = this.settings.toolRedirects;
 		return redirects ? { ...redirects } : undefined;
+	}
+
+	/**
+	 * A.6/B.8 per-skill visibility map (canonical skill ID → state) for the
+	 * requested scope, or the merged effective map when omitted. Defensive copy;
+	 * values are returned as persisted and may be malformed (callers normalize).
+	 */
+	getSkillVisibility(scope?: SettingsScope): Record<string, SkillVisibilityState> {
+		const map =
+			scope === "global"
+				? this.globalSettings.skillVisibility
+				: scope === "project"
+					? this.projectSettings.skillVisibility
+					: this.settings.skillVisibility;
+		return { ...(map ?? {}) };
+	}
+
+	/**
+	 * Effective persisted state for one canonical skill ID (project over
+	 * global). Absent and malformed values both resolve to `"on"` — a corrupted
+	 * value must never hide a skill — but a malformed value is recorded exactly
+	 * once as a settings diagnostic identifying the key and originating scope.
+	 */
+	getSkillVisibilityState(id: string): SkillVisibilityState {
+		const info = this.getSkillVisibilityInfo(id);
+		if (info.malformed && info.scope) {
+			const dedupKey = `${info.scope}:${id}`;
+			if (!this.reportedMalformedSkillVisibility.has(dedupKey)) {
+				this.reportedMalformedSkillVisibility.add(dedupKey);
+				this.skillVisibilityDiagnostics.push({
+					type: "warning",
+					message: `skillVisibility entry for skill "${id}" (${info.scope} scope) is not a valid visibility state; treating it as "on"`,
+				});
+			}
+		}
+		return info.state;
+	}
+
+	/**
+	 * Effective state plus its originating scope and validity, for surfaces
+	 * (`/skills`) that display where a state comes from and flag malformed
+	 * persisted values. `scope` is undefined when no scope persists a value.
+	 */
+	getSkillVisibilityInfo(id: string): {
+		state: SkillVisibilityState;
+		scope: SettingsScope | undefined;
+		malformed: boolean;
+	} {
+		const projectMap = this.projectSettings.skillVisibility;
+		const globalMap = this.globalSettings.skillVisibility;
+		let raw: unknown;
+		let scope: SettingsScope | undefined;
+		if (projectMap && id in projectMap) {
+			raw = projectMap[id];
+			scope = "project";
+		} else if (globalMap && id in globalMap) {
+			raw = globalMap[id];
+			scope = "global";
+		} else {
+			return { state: "on", scope: undefined, malformed: false };
+		}
+		if (isSkillVisibilityState(raw)) {
+			return { state: raw, scope, malformed: false };
+		}
+		return { state: "on", scope, malformed: true };
+	}
+
+	/** Malformed-value diagnostics recorded since the last drain (session diagnostic channel). */
+	drainSkillVisibilityDiagnostics(): ResourceDiagnostic[] {
+		const drained = [...this.skillVisibilityDiagnostics];
+		this.skillVisibilityDiagnostics = [];
+		return drained;
+	}
+
+	/**
+	 * Persist one skill's visibility state at the given scope, keyed by its
+	 * canonical ID (B.8) with per-key nested merge so concurrent sessions
+	 * editing different IDs both survive. Pruning is effective-state-aware: the
+	 * scope's key is deleted only when the resulting merged state equals the
+	 * requested state; otherwise an explicit value is written so, e.g., a
+	 * project `"on"` still overrides a global `"off"`.
+	 */
+	setSkillVisibilityState(id: string, state: SkillVisibilityState, scope: SettingsScope): void {
+		const otherMap = scope === "global" ? this.projectSettings.skillVisibility : this.globalSettings.skillVisibility;
+		const otherRaw = otherMap?.[id];
+		const effectiveAfterDelete = isSkillVisibilityState(otherRaw) ? otherRaw : "on";
+		const prune = effectiveAfterDelete === state;
+		if (scope === "global") {
+			if (prune) {
+				if (this.globalSettings.skillVisibility) {
+					delete this.globalSettings.skillVisibility[id];
+				}
+			} else {
+				this.globalSettings.skillVisibility = { ...this.globalSettings.skillVisibility, [id]: state };
+			}
+			this.markModified("skillVisibility", id);
+			this.save();
+			return;
+		}
+		this.updateProjectSettings(
+			"skillVisibility",
+			(settings) => {
+				if (prune) {
+					if (settings.skillVisibility) {
+						delete settings.skillVisibility[id];
+					}
+				} else {
+					settings.skillVisibility = { ...settings.skillVisibility, [id]: state };
+				}
+			},
+			id,
+		);
 	}
 
 	getDisableToolRedirects(): boolean {

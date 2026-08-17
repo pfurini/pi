@@ -31,6 +31,8 @@ export interface BuildSystemPromptOptions {
 		invocationCounts: ReadonlyMap<string, number>;
 		diagnostics?: ResourceDiagnostic[];
 	};
+	/** A.6 per-skill model-facing visibility (c4c), keyed by canonical skill ID; absent entries fall back to frontmatter. */
+	skillModelVisibility?: ReadonlyMap<string, "full" | "name" | "no">;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -46,6 +48,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		skills: providedSkills,
 		skillPathsBoost,
 		skillListingBudget,
+		skillModelVisibility,
 	} = options;
 	const promptCwd = cwd.replace(/\\/g, "/");
 
@@ -81,6 +84,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 				customPromptHasSkillTool ? "tool" : "read",
 				skillPathsBoost,
 				skillListingBudget,
+				skillModelVisibility,
 			);
 		}
 		prompt += `\nCurrent working directory: ${promptCwd}`;
@@ -172,7 +176,13 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	// read tool, or the A.1 skill tool when it is active)
 	const hasSkillTool = tools.includes("skill");
 	if ((hasRead || hasSkillTool) && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills, hasSkillTool ? "tool" : "read", skillPathsBoost, skillListingBudget);
+		prompt += formatSkillsForPrompt(
+			skills,
+			hasSkillTool ? "tool" : "read",
+			skillPathsBoost,
+			skillListingBudget,
+			skillModelVisibility,
+		);
 	}
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 

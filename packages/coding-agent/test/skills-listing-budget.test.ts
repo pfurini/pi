@@ -5,6 +5,7 @@ import {
 	computeSkillInvocationCounts,
 	escapeXml,
 	est,
+	estimateListingEntryCost,
 	type ListingBudgetEntry,
 	SKILL_LISTING_END_DELIMITER,
 	SKILL_LISTING_START_DELIMITER,
@@ -286,5 +287,76 @@ describe("skillListingBudgetCodeUnits", () => {
 	it("returns a real numeric budget for a positive window, even when it floors to 0", () => {
 		expect(skillListingBudgetCodeUnits(50, 0.01)).toBe(0);
 		expect(skillListingBudgetCodeUnits(100_000, 0.01)).toBe(1000);
+	});
+});
+
+describe("forceNameOnly (A.6 name-only visibility, c4c)", () => {
+	it("renders name+location only even with an unlimited budget", () => {
+		const { block, diagnostics } = buildBudgetedListingBlock(
+			[makeEntry({ listingName: "named", description: "a full description", forceNameOnly: true })],
+			undefined,
+		);
+		expect(diagnostics).toEqual([]);
+		expect(block).toBe(
+			`${SKILL_LISTING_START_DELIMITER}\n` +
+				"  <skill>\n" +
+				"    <name>named</name>\n" +
+				"    <location>/skills/named/SKILL.md</location>\n" +
+				"  </skill>\n" +
+				`${SKILL_LISTING_END_DELIMITER}`,
+		);
+	});
+
+	it("is never given a description by the truncation loop and truncates other entries first", () => {
+		const entries = [
+			makeEntry({ listingName: "named", description: "name-only description", forceNameOnly: true }),
+			makeEntry({ listingName: "other", description: "O".repeat(600) }),
+		];
+		// Budget forces truncation; the name-only entry must stay name+location
+		// (never expanded, never re-truncated) while `other` absorbs the trim.
+		const { block } = buildBudgetedListingBlock(entries, 120);
+		expect(block).toContain("<name>named</name>");
+		expect(block).not.toContain("name-only description");
+		expect(block).not.toContain("O".repeat(600));
+	});
+});
+
+describe("estimateListingEntryCost (c4c)", () => {
+	it("equals est of the rendered full entry", () => {
+		const entry = makeEntry({ listingName: "deploy", description: "ship it", location: "/skills/deploy/SKILL.md" });
+		const rendered = [
+			"  <skill>",
+			"    <name>deploy</name>",
+			"    <description>ship it</description>",
+			"    <location>/skills/deploy/SKILL.md</location>",
+			"  </skill>",
+		].join("\n");
+		expect(estimateListingEntryCost(entry)).toBe(est(rendered));
+	});
+
+	it("measures a forceNameOnly entry at its name+location rendering", () => {
+		const entry = makeEntry({
+			listingName: "named",
+			description: "dropped description",
+			location: "/skills/named/SKILL.md",
+			forceNameOnly: true,
+		});
+		const rendered = [
+			"  <skill>",
+			"    <name>named</name>",
+			"    <location>/skills/named/SKILL.md</location>",
+			"  </skill>",
+		].join("\n");
+		expect(estimateListingEntryCost(entry)).toBe(est(rendered));
+	});
+
+	it("escapes exactly like the block renderer", () => {
+		const entry = makeEntry({ listingName: 'a<b>&"c"', description: "x&y", location: "/p/SKILL.md" });
+		const { block } = buildBudgetedListingBlock([entry], undefined);
+		const inner = block.slice(
+			SKILL_LISTING_START_DELIMITER.length + 1,
+			block.length - SKILL_LISTING_END_DELIMITER.length - 1,
+		);
+		expect(estimateListingEntryCost(entry)).toBe(est(inner));
 	});
 });

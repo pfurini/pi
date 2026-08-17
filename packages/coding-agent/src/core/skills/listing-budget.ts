@@ -26,11 +26,32 @@ export interface ListingBudgetEntry {
 	location: string;
 	isExempt: boolean;
 	invocationCount: number;
+	/** A.6 `name-only` visibility: the entry always renders without a description and is exempt from budget re-expansion. */
+	forceNameOnly?: boolean;
 }
 
 export interface BudgetedListing {
 	block: string;
 	diagnostics: ResourceDiagnostic[];
+}
+
+/** Render one `<skill>` entry exactly as the budgeted block emits it (LISTING_EMIT_LOOP). */
+function renderListingEntry(entry: ListingBudgetEntry, showDescription: boolean, description: string): string[] {
+	const lines = ["  <skill>", `    <name>${escapeXml(entry.listingName)}</name>`];
+	if (showDescription) {
+		lines.push(`    <description>${escapeXml(description)}</description>`);
+	}
+	lines.push(`    <location>${escapeXml(entry.location)}</location>`, "  </skill>");
+	return lines;
+}
+
+/**
+ * Estimated listing cost of one entry — `est` of its rendered (capped,
+ * escaped) form, the same measure the budget engine applies. A `forceNameOnly`
+ * entry is measured at its name+location rendering.
+ */
+export function estimateListingEntryCost(entry: ListingBudgetEntry): number {
+	return est(renderListingEntry(entry, entry.forceNameOnly !== true, entry.description).join("\n"));
 }
 
 /**
@@ -48,24 +69,16 @@ export function buildBudgetedListingBlock(
 	budgetCodeUnits: number | undefined,
 ): BudgetedListing {
 	const descriptions = entries.map((e) => e.description);
-	const dropped = entries.map(() => false);
+	const dropped = entries.map((e) => e.forceNameOnly === true);
 
 	const render = (): string => {
 		const lines: string[] = [SKILL_LISTING_START_DELIMITER];
 		for (let i = 0; i < entries.length; i++) {
-			const entry = entries[i]!;
-			lines.push("  <skill>");
-			lines.push(`    <name>${escapeXml(entry.listingName)}</name>`);
-			if (!dropped[i]) {
-				lines.push(`    <description>${escapeXml(descriptions[i]!)}</description>`);
-			}
-			lines.push(`    <location>${escapeXml(entry.location)}</location>`);
-			lines.push("  </skill>");
+			lines.push(...renderListingEntry(entries[i]!, !dropped[i], descriptions[i]!));
 		}
 		lines.push(SKILL_LISTING_END_DELIMITER);
 		return lines.join("\n");
 	};
-
 	if (budgetCodeUnits === undefined) {
 		return { block: render(), diagnostics: [] };
 	}

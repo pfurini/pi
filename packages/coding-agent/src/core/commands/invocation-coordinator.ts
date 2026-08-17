@@ -196,6 +196,11 @@ export class InvocationCoordinator {
 				text += span.text;
 				continue;
 			}
+			// A.6 `off` tombstone span (c4c): consumed — contributes no text and
+			// no invocation; its diagnostic was emitted by the caller.
+			if (span.kind === "disabled") {
+				continue;
+			}
 			if (span.invocation.source === "skill") {
 				const skill = span.invocation.skill;
 				let prepared: PreparedSkillInvocation;

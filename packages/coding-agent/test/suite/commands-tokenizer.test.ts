@@ -82,7 +82,15 @@ function invocationNames(spans: ReturnType<typeof tokenizeMessage>["spans"]): st
 }
 
 function plainText(spans: ReturnType<typeof tokenizeMessage>["spans"]): string {
-	return spans.map((span) => (span.kind === "text" ? span.text : `<${span.invocation.name}>`)).join("");
+	return spans
+		.map((span) =>
+			span.kind === "text"
+				? span.text
+				: span.kind === "disabled"
+					? `<disabled:${span.name}>`
+					: `<${span.invocation.name}>`,
+		)
+		.join("");
 }
 
 describe("A.1 tokenizer grammar examples", () => {

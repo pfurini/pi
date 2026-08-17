@@ -14,7 +14,8 @@ import { boostSkillsByPaths, byListingName } from "./paths-boost.ts";
 
 export { escapeXml, SKILL_LISTING_END_DELIMITER, SKILL_LISTING_START_DELIMITER, SKILL_LISTING_VERSION };
 
-function getListingDescription(skill: LoadedSkill): string {
+/** The capped listing description (description + `when_to_use`) the budget engine and cost estimator render. */
+export function getListingDescription(skill: LoadedSkill): string {
 	const whenToUse = skill.frontmatter.when_to_use;
 	const combined =
 		typeof whenToUse === "string" && whenToUse.length > 0 ? `${skill.description} ${whenToUse}` : skill.description;
@@ -37,10 +38,11 @@ export function formatSkillsForPrompt(
 		invocationCounts: ReadonlyMap<string, number>;
 		diagnostics?: ResourceDiagnostic[];
 	},
+	visibility?: ReadonlyMap<string, "full" | "name" | "no">,
 ): string {
 	const visibleSkills = skills
 		.map((skill) => normalizeSkillInput(skill).skill)
-		.filter((skill) => !skill.disableModelInvocation);
+		.filter((skill) => (visibility?.get(skill.id) ?? (skill.disableModelInvocation ? "no" : "full")) !== "no");
 
 	if (visibleSkills.length === 0) {
 		return "";
@@ -65,6 +67,7 @@ export function formatSkillsForPrompt(
 		location: skill.filePath,
 		isExempt: exemptIds.has(skill.id),
 		invocationCount: budget?.invocationCounts.get(skill.id) ?? 0,
+		forceNameOnly: visibility?.get(skill.id) === "name",
 	}));
 
 	const { block, diagnostics } = buildBudgetedListingBlock(entries, budget?.budgetCodeUnits);

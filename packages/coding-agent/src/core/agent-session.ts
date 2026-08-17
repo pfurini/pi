@@ -63,7 +63,13 @@ import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
 import { buildCommandRegistry, type CommandRegistry, type ExtensionCommandInfo } from "./commands/registry.ts";
 import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
 import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
-import { type InvocationSpan, type MessageSpan, type TokenizeResult, tokenizeMessage } from "./commands/tokenizer.ts";
+import {
+	type InvocationSpan,
+	isSkillDisabledDiagnostic,
+	type MessageSpan,
+	type TokenizeResult,
+	tokenizeMessage,
+} from "./commands/tokenizer.ts";
 import {
 	type CompactionResult,
 	calculateContextTokens,
@@ -123,7 +129,7 @@ import type {
 	SkillInvocationEntry,
 } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type { SettingsManager } from "./settings-manager.ts";
+import type { SettingsManager, SettingsScope } from "./settings-manager.ts";
 import { deriveCarriedSkills } from "./skills/carry-forward.ts";
 import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
 import {
@@ -137,7 +143,13 @@ import {
 	selectSkillTransport,
 } from "./skills/delivery.ts";
 import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
-import { computeSkillInvocationCounts, skillListingBudgetCodeUnits } from "./skills/listing-budget.ts";
+import { getListingDescription } from "./skills/listing.ts";
+import {
+	computeSkillInvocationCounts,
+	estimateListingEntryCost,
+	type ListingBudgetEntry,
+	skillListingBudgetCodeUnits,
+} from "./skills/listing-budget.ts";
 import { skillPathTouchFromToolCall } from "./skills/paths-boost.ts";
 import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
 import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
@@ -154,6 +166,11 @@ import {
 	type SkillToolForkResult,
 } from "./skills/skill-tool.ts";
 import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
+import {
+	type ResolvedSkillVisibility,
+	resolveSkillVisibility,
+	type SkillVisibilityState,
+} from "./skills/visibility.ts";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -398,6 +415,28 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 // AgentSession Class
 // ============================================================================
 
+/** One `/skills` management row (c4c): a loaded skill with its effective A.6 visibility, persisted state + scope, and estimated listing cost. */
+export interface SkillManagementRow {
+	/** Canonical skill ID (B.8 persistence key). */
+	id: string;
+	name: string;
+	listingName: string;
+	/** SKILL.md path (the listing's `<location>`). */
+	location: string;
+	source: string;
+	disableModelInvocation: boolean;
+	userInvocable: boolean;
+	/** Effective persisted state (malformed values resolve to `"on"`). */
+	state: SkillVisibilityState;
+	/** Scope the effective persisted state comes from; undefined when nothing is persisted. */
+	stateScope: SettingsScope | undefined;
+	/** The persisted value at the originating scope was not a valid state. */
+	malformed: boolean;
+	/** A.6 truth-table resolution (frontmatter × state). */
+	effective: ResolvedSkillVisibility;
+	/** `est` of the skill's rendered listing entry (the budget engine's measure). */
+	estimatedCost: number;
+}
 export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
@@ -533,8 +572,14 @@ export class AgentSession {
 	private _skillPathsWindowDirty = false;
 	/** Set on any model-assignment path, `activateSkill`, a persisting fork delivery, or a branch-leaf change; consumed by the `_promptInScope` rebuild boundary. */
 	private _skillListingBudgetDirty = false;
+	/** Set by `applySkillVisibilityChange` (c4c): the listing content itself changed, so the next rebuild is not gated by `visibleCount > 0` (a change may hide the last visible skill). */
+	private _skillListingContentDirty = false;
 	/** Whether the most recently rebuilt listing hit the A.6 skeleton floor; used to deliver the overflow diagnostic once per continuous episode and re-arm on recovery. */
 	private _skillListingSkeletonOverflowing = false;
+	/** A.6 per-skill visibility (c4c): the shared settings-derived state map, refreshed at every prompt rebuild; both model-facing gates and the user-facing registry consume it so they cannot drift. */
+	private _skillVisibilityStates: ReadonlyMap<string, SkillVisibilityState> = new Map();
+	/** Model-facing projection of `_skillVisibilityStates` (A.6 truth table), consumed by the listing and `_getModelVisibleSkills`. */
+	private _skillModelVisibility: ReadonlyMap<string, "full" | "name" | "no"> = new Map();
 	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
 	/** A.6 compaction carry-forward (c4b): the currently re-attached skills' `{args, body}`, keyed by `skillId`. Ephemeral — recomputed on every rebuild, never persisted. Consulted by dedup to treat a carried-forward body as "still present". */
@@ -644,6 +689,10 @@ export class AgentSession {
 			if (!skillEnv) return context;
 			return { ...context, env: { ...context.env, ...skillEnv } };
 		});
+		// c4c: the visibility snapshot must exist before the first tool
+		// registration so `_getModelVisibleSkills()` (and thus the `skill`
+		// tool's conditional registration) already respects persisted states.
+		this._refreshSkillVisibilitySnapshot();
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
@@ -782,25 +831,41 @@ export class AgentSession {
 		this._markSkillListingBudgetDirty();
 	}
 
-	/** Rebuild and clear any applicable skill-listing invalidation. */
+	/**
+	 * Rebuild and clear any applicable skill-listing invalidation as ONE
+	 * coalescing transaction (c4c): a flag clears only after a successful
+	 * rebuild, so a failed rebuild leaves every dirty flag set and the next
+	 * request retries; a content change that hides the last visible skill still
+	 * rebuilds (not gated by `visibleCount > 0`).
+	 */
 	private _refreshSkillListingIfDirty(): void {
-		let listingRebuilt = false;
-		const pathsDirty = this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths();
-		const budgetDirty = this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0;
-		if (pathsDirty || budgetDirty) {
-			const previousBasePrompt = this._baseSystemPrompt;
-			this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
-			if (this._systemPromptOverride === previousBasePrompt) {
-				this._systemPromptOverride = this._baseSystemPrompt;
+		const needsRebuild =
+			(this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths()) ||
+			(this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0) ||
+			this._skillListingContentDirty;
+		if (!needsRebuild) {
+			// No rebuild owed: clear only flags whose precondition lapsed.
+			if (this._skillPathsWindowDirty && !this._anyVisibleSkillDeclaresPaths()) {
+				this._skillPathsWindowDirty = false;
 			}
-			listingRebuilt = true;
+			if (
+				this._skillListingBudgetDirty &&
+				this._getModelVisibleSkills().length === 0 &&
+				!this._skillListingContentDirty
+			) {
+				this._skillListingBudgetDirty = false;
+			}
+			return;
 		}
-		if (this._skillPathsWindowDirty && (listingRebuilt || !this._anyVisibleSkillDeclaresPaths())) {
-			this._skillPathsWindowDirty = false;
+		const previousBasePrompt = this._baseSystemPrompt;
+		// Throws propagate with every dirty flag intact (retry on next request).
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		if (this._systemPromptOverride === previousBasePrompt) {
+			this._systemPromptOverride = this._baseSystemPrompt;
 		}
-		if (this._skillListingBudgetDirty && (listingRebuilt || this._getModelVisibleSkills().length === 0)) {
-			this._skillListingBudgetDirty = false;
-		}
+		this._skillPathsWindowDirty = false;
+		this._skillListingBudgetDirty = false;
+		this._skillListingContentDirty = false;
 	}
 
 	private _installAgentToolHooks(): void {
@@ -1589,6 +1654,13 @@ export class AgentSession {
 			});
 		}
 
+		// c4c: refresh the shared visibility snapshot from settings so this
+		// rebuild's listing and the `skill` tool gate read the same states, and
+		// surface any malformed persisted values through the listing's
+		// diagnostic channel (deduplicated per key/scope by the manager).
+		this._refreshSkillVisibilitySnapshot();
+		listingDiagnostics.push(...this.settingsManager.drainSkillVisibilityDiagnostics());
+
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			skills: loadedSkills,
@@ -1604,6 +1676,7 @@ export class AgentSession {
 				invocationCounts: computeSkillInvocationCounts(this.sessionManager.getBranch()),
 				diagnostics: listingDiagnostics,
 			},
+			skillModelVisibility: this._skillModelVisibility,
 		};
 		const preSkeletonCount = listingDiagnostics.length;
 		const prompt = buildSystemPrompt(this._baseSystemPromptOptions);
@@ -2026,6 +2099,10 @@ export class AgentSession {
 
 	/** Build the A.1 namespace registry from the current resource, extension, and built-in sources. */
 	private _buildCommandRegistry(): CommandRegistry {
+		// c4c: refresh the shared snapshot so the user gate and the `off`
+		// tombstones read the same states the model-facing gates use, even when
+		// no prompt rebuild has run since the last settings change.
+		this._refreshSkillVisibilitySnapshot();
 		const skills = this._resourceLoader.getSkills().skills.map((skill) => normalizeSkillInput(skill).skill);
 		const extensionCommands: ExtensionCommandInfo[] = this._extensionRunner
 			.getRegisteredCommands()
@@ -2041,6 +2118,7 @@ export class AgentSession {
 			commands: this._getLoadedCommands(),
 			skills,
 			enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+			skillVisibility: this._skillVisibilityStates,
 		});
 	}
 
@@ -2087,12 +2165,137 @@ export class AgentSession {
 		return { role: "user", content, timestamp: Date.now() };
 	}
 
-	/** Loaded skills visible to the model (A.1: `disable-model-invocation` excludes). */
+	/**
+	 * Refresh the shared A.6 visibility snapshot (c4c) from settings: one
+	 * `skillId → state` map plus its model-facing projection. Both model-facing
+	 * gates (listing, `skill` tool) and the user-facing registry consume these
+	 * maps so the surfaces cannot drift. Malformed persisted values resolve to
+	 * `on` inside the settings manager, which records one deduplicated
+	 * diagnostic per key/scope (drained at the next prompt rebuild).
+	 */
+	private _refreshSkillVisibilitySnapshot(): void {
+		const states = new Map<string, SkillVisibilityState>();
+		const model = new Map<string, "full" | "name" | "no">();
+		for (const input of this._resourceLoader.getSkills().skills) {
+			const skill = normalizeSkillInput(input).skill;
+			const state = this.settingsManager.getSkillVisibilityState(skill.id);
+			states.set(skill.id, state);
+			model.set(
+				skill.id,
+				resolveSkillVisibility(
+					{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+					state,
+				).model,
+			);
+		}
+		this._skillVisibilityStates = states;
+		this._skillModelVisibility = model;
+	}
+
+	/** Loaded skills visible to the model (A.1/A.6: `model === "no"` excludes — frontmatter `disable-model-invocation` or a visibility state). */
 	private _getModelVisibleSkills(): LoadedSkill[] {
 		return this.resourceLoader
 			.getSkills()
 			.skills.map((s) => normalizeSkillInput(s).skill)
-			.filter((s) => !s.disableModelInvocation);
+			.filter((s) => (this._skillModelVisibility.get(s.id) ?? (s.disableModelInvocation ? "no" : "full")) !== "no");
+	}
+
+	/**
+	 * c4c: keep the `skill` tool's base registration in sync with effective
+	 * model visibility. `_buildRuntime` registers `SKILL_TOOL_NAME` only when
+	 * `_getModelVisibleSkills().length > 0`; a visibility change that crosses
+	 * zero must refresh the base definitions and re-project the active tools,
+	 * not only rebuild the prompt.
+	 */
+	private _refreshSkillToolRegistration(): void {
+		const registered = this._baseToolDefinitions.has(SKILL_TOOL_NAME);
+		const shouldRegister = this._getModelVisibleSkills().length > 0;
+		if (registered === shouldRegister) {
+			return;
+		}
+		if (shouldRegister) {
+			this._baseToolDefinitions.set(SKILL_TOOL_NAME, this._createSkillTool());
+		} else {
+			this._baseToolDefinitions.delete(SKILL_TOOL_NAME);
+		}
+		const activeToolNames = this.getActiveToolNames();
+		this._refreshToolRegistry({
+			activeToolNames:
+				shouldRegister && !activeToolNames.includes(SKILL_TOOL_NAME)
+					? [...activeToolNames, SKILL_TOOL_NAME]
+					: activeToolNames,
+		});
+	}
+
+	/** The `/skills` management rows (c4c): every loaded skill with effective visibility, persisted state + scope, malformed flag, and estimated listing cost. */
+	getSkillsManagementView(): SkillManagementRow[] {
+		const rows = this._resourceLoader.getSkills().skills.map((input) => {
+			const skill = normalizeSkillInput(input).skill;
+			const info = this.settingsManager.getSkillVisibilityInfo(skill.id);
+			const effective = resolveSkillVisibility(
+				{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+				info.state,
+			);
+			const entry: ListingBudgetEntry = {
+				listingName: skill.listingName,
+				description: getListingDescription(skill),
+				location: skill.filePath,
+				isExempt: false,
+				invocationCount: 0,
+				forceNameOnly: effective.model === "name",
+			};
+			return {
+				id: skill.id,
+				name: skill.name,
+				listingName: skill.listingName,
+				location: skill.filePath,
+				source: skill.sourceInfo.source,
+				disableModelInvocation: skill.disableModelInvocation,
+				userInvocable: skill.userInvocable,
+				state: info.state,
+				stateScope: info.scope,
+				malformed: info.malformed,
+				effective,
+				estimatedCost: estimateListingEntryCost(entry),
+			};
+		});
+		return rows.sort((a, b) => a.listingName.localeCompare(b.listingName));
+	}
+
+	/**
+	 * Persist one skill's visibility state (c4c) and apply it to the next
+	 * request's surfaces without a `/reload`: flush the settings write (a
+	 * failed write is detected via `drainErrors()` and reported, not claimed),
+	 * refresh the shared snapshot and the `skill` tool registration on a
+	 * zero-crossing, and run the coalescing listing rebuild. On any failure the
+	 * dirty flags survive so the next request retries.
+	 */
+	async applySkillVisibilityChange(
+		id: string,
+		state: SkillVisibilityState,
+		scope: SettingsScope,
+	): Promise<{ ok: true } | { ok: false; error: string }> {
+		this.settingsManager.drainErrors();
+		this.settingsManager.setSkillVisibilityState(id, state, scope);
+		await this.settingsManager.flush();
+		const writeErrors = this.settingsManager.drainErrors();
+		if (writeErrors.length > 0) {
+			return { ok: false, error: writeErrors.map((entry) => entry.error.message).join("; ") };
+		}
+		try {
+			// Mark dirty FIRST so a failure below leaves every flag set and the
+			// next request retries the whole rebuild.
+			this._skillListingContentDirty = true;
+			this._refreshSkillVisibilitySnapshot();
+			this._refreshSkillToolRegistration();
+			this._refreshSkillListingIfDirty();
+			// Push the rebuilt prompt to the agent so the very next request uses
+			// it (same sync point as `setActiveToolsByName`).
+			this.agent.state.systemPrompt = this._systemPromptOverride ?? this._baseSystemPrompt;
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
+		return { ok: true };
 	}
 
 	/**
@@ -2961,6 +3164,13 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text, getCommandRegistry);
 		}
 		const tokenized = tokenizeMessage(text, getCommandRegistry());
+		// c4c: steer/follow-up emit the `off` disabled diagnostic and drop the
+		// token, matching the direct path exactly once per invocation. Other
+		// tokenizer diagnostics keep their existing (non-queued) behavior.
+		const disabledDiagnostics = tokenized.diagnostics.filter(isSkillDisabledDiagnostic);
+		if (disabledDiagnostics.length > 0) {
+			this._emitSkillDiagnostics(disabledDiagnostics);
+		}
 		if (tokenized.spans.some((span) => span.kind === "invocation")) {
 			await this._queueInvocation(queue, text, tokenized, images);
 			return;

@@ -140,6 +140,7 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.ts";
+import { SkillsSelectorComponent } from "./components/skills-selector.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,
@@ -2882,6 +2883,11 @@ export class InteractiveMode {
 				await this.showModelsSelector();
 				return;
 			}
+			if (text === "/skills") {
+				this.editor.setText("");
+				this.showSkillsSelector();
+				return;
+			}
 			if (text === "/model" || text.startsWith("/model ")) {
 				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
@@ -4947,6 +4953,48 @@ export class InteractiveMode {
 					clearTimeout(timeout);
 					controller.abort();
 				},
+			};
+		});
+	}
+
+	/** `/skills` (c4c): per-skill A.6 visibility management overlay. Each cycle persists through the session apply seam and reflects failures instead of claiming a save. */
+	private showSkillsSelector(): void {
+		this.showSelector((done) => {
+			const selector = new SkillsSelectorComponent(
+				{
+					rows: this.session.getSkillsManagementView(),
+					initialScope: "global",
+				},
+				{
+					onChange: (id, state, scope) => {
+						void this.session
+							.applySkillVisibilityChange(id, state, scope)
+							.then((result) => {
+								if (result.ok) {
+									selector.setStatus(`saved "${state}" (${scope}) — applies next request`, "success");
+									selector.updateRows(this.session.getSkillsManagementView());
+								} else {
+									selector.setStatus(`could not apply: ${result.error}`, "warning");
+								}
+								this.ui.requestRender();
+							})
+							.catch((error: unknown) => {
+								selector.setStatus(
+									`could not apply: ${error instanceof Error ? error.message : String(error)}`,
+									"warning",
+								);
+								this.ui.requestRender();
+							});
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return {
+				component: selector,
+				focus: selector,
 			};
 		});
 	}

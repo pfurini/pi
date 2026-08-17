@@ -46,6 +46,9 @@ export interface AppKeybindings {
 	"app.models.toggleProvider": true;
 	"app.models.reorderUp": true;
 	"app.models.reorderDown": true;
+	"app.skills.cycle": true;
+	"app.skills.sort": true;
+	"app.skills.scope": true;
 	"app.tree.filter.default": true;
 	"app.tree.filter.noTools": true;
 	"app.tree.filter.userOnly": true;
@@ -175,6 +178,18 @@ export const KEYBINDINGS = {
 	"app.models.reorderDown": {
 		defaultKeys: "alt+down",
 		description: "Move model down in order",
+	},
+	"app.skills.cycle": {
+		defaultKeys: "space",
+		description: "Cycle skill visibility state",
+	},
+	"app.skills.sort": {
+		defaultKeys: "s",
+		description: "Sort skills by listing cost",
+	},
+	"app.skills.scope": {
+		defaultKeys: "g",
+		description: "Toggle skill visibility scope (global/project)",
 	},
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",

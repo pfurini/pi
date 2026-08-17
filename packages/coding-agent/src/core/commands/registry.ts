@@ -26,6 +26,11 @@
 import { basename, dirname } from "node:path";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { LoadedSkill } from "../skills/frontmatter.ts";
+import {
+	type ResolvedSkillVisibility,
+	resolveSkillVisibility,
+	type SkillVisibilityState,
+} from "../skills/visibility.ts";
 import type { BuiltinSlashCommand } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { LoadedCommand } from "./loader.ts";
@@ -110,6 +115,14 @@ export interface CommandRegistry {
 	 * Returns undefined for any unregistered name (A.1: no fuzzy fallback).
 	 */
 	resolve(name: string, options: { messageInitial: boolean }): ResolvedInvocation | undefined;
+	/**
+	 * A.6 `off` tombstones (c4c): resolve a name that belongs to a skill at
+	 * visibility `off` (consumed-error invocation, never literal text). Fallback
+	 * only — a live `resolved` hit always wins, so an `off` skill never shadows
+	 * a higher-precedence command. Tombstoned names never enter the listing,
+	 * autocomplete, or collision accounting.
+	 */
+	resolveDisabled(name: string): { skillName: string; skillId: string } | undefined;
 	/** Complete flat listing for autocomplete / `getCommands()`. */
 	getListing(): CommandListingEntry[];
 	/** One aggregated single-line collision diagnostic, or undefined when none. */
@@ -140,6 +153,8 @@ export interface BuildCommandRegistryInput {
 	skills: readonly LoadedSkill[];
 	/** `enableSkillCommands` (false removes bare skills only). */
 	enableSkillCommands: boolean;
+	/** A.6 per-skill visibility states (c4c), keyed by canonical skill ID; absent entries resolve as `on`. */
+	skillVisibility?: ReadonlyMap<string, SkillVisibilityState>;
 }
 
 /** Generate a `dir:name` disambiguator for a same-tier nested collision. */
@@ -197,9 +212,26 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 			command,
 		});
 	}
+	// A.6 (c4c): effective visibility = AND of frontmatter and the persisted
+	// per-skill state. `off` skills leave the namespace but keep a tombstone so
+	// every would-be name errors instead of staying literal.
+	const visibilityOf = (skill: LoadedSkill): ResolvedSkillVisibility =>
+		resolveSkillVisibility(
+			{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+			input.skillVisibility?.get(skill.id) ?? "on",
+		);
+	const disabledSkills: LoadedSkill[] = [];
 	if (input.enableSkillCommands) {
 		for (const skill of input.skills) {
-			if (!skill.commandNameValid || !skill.userInvocable) {
+			if (!skill.commandNameValid) {
+				continue;
+			}
+			const visibility = visibilityOf(skill);
+			if (visibility.userInvokeError) {
+				disabledSkills.push(skill);
+				continue;
+			}
+			if (visibility.user === "no") {
 				continue;
 			}
 			entries.push({
@@ -328,6 +360,38 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 		}
 	}
 
+	// A.6 `off` tombstones (c4c): every name the skill would otherwise be
+	// reachable under — bare, `skill:` qualifier, and, for same-tier collision
+	// participants, each `dirQualifier` variant. Fallback-only: a tombstone is
+	// never installed over a live `resolved` name, so an `off` skill never
+	// shadows a higher-precedence command or a visible winner's bare name, and
+	// never enters `listing`/collisions. Gated by `commandNameValid &&
+	// enableSkillCommands` only — `off` error-resolution overrides
+	// `user-invocable: false` (A.6 marks `off` "invocation errors" across all
+	// four frontmatter columns).
+	const disabled = new Map<string, { skillName: string; skillId: string }>();
+	if (disabledSkills.length > 0) {
+		const offCountByName = new Map<string, number>();
+		for (const skill of disabledSkills) {
+			offCountByName.set(skill.name, (offCountByName.get(skill.name) ?? 0) + 1);
+		}
+		const tombstone = (name: string, skill: LoadedSkill): void => {
+			if (!resolved.has(name) && !disabled.has(name)) {
+				disabled.set(name, { skillName: skill.name, skillId: skill.id });
+			}
+		};
+		for (const skill of disabledSkills) {
+			tombstone(skill.name, skill);
+			tombstone(`skill:${skill.name}`, skill);
+			const group = byName.get(skill.name);
+			const higherTierClaimsBare = group?.some((entry) => entry.tier < TIER.skill) ?? false;
+			const skillTierEntries = group?.filter((entry) => entry.tier === TIER.skill).length ?? 0;
+			if (!higherTierClaimsBare && skillTierEntries + (offCountByName.get(skill.name) ?? 0) > 1) {
+				tombstone(dirQualifier(skill.baseDir, skill.name), skill);
+			}
+		}
+	}
+
 	const collisionDiagnostic: ResourceDiagnostic | undefined =
 		collisions.length > 0
 			? { type: "warning", message: `command namespace collisions: ${collisions.join("; ")}` }
@@ -343,6 +407,9 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 				return undefined;
 			}
 			return invocation;
+		},
+		resolveDisabled(lookupName): { skillName: string; skillId: string } | undefined {
+			return disabled.get(lookupName);
 		},
 		getListing(): CommandListingEntry[] {
 			return listing;

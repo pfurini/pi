@@ -1,6 +1,6 @@
 # Plan Review Report Template
 
-The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{name}-review.md`. Fill every `{placeholder}`; keep every section heading. Omit only the Traceability Matrix section when traceability did not run (its SKIPPED status still appears in the header). The report is a snapshot of one pass — on re-run the previous report is archived under its Reviewed date (see the skill's Phase 5 path rule) and this canonical path always holds the latest.
+The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{name}-review.md`. Fill every `{placeholder}`; keep every section heading. Omit only the Traceability Matrix section when traceability did not run (its SKIPPED status still appears in the header). The report is a snapshot of one pass — on re-run the previous report is archived under its Reviewed timestamp (see the skill's Phase 5 path rule) and this canonical path always holds the latest.
 
 ---
 

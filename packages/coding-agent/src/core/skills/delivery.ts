@@ -393,6 +393,12 @@ export function sliceSkillInvocationSegments(
 	const segments: SkillTextSegment[] = [];
 	let cursor = 0;
 	for (const invocation of invocations) {
+		// Persisted metadata is untrusted: a torn/hand-edited entry can hold a null
+		// or non-object element. Treat it as malformed (render plain + diagnostic)
+		// rather than dereferencing (throw), symmetric with the dedup/carry-forward scans.
+		if (!invocation || typeof invocation !== "object") {
+			return undefined;
+		}
 		const { blockStart, blockEnd } = invocation;
 		if (
 			!Number.isInteger(blockStart) ||

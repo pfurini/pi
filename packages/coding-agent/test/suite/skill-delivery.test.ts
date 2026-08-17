@@ -12,7 +12,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Model } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import { convertToLlm } from "../../src/core/messages.ts";
-import type { SessionMessageEntry } from "../../src/core/session-manager.ts";
+import type { SessionMessageEntry, SkillInvocationEntry } from "../../src/core/session-manager.ts";
 import {
 	buildSkillDelivery,
 	buildSkillMessageBlock,
@@ -242,6 +242,11 @@ describe("sliceSkillInvocationSegments", () => {
 		).toBeUndefined();
 	});
 
+	it("treats a null invocation element as malformed without throwing", () => {
+		const invocations = [null] as unknown as SkillInvocationEntry[];
+		expect(() => sliceSkillInvocationSegments("text", invocations)).not.toThrow();
+		expect(sliceSkillInvocationSegments("text", invocations)).toBeUndefined();
+	});
 	it("treats an empty array as no blocks", () => {
 		expect(sliceSkillInvocationSegments("plain", [])).toEqual([{ type: "text", text: "plain" }]);
 	});

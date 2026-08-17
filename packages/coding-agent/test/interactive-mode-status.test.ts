@@ -1292,3 +1292,39 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).not.toContain("[Skills]");
 	});
 });
+
+describe("InteractiveMode resources_changed autocomplete refresh (c4d)", () => {
+	test("rebuilds the autocomplete provider exactly once per event, with the changed /name included", async () => {
+		const defaultEditor = { setAutocompleteProvider: vi.fn() };
+		const customEditor = { setAutocompleteProvider: vi.fn() };
+		const proto = (InteractiveMode as any).prototype;
+		const fakeThis = {
+			isInitialized: true,
+			footer: { invalidate: vi.fn() },
+			ui: { requestRender: vi.fn() },
+			session: {
+				getCommands: () => [{ name: "fresh-cmd", source: "command", description: "Fresh command" }],
+				scopedModels: [],
+				modelRuntime: { getAvailableSnapshot: () => [] },
+				extensionRunner: { getRegisteredCommands: () => [] },
+			},
+			prefixAutocompleteDescription: (description: string | undefined) => description,
+			sessionManager: { getCwd: () => "/tmp" },
+			fdPath: null,
+			autocompleteProviderWrappers: [],
+			defaultEditor,
+			editor: customEditor,
+			setupAutocompleteProvider: vi.fn(),
+			createBaseAutocompleteProvider: proto.createBaseAutocompleteProvider,
+		};
+		// Route the (spied) method through the real implementation against the stubbed session.
+		fakeThis.setupAutocompleteProvider = vi.fn(() => proto.setupAutocompleteProvider.call(fakeThis));
+
+		await proto.handleEvent.call(fakeThis, { type: "resources_changed" });
+
+		expect(fakeThis.setupAutocompleteProvider).toHaveBeenCalledTimes(1);
+		const provider = defaultEditor.setAutocompleteProvider.mock.calls[0]![0] as AutocompleteProvider;
+		const suggestions = await provider.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+		expect((suggestions?.items ?? []).map((item) => item.value)).toContain("fresh-cmd");
+	});
+});

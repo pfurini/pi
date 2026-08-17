@@ -24,7 +24,7 @@ import type { LoadedSkill } from "../skills/frontmatter.ts";
 import type { RenderedSkillInvocation } from "../skills/render.ts";
 import type { SkillInvocation } from "../skills/runtime.ts";
 import type { LoadedCommand } from "./loader.ts";
-import type { ResolvedSkillInvocation } from "./registry.ts";
+import { formatNestedVariantsNote, type ResolvedSkillInvocation } from "./registry.ts";
 import type { RenderedCommand } from "./render.ts";
 import type { InvocationSpan, MessageSpan, TokenizeResult } from "./tokenizer.ts";
 
@@ -58,6 +58,8 @@ export interface SoleSkillPreparation {
 	kind: "sole-skill";
 	skill: LoadedSkill;
 	rawArgs: string;
+	/** A.1 nested-collision variants of the bare name (c4d): the caller appends the variant note. */
+	nestedVariants?: string[];
 }
 
 export interface ComposedPreparation {
@@ -118,7 +120,14 @@ export class InvocationCoordinator {
 		const { tokenized, text, images, signal } = input;
 		const soleSkill = tokenized ? this.soleSkillSpan(tokenized.spans, tokenized.messageInitial) : undefined;
 		if (soleSkill) {
-			return { kind: "sole-skill", skill: soleSkill.invocation.skill, rawArgs: soleSkill.rawArgs };
+			return {
+				kind: "sole-skill",
+				skill: soleSkill.invocation.skill,
+				rawArgs: soleSkill.rawArgs,
+				...(soleSkill.invocation.nestedVariants !== undefined && {
+					nestedVariants: soleSkill.invocation.nestedVariants,
+				}),
+			};
 		}
 		const invocationSpans = tokenized
 			? tokenized.spans.filter((span): span is InvocationSpan => span.kind === "invocation")
@@ -142,7 +151,14 @@ export class InvocationCoordinator {
 	async prepareQueued(queued: QueuedInvocationSnapshot, signal?: AbortSignal): Promise<PreparedInvocationMessage> {
 		const soleSkill = this.soleSkillSpan(queued.snapshot.spans, queued.snapshot.messageInitial);
 		if (soleSkill) {
-			return { kind: "sole-skill", skill: soleSkill.invocation.skill, rawArgs: soleSkill.rawArgs };
+			return {
+				kind: "sole-skill",
+				skill: soleSkill.invocation.skill,
+				rawArgs: soleSkill.rawArgs,
+				...(soleSkill.invocation.nestedVariants !== undefined && {
+					nestedVariants: soleSkill.invocation.nestedVariants,
+				}),
+			};
 		}
 		const composed = await this.composeSpans(queued.snapshot.spans, queued.images, signal);
 		if (composed) {
@@ -229,6 +245,10 @@ export class InvocationCoordinator {
 					invocations.push({ ...block.invocation, blockStart, blockEnd: text.length });
 				}
 				activations.push(prepared.record);
+				// A.1 (c4d): an unqualified invocation with nested variants carries a note listing them.
+				if (span.invocation.nestedVariants !== undefined && span.invocation.nestedVariants.length > 0) {
+					text += `\n\n${formatNestedVariantsNote(span.invocation.name, span.invocation.nestedVariants)}`;
+				}
 			} else if (span.invocation.source === "command" || span.invocation.source === "prompt") {
 				const command = span.invocation.command;
 				let rendered: RenderedCommand;

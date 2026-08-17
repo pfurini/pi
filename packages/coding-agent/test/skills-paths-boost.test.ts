@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LoadedSkill, SkillFrontmatter } from "../src/core/skills/frontmatter.ts";
 import { boostSkillsByPaths, skillPathTouchFromToolCall } from "../src/core/skills/paths-boost.ts";
@@ -121,47 +124,56 @@ describe("boostSkillsByPaths", () => {
 });
 
 describe("skillPathTouchFromToolCall", () => {
-	it("returns the path for a successful read call", () => {
-		expect(skillPathTouchFromToolCall("read", { path: "src/api/foo.ts" })).toBe("src/api/foo.ts");
+	// c4d: the extractor is name-agnostic and resolves `path` against the session cwd,
+	// so it needs a real filesystem to recognize an authoritative single-file touch.
+	function withTempTree(run: (cwd: string) => void): void {
+		const cwd = mkdtempSync(join(tmpdir(), "pi-paths-boost-"));
+		try {
+			mkdirSync(join(cwd, "src/api"), { recursive: true });
+			writeFileSync(join(cwd, "src/api/foo.ts"), "export {};\n");
+			run(cwd);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	}
+
+	it("returns the resolved absolute path for an authoritative single-file touch, name-agnostic", () => {
+		withTempTree((cwd) => {
+			const expected = join(cwd, "src/api/foo.ts");
+			// The tool name plays no role (c4d): the built-in read/edit/write, override
+			// setups' `replace`, and Hypa/lens single-file readers all carry a `path`.
+			expect(skillPathTouchFromToolCall({ path: "src/api/foo.ts" }, cwd)).toBe(expected);
+			expect(skillPathTouchFromToolCall({ path: join(cwd, "src/api/foo.ts") }, cwd)).toBe(expected);
+		});
 	});
 
-	it("returns the path for a successful edit call", () => {
-		expect(skillPathTouchFromToolCall("edit", { path: "src/api/foo.ts" })).toBe("src/api/foo.ts");
+	it("resolves a relative path against the session cwd, not process.cwd()", () => {
+		withTempTree((cwd) => {
+			expect(cwd).not.toBe(process.cwd());
+			expect(skillPathTouchFromToolCall({ path: "src/api/foo.ts" }, cwd)).toBe(join(cwd, "src/api/foo.ts"));
+		});
 	});
 
-	it("returns the path for a successful write call", () => {
-		expect(skillPathTouchFromToolCall("write", { path: "src/api/foo.ts" })).toBe("src/api/foo.ts");
+	it("returns undefined for directory/multi-file scanners (path is a directory)", () => {
+		withTempTree((cwd) => {
+			expect(skillPathTouchFromToolCall({ path: "src/api" }, cwd)).toBeUndefined();
+		});
 	});
 
-	it("returns undefined for grep (search root, not a touch)", () => {
-		expect(skillPathTouchFromToolCall("grep", { path: "src/api" })).toBeUndefined();
+	it("returns undefined when the path does not exist", () => {
+		withTempTree((cwd) => {
+			expect(skillPathTouchFromToolCall({ path: "src/api/missing.ts" }, cwd)).toBeUndefined();
+		});
 	});
 
-	it("returns undefined for find (search root, not a touch)", () => {
-		expect(skillPathTouchFromToolCall("find", { path: "src/api" })).toBeUndefined();
-	});
-
-	it("returns undefined for ls (search root, not a touch)", () => {
-		expect(skillPathTouchFromToolCall("ls", { path: "src/api" })).toBeUndefined();
-	});
-
-	it("returns undefined for bash", () => {
-		expect(skillPathTouchFromToolCall("bash", { command: "ls" })).toBeUndefined();
-	});
-
-	it("returns undefined for missing args", () => {
-		expect(skillPathTouchFromToolCall("read", undefined)).toBeUndefined();
-	});
-
-	it("returns undefined for a non-string path", () => {
-		expect(skillPathTouchFromToolCall("read", { path: 42 })).toBeUndefined();
-	});
-
-	it("returns undefined for nested/non-object args", () => {
-		expect(skillPathTouchFromToolCall("read", "src/api/foo.ts")).toBeUndefined();
-	});
-
-	it("returns undefined for null args", () => {
-		expect(skillPathTouchFromToolCall("read", null)).toBeUndefined();
+	it("returns undefined for calls without a string path argument", () => {
+		withTempTree((cwd) => {
+			expect(skillPathTouchFromToolCall({ command: "ls" }, cwd)).toBeUndefined();
+			expect(skillPathTouchFromToolCall(undefined, cwd)).toBeUndefined();
+			expect(skillPathTouchFromToolCall({ path: 42 }, cwd)).toBeUndefined();
+			expect(skillPathTouchFromToolCall("src/api/foo.ts", cwd)).toBeUndefined();
+			expect(skillPathTouchFromToolCall(null, cwd)).toBeUndefined();
+			expect(skillPathTouchFromToolCall({ path: "" }, cwd)).toBeUndefined();
+		});
 	});
 });

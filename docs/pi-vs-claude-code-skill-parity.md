@@ -152,8 +152,8 @@ The CC **plugin system** (components, manifest, `userConfig`, marketplaces, `plu
 | Listing budget | 1% of window, per-skill 1,536 cap, least-invoked-first truncation | None |
 | Compaction carry-forward | Re-attach MRU invocation per skill (5k/25k budgets) | None |
 | Re-invocation dedup | "Already loaded" note | Full content re-appended |
-| Live reload | Watchers + `/reload-skills` | `/reload` covers skills (no watching) |
-| Nested/monorepo names | Runtime discovery + `dir:name` qualification | Ancestor discovery; first-wins collisions |
+| Live reload | Watchers + `/reload-skills` | Yes (C4d: debounced per-directory watchers over every scanned skill/command root; `/reload` still covers the rest) |
+| Nested/monorepo names | Runtime discovery + `dir:name` qualification | Yes (C4d: tool-touch-triggered discovery of nested `.pi/skills`/`.agents/skills` roots between cwd and the touched file, `dir:name` on collision) |
 | Visibility management | `/skills` menu + 4-state `skillOverrides` | Enable/disable via `pi config` |
 | Skill stacking (one message) | Up to 6 | No |
 | Expansion-time extension seam | `UserPromptExpansion` hook (augment/block) | `input` transform (pre-expansion) |
@@ -177,9 +177,9 @@ The CC **plugin system** (components, manifest, `userConfig`, marketplaces, `plu
 10. **No shell injection** (`` !`cmd` ``) with policy control.
 11. **No listing budget / compaction carry-forward / re-invocation dedup** (context-lifecycle hygiene).
 12. **No `/skills` management UX** with 4-state visibility.
-13. **No nested/monorepo runtime discovery** with dir-qualified names.
+13. ~~No nested/monorepo runtime discovery~~ **Shipped (C4d)** with dir-qualified names.
 14. **No skill stacking.**
-15. **No live watching** (manual `/reload` covers skills but requires user action).
+15. ~~No live watching~~ **Shipped (C4d)** — skill/command roots are watched in-session; `/reload` remains the fallback and covers non-skill resources.
 16. **Interop warts**: strict boolean parsing; CC tool names (`Glob`, `Read`, `EnterPlanMode`) in imported skill prose need translation.
 
 ---
@@ -213,8 +213,8 @@ Implementation vehicle note: per §7, Phases 1–2 are deliverable almost entire
 15. Compaction carry-forward (re-attach MRU invocation per skill, bounded budget) — investigate the `session_before_compact` customization surface first (§7.3).
 16. Re-invocation dedup ("already loaded" note).
 17. `/skills` menu + `skillOverrides`-style setting (on / name-only / user-invocable-only / off).
-18. Live watching of skill dirs (`fs.watch` + `ctx.reload()` — extension-deliverable, §7.1).
-19. Nested/monorepo dir-qualified names (`apps/web:deploy`).
+18. ~~Live watching of skill dirs~~ **Shipped (C4d, core)**: debounced per-directory watchers over every scanned skill/command root driving a light skills+commands refresh.
+19. ~~Nested/monorepo dir-qualified names (`apps/web:deploy`)~~ **Shipped (C4d, core)**: tool-touch-triggered nested discovery with collision-conditional qualification.
 
 **Phase 4 — ecosystem polish:**
 20. Skill-scoped hooks (per OQ-1 decision), `shell` powershell support, eval/iteration tooling, CC tool-name translation guide for imported skills.

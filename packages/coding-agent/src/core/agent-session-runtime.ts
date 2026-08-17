@@ -174,6 +174,10 @@ export class AgentSessionRuntime {
 		});
 		this.beforeSessionInvalidate?.();
 		this.session.dispose();
+		// c4d: the services' resource loader is internally owned by this boundary, so
+		// its watchers/timers are released on replacement (an injected loader would be
+		// caller-owned, but createAgentSessionServices always constructs one).
+		this._services.resourceLoader.dispose?.();
 	}
 
 	private apply(result: CreateAgentSessionRuntimeResult): void {
@@ -406,6 +410,7 @@ export class AgentSessionRuntime {
 		});
 		this.beforeSessionInvalidate?.();
 		this.session.dispose();
+		this._services.resourceLoader.dispose?.();
 	}
 }
 

@@ -1,11 +1,12 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExtensionRuntime } from "../src/core/extensions/loader.ts";
-import type { ResourceLoader } from "../src/core/resource-loader.ts";
+import { DefaultResourceLoader, type ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 
 describe("createAgentSession skills option", () => {
@@ -109,5 +110,77 @@ This is a test skill.
 
 		expect(session.resourceLoader.getSkills().skills).toEqual([customSkill]);
 		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
+	});
+});
+
+describe("createAgentSession loader ownership (c4d)", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `pi-sdk-disposal-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		if (tempDir) {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("disposes the internally-created loader when the session is disposed", async () => {
+		const disposeSpy = vi.spyOn(DefaultResourceLoader.prototype, "dispose");
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+		});
+		expect(disposeSpy).not.toHaveBeenCalled();
+		session.dispose();
+		expect(disposeSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("disposes the internally-created loader when session construction fails after reload", async () => {
+		const disposeSpy = vi.spyOn(DefaultResourceLoader.prototype, "dispose");
+		// Fail the AgentSession constructor (after the internal loader's reload started watching).
+		const settingsManager = SettingsManager.inMemory();
+		vi.spyOn(settingsManager, "getImageAutoResize").mockImplementation(() => {
+			throw new Error("settings boom");
+		});
+		await expect(
+			createAgentSession({
+				cwd: tempDir,
+				agentDir: tempDir,
+				sessionManager: SessionManager.inMemory(),
+				settingsManager,
+			}),
+		).rejects.toThrow("settings boom");
+		expect(disposeSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("never disposes a caller-injected loader", async () => {
+		const dispose = vi.fn();
+		const resourceLoader: ResourceLoader = {
+			getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+			getSkills: () => ({ skills: [], diagnostics: [] }),
+			getPrompts: () => ({ prompts: [], diagnostics: [] }),
+			getThemes: () => ({ themes: [], diagnostics: [] }),
+			getAgentsFiles: () => ({ agentsFiles: [] }),
+			getSystemPrompt: () => undefined,
+			getSystemPromptSource: () => undefined,
+			getAppendSystemPrompt: () => [],
+			getAppendSystemPromptSources: () => [],
+			extendResources: () => {},
+			reload: async () => {},
+			dispose,
+		};
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+			resourceLoader,
+		});
+		session.dispose();
+		expect(dispose).not.toHaveBeenCalled();
 	});
 });

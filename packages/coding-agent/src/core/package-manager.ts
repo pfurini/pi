@@ -175,7 +175,7 @@ interface ResourceAccumulator {
  *   3  user + auto-discovered (source: "auto", scope: "user")
  *   4  package resource (origin: "package")
  */
-function resourcePrecedenceRank(m: PathMetadata): number {
+export function resourcePrecedenceRank(m: PathMetadata): number {
 	if (m.origin === "package") return 4;
 	const scopeBase = m.scope === "project" ? 0 : 2;
 	return scopeBase + (m.source === "local" ? 0 : 1);
@@ -783,6 +783,16 @@ export class DefaultPackageManager implements PackageManager {
 	private globalNpmRoot: string | undefined;
 	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
+	/**
+	 * Skill-discovery roots retained across the leaf collapse (c4d): collectSkillEntries
+	 * resolves configured/package skill dirs to leaf SKILL.md paths, so an empty or
+	 * not-yet-existing root would otherwise vanish before the loader can watch it.
+	 * Keyed by canonical root; the main bucket is rebuilt by resolve(), the temporary
+	 * bucket by resolveExtensionSources().
+	 */
+	private skillDiscoveryRoots = new Map<string, { root: string; metadata: PathMetadata }>();
+	private temporarySkillDiscoveryRoots = new Map<string, { root: string; metadata: PathMetadata }>();
+	private skillRootsBucket = this.skillDiscoveryRoots;
 
 	constructor(options: PackageManagerOptions) {
 		this.cwd = resolvePath(options.cwd);
@@ -792,6 +802,31 @@ export class DefaultPackageManager implements PackageManager {
 
 	setProgressCallback(callback: ProgressCallback | undefined): void {
 		this.progressCallback = callback;
+	}
+
+	/**
+	 * The retained skill-discovery roots from the last resolve() /
+	 * resolveExtensionSources() (c4d): configured and auto-discovery candidate roots
+	 * (including empty or not-yet-existing ones) with their trust/source metadata.
+	 */
+	getSkillDiscoveryRoots(): Array<{ root: string; metadata: PathMetadata }> {
+		return [...this.skillDiscoveryRoots.values(), ...this.temporarySkillDiscoveryRoots.values()];
+	}
+
+	private recordSkillDiscoveryRoot(root: string, metadata: PathMetadata): void {
+		if (!root) return;
+		const key = canonicalizePath(root);
+		if (!this.skillRootsBucket.has(key)) {
+			this.skillRootsBucket.set(key, { root, metadata });
+		}
+	}
+
+	/** Manifest skill entries that name concrete paths (not globs/override patterns) are discovery roots. */
+	private recordManifestSkillRoots(entries: string[], root: string, metadata: PathMetadata): void {
+		for (const entry of entries) {
+			if (isOverridePattern(entry) || hasGlobPattern(entry)) continue;
+			this.recordSkillDiscoveryRoot(resolve(root, entry), metadata);
+		}
 	}
 
 	addSourceToSettings(source: string, options?: { local?: boolean }): boolean {
@@ -883,6 +918,8 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async resolve(onMissing?: (source: string) => Promise<MissingSourceAction>): Promise<ResolvedPaths> {
+		this.skillDiscoveryRoots = new Map();
+		this.skillRootsBucket = this.skillDiscoveryRoots;
 		const accumulator = this.createAccumulator();
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
@@ -940,6 +977,8 @@ export class DefaultPackageManager implements PackageManager {
 		sources: string[],
 		options?: { local?: boolean; temporary?: boolean },
 	): Promise<ResolvedPaths> {
+		this.temporarySkillDiscoveryRoots = new Map();
+		this.skillRootsBucket = this.temporarySkillDiscoveryRoots;
 		const accumulator = this.createAccumulator();
 		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "user";
 		const packageSources = sources.map((source) => ({ pkg: source as PackageSource, scope }));
@@ -2162,6 +2201,10 @@ export class DefaultPackageManager implements PackageManager {
 		let hasAnyDir = false;
 		for (const resourceType of RESOURCE_TYPES) {
 			const dir = join(packageRoot, resourceType);
+			if (resourceType === "skills") {
+				// Retain the convention root even when empty/missing so the c4d watcher covers it.
+				this.recordSkillDiscoveryRoot(dir, metadata);
+			}
 			if (existsSync(dir)) {
 				// Collect all files from the directory (all enabled by default)
 				const files = collectResourceFiles(dir, resourceType);
@@ -2187,6 +2230,9 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 		const dir = join(packageRoot, resourceType);
+		if (resourceType === "skills") {
+			this.recordSkillDiscoveryRoot(dir, metadata);
+		}
 		if (existsSync(dir)) {
 			// Collect all files from the directory (all enabled by default)
 			const files = collectResourceFiles(dir, resourceType);
@@ -2203,7 +2249,7 @@ export class DefaultPackageManager implements PackageManager {
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
 	): void {
-		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
+		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType, metadata);
 
 		if (userPatterns.length === 0) {
 			// Empty array explicitly disables all resources of this type
@@ -2233,7 +2279,7 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 
-		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
+		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType, metadata);
 		const enabledByUser = applyAutoloadDisabledPatterns(allFiles, userPatterns, packageRoot);
 		for (const [filePath, enabled] of enabledByUser) {
 			this.addResource(target, filePath, metadata, enabled);
@@ -2248,10 +2294,14 @@ export class DefaultPackageManager implements PackageManager {
 	private collectManifestFiles(
 		packageRoot: string,
 		resourceType: ResourceType,
+		metadata: PathMetadata,
 	): { allFiles: string[]; enabledByManifest: Set<string> } {
 		const manifest = readPiManifest(join(packageRoot, "package.json"));
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries && entries.length > 0) {
+			if (resourceType === "skills") {
+				this.recordManifestSkillRoots(entries, packageRoot, metadata);
+			}
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
 			const manifestPatterns = entries.filter(isOverridePattern);
 			const enabledByManifest =
@@ -2260,6 +2310,9 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		const conventionDir = join(packageRoot, resourceType);
+		if (resourceType === "skills") {
+			this.recordSkillDiscoveryRoot(conventionDir, metadata);
+		}
 		if (!existsSync(conventionDir)) {
 			return { allFiles: [], enabledByManifest: new Set() };
 		}
@@ -2275,6 +2328,9 @@ export class DefaultPackageManager implements PackageManager {
 		metadata: PathMetadata,
 	): void {
 		if (!entries) return;
+		if (resourceType === "skills") {
+			this.recordManifestSkillRoots(entries, root, metadata);
+		}
 
 		const allFiles = this.collectFilesFromManifestEntries(entries, root, resourceType);
 		const patterns = entries.filter(isOverridePattern);
@@ -2316,8 +2372,13 @@ export class DefaultPackageManager implements PackageManager {
 		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
 		const resolvedPlain = plain.map((p) => this.resolvePathFromBase(p, baseDir));
+		if (resourceType === "skills") {
+			// Retain the configured roots (dirs or files, existing or not) for the c4d watcher.
+			for (const p of resolvedPlain) {
+				this.recordSkillDiscoveryRoot(p, metadata);
+			}
+		}
 		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
-
 		// Determine which files are enabled based on patterns
 		const enabledPaths = applyPatterns(allFiles, patterns, baseDir);
 
@@ -2403,6 +2464,7 @@ export class DefaultPackageManager implements PackageManager {
 			);
 
 			// Project skills from .pi/
+			this.recordSkillDiscoveryRoot(projectDirs.skills, projectMetadata);
 			addResources(
 				"skills",
 				collectAutoSkillEntries(projectDirs.skills, "pi"),
@@ -2419,6 +2481,7 @@ export class DefaultPackageManager implements PackageManager {
 				...projectMetadata,
 				baseDir: agentsBaseDir,
 			};
+			this.recordSkillDiscoveryRoot(agentsSkillsDir, agentsMetadata);
 			addResources(
 				"skills",
 				collectAutoSkillEntries(agentsSkillsDir, "agents"),
@@ -2455,6 +2518,7 @@ export class DefaultPackageManager implements PackageManager {
 		);
 
 		// User skills from ~/.pi/agent/
+		this.recordSkillDiscoveryRoot(userDirs.skills, userMetadata);
 		addResources(
 			"skills",
 			collectAutoSkillEntries(userDirs.skills, "pi"),
@@ -2469,6 +2533,7 @@ export class DefaultPackageManager implements PackageManager {
 			...userMetadata,
 			baseDir: userAgentsBaseDir,
 		};
+		this.recordSkillDiscoveryRoot(userAgentsSkillsDir, userAgentsMetadata);
 		addResources(
 			"skills",
 			collectAutoSkillEntries(userAgentsSkillsDir, "agents"),

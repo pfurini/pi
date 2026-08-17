@@ -3123,6 +3123,12 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				break;
 
+			case "resources_changed":
+				// c4d: a watched or nested skill/command change reaches the mid-prompt
+				// `/` menu without /reload; the provider resnapshots session.getCommands().
+				this.setupAutocompleteProvider();
+				break;
+
 			case "message_start":
 				if (event.message.role === "custom") {
 					this.addMessageToChat(event.message);

@@ -21,6 +21,38 @@ A skill's frontmatter (`name`, `description`, `when_to_use`,
 CC-class contract) is normalized at load; unknown fields are preserved.
 Malformed values produce load warnings, never load failures.
 
+## Watching
+
+Every scanned skill root (the default user/project directories, package-,
+settings-, and `--skill`-provided paths, extension-registered paths, and
+nested roots discovered at runtime) and both command roots (`commands/` under
+the agent config directory and the trust-gated `.pi/commands/`) are watched
+live. Creating, editing, or deleting a skill or command on disk takes effect in
+the running session without `/reload`: the next request's `<available_skills>`
+listing, the `skill` tool's accepted set, the `/name` namespace, and the
+`skills:changed` extension feed all converge to the on-disk state within a
+short debounce window, and deletions unregister.
+
+Watching needs no configuration and has no setting. If watching itself fails
+(for example an OS watcher limit), Pi surfaces one diagnostic, retries in the
+background, and the session degrades to pre-watch behavior: `/reload` still
+picks up every change.
+
+## Nested (monorepo) discovery
+
+When a tool call touches a file whose ancestor directories between the project
+root and the file contain a `.pi/skills/` or `.agents/skills/` directory that
+has not been scanned yet — for example `apps/web/.pi/skills/` in a monorepo —
+Pi scans and registers that root mid-session, trust-gated exactly like the
+project's own roots. The new root is watched like every other scanned root,
+and deleting it unregisters its skills.
+
+On a name collision with an already-loaded skill, the nested skill keeps its
+frontmatter `name` but is listed and invoked under a directory-qualified name
+(`<root-relative-dir>:<name>`, e.g. `apps/web:deploy`). Both collide-ees stay
+available: invoking the bare `/name` resolves to the incumbent and appends a
+note listing the qualified variants.
+
 ## Invocation
 
 - **Model invocation:** the model calls the `skill` tool with a name from the

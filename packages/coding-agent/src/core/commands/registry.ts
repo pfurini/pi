@@ -165,6 +165,12 @@ function dirQualifier(baseDir: string | undefined, name: string): string {
 	return segment !== "" ? `${segment}:${name}` : name;
 }
 
+/** A.1 note appended when an unqualified invocation has nested qualified variants (c4d). */
+export function formatNestedVariantsNote(name: string, variants: readonly string[]): string {
+	const list = variants.map((variant) => `/${variant}`).join(", ");
+	return `Note: /${name} has nested variants; the first was invoked. Qualified variants: ${list}.`;
+}
+
 export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandRegistry {
 	const entries: InternalEntry[] = [];
 
@@ -308,21 +314,36 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 		const winnerTierPeers = ordered.filter((entry) => entry.tier === winner.tier);
 
 		if (winnerTierPeers.length > 1) {
-			// Same-tier nested collision: keep every variant under a dir-qualified
-			// name; the bare name resolves to the first and carries the variant note.
-			const variants = winnerTierPeers.map((entry) => dirQualifier(entry.baseDir, name));
+			// Same-tier nested collision: keep every variant under a qualified name;
+			// the bare name resolves to the first and carries the variant note. A
+			// skill discovered from a nested root (c4d) carries its A.6 dir-qualified
+			// name as listingName (e.g. `apps/web:deploy`); other entries derive the
+			// dir qualifier from baseDir as before.
+			const variants = winnerTierPeers.map((entry) =>
+				entry.source === "skill" && entry.skill && entry.skill.listingName !== name
+					? entry.skill.listingName
+					: dirQualifier(entry.baseDir, name),
+			);
+			const seenSkillQualifiers = new Set<string>();
 			winnerTierPeers.forEach((entry, index) => {
 				register(variants[index], toInvocation(entry), () => {
-					collisions.push(
-						`/${name} qualifier "${variants[index]}" is ambiguous; one variant is unreachable (dir-qualified names land in C4)`,
-					);
+					collisions.push(`/${name} qualifier "${variants[index]}" is ambiguous; one variant is unreachable`);
 				});
 				if (entry.qualifier) {
-					register(entry.qualifier, toInvocation(entry), () => {
-						collisions.push(
-							`/${name} qualifier "${entry.qualifier}" is ambiguous; one variant is unreachable (dir-qualified names land in C4)`,
-						);
-					});
+					// Two same-name skill collide-ees share the `skill:name` qualifier; the
+					// first registration wins silently (the dir-qualified variants are the
+					// disambiguators, noted below).
+					const intraGroupSkillDupe = entry.source === "skill" && seenSkillQualifiers.has(entry.qualifier);
+					if (entry.source === "skill") {
+						seenSkillQualifiers.add(entry.qualifier);
+					}
+					if (!intraGroupSkillDupe) {
+						register(entry.qualifier, toInvocation(entry), () => {
+							collisions.push(
+								`/${name} qualifier "${entry.qualifier}" is ambiguous; one variant is unreachable`,
+							);
+						});
+					}
 				}
 				listing.push(toListingEntry(entry, variants[index]));
 			});
@@ -384,7 +405,11 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 			const higherTierClaimsBare = group?.some((entry) => entry.tier < TIER.skill) ?? false;
 			const skillTierEntries = group?.filter((entry) => entry.tier === TIER.skill).length ?? 0;
 			if (!higherTierClaimsBare && skillTierEntries + (offCountByName.get(skill.name) ?? 0) > 1) {
-				tombstone(dirQualifier(skill.baseDir, skill.name), skill);
+				// A nested collide-ee (c4d) carries its A.6 dir-qualified listingName; others derive it from baseDir.
+				tombstone(
+					skill.listingName !== skill.name ? skill.listingName : dirQualifier(skill.baseDir, skill.name),
+					skill,
+				);
 			}
 		}
 	}

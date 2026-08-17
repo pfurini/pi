@@ -97,8 +97,13 @@ export interface LoadSkillsFromDirOptions {
 	dir: string;
 	/** Source identifier for these skills */
 	source: string;
+	/**
+	 * Traversal-failure signal (c4d nested registration): invoked when a directory
+	 * cannot be read. Without it a traversal failure is indistinguishable from a
+	 * valid empty result (the scan is best-effort by default).
+	 */
+	onTraversalError?: (path: string, error: unknown) => void;
 }
-
 function createSkillSourceInfo(filePath: string, baseDir: string, source: string): SourceInfo {
 	switch (source) {
 		case "user":
@@ -133,7 +138,7 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
  */
 export function loadSkillsFromDir(options: LoadSkillsFromDirOptions): LoadSkillsResult {
 	const { dir, source } = options;
-	return loadSkillsFromDirInternal(dir, source, true);
+	return loadSkillsFromDirInternal(dir, source, true, undefined, undefined, options.onTraversalError);
 }
 
 function loadSkillsFromDirInternal(
@@ -142,6 +147,7 @@ function loadSkillsFromDirInternal(
 	includeRootFiles: boolean,
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
+	onTraversalError?: (path: string, error: unknown) => void,
 ): LoadSkillsResult {
 	const skills: LoadedSkill[] = [];
 	const diagnostics: ResourceDiagnostic[] = [];
@@ -232,7 +238,7 @@ function loadSkillsFromDirInternal(
 			}
 
 			if (isDirectory) {
-				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root);
+				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root, onTraversalError);
 				skills.push(...subResult.skills);
 				diagnostics.push(...subResult.diagnostics);
 				continue;
@@ -248,7 +254,10 @@ function loadSkillsFromDirInternal(
 			}
 			diagnostics.push(...result.diagnostics);
 		}
-	} catch {}
+	} catch (error) {
+		// Best-effort by default; the c4d nested-registration path observes this via onTraversalError.
+		onTraversalError?.(dir, error);
+	}
 
 	return { skills, diagnostics };
 }
@@ -304,8 +313,22 @@ export interface LoadSkillsOptions {
 	skillPaths: string[];
 	/** Include default skills directories. */
 	includeDefaults: boolean;
+	/**
+	 * A.6 nested roots (c4d): a skill loaded from under one of these roots whose
+	 * bare name collides is NOT dropped; it is kept under the dir-qualified
+	 * listingName `<qualifier>:<name>` while the incumbent keeps the bare name.
+	 * A still-colliding qualified name falls back to loser-drop + diagnostic.
+	 */
+	qualifiedRoots?: readonly QualifiedSkillRoot[];
 }
 
+/** A nested skill-discovery root whose colliding skills get the A.6 dir-qualified name. */
+export interface QualifiedSkillRoot {
+	/** Absolute root directory (compared canonicalized). */
+	root: string;
+	/** Root-relative qualifier, posixified (A.6: `apps/web` → `apps/web:deploy`). */
+	qualifier: string;
+}
 /**
  * Load skills from all configured locations.
  * Returns skills and any validation diagnostics.
@@ -319,8 +342,23 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 
 	const skillMap = new Map<string, LoadedSkill>();
 	const realPathSet = new Set<string>();
+	const takenListingNames = new Set<string>();
 	const allDiagnostics: ResourceDiagnostic[] = [];
 	const collisionDiagnostics: ResourceDiagnostic[] = [];
+
+	const qualifiedRoots = (options.qualifiedRoots ?? []).map((qualifiedRoot) => ({
+		canonicalRoot: canonicalizePath(qualifiedRoot.root),
+		qualifier: qualifiedRoot.qualifier,
+	}));
+	const qualifierFor = (skill: LoadedSkill): string | undefined => {
+		const filePath = canonicalizePath(skill.filePath);
+		for (const { canonicalRoot, qualifier } of qualifiedRoots) {
+			if (filePath === canonicalRoot || filePath.startsWith(`${canonicalRoot}${sep}`)) {
+				return qualifier;
+			}
+		}
+		return undefined;
+	};
 
 	function addSkills(result: LoadSkillsResult) {
 		allDiagnostics.push(...result.diagnostics);
@@ -333,8 +371,8 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 				continue;
 			}
 
-			const existing = skillMap.get(skill.name);
-			if (existing) {
+			const dropLoser = () => {
+				const existing = skillMap.get(skill.name);
 				collisionDiagnostics.push({
 					type: "collision",
 					message: `name "${skill.name}" collision`,
@@ -342,17 +380,33 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 					collision: {
 						resourceType: "skill",
 						name: skill.name,
-						winnerPath: existing.filePath,
+						winnerPath: existing?.filePath ?? skill.filePath,
 						loserPath: skill.filePath,
 					},
 				});
+			};
+
+			const existing = skillMap.get(skill.name);
+			if (existing) {
+				// A.6 nested collision (c4d): a skill from a qualified nested root is kept
+				// under its dir-qualified listingName; the incumbent keeps the bare name.
+				const qualifier = qualifierFor(skill);
+				const qualifiedName = qualifier ? `${qualifier}:${skill.name}` : undefined;
+				if (qualifiedName !== undefined && !takenListingNames.has(qualifiedName)) {
+					const qualifiedSkill: LoadedSkill = { ...skill, listingName: qualifiedName };
+					skillMap.set(qualifiedName, qualifiedSkill);
+					takenListingNames.add(qualifiedName);
+					realPathSet.add(realPath);
+				} else {
+					dropLoser();
+				}
 			} else {
 				skillMap.set(skill.name, skill);
+				takenListingNames.add(skill.listingName);
 				realPathSet.add(realPath);
 			}
 		}
 	}
-
 	if (includeDefaults) {
 		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
 		addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));

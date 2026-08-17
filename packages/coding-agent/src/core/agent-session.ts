@@ -60,7 +60,12 @@ import {
 	type QueuedInvocationSnapshot,
 } from "./commands/invocation-coordinator.ts";
 import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
-import { buildCommandRegistry, type CommandRegistry, type ExtensionCommandInfo } from "./commands/registry.ts";
+import {
+	buildCommandRegistry,
+	type CommandRegistry,
+	type ExtensionCommandInfo,
+	formatNestedVariantsNote,
+} from "./commands/registry.ts";
 import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
 import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
 import {
@@ -119,7 +124,7 @@ import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import type { PromptTemplate } from "./prompt-templates.ts";
-import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
+import type { ResourceExtensionPaths, ResourceLoader, ResourceLoaderChangeEvent } from "./resource-loader.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -265,7 +270,9 @@ export type AgentSessionEvent =
 	  }
 	| { type: "summarization_retry_finished" }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-	| { type: "bash_execution_update"; id?: string; delta: string };
+	| { type: "bash_execution_update"; id?: string; delta: string }
+	/** c4d: a watcher- or nested-discovery-driven light refresh changed the effective skill/command set. */
+	| { type: "resources_changed" };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -333,6 +340,13 @@ export interface AgentSessionConfig {
 	 * this public interface are not forced to supply one.
 	 */
 	sessionAbortController?: AbortController;
+	/**
+	 * c4d: set only by a boundary that constructed the loader itself (sdk.ts
+	 * `createAgentSession` with no injected loader): dispose() then disposes the
+	 * loader (watchers, timers) with the session. Injected/shared loaders stay
+	 * caller-owned and are never disposed here.
+	 */
+	ownsResourceLoader?: boolean;
 	/**
 	 * C3b fork client timeout overrides (tests only): shorten the spawn-reply cap and
 	 * the foreground completion cap so timeout paths do not stall the suite. Production
@@ -480,6 +494,8 @@ export class AgentSession {
 	private _turnIndex = 0;
 
 	private _resourceLoader: ResourceLoader;
+	/** c4d: whether dispose() also disposes the loader (only when a construction boundary created it). */
+	private readonly _ownsResourceLoader: boolean;
 	private _customTools: ToolDefinition[];
 	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
 	private _cwd: string;
@@ -573,8 +589,12 @@ export class AgentSession {
 	private _skillPathsWindowDirty = false;
 	/** Set on any model-assignment path, `activateSkill`, a persisting fork delivery, or a branch-leaf change; consumed by the `_promptInScope` rebuild boundary. */
 	private _skillListingBudgetDirty = false;
-	/** Set by `applySkillVisibilityChange` (c4c): the listing content itself changed, so the next rebuild is not gated by `visibleCount > 0` (a change may hide the last visible skill). */
+	/** Set by `applySkillVisibilityChange` (c4c) and the c4d watcher/nested refresh reaction: the listing content itself changed, so the next rebuild is not gated by `visibleCount > 0` (a change may hide the last visible skill). */
 	private _skillListingContentDirty = false;
+	/** c4d: unsubscribe for the loader change reaction registered at construction. */
+	private _unsubscribeResourceChanges?: () => void;
+	/** c4d: last-emitted aggregated collision diagnostic content; shared baseline for the deduped watcher path and the unconditional /reload re-emit. */
+	private _lastEmittedCollisionDiagnostic?: string;
 	/** Whether the most recently rebuilt listing hit the A.6 skeleton floor; used to deliver the overflow diagnostic once per continuous episode and re-arm on recovery. */
 	private _skillListingSkeletonOverflowing = false;
 	/** A.6 per-skill visibility (c4c): the shared, settings-derived resolved-visibility map, refreshed at every prompt rebuild; the model-facing gates (listing, `skill` tool), the user-facing registry, and the `/skills` view all consume this one map so they cannot drift. */
@@ -601,6 +621,7 @@ export class AgentSession {
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
+		this._ownsResourceLoader = config.ownsResourceLoader ?? false;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._agentDir = config.agentDir;
@@ -692,10 +713,52 @@ export class AgentSession {
 		// registration so `_getModelVisibleSkills()` (and thus the `skill`
 		// tool's conditional registration) already respects persisted states.
 		this._refreshSkillVisibilitySnapshot();
+		// c4d: react to watcher/nested-driven resource changes (registration replays
+		// any degraded watcher-health synchronously). A direct callback, not a
+		// `skills:changed` bus subscription: the A.9 seam carries skills only, and
+		// loader-initiated publishes (initial load, /reload) must not echo here.
+		this._unsubscribeResourceChanges = this._resourceLoader.onResourceChange?.((event) =>
+			this._onLoaderResourceChange(event),
+		);
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
 		});
+	}
+
+	/**
+	 * c4d change reaction to the loader's light refresh (watcher / nested discovery):
+	 * the c4c coalescing transaction owns the listing rebuild, the `skill` tool
+	 * registration crosses zero here, and the aggregated collision diagnostic
+	 * re-emits only when its content changed (A.6's unconditional re-emit on this
+	 * path would spam identical warnings per save). Never throws into the loader's
+	 * fs/timer callback.
+	 */
+	private _onLoaderResourceChange(event: ResourceLoaderChangeEvent): void {
+		try {
+			if (event.kind === "watcher-health") {
+				if (event.health !== undefined) {
+					this._deliverSkillListingDiagnostics([event.health]);
+				}
+				return;
+			}
+			if (event.kind === "diagnostic") {
+				this._deliverSkillListingDiagnostics([event.diagnostic]);
+				return;
+			}
+			this._skillListingContentDirty = true;
+			this._refreshSkillToolRegistration();
+			const collision = this.getCommandCollisionDiagnostic();
+			if (collision?.message !== this._lastEmittedCollisionDiagnostic) {
+				this._lastEmittedCollisionDiagnostic = collision?.message;
+				if (collision) {
+					this._deliverSkillListingDiagnostics([collision]);
+				}
+			}
+			this._emit({ type: "resources_changed" });
+		} catch {
+			// The reaction must never throw into the loader's watcher callback.
+		}
 	}
 
 	get modelRuntime(): ModelRuntime {
@@ -783,9 +846,9 @@ export class AgentSession {
 	 * converted by the agent loop into an `isError` result, which would report an
 	 * already-applied edit/write as failed and invite a duplicate retry.
 	 */
-	private _recordSkillPathTouches(toolName: string, args: unknown): void {
+	private _recordSkillPathTouches(args: unknown): void {
 		try {
-			const touchedPath = skillPathTouchFromToolCall(toolName, args);
+			const touchedPath = skillPathTouchFromToolCall(args, this._cwd);
 			if (touchedPath === undefined) {
 				return;
 			}
@@ -798,6 +861,10 @@ export class AgentSession {
 				this._skillPathsWindow.shift();
 			}
 			this._skillPathsWindowDirty = true;
+			// A.6 nested/monorepo discovery (c4d): a touched file under an unscanned
+			// nested .pi/skills or .agents/skills root registers it mid-session.
+			// Best-effort like the boost window: the loader stages and contains failures.
+			this._resourceLoader.discoverNestedSkillRoots?.(touchedPath);
 		} catch {
 			// Best-effort: a bad skillPathsWindow setting must not fail the tool call.
 		}
@@ -899,7 +966,7 @@ export class AgentSession {
 				(result.details as SkillToolResultDetails | undefined)?.forkError === true;
 			const effectiveIsError = isError || forkError;
 			if (!effectiveIsError) {
-				this._recordSkillPathTouches(toolCall.name, args);
+				this._recordSkillPathTouches(args);
 			}
 
 			let hookResult: Awaited<ReturnType<typeof runner.emitToolResult>> | undefined;
@@ -1422,10 +1489,17 @@ export class AgentSession {
 		);
 		this._disconnectFromAgent();
 		this._unregisterSkillSpawnComposer();
+		this._unsubscribeResourceChanges?.();
+		this._unsubscribeResourceChanges = undefined;
 		this._skillRuntime.dispose();
 		this._skillForkClient.dispose();
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
+		// c4d: only a loader this session's construction boundary created is disposed here;
+		// injected or runtime-shared loaders stay caller-owned.
+		if (this._ownsResourceLoader) {
+			this._resourceLoader.dispose?.();
+		}
 	}
 
 	// =========================================================================
@@ -1938,6 +2012,12 @@ export class AgentSession {
 				if (forkResult.delivery) {
 					messages.push(...forkResult.delivery.messages);
 					promptText = forkResult.delivery.textForm;
+					if (prepared.nestedVariants !== undefined && prepared.nestedVariants.length > 0) {
+						// A.1 (c4d): the bare name collided with a nested root; append the variant note.
+						const note = formatNestedVariantsNote(prepared.skill.name, prepared.nestedVariants);
+						messages.push(this._literalUserMessage(note));
+						promptText = `${promptText}\n\n${note}`;
+					}
 				} else {
 					// Render failed (diagnostic already emitted): send the literal text.
 					messages.push(this._literalUserMessage(currentText, currentImages));
@@ -3106,6 +3186,14 @@ export class AgentSession {
 								this._literalUserMessage(queued.originalText, queued.images),
 							]),
 						);
+						if (prepared.nestedVariants !== undefined && prepared.nestedVariants.length > 0) {
+							// A.1 (c4d): the bare name collided with a nested root; append the variant note.
+							delivered.push(
+								this._literalUserMessage(
+									formatNestedVariantsNote(prepared.skill.name, prepared.nestedVariants),
+								),
+							);
+						}
 					}
 				} else {
 					// Mid-prompt / mixed / command: composed at consumption time.
@@ -4431,6 +4519,15 @@ export class AgentSession {
 			await options?.beforeSessionStart?.();
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
+		}
+
+		// A.6 "both re-emit": /reload re-emits the aggregated collision diagnostic
+		// unconditionally; the watcher/nested path dedups against this shared baseline,
+		// so a /reload immediately followed by a no-op watcher refresh never double-emits.
+		const collisionDiagnostic = this.getCommandCollisionDiagnostic();
+		this._lastEmittedCollisionDiagnostic = collisionDiagnostic?.message;
+		if (collisionDiagnostic) {
+			this._deliverSkillListingDiagnostics([collisionDiagnostic]);
 		}
 	}
 

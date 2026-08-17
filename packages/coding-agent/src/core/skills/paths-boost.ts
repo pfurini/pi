@@ -1,4 +1,5 @@
-import { isAbsolute, relative } from "node:path";
+import { statSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import { minimatch } from "minimatch";
 import type { LoadedSkill } from "./frontmatter.ts";
 
@@ -55,16 +56,30 @@ function patternsMatchTouched(patterns: string[], touched: readonly NormalizedTo
 	return false;
 }
 
-/** Return the file path a successful tool call touched, or undefined for non-file-touch tools. */
-export function skillPathTouchFromToolCall(toolName: string, args: unknown): string | undefined {
-	if (toolName !== "read" && toolName !== "edit" && toolName !== "write") {
-		return undefined;
-	}
+/**
+ * Return the absolute file path a successful tool call touched, or undefined when the call
+ * did not authoritatively touch exactly one existing file. Name-agnostic (c4d): any tool
+ * whose `path` argument — resolved against the session cwd — points at an existing regular
+ * file qualifies (the built-in read/edit/write, override setups' `replace`, and Hypa/lens
+ * single-file readers alike); directory and multi-file scanners (`grep`, `ast_grep`,
+ * listings) return nothing because their `path` is a directory or absent. Not pure (it
+ * stats the filesystem) but side-effect-free and never throws: it runs inside the wrapped
+ * `_recordSkillPathTouches`.
+ */
+export function skillPathTouchFromToolCall(args: unknown, cwd: string): string | undefined {
 	if (typeof args !== "object" || args === null) {
 		return undefined;
 	}
 	const path = (args as Record<string, unknown>).path;
-	return typeof path === "string" ? path : undefined;
+	if (typeof path !== "string" || path.length === 0) {
+		return undefined;
+	}
+	try {
+		const resolved = isAbsolute(path) ? resolve(path) : resolve(cwd, path);
+		return statSync(resolved).isFile() ? resolved : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**

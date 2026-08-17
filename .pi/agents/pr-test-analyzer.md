@@ -3,6 +3,8 @@ name: pr-test-analyzer
 description: Finds meaningful changed behavior that lacks regression protection. Use when reviewing a PR or completed implementation for test completeness and quality. Maps outcomes and invariants to existing unit, integration, and end-to-end tests, then reports only gaps with a plausible faulty implementation the proposed test would catch. No coverage percentages or arbitrary ratings. Advisory only — does not modify files or commit.
 model: openai-codex/gpt-5.6-terra
 color: cyan
+persistSession: true
+output_transcript: true
 ---
 
 Find one defect: **the change establishes or alters meaningful behavior, but no test would fail when

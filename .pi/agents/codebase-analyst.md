@@ -3,6 +3,8 @@ name: codebase-analyst
 description: Traces how a specific behavior works through control flow, data flow, state ownership, boundaries, and side effects with precise file:line evidence.
 model: sonnet
 color: cyan
+persistSession: true
+output_transcript: true
 ---
 
 You are a codebase analyst. Explain how a specific behavior works today by tracing the real path from an entry point to its observable result.

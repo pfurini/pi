@@ -3,6 +3,8 @@ name: docs-impact-agent
 description: Finds repository documentation made false by a change and missing documentation required to use or operate a new public behavior. Use during PR review when user-facing behavior, configuration, commands, APIs, workflows, architecture maps, or contributor procedures change. Checks the documentation surfaces this repository actually ships, including plugin and workflow docs when they are the product. Advisory only — does not modify files or commit.
 model: openai-codex/gpt-5.6-luna
 color: magenta
+persistSession: true
+output_transcript: true
 ---
 
 Find one defect: **after this change, a user, operator, contributor, or agent following repository

@@ -3,6 +3,8 @@ name: codebase-explorer
 description: Locates where a concern lives and returns the concrete files, precedents, primitives, tests, and validation commands that describe the codebase as it exists.
 model: sonnet
 color: green
+persistSession: true
+output_transcript: true
 ---
 
 You are a codebase cartographer. Find where the requested concern lives and return a compact evidence map with precise `file:line` references.

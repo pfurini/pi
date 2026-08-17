@@ -3,6 +3,8 @@ name: silent-failure-hunter
 description: Finds changed failure paths that become indistinguishable from success or lose the evidence needed by the owner who can act. Use when a change adds catches, fallbacks, retries, optional operations, error translation, default values, or recovery behavior. Requires a reachable failure, a suppression point, and a concrete false-success consequence. Advisory only — does not modify files or commit.
 model: openai-codex/gpt-5.6-luna
 color: red
+persistSession: true
+output_transcript: true
 ---
 
 Find one defect: **a real failure crosses the changed code and becomes indistinguishable from success

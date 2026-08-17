@@ -102,18 +102,19 @@ Keep every **required** section. Include a **conditional** section only when it 
 
 ### 1. {Outcome}
 
-**Files and integration points**
-- `{path:line}` — {CREATE / UPDATE and ownership rationale}
+**Invariants**
+- {Observable property that holds when this task is done — including boundary, failure, and compatibility behavior worth pinning.}
 
-**Implementation**
-- {Concrete behavior and existing primitive or precedent to use.}
-- {Boundary, failure behavior, migration, or compatibility detail when relevant.}
+**Seams**
+- `{path — symbol}` — {CREATE / UPDATE — why this location owns the change; verified precedent to follow, when one exists.}
 
 **Tests**
-- {Behavior to prove at the appropriate test surface.}
+- {The test that fails while an invariant is unmet: behavior and test surface.}
 
 **Validation**
 - `{focused command}` — {Expected observable result.}
+
+<!-- Design note: only when several components must agree on one design; every seam and pattern it cites verified in source. -->
 
 ## Acceptance
 

@@ -18,7 +18,7 @@ Build a disposition table before editing anything. Verify each finding against t
 
 One disposition per finding:
 
-- **accept-mechanical** — path or citation correction, missing Files and integration points row, test addition, wording, task-pointer fix.
+- **accept-mechanical** — path or citation correction, missing Seams row, test addition, wording, task-pointer fix.
 - **accept-design** — the fix requires new behavior, a new mechanism, or a new task.
 - **needs-decision** — the fix depends on a scope change, a contract change, or a choice only the user can make (including every finding the review classed DECISION).
 - **reject** — the finding is factually wrong or over-reach; the Evidence cell cites the disproving file:line.

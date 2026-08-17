@@ -163,7 +163,7 @@ Use `references/visuals.md` when either applies:
 
 When existing users, behavior, or stored data can be affected, include one compact Delivery Considerations section covering only what applies: discoverability, compatibility, rollout, migration, observability, reversibility, documentation, or communication.
 
-Tasks describe outcomes in dependency order. Each task identifies its files and integration points, applicable precedent, implementation detail, tests, and focused validation. Acceptance criteria state the observable completed behavior once, and the validation gates prove those criteria. Use commands verified from this repository, not a generic language catalog. Verify each command against the project and the host before saving the plan: the script or tool exists here, the working directory is stated when the command is directory-sensitive, and required network access is flagged. Manual validation steps name exact commands, environment variables, and flags confirmed to exist — a paraphrase of how launching "should" work fails at implementation time.
+Tasks describe outcomes in dependency order. Each task pins its invariants, verified seams with the closest precedent, falsifying tests, and focused validation — mechanism internals only as a design note when several components must agree, per `references/task-format.md`. Acceptance criteria state the observable completed behavior once, and the validation gates prove those criteria. Use commands verified from this repository, not a generic language catalog. Verify each command against the project and the host before saving the plan: the script or tool exists here, the working directory is stated when the command is directory-sensitive, and required network access is flagged. Manual validation steps name exact commands, environment variables, and flags confirmed to exist — a paraphrase of how launching "should" work fails at implementation time.
 
 The plan must make incomplete work unacceptable: every requested outcome is covered, and every validation has an owner. If something cannot be completed in this implementation, resolve the scope with the user before presenting the plan as ready.
 
@@ -178,6 +178,8 @@ Before reporting completion, verify:
 - the approach is supported by codebase evidence and any relevant spike or research;
 - bug-fix plans state the proven causal chain, fix boundary, and regression proof, or clearly surface the evidence still missing;
 - tasks cover the full agreed scope and can execute top-to-bottom;
+- tasks stay at altitude — invariants, verified seams, falsifying tests; mechanism prose appears only in design notes that earn it;
+- the plan reads as a decision record, not a specification: its length is proportionate to the decisions it settles;
 - acceptance criteria cover the observable completed outcome without duplicating a completion checklist;
 - decisive references use real paths and line numbers;
 - tests prove behavior rather than implementation trivia;

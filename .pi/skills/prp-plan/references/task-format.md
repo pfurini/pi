@@ -1,30 +1,34 @@
 # Implementation Task Format
 
-Write tasks as executable outcomes, not a file inventory. Size each task as the smallest coherent change that can be validated without leaving the system in a knowingly broken intermediate state.
+Write tasks as executable outcomes, not a file inventory or a mechanism script. Size each task as the smallest coherent change that can be validated without leaving the system in a knowingly broken intermediate state.
 
-A task pins what must hold — the invariant, the seam to touch (verified symbol plus `file:line`; symbol names survive line drift), and the falsifying test — not a prose script of the mechanism. Mechanism internals written in plan prose are unverified code that reviews must attack and that drifts stale; the implementer designs the mechanism against real code with the compiler and test suite the plan does not have. Reserve mechanism internals for designs several components must agree on, and verify every seam and pattern such a design cites in source first.
+## Altitude
+
+A task pins WHAT must hold — invariants, the seams to touch, and the falsifying tests — never HOW to build the mechanism. The implementer designs the mechanism against real code with the compiler and test suite the plan does not have; mechanism prose in a plan is unverified code that reviews must attack, that drifts stale, and that implementation regularly overturns. Implementation reports' Deviations sections keep the score: a plan whose mechanisms get overturned there was written too low.
+
+One case earns a **Design note**: several components must agree on one design before any of them can be built. Then verify in source every seam and pattern the note cites before writing it.
 
 ## Required content
 
 ```markdown
 ### N. <Outcome>
 
-**Files and integration points**
-- `path/file.ext:line` — CREATE / UPDATE — why this location owns the change
+**Invariants**
+- Observable properties that hold when this task is done — including the boundary,
+  failure, and compatibility behavior worth pinning.
 
-**Implementation**
-- Concrete behavior, contract, state transition, or data flow to add or change.
-- Existing primitive or pattern to reuse, with `file:line` evidence.
-- Important boundary, failure behavior, or compatibility constraint.
+**Seams**
+- `path/file.ext — symbol` — CREATE / UPDATE — why this location owns the change;
+  the verified precedent to follow, when one exists.
 
 **Tests**
-- Behavior to prove and the appropriate test surface.
+- The test that fails while an invariant is unmet: the behavior and its test surface.
 
 **Validation**
 - `<focused command>` — expected observable result.
 ```
 
-Use only fields that carry information. Add imports, types, schemas, migrations, or gotchas when they are load-bearing; do not repeat details an implementation agent can read directly from the cited file.
+Add a **Design note** only under the rule above. Add imports, types, schemas, migrations, or gotchas only when they are load-bearing evidence from research; do not repeat what the implementer can read from the cited file, and do not script branch logic, lifecycles, helper bodies, or test internals.
 
 ## Ordering and sizing
 
@@ -37,6 +41,7 @@ Use only fields that carry information. Add imports, types, schemas, migrations,
 
 ## Avoid
 
+- Mechanism prose: pseudo-code, scripted lifecycles, exact helper bodies, channel designs, or test internals the implementer will re-derive against real source.
 - Status markers that no workflow maintains.
 - “Mirror exactly” when the precedent contains a known poor convention.
 - Generic edge-case checklists unrelated to the feature.

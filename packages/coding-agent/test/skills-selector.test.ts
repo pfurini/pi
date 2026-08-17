@@ -104,6 +104,25 @@ describe("SkillsSelectorComponent", () => {
 		expect(render(component)).toContain("user-invocable-only");
 	});
 
+	it("reverts the optimistic state when the host reports a failed persist", () => {
+		const onChange = vi.fn();
+		const component = new SkillsSelectorComponent(
+			{ rows: [makeRow({ name: "deploy", state: "on" })], initialScope: "global" },
+			{ onChange, onCancel: () => {} },
+		);
+		// Optimistic cycle shows "name-only" before the host resolves.
+		component.handleInput(CYCLE);
+		expect(render(component)).toContain("model: name");
+		// Host persist failed: it never calls updateRows, only revertPending.
+		component.revertPending("/skills/deploy/SKILL.md");
+		const text = render(component);
+		expect(text).not.toContain("name-only");
+		expect(text).toContain("model: full");
+		// A subsequent cycle derives from the committed "on", not the reverted pending.
+		component.handleInput(CYCLE);
+		expect(onChange).toHaveBeenLastCalledWith("/skills/deploy/SKILL.md", "name-only", "global");
+	});
+
 	it("typing s or g narrows the filter instead of sorting or toggling scope", () => {
 		const onChange = vi.fn();
 		const component = new SkillsSelectorComponent(

@@ -4975,6 +4975,7 @@ export class InteractiveMode {
 									selector.updateRows(this.session.getSkillsManagementView());
 								} else {
 									selector.setStatus(`could not apply: ${result.error}`, "warning");
+									selector.revertPending(id);
 								}
 								this.ui.requestRender();
 							})
@@ -4983,6 +4984,7 @@ export class InteractiveMode {
 									`could not apply: ${error instanceof Error ? error.message : String(error)}`,
 									"warning",
 								);
+								selector.revertPending(id);
 								this.ui.requestRender();
 							});
 					},

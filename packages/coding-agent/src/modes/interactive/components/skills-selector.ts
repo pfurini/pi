@@ -135,6 +135,13 @@ export class SkillsSelectorComponent extends Container implements Focusable {
 		}
 	}
 
+	/** Discard a still-in-flight optimistic state whose persist failed, reverting the row to its committed state. */
+	revertPending(id: string): void {
+		if (this.pending.delete(id)) {
+			this.updateList();
+		}
+	}
+
 	/** Surface a host-side outcome (e.g. a failed persist/rebuild). */
 	setStatus(message: string, kind: "muted" | "success" | "warning" = "muted"): void {
 		this.statusText.setText(message === "" ? "" : theme.fg(kind, `  ${message}`));

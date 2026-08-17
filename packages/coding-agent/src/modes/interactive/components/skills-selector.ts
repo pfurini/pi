@@ -11,7 +11,12 @@ import {
 } from "@earendil-works/pi-tui";
 import type { SkillManagementRow } from "../../../core/agent-session.ts";
 import type { SettingsScope } from "../../../core/settings-manager.ts";
-import { SKILL_VISIBILITY_STATES, type SkillVisibilityState } from "../../../core/skills/visibility.ts";
+import {
+	type ResolvedSkillVisibility,
+	resolveSkillVisibility,
+	SKILL_VISIBILITY_STATES,
+	type SkillVisibilityState,
+} from "../../../core/skills/visibility.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyText } from "./keybinding-hints.ts";
@@ -41,14 +46,19 @@ function scopeBadge(scope: SettingsScope | undefined): string {
 /**
  * `/skills` management overlay (c4c): lists every loaded skill with its
  * estimated listing cost, effective A.6 visibility, and the scope its
- * persisted state comes from. Space cycles the four states; `s` toggles
- * cost sort; `g` toggles the persist scope. Changes apply per keystroke
- * through `onChange` (the host owns persistence); cancel leaves persisted
- * state intact.
+ * persisted state comes from. The configurable `app.skills.*` actions cycle
+ * the four states, toggle cost sort, and toggle the persist scope (all
+ * modified keys, so the text filter can receive every character); changes
+ * apply through `onChange` (the host owns persistence). A cycle derives its
+ * next state from an optimistic pending state, not the last committed row, so
+ * two quick presses advance two steps instead of repeating one while the
+ * async persist is in flight; cancel leaves persisted state intact.
  */
 export class SkillsSelectorComponent extends Container implements Focusable {
 	private rows: SkillManagementRow[];
 	private filteredRows: SkillManagementRow[] = [];
+	/** Optimistic per-skill states requested since the last host reconcile, so a rapid re-cycle advances from the requested state rather than a stale committed row. */
+	private pending: Map<string, SkillVisibilityState> = new Map();
 	private selectedIndex = 0;
 	private sortByCost = false;
 	private scope: SettingsScope;
@@ -111,6 +121,12 @@ export class SkillsSelectorComponent extends Container implements Focusable {
 	updateRows(rows: SkillManagementRow[]): void {
 		const selectedId = this.filteredRows[this.selectedIndex]?.id;
 		this.rows = [...rows];
+		// Drop optimistic states the host has now reconciled; keep any still in flight.
+		for (const row of this.rows) {
+			if (this.pending.get(row.id) === row.state) {
+				this.pending.delete(row.id);
+			}
+		}
 		this.refresh();
 		const refreshedIndex = selectedId ? this.filteredRows.findIndex((row) => row.id === selectedId) : -1;
 		if (refreshedIndex >= 0) {
@@ -154,11 +170,26 @@ export class SkillsSelectorComponent extends Container implements Focusable {
 		this.footerText.setText(this.getFooterText());
 	}
 
+	/** Display state and effective visibility, reflecting an optimistic pending cycle until the host reconciles it. */
+	private displayState(row: SkillManagementRow): SkillVisibilityState {
+		return this.pending.get(row.id) ?? row.state;
+	}
+	private displayEffective(row: SkillManagementRow): ResolvedSkillVisibility {
+		const pendingState = this.pending.get(row.id);
+		return pendingState === undefined
+			? row.effective
+			: resolveSkillVisibility(
+					{ disableModelInvocation: row.disableModelInvocation, userInvocable: row.userInvocable },
+					pendingState,
+				);
+	}
+
 	private renderRow(row: SkillManagementRow, isSelected: boolean): string {
 		const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
 		const name = isSelected ? theme.fg("accent", row.listingName) : row.listingName;
-		const stateColor = row.state === "off" ? "error" : row.state === "on" ? "success" : "warning";
-		const state = theme.fg(stateColor, ` ${row.state}`);
+		const displayState = this.displayState(row);
+		const stateColor = displayState === "off" ? "error" : displayState === "on" ? "success" : "warning";
+		const state = theme.fg(stateColor, ` ${displayState}`);
 		const scope = theme.fg("muted", ` (${scopeBadge(row.stateScope)})`);
 		const cost = theme.fg("muted", ` ~${row.estimatedCost} cu`);
 		const invalid = row.malformed ? theme.fg("error", " ⚠ invalid") : "";
@@ -197,19 +228,12 @@ export class SkillsSelectorComponent extends Container implements Focusable {
 
 		const selected = this.filteredRows[this.selectedIndex];
 		if (selected) {
+			const effective = this.displayEffective(selected);
+			const detail = `  ${selected.location} · model: ${effective.model} · user: ${effective.user}${
+				effective.userInvokeError ? " (invocation errors)" : ""
+			}`;
 			this.listContainer.addChild(new Spacer(1));
-			this.listContainer.addChild(
-				new Text(
-					theme.fg(
-						"muted",
-						`  ${selected.location} · model: ${selected.effective.model} · user: ${selected.effective.user}${
-							selected.effective.userInvokeError ? " (invocation errors)" : ""
-						}`,
-					),
-					0,
-					0,
-				),
-			);
+			this.listContainer.addChild(new Text(theme.fg("muted", detail), 0, 0));
 		}
 	}
 
@@ -235,7 +259,13 @@ export class SkillsSelectorComponent extends Container implements Focusable {
 			if (!hasSelection) return;
 			const row = this.filteredRows[this.selectedIndex];
 			if (row) {
-				this.callbacks.onChange(row.id, nextState(row.state), this.scope);
+				// Derive from the optimistic pending state, not the committed row,
+				// so a second press before the host reconciles advances one more
+				// step instead of repeating the same transition.
+				const next = nextState(this.pending.get(row.id) ?? row.state);
+				this.pending.set(row.id, next);
+				this.updateList();
+				this.callbacks.onChange(row.id, next, this.scope);
 			}
 			return;
 		}

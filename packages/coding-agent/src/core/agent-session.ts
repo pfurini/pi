@@ -167,6 +167,7 @@ import {
 } from "./skills/skill-tool.ts";
 import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
 import {
+	defaultSkillVisibility,
 	type ResolvedSkillVisibility,
 	resolveSkillVisibility,
 	type SkillVisibilityState,
@@ -576,10 +577,8 @@ export class AgentSession {
 	private _skillListingContentDirty = false;
 	/** Whether the most recently rebuilt listing hit the A.6 skeleton floor; used to deliver the overflow diagnostic once per continuous episode and re-arm on recovery. */
 	private _skillListingSkeletonOverflowing = false;
-	/** A.6 per-skill visibility (c4c): the shared settings-derived state map, refreshed at every prompt rebuild; both model-facing gates and the user-facing registry consume it so they cannot drift. */
-	private _skillVisibilityStates: ReadonlyMap<string, SkillVisibilityState> = new Map();
-	/** Model-facing projection of `_skillVisibilityStates` (A.6 truth table), consumed by the listing and `_getModelVisibleSkills`. */
-	private _skillModelVisibility: ReadonlyMap<string, "full" | "name" | "no"> = new Map();
+	/** A.6 per-skill visibility (c4c): the shared, settings-derived resolved-visibility map, refreshed at every prompt rebuild; the model-facing gates (listing, `skill` tool), the user-facing registry, and the `/skills` view all consume this one map so they cannot drift. */
+	private _skillVisibility: ReadonlyMap<string, ResolvedSkillVisibility> = new Map();
 	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
 	/** A.6 compaction carry-forward (c4b): the currently re-attached skills' `{args, body}`, keyed by `skillId`. Ephemeral — recomputed on every rebuild, never persisted. Consulted by dedup to treat a carried-forward body as "still present". */
@@ -1676,7 +1675,7 @@ export class AgentSession {
 				invocationCounts: computeSkillInvocationCounts(this.sessionManager.getBranch()),
 				diagnostics: listingDiagnostics,
 			},
-			skillModelVisibility: this._skillModelVisibility,
+			skillVisibility: this._skillVisibility,
 		};
 		const preSkeletonCount = listingDiagnostics.length;
 		const prompt = buildSystemPrompt(this._baseSystemPromptOptions);
@@ -2118,7 +2117,7 @@ export class AgentSession {
 			commands: this._getLoadedCommands(),
 			skills,
 			enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
-			skillVisibility: this._skillVisibilityStates,
+			skillVisibility: this._skillVisibility,
 		});
 	}
 
@@ -2174,22 +2173,19 @@ export class AgentSession {
 	 * diagnostic per key/scope (drained at the next prompt rebuild).
 	 */
 	private _refreshSkillVisibilitySnapshot(): void {
-		const states = new Map<string, SkillVisibilityState>();
-		const model = new Map<string, "full" | "name" | "no">();
+		const resolved = new Map<string, ResolvedSkillVisibility>();
 		for (const input of this._resourceLoader.getSkills().skills) {
 			const skill = normalizeSkillInput(input).skill;
 			const state = this.settingsManager.getSkillVisibilityState(skill.id);
-			states.set(skill.id, state);
-			model.set(
+			resolved.set(
 				skill.id,
 				resolveSkillVisibility(
 					{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
 					state,
-				).model,
+				),
 			);
 		}
-		this._skillVisibilityStates = states;
-		this._skillModelVisibility = model;
+		this._skillVisibility = resolved;
 	}
 
 	/** Loaded skills visible to the model (A.1/A.6: `model === "no"` excludes — frontmatter `disable-model-invocation` or a visibility state). */
@@ -2197,7 +2193,16 @@ export class AgentSession {
 		return this.resourceLoader
 			.getSkills()
 			.skills.map((s) => normalizeSkillInput(s).skill)
-			.filter((s) => (this._skillModelVisibility.get(s.id) ?? (s.disableModelInvocation ? "no" : "full")) !== "no");
+			.filter(
+				(s) =>
+					(
+						this._skillVisibility.get(s.id) ??
+						defaultSkillVisibility({
+							disableModelInvocation: s.disableModelInvocation,
+							userInvocable: s.userInvocable,
+						})
+					).model !== "no",
+			);
 	}
 
 	/**

@@ -76,9 +76,10 @@ deletion can never silently re-grant (or transfer) a restriction.
 Open **`/skills`** to manage this interactively. The overlay lists every
 loaded skill with its estimated listing cost (the same `est` measure the
 budget engine uses), its effective visibility, and the scope its state comes
-from. `Space` cycles the four states, `s` toggles sorting by cost, `g` toggles
-whether changes persist to global or project settings, and typing filters the
-list. A malformed persisted value falls back to `on`, shows an invalid-value
+from. The `app.skills.*` actions cycle the four states, toggle sorting by cost,
+and toggle whether changes persist to global or project settings (all
+configurable modified keys, so typing filters the list unambiguously). A
+malformed persisted value falls back to `on`, shows an invalid-value
 indicator, and produces one settings warning. Changes apply to the next
 request across every surface — listing, `skill` tool, and `/name` — without a
 `/reload`.

@@ -11,6 +11,7 @@ import {
 	SKILL_LISTING_VERSION,
 } from "./listing-budget.ts";
 import { boostSkillsByPaths, byListingName } from "./paths-boost.ts";
+import { defaultSkillVisibility, type ResolvedSkillVisibility } from "./visibility.ts";
 
 export { escapeXml, SKILL_LISTING_END_DELIMITER, SKILL_LISTING_START_DELIMITER, SKILL_LISTING_VERSION };
 
@@ -38,11 +39,13 @@ export function formatSkillsForPrompt(
 		invocationCounts: ReadonlyMap<string, number>;
 		diagnostics?: ResourceDiagnostic[];
 	},
-	visibility?: ReadonlyMap<string, "full" | "name" | "no">,
+	visibility?: ReadonlyMap<string, ResolvedSkillVisibility>,
 ): string {
+	const modelOf = (skill: LoadedSkill): "full" | "name" | "no" =>
+		(visibility?.get(skill.id) ?? defaultSkillVisibility(skill)).model;
 	const visibleSkills = skills
 		.map((skill) => normalizeSkillInput(skill).skill)
-		.filter((skill) => (visibility?.get(skill.id) ?? (skill.disableModelInvocation ? "no" : "full")) !== "no");
+		.filter((skill) => modelOf(skill) !== "no");
 
 	if (visibleSkills.length === 0) {
 		return "";
@@ -67,7 +70,7 @@ export function formatSkillsForPrompt(
 		location: skill.filePath,
 		isExempt: exemptIds.has(skill.id),
 		invocationCount: budget?.invocationCounts.get(skill.id) ?? 0,
-		forceNameOnly: visibility?.get(skill.id) === "name",
+		forceNameOnly: modelOf(skill) === "name",
 	}));
 
 	const { block, diagnostics } = buildBudgetedListingBlock(entries, budget?.budgetCodeUnits);

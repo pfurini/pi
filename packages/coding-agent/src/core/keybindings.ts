@@ -180,15 +180,17 @@ export const KEYBINDINGS = {
 		description: "Move model down in order",
 	},
 	"app.skills.cycle": {
-		defaultKeys: "space",
+		// Modified keys (not bare space/letters) so the overlay's text filter
+		// can receive every character; matched before delegating to the input.
+		defaultKeys: "ctrl+s",
 		description: "Cycle skill visibility state",
 	},
 	"app.skills.sort": {
-		defaultKeys: "s",
+		defaultKeys: "ctrl+t",
 		description: "Sort skills by listing cost",
 	},
 	"app.skills.scope": {
-		defaultKeys: "g",
+		defaultKeys: "ctrl+g",
 		description: "Toggle skill visibility scope (global/project)",
 	},
 	"app.tree.filter.default": {

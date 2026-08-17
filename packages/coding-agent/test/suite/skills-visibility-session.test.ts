@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { extractSkillListingBlock, formatSkillsForPrompt } from "../../src/core/skills/listing.ts";
-import type { SkillVisibilityState } from "../../src/core/skills/visibility.ts";
+import { resolveSkillVisibility, type SkillVisibilityState } from "../../src/core/skills/visibility.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
 import { canonicalizePath } from "../../src/utils/paths.ts";
@@ -265,7 +265,18 @@ describe("AC1: A.6 truth table across all four surfaces", () => {
 					"read",
 					undefined,
 					undefined,
-					new Map([[fixtureId(tempDir, probe), row.model]]),
+					new Map([
+						[
+							fixtureId(tempDir, probe),
+							resolveSkillVisibility(
+								{
+									disableModelInvocation: row.disableModelInvocation ?? false,
+									userInvocable: row.userInvocable ?? true,
+								},
+								row.state,
+							),
+						],
+					]),
 				),
 			);
 			expect(readBlock).toBe(extractSkillListingBlock(harness.session.systemPrompt));
@@ -522,6 +533,36 @@ describe("AC7: prospective-only + transitions + scope precedence", () => {
 		await harness.session.prompt("hi again");
 		expect(listingModel(harness.session.systemPrompt, "probe")).toBe("no");
 		expect(JSON.stringify(harness.session.sessionManager.getBranch())).not.toContain("<name>probe</name>");
+	});
+
+	it("setting off preserves a carry-forward record established before the transition", async () => {
+		const tempDir = makeTempDir();
+		const harness = await createVisibilityHarness(tempDir, [PROBE, ANCHOR], {
+			settings: { compaction: { keepRecentTokens: 0 } },
+		});
+		harness.setResponses([fauxAssistantMessage("ok")]);
+		await harness.session.prompt("/probe");
+		expect(allMessageText(harness)).toContain("probe body");
+
+		// Compact while probe is still on, so a carry-forward record (the
+		// re-attached inline body) exists BEFORE the visibility change.
+		harness.setResponses([fauxAssistantMessage("compacted summary")]);
+		await harness.session.compact();
+		expect(allMessageText(harness)).toContain("probe body");
+		const carriedMessages = allMessageText(harness);
+
+		// Hiding it is prospective-only: the already-carried body is untouched,
+		// independently of the delivered-history assertion above.
+		await applyVisibility(harness, tempDir, PROBE, "off");
+		expect(allMessageText(harness)).toBe(carriedMessages);
+		expect(allMessageText(harness)).toContain("probe body");
+
+		// The next request's model-facing listing is still gated even though the
+		// carried body remains.
+		harness.setResponses([fauxAssistantMessage("ok")]);
+		await harness.session.prompt("hi again");
+		expect(listingModel(harness.session.systemPrompt, "probe")).toBe("no");
+		expect(allMessageText(harness)).toContain("probe body");
 	});
 
 	it("off → on → /name invokes normally (no stale disabled state)", async () => {

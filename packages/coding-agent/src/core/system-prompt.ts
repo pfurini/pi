@@ -4,6 +4,7 @@
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
+import type { ResolvedSkillVisibility } from "./skills/visibility.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -31,8 +32,8 @@ export interface BuildSystemPromptOptions {
 		invocationCounts: ReadonlyMap<string, number>;
 		diagnostics?: ResourceDiagnostic[];
 	};
-	/** A.6 per-skill model-facing visibility (c4c), keyed by canonical skill ID; absent entries fall back to frontmatter. */
-	skillModelVisibility?: ReadonlyMap<string, "full" | "name" | "no">;
+	/** A.6 per-skill effective visibility (c4c), keyed by canonical skill ID; absent entries fall back to frontmatter. */
+	skillVisibility?: ReadonlyMap<string, ResolvedSkillVisibility>;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -48,7 +49,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		skills: providedSkills,
 		skillPathsBoost,
 		skillListingBudget,
-		skillModelVisibility,
+		skillVisibility,
 	} = options;
 	const promptCwd = cwd.replace(/\\/g, "/");
 
@@ -84,7 +85,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 				customPromptHasSkillTool ? "tool" : "read",
 				skillPathsBoost,
 				skillListingBudget,
-				skillModelVisibility,
+				skillVisibility,
 			);
 		}
 		prompt += `\nCurrent working directory: ${promptCwd}`;
@@ -181,7 +182,7 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 			hasSkillTool ? "tool" : "read",
 			skillPathsBoost,
 			skillListingBudget,
-			skillModelVisibility,
+			skillVisibility,
 		);
 	}
 	prompt += `\nCurrent working directory: ${promptCwd}`;

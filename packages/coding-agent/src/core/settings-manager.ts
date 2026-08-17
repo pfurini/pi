@@ -670,6 +670,16 @@ export class SettingsManager {
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
 
 		if (this.globalSettingsLoadError) {
+			// The file could not be parsed at load; writing would clobber a file
+			// the user may still fix. Record the blockade so callers (e.g. the
+			// `/skills` overlay via `drainErrors()`) report the failure instead
+			// of claiming persistence.
+			this.recordError(
+				"global",
+				new Error(
+					`global settings not saved: the settings file failed to load (${this.globalSettingsLoadError.message}); fix or remove it to persist changes`,
+				),
+			);
 			return;
 		}
 
@@ -688,6 +698,12 @@ export class SettingsManager {
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
 
 		if (this.projectSettingsLoadError) {
+			this.recordError(
+				"project",
+				new Error(
+					`project settings not saved: the settings file failed to load (${this.projectSettingsLoadError.message}); fix or remove it to persist changes`,
+				),
+			);
 			return;
 		}
 
@@ -1243,9 +1259,8 @@ export class SettingsManager {
 		const prune = effectiveAfterDelete === state;
 		if (scope === "global") {
 			if (prune) {
-				if (this.globalSettings.skillVisibility) {
-					delete this.globalSettings.skillVisibility[id];
-				}
+				this.globalSettings.skillVisibility ??= {};
+				delete this.globalSettings.skillVisibility[id];
 			} else {
 				this.globalSettings.skillVisibility = { ...this.globalSettings.skillVisibility, [id]: state };
 			}
@@ -1257,9 +1272,8 @@ export class SettingsManager {
 			"skillVisibility",
 			(settings) => {
 				if (prune) {
-					if (settings.skillVisibility) {
-						delete settings.skillVisibility[id];
-					}
+					settings.skillVisibility ??= {};
+					delete settings.skillVisibility[id];
 				} else {
 					settings.skillVisibility = { ...settings.skillVisibility, [id]: state };
 				}

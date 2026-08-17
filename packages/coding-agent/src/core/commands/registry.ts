@@ -26,11 +26,7 @@
 import { basename, dirname } from "node:path";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { LoadedSkill } from "../skills/frontmatter.ts";
-import {
-	type ResolvedSkillVisibility,
-	resolveSkillVisibility,
-	type SkillVisibilityState,
-} from "../skills/visibility.ts";
+import { defaultSkillVisibility, type ResolvedSkillVisibility } from "../skills/visibility.ts";
 import type { BuiltinSlashCommand } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { LoadedCommand } from "./loader.ts";
@@ -153,8 +149,8 @@ export interface BuildCommandRegistryInput {
 	skills: readonly LoadedSkill[];
 	/** `enableSkillCommands` (false removes bare skills only). */
 	enableSkillCommands: boolean;
-	/** A.6 per-skill visibility states (c4c), keyed by canonical skill ID; absent entries resolve as `on`. */
-	skillVisibility?: ReadonlyMap<string, SkillVisibilityState>;
+	/** A.6 per-skill effective visibility (c4c), keyed by canonical skill ID; absent entries fall back to frontmatter. */
+	skillVisibility?: ReadonlyMap<string, ResolvedSkillVisibility>;
 }
 
 /** Generate a `dir:name` disambiguator for a same-tier nested collision. */
@@ -216,10 +212,11 @@ export function buildCommandRegistry(input: BuildCommandRegistryInput): CommandR
 	// per-skill state. `off` skills leave the namespace but keep a tombstone so
 	// every would-be name errors instead of staying literal.
 	const visibilityOf = (skill: LoadedSkill): ResolvedSkillVisibility =>
-		resolveSkillVisibility(
-			{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
-			input.skillVisibility?.get(skill.id) ?? "on",
-		);
+		input.skillVisibility?.get(skill.id) ??
+		defaultSkillVisibility({
+			disableModelInvocation: skill.disableModelInvocation,
+			userInvocable: skill.userInvocable,
+		});
 	const disabledSkills: LoadedSkill[] = [];
 	if (input.enableSkillCommands) {
 		for (const skill of input.skills) {

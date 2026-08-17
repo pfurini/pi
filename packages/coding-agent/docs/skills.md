@@ -318,10 +318,31 @@ The system prompt includes a versioned listing of visible skills:
 
 `description` is the frontmatter `description`, plus a space and `when_to_use` when present, capped at 1,536 UTF-16 code units before XML-escaping. `location` (the `SKILL.md` path) is always present, including in future name-only entries, because it is the model-read access path for consumers that don't have a `skill` tool.
 
-Visibility has two independent dimensions:
+Effective visibility is the AND of two frontmatter flags and a persisted,
+runtime-controlled state (A.6). The four persisted states, on each of the two
+dimensions:
 
-- **Model-facing** (the listing above and the `skill` tool): controlled by `disable-model-invocation`.
-- **User-facing** (`/skill:name` menus and expansion): controlled by `user-invocable` and command-name eligibility (see [Name Rules](#name-rules)).
+| state | model-facing (listing + `skill` tool) | user-facing (`/skill:name`) |
+| --- | --- | --- |
+| `on` (default) | listed with description | `/name` works |
+| `name-only` | listed as name+location (no description) | `/name` works |
+| `user-invocable-only` | not listed, `skill` tool rejects it | `/name` works |
+| `off` | not listed, `skill` tool rejects it | `/name` **errors** (consumed, not literal) |
+
+Settings can restrict further but never re-grant what frontmatter removed:
+`disable-model-invocation` always hides from the model, and `user-invocable: false`
+always hides from `/name` (see [Name Rules](#name-rules)). `off` is the only state
+whose `/name` invocation becomes a consumed error rather than literal text, and it
+does so for every valid name — bare, `skill:`-qualified, and collision-qualified —
+even when frontmatter also sets `user-invocable: false`.
+
+States persist under the `skillVisibility` settings key, keyed by canonical ID, at
+both global and project scope (project precedence); a malformed value falls back to
+`on` with one settings warning. Manage them at runtime with the **`/skills`** overlay,
+which lists each loaded skill with its estimated listing cost, effective visibility, and
+originating scope. Changes apply to the next request — listing, `skill` tool, and
+`/name` — without a `/reload`, and are prospective-only (they never rewrite
+already-delivered content or dedup/carry-forward records).
 
 Each skill has a canonical ID: the symlink-resolved absolute path of its `SKILL.md`. This is the discovery dedupe key and the key used by the extension skill-set seam below.
 

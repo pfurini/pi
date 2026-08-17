@@ -3,11 +3,13 @@
  * visibility is the AND of the frontmatter contribution and the
  * settings-state contribution on each of the two dimensions (model-facing,
  * user-facing); settings can never re-grant what frontmatter removed.
- * `off` is the only state that turns a `/name` invocation into a consumed
- * error rather than literal text, and it does so for every valid name of the
- * skill regardless of `user-invocable` (A.6 marks `off` "invocation errors"
- * the same across all four frontmatter columns; A.1: "errors when invoked by
- * any of its names"). Pure and session-agnostic (ADR-0003).
+ * `off` is the only state whose resolved `userInvokeError` is `true`,
+ * independent of `user-invocable` (A.6 marks `off` "invocation errors" the same
+ * across all four frontmatter columns; A.1: "errors when invoked by any of its
+ * names"). Turning that flag into a consumed error rather than literal text is
+ * the registry's job, and it does so only where skill commands are enabled
+ * (`enableSkillCommands`) — see `buildCommandRegistry`'s disabled tombstones.
+ * Pure and session-agnostic (ADR-0003).
  */
 
 /** B.8: the closed union of persisted per-skill visibility states. */
@@ -73,4 +75,13 @@ export function resolveSkillVisibility(
 				: "no";
 	const user = frontmatter.userInvocable ? "yes" : "no";
 	return { model, user, userInvokeError: false };
+}
+
+/**
+ * Effective visibility of a skill with no persisted override — the `on` row of
+ * the truth table. The single source consumers use when the snapshot has no
+ * entry for a skill, so the frontmatter-only default is never re-inlined.
+ */
+export function defaultSkillVisibility(frontmatter: SkillVisibilityFrontmatter): ResolvedSkillVisibility {
+	return resolveSkillVisibility(frontmatter, "on");
 }

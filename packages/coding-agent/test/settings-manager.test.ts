@@ -843,5 +843,46 @@ describe("SettingsManager", () => {
 			expect(reader.getSkillVisibilityState("/skills/three/SKILL.md")).toBe("user-invocable-only");
 			expect(reader.getSkillVisibilityState("/skills/four/SKILL.md")).toBe("off");
 		});
+
+		it("pruning a scope's first visibility write preserves a concurrent writer's other-key entries", async () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
+			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({}));
+
+			// A project override, so a later global `on` prunes (effective already on).
+			const seeder = SettingsManager.create(projectDir, agentDir);
+			seeder.setSkillVisibilityState("/skills/a/SKILL.md", "on", "project");
+			await seeder.flush();
+
+			// This session never wrote a global visibility entry (its in-memory
+			// global map is undefined); a concurrent writer adds one on disk.
+			const pruner = SettingsManager.create(projectDir, agentDir);
+			const concurrent = SettingsManager.create(projectDir, agentDir);
+			concurrent.setSkillVisibilityState("/skills/other/SKILL.md", "off", "global");
+			await concurrent.flush();
+
+			// The prune deletes the (absent) global key but must merge per-key,
+			// not overwrite the whole field with undefined and wipe /other.
+			pruner.setSkillVisibilityState("/skills/a/SKILL.md", "on", "global");
+			await pruner.flush();
+
+			const globalFile = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(globalFile.skillVisibility).toEqual({ "/skills/other/SKILL.md": "off" });
+		});
+
+		it("surfaces a save blockade via drainErrors when the settings file failed to load", async () => {
+			writeFileSync(join(agentDir, "settings.json"), "{ invalid global json");
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.drainErrors()).toHaveLength(1); // initial load error, now cleared
+
+			manager.setSkillVisibilityState("/skills/a/SKILL.md", "off", "global");
+			await manager.flush();
+
+			const errors = manager.drainErrors();
+			expect(errors).toHaveLength(1);
+			expect(errors[0]!.scope).toBe("global");
+			expect(errors[0]!.error.message).toContain("not saved");
+			// The unparseable file is left untouched, not clobbered.
+			expect(readFileSync(join(agentDir, "settings.json"), "utf-8")).toBe("{ invalid global json");
+		});
 	});
 });

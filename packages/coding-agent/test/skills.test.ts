@@ -5,6 +5,7 @@ import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
 import type { SkillFrontmatter } from "../src/core/skills/frontmatter.ts";
 import { escapeXml as escapeXmlFromListing } from "../src/core/skills/listing.ts";
 import { escapeXml as escapeXmlFromListingBudget } from "../src/core/skills/listing-budget.ts";
+import type { ResolvedSkillVisibility } from "../src/core/skills/visibility.ts";
 import {
 	extractSkillListingBlock,
 	formatSkillsForPrompt,
@@ -22,6 +23,11 @@ import {
 	SKILL_LISTING_VERSION as INDEX_VERSION,
 } from "../src/index.ts";
 import { canonicalizePath } from "../src/utils/paths.ts";
+
+/** A resolved-visibility entry for the listing tests; only `model` affects listing output. */
+function vis(model: "full" | "name" | "no"): ResolvedSkillVisibility {
+	return { model, user: model === "no" ? "no" : "yes", userInvokeError: false };
+}
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
@@ -490,7 +496,7 @@ describe("skills", () => {
 					"tool",
 					undefined,
 					undefined,
-					new Map([[canonicalizePath(skill.filePath), "name"]]),
+					new Map([[canonicalizePath(skill.filePath), vis("name")]]),
 				);
 				const block = extractSkillListingBlock(result)!;
 				expect(block).toBe(
@@ -511,7 +517,7 @@ describe("skills", () => {
 					"tool",
 					undefined,
 					undefined,
-					new Map([[canonicalizePath(hidden.filePath), "no"]]),
+					new Map([[canonicalizePath(hidden.filePath), vis("no")]]),
 				);
 				expect(result).not.toContain("<name>hidden</name>");
 				expect(result).toContain("<name>visible</name>");
@@ -525,7 +531,7 @@ describe("skills", () => {
 					"tool",
 					undefined,
 					undefined,
-					new Map([[canonicalizePath(skill.filePath), "no"]]),
+					new Map([[canonicalizePath(skill.filePath), vis("no")]]),
 				);
 				expect(result).toBe("");
 			});
@@ -534,9 +540,9 @@ describe("skills", () => {
 				const full = visibilitySkill("full-skill");
 				const named = visibilitySkill("named-skill");
 				const hidden = visibilitySkill("hidden-skill");
-				const visibility = new Map<string, "full" | "name" | "no">([
-					[canonicalizePath(named.filePath), "name"],
-					[canonicalizePath(hidden.filePath), "no"],
+				const visibility = new Map<string, ResolvedSkillVisibility>([
+					[canonicalizePath(named.filePath), vis("name")],
+					[canonicalizePath(hidden.filePath), vis("no")],
 				]);
 				const skills = [full, named, hidden];
 				const readBlock = extractSkillListingBlock(
@@ -565,7 +571,7 @@ describe("skills", () => {
 					"tool",
 					undefined,
 					{ budgetCodeUnits: 400, invocationCounts: new Map() },
-					new Map([[canonicalizePath(named.filePath), "name"]]),
+					new Map([[canonicalizePath(named.filePath), vis("name")]]),
 				);
 				const block = extractSkillListingBlock(result)!;
 				expect(block).toContain("<name>named</name>");
@@ -588,9 +594,9 @@ describe("skills", () => {
 					"tool",
 					undefined,
 					undefined,
-					new Map<string, "full" | "name" | "no">([
-						[canonicalizePath(one.filePath), "full"],
-						[canonicalizePath(two.filePath), "no"],
+					new Map<string, ResolvedSkillVisibility>([
+						[canonicalizePath(one.filePath), vis("full")],
+						[canonicalizePath(two.filePath), vis("no")],
 					]),
 				);
 				expect(withMap).toBe(baseline);

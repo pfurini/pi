@@ -144,8 +144,9 @@ export type RecoveredBody =
  * per-block offset; a synthetic-pair tool-result spans the bare body).
  * `text.slice(blockStart, blockEnd)` is correct at any offset; only a
  * message-block entry (`role !== "toolResult"`) then needs its wrapper
- * stripped. `blockEnd <= blockStart` (a dedup note or a 0/0 fork marker) is
- * "empty", never a malformed slice. Never re-renders — shell injection must
+ * stripped. Only an exact `0/0` marker (a dedup note or a fork marker) is
+ * "empty"; any other `blockEnd <= blockStart` (a reversed or zero-length-at-offset
+ * range) is a torn entry → "malformed". Never re-renders — shell injection must
  * not run twice.
  */
 export function recoverDeliveredBody(
@@ -153,16 +154,25 @@ export function recoverDeliveredBody(
 	invocation: { blockStart: number; blockEnd: number },
 ): RecoveredBody {
 	const { blockStart, blockEnd } = invocation;
-	if (blockEnd <= blockStart) {
+	// Only an exact 0/0 is the intentional empty marker (dedup note / fork marker).
+	// A reversed or zero-length-at-offset range is a torn entry, caught as malformed
+	// by the range check below rather than silently skipped as "empty".
+	if (blockStart === 0 && blockEnd === 0) {
 		return { kind: "empty" };
 	}
 	const text = flattenMessageContentText(message.content);
-	if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd) || blockStart < 0 || blockEnd > text.length) {
+	if (
+		!Number.isInteger(blockStart) ||
+		!Number.isInteger(blockEnd) ||
+		blockStart < 0 ||
+		blockEnd <= blockStart ||
+		blockEnd > text.length
+	) {
 		return {
 			kind: "malformed",
 			diagnostic: {
 				type: "warning",
-				message: `skill invocation metadata malformed: offsets [${blockStart}, ${blockEnd}) out of range for a ${text.length}-code-unit message`,
+				message: `skill invocation metadata malformed: offsets [${blockStart}, ${blockEnd}) invalid or out of range for a ${text.length}-code-unit message`,
 			},
 		};
 	}

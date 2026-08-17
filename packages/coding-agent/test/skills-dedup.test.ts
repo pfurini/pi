@@ -170,6 +170,41 @@ describe("findLastFullInlineDelivery", () => {
 		];
 		expect(findLastFullInlineDelivery(entries, undefined, "/s/SKILL.md")).toEqual({ kind: "malformed" });
 	});
+
+	it("treats a reversed newest offset as malformed (terminal), not an empty marker", () => {
+		const entries: BranchEntryLike[] = [
+			messageBlockEntry("e1", "/s/SKILL.md", "s", "x", "Older valid body."),
+			{
+				id: "e2",
+				type: "message",
+				message: { role: "user", content: "torn" },
+				invocations: [{ skillId: "/s/SKILL.md", args: "x", blockStart: 3, blockEnd: 1 }],
+			},
+		];
+		const diagnostics: unknown[] = [];
+		expect(findLastFullInlineDelivery(entries, undefined, "/s/SKILL.md", (d) => diagnostics.push(d))).toEqual({
+			kind: "malformed",
+		});
+		expect(diagnostics).toHaveLength(1);
+	});
+
+	it("skips a null invocation element without throwing, falling through to a valid delivery", () => {
+		const entries: BranchEntryLike[] = [
+			messageBlockEntry("e1", "/s/SKILL.md", "s", "x", "Valid body."),
+			{
+				id: "e2",
+				type: "message",
+				message: { role: "user", content: "corrupt" },
+				invocations: [null] as unknown as BranchEntryLike["invocations"],
+			},
+		];
+		expect(() => findLastFullInlineDelivery(entries, undefined, "/s/SKILL.md")).not.toThrow();
+		expect(findLastFullInlineDelivery(entries, undefined, "/s/SKILL.md")).toEqual({
+			kind: "found",
+			args: "x",
+			body: "Valid body.",
+		});
+	});
 });
 
 describe("isDedupHit", () => {

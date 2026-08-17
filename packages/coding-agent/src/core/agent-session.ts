@@ -2359,7 +2359,8 @@ export class AgentSession {
 	 * completes. Also covers `switchSession` (routes through
 	 * `createRuntime` → `createAgentSession`). Runs before `bindExtensions`
 	 * binds a real diagnostic listener, so any diagnostic is buffered by
-	 * `_deliverSkillListingDiagnostics` and flushed later, never lost.
+	 * `_deliverSkillListingDiagnostics` and flushed once a listener binds (a
+	 * throwing listener may still drop it, by design).
 	 */
 	reattachCarriedSkills(): void {
 		this._reattachCarriedSkills();
@@ -2705,10 +2706,12 @@ export class AgentSession {
 	}
 
 	/**
-	 * B.12 counting metadata for a user `/name context: fork` spawn (B.12/c4b): the
-	 * same shape a model fork's toolResult entry carries (`fork: true`, 0/0
-	 * offsets — no in-context body), so the spawn counts once regardless of
-	 * transport (A.6 fork-count symmetry). Only the spawn notice carries this;
+	 * B.12 counting metadata for a user `/name context: fork` spawn (B.12/c4b). It
+	 * counts once like a model fork's toolResult entry (both `fork: true`, both
+	 * excluded from A.6 dedup/carry-forward). This user notice uses `0/0` offsets
+	 * since the spawn body never enters the parent context; a model fork's entry
+	 * instead spans its result content — the offsets differ, the count does not.
+	 * Only the spawn notice carries this;
 	 * completion / repeat-blocked / timeout / aborted notices carry none.
 	 */
 	private _forkSpawnInvocationEntry(record: SkillInvocation, name: string): SkillInvocationEntry {

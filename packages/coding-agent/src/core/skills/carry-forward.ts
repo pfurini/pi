@@ -71,6 +71,11 @@ export function deriveCarriedSkills(
 		const messageLike = entryMessageLike(entry);
 		for (let j = entry.invocations.length - 1; j >= 0; j--) {
 			const invocation = entry.invocations[j]!;
+			// Persisted metadata is untrusted: a torn/hand-edited entry can hold a
+			// null or non-object element. Skip it rather than dereferencing (throw).
+			if (!invocation || typeof invocation !== "object") {
+				continue;
+			}
 			if (typeof invocation.skillId !== "string") {
 				continue;
 			}

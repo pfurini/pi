@@ -54,8 +54,9 @@ export type LastFullInlineDeliveryResult =
  * `undefined` = whole branch = no compaction) for the most recent
  * non-fork, non-empty-offset invocation of `skillId`, then recover its bare
  * body. Keyed on `skillId` alone (A.6: identity compares against "the last
- * delivery of that skill"), so an `A → B → A` sequence anchors on `B`, the
- * actual last delivery — the caller compares the whole tuple against it.
+ * delivery of that skill"), so the anchor is always the most-recent delivery of
+ * that skill (in an `A → B → A` sequence, the final `A`), never an earlier one —
+ * the caller compares the whole tuple against it.
  *
  * A malformed most-recent candidate is terminal for this skill: it returns
  * `{ kind: "malformed" }` (never falls through to an older valid delivery,
@@ -81,6 +82,11 @@ export function findLastFullInlineDelivery(
 		}
 		for (let j = entry.invocations.length - 1; j >= 0; j--) {
 			const invocation = entry.invocations[j]!;
+			// Persisted metadata is untrusted: a torn/hand-edited entry can hold a
+			// null or non-object element. Skip it rather than dereferencing (throw).
+			if (!invocation || typeof invocation !== "object") {
+				continue;
+			}
 			if (typeof invocation.skillId !== "string" || invocation.skillId !== skillId) {
 				continue;
 			}

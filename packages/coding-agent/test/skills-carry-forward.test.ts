@@ -184,4 +184,37 @@ describe("deriveCarriedSkills", () => {
 		expect(result.entries).toEqual([]);
 		expect(result.diagnostics).toHaveLength(1);
 	});
+
+	it("a reversed newest offset drops that skill (diagnostic, not an empty skip to a stale older body)", () => {
+		const entries: BranchEntryLike[] = [
+			messageBlockEntry("e1", [{ skillId: "/a/SKILL.md", args: "x", body: "Older valid body." }]),
+			{
+				id: "e2",
+				type: "message",
+				message: { role: "user", content: "torn" },
+				invocations: [{ skillId: "/a/SKILL.md", args: "x", blockStart: 3, blockEnd: 1 }],
+			},
+			boundaryEntry("boundary"),
+		];
+		const result = deriveCarriedSkills(entries, "boundary");
+		expect(result.entries).toEqual([]);
+		expect(result.diagnostics).toHaveLength(1);
+	});
+
+	it("skips a null invocation element without throwing", () => {
+		const entries: BranchEntryLike[] = [
+			messageBlockEntry("e1", [{ skillId: "/a/SKILL.md", args: "x", body: "Valid body." }]),
+			{
+				id: "e2",
+				type: "message",
+				message: { role: "user", content: "corrupt" },
+				invocations: [null] as unknown as BranchEntryLike["invocations"],
+			},
+			boundaryEntry("boundary"),
+		];
+		expect(() => deriveCarriedSkills(entries, "boundary")).not.toThrow();
+		expect(deriveCarriedSkills(entries, "boundary").entries).toEqual([
+			{ skillId: "/a/SKILL.md", args: "x", body: "Valid body." },
+		]);
+	});
 });

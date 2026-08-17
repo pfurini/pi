@@ -900,13 +900,22 @@ binary: !!binary SGVsbG8=`,
 
 describe("command visibility", () => {
 	function createVisibilitySkills(): SkillInput[] {
+		// Distinct canonical IDs: c4c's registry consumes one shared visibility snapshot
+		// keyed by skill ID, so fixtures must not share the default filePath.
+		const named = (name: string, overrides: Partial<SkillInput> = {}) =>
+			createSkillInput({
+				name,
+				filePath: `/tmp/visibility/${name}/SKILL.md`,
+				baseDir: `/tmp/visibility/${name}`,
+				...overrides,
+			});
 		return [
-			createSkillInput({ name: "valid-skill", frontmatter: { "argument-hint": "[path]" } }),
-			createSkillInput({ name: "hidden-skill", frontmatter: { "user-invocable": false } }),
-			createSkillInput({ name: "dmi-skill", disableModelInvocation: true }),
-			createSkillInput({ name: "Upper.Name" }),
-			createSkillInput({ name: "trailing." }),
-			createSkillInput({ name: "skill:reserved" }),
+			named("valid-skill", { frontmatter: { "argument-hint": "[path]" } }),
+			named("hidden-skill", { frontmatter: { "user-invocable": false } }),
+			named("dmi-skill", { disableModelInvocation: true }),
+			named("Upper.Name"),
+			named("trailing."),
+			named("skill:reserved"),
 		];
 	}
 

@@ -253,13 +253,20 @@ tracked), or DISPUTED (disproving evidence). ACCEPTED, DEFERRED, and DISPUTED ar
 dispositions: the next re-review verifies they were recorded and they no longer block the verdict
 unless new evidence re-opens them.
 
+**Plan completion.** When the verdict is READY TO MERGE and step 2 matched a plan under
+`$PRP_DIR/plans/` whose delivery this review covered, the plan's lifecycle is complete:
+`mkdir -p "$PRP_DIR/plans/completed"` and move the plan file there, recording the archived path in
+the final report. Leave plans supplied from any other path in place, and leave the plan in
+`plans/` while findings remain open — correction passes still consume it there.
+
 Non-interactive runs stop after the report — never apply without the human gate.
 
 ## 9. Report to the user
 
 Return the target, mode, and key; the verdict; finding counts by class (critical / decision /
 important / suggestion); the validation summary; selected scopes; polish summary when it ran; the
-absolute report path; and the publication URL (PR mode) or apply-cycle outcome (local mode). Name
+absolute report path; the archived plan path when the review completed a plan's lifecycle; and the
+publication URL (PR mode) or apply-cycle outcome (local mode). Name
 the next step: open Decisions go to the user; PR-mode `NEEDS FIXES` goes to `/skill:prp-implement
 review` with this report; local-mode findings resolve through the apply cycle, then re-run this
 skill with the same key until the verdict is `READY TO MERGE`.

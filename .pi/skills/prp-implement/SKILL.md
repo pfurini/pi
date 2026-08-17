@@ -33,7 +33,7 @@ mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "n
 
 ## 1. Establish context
 
-Resolve the plan path from the arguments, linked implementation report, or conversation and read the entire file. When the input is an issue reference rather than a path, normalize number and URL forms to the same tracker item, search `$PRP_DIR/plans/` for matching `Source Issue` metadata, and select the single current plan. If several match, present the newest viable candidates and ask; never guess. If no local plan exists, retrieve the latest complete issue comment marked `<!-- prp-plan-id: ... -->`, persist that published plan under `$PRP_DIR/plans/`, and use it. Never substitute the issue body for a missing plan.
+Resolve the plan path from the arguments, linked implementation report, or conversation and read the entire file. When the input is an issue reference rather than a path, normalize number and URL forms to the same tracker item, search `$PRP_DIR/plans/` — and, for a correction pass on already-delivered work, `$PRP_DIR/plans/completed/` — for matching `Source Issue` metadata, and select the single current plan. If several match, present the newest viable candidates and ask; never guess. If no local plan exists, retrieve the latest complete issue comment marked `<!-- prp-plan-id: ... -->`, persist that published plan under `$PRP_DIR/plans/`, and use it. Never substitute the issue body for a missing plan.
 
 For an issue-derived plan, read comments added after `Plan Publication` before editing. If they correct or materially change the implementation contract, stop and invoke `/skill:prp-plan` to revise and republish the plan before implementation; do not implement a knowingly stale plan.
 
@@ -65,7 +65,7 @@ Apply these implementation principles:
 
 Never defer work required by the plan or its acceptance criteria: complete it now or mark the implementation `BLOCKED`. For actionable work discovered outside the agreed scope, avoid widening the implementation; create or link a human-visible GitHub issue before reporting green, and carry that issue into the report and PR description so normal repository triage and `/skill:prp-worklist` can pick it up. If durable tracking cannot be established, stop and ask the user where it belongs; do not bury it in the report or report green. Omit optional ideas that do not merit a commitment.
 
-Record deviations and implementation-only decisions in the implementation report. For a legacy plan that explicitly provides maintained Agent Notes or Amendments sections, keep those current as well. Do not move or archive the plan.
+Record deviations and implementation-only decisions in the implementation report. For a legacy plan that explicitly provides maintained Agent Notes or Amendments sections, keep those current as well. Do not move or archive the plan — archival belongs to the review cycle when it reaches READY TO MERGE.
 
 ## 3. Validate to green
 

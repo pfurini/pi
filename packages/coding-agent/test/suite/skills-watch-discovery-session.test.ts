@@ -275,6 +275,32 @@ describe("c4d live watching (AC1/AC2)", () => {
 		expect(session.getCommands().map((command) => command.name)).not.toContain("user-cmd");
 	});
 
+	it("reflects a command argument-hint-only edit live (coalescing compares argumentHint/frontmatter)", async () => {
+		const w = await createWatchHarness();
+		const { session } = w.harness;
+
+		mkdirSync(w.userCommandsRoot, { recursive: true });
+		w.factory.emit(w.agentDir, "commands");
+		w.timers.flush();
+		// Body is identical across the edit; only the `argument-hint` frontmatter changes,
+		// so name/description/body stay byte-identical and only the coalescing equality's
+		// argumentHint/frontmatter comparison can catch it.
+		const body = "---\nargument-hint: <old>\n---\nHint command body";
+		writeFileSync(join(w.userCommandsRoot, "hint-cmd.md"), body);
+		w.factory.emit(w.userCommandsRoot, "hint-cmd.md");
+		w.timers.flush();
+		expect(session.getCommands().find((command) => command.name === "hint-cmd")?.argumentHint).toBe("<old>");
+
+		const eventsBefore = w.harness.eventsOfType("resources_changed").length;
+		writeFileSync(join(w.userCommandsRoot, "hint-cmd.md"), "---\nargument-hint: <new>\n---\nHint command body");
+		w.factory.emit(w.userCommandsRoot, "hint-cmd.md");
+		w.timers.flush();
+
+		// Pre-fix this refresh coalesced (argumentHint uncompared): stale hint, no event.
+		expect(session.getCommands().find((command) => command.name === "hint-cmd")?.argumentHint).toBe("<new>");
+		expect(w.harness.eventsOfType("resources_changed").length).toBe(eventsBefore + 1);
+	});
+
 	it("deleting a collision winner surfaces the survivor under the bare name and keeps its ID-keyed visibility state", async () => {
 		const w = await createWatchHarness();
 		const { session } = w.harness;

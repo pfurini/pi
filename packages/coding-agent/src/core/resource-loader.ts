@@ -144,7 +144,12 @@ function commandsSemanticallyEqual(a: readonly LoadedCommand[], b: readonly Load
 			x.body !== y.body ||
 			x.filePath !== y.filePath ||
 			x.disableModelInvocation !== y.disableModelInvocation ||
-			x.userInvocable !== y.userInvocable
+			x.userInvocable !== y.userInvocable ||
+			// Mirror skillsSemanticallyEqual: a command's `argument-hint` (carried
+			// outside `frontmatter` for adapted templates) and any other frontmatter
+			// edit must not be coalesced away, or a live edit never reaches the listing.
+			x.argumentHint !== y.argumentHint ||
+			JSON.stringify(x.frontmatter) !== JSON.stringify(y.frontmatter)
 		) {
 			return false;
 		}
@@ -1063,6 +1068,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 		diagnostics.push(...adapted.diagnostics);
 
 		if (options?.coalesce && commandsSemanticallyEqual(commands, this.commands)) {
+			// Semantically identical: keep the fresh objects (matching the skills
+			// branch's `this.skills = nextSkills`) but publish/notify nothing.
+			this.commands = commands;
 			this.commandDiagnostics = diagnostics;
 			return false;
 		}

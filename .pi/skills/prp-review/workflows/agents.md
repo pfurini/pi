@@ -257,7 +257,11 @@ unless new evidence re-opens them.
 `$PRP_DIR/plans/` whose delivery this review covered, the plan's lifecycle is complete:
 `mkdir -p "$PRP_DIR/plans/completed"` and move the plan file there, recording the archived path in
 the final report. Leave plans supplied from any other path in place, and leave the plan in
-`plans/` while findings remain open — correction passes still consume it there.
+`plans/` while findings remain open — correction passes still consume it there. When the archived
+plan carries `Source PRD` and `PRD Phase` metadata and it was the phase's last outstanding slice
+with the row's stated completion conditions green, invoke `/skill:prp-prd-update merged` with the
+PRD path, phase number, and this review report as the completion evidence; otherwise the phase
+stays `in-progress` (prp-implement already recorded its delivery evidence).
 
 Non-interactive runs stop after the report — never apply without the human gate.
 

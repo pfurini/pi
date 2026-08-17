@@ -8,8 +8,9 @@ description: Reviews a pull request, branch, commit range, or working tree throu
 # Review a Change
 
 Coordinate an evidence-based review of a PR, branch, commit range, staged or working-tree change.
-Reviewer agents are the only path for judging the code: do not add an inline review pass before or
-after them. On a PR the review is advisory and publishes to GitHub; on a local target it runs the
+Reviewer agents are the only path for first-pass judgment of code: do not add an inline review pass
+before or after them (re-reviews verify already-judged ground per the workflow's dispatch-economy
+rule). On a PR the review is advisory and publishes to GitHub; on a local target it runs the
 full step-close cycle — polish, judge, human-gated apply — and converges across re-reviews.
 
 **Input**: $ARGUMENTS (if absent, use the current branch's open PR, else the current branch against

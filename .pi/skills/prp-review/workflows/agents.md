@@ -22,7 +22,11 @@ Two modes follow from the target:
 **Review key** — the identity that convergence, archiving, and re-review detection hang off:
 `pr-{NUMBER}` in PR mode; in local mode a caller-supplied label (e.g. the plan step name), else the
 current branch name. Successive step cycles on one branch need distinct labels — reusing a key makes
-this pass a re-review of that key, not a fresh review.
+this pass a re-review of that key, not a fresh review. A request that identifies itself as a
+re-review without naming a label resumes the **most recent local-mode key** whose reviewed range
+covers the target — do not fall back to the branch name and split one convergence thread across two
+keys. When prior reports under *other* keys overlap the target range, read them as verified inputs
+(their Resolution Logs count as prior findings to verify), never re-litigate them.
 
 Capture the diff for the resolved scope (`gh pr diff`, `git diff <base>...HEAD`, `git diff
 --staged`, `git diff`, or the named files) and state target, mode, and key out loud.
@@ -112,11 +116,21 @@ a re-review instead:
 1. **Verifies prior findings.** Every prior Critical, Important, and Decision finding gets a
    resolution: RESOLVED (cite the commit and evidence), UPHELD (a recorded human disposition —
    accepted risk, deferred with tracking, or an evidence-backed dispute — stands; judge the record,
-   and re-open only when new evidence defeats it), or STILL OPEN.
+   and re-open only when new evidence defeats it), or STILL OPEN. A finding RESOLVED in any earlier
+   pass that still holds stays RESOLVED — do not invent hybrid labels.
 2. **Attacks only new ground at full depth**: commits since the previously reviewed head and areas
    the prior pass did not reach. Re-open settled findings only on new evidence.
 3. **Reports convergence honestly.** A re-review that finds nothing new says so — finding count is
    not review quality.
+
+**Re-review dispatch economy.** The "agents are the only path for judging the code" rule binds
+first-pass judgment of new code; verifying already-reviewed ground is orchestrator work. On a
+re-review: dispatch the mandatory pair scoped to the new ground; add optional scopes only when the
+new ground implicates them (do not re-run the full first-pass fan-out by default); and when the new
+ground is docs-only or trivially mechanical (applied fixes matching the prior findings' prescribed
+corrections), verify inline and state in the report that no agents were dispatched and why. Polish
+also runs only on new, not-yet-polished work — ground the prior pass already judged is never
+re-polished.
 
 Prepend this line to every agent brief: "Re-review pass: prior findings and their dispositions are
 in the prior review report and its Resolution Log. Verify the ones relevant to your focus, attack

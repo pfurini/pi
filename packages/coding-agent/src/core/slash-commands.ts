@@ -18,7 +18,7 @@ export interface BuiltinSlashCommand {
 	argumentHint?: string;
 }
 
-export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+export const BUILTIN_SLASH_COMMANDS = [
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)", argumentHint: "<provider/model>" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
@@ -42,4 +42,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, themes, and context files" },
 	{ name: "quit", description: `Quit ${APP_NAME}` },
-];
+] as const satisfies readonly BuiltinSlashCommand[];
+
+/** Literal union of every built-in control-command name (derived; do not hand-write). */
+export type BuiltinCommandName = (typeof BUILTIN_SLASH_COMMANDS)[number]["name"];

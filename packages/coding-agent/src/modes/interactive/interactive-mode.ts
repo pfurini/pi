@@ -96,6 +96,7 @@ import type { SkillInvocationEntry } from "../../core/session-manager.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { sliceSkillInvocationSegments } from "../../core/skills/delivery.ts";
+import type { BuiltinCommandName } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -211,6 +212,38 @@ type RenderSessionItem = AgentMessage | Extract<SessionEntry, { type: "custom" }
 
 function isCustomSessionEntry(item: RenderSessionItem): item is Extract<SessionEntry, { type: "custom" }> {
 	return "type" in item && item.type === "custom";
+}
+
+/**
+ * Hidden easter-egg control commands: exact-match dispatch ahead of registry
+ * resolution, deliberately absent from BUILTIN_SLASH_COMMANDS so they never
+ * appear in listing/autocomplete and can never be shadowed by an extension.
+ */
+const HIDDEN_CONTROL_COMMANDS = ["debug", "arminsayshi", "dementedelves"] as const;
+type HiddenControlCommand = (typeof HIDDEN_CONTROL_COMMANDS)[number];
+
+function isHiddenControlCommand(name: string): name is HiddenControlCommand {
+	return (HIDDEN_CONTROL_COMMANDS as readonly string[]).includes(name);
+}
+
+/**
+ * One built-in control dispatch entry. `arg` replicates the eligibility predicate
+ * of the pre-registry hardcoded chain: "none" rejects any trailing text (so
+ * `/quit now` is not a control invocation); "remainder" accepts trailing text and
+ * passes the trimmed post-name remainder (undefined on the bare form); "full"
+ * passes the whole submitted text.
+ */
+type ControlDispatchEntry =
+	| { arg: "none"; run(): void | Promise<void> }
+	| { arg: "remainder"; run(arg: string | undefined): void | Promise<void> }
+	| { arg: "full"; run(text: string): void | Promise<void> };
+
+/** Narrow a registry-resolved built-in name to the table's key union via the table itself. */
+function isBuiltinCommandName(
+	name: string,
+	table: Record<BuiltinCommandName, ControlDispatchEntry>,
+): name is BuiltinCommandName {
+	return name in table;
 }
 
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
@@ -2872,139 +2905,43 @@ export class InteractiveMode {
 			text = text.trim();
 			if (!text) return;
 
-			// Handle commands
-			if (text === "/settings") {
-				this.showSettingsSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
-			if (text === "/skills") {
-				this.editor.setText("");
-				this.showSkillsSelector();
-				return;
-			}
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleModelCommand(searchTerm);
-				return;
-			}
-			if (text === "/export" || text.startsWith("/export ")) {
-				await this.handleExportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/import" || text.startsWith("/import ")) {
-				await this.handleImportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.handleShareCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/copy") {
-				await this.handleCopyCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.handleNameCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/session") {
-				this.handleSessionCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/changelog") {
-				this.handleChangelogCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/hotkeys") {
-				this.handleHotkeysCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/fork") {
-				this.showUserMessageSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.handleCloneCommand();
-				return;
-			}
-			if (text === "/tree") {
-				this.showTreeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/trust") {
-				this.showTrustSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/login" || text.startsWith("/login ")) {
-				const providerRef = text.startsWith("/login ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleLoginCommand(providerRef);
-				return;
-			}
-			if (text === "/logout") {
-				this.showOAuthSelector("logout");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/new") {
-				this.editor.setText("");
-				await this.handleClearCommand();
-				return;
-			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
-			if (text === "/debug") {
-				this.handleDebugCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/arminsayshi") {
-				this.handleArminSaysHi();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/dementedelves") {
-				this.handleDementedDelves();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume") {
-				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/quit") {
-				this.editor.setText("");
-				await this.shutdown();
-				return;
+			// Control commands: hidden easter-eggs first (exact match, unlisted and
+			// unshadowable), then built-in dispatch routed through the same A.1 registry
+			// resolution autocomplete/listing use (built-ins outrank extensions). A
+			// non-builtin resolution falls through to the extension/bash/compaction/
+			// streaming/normal branches below, which dispatch it as they already do.
+			if (text.startsWith("/")) {
+				const hiddenName = text.slice(1);
+				if (isHiddenControlCommand(hiddenName)) {
+					this.runHiddenControlCommand(hiddenName);
+					this.editor.setText("");
+					return;
+				}
+
+				const spaceIndex = text.indexOf(" ");
+				const token = spaceIndex === -1 ? hiddenName : text.slice(1, spaceIndex);
+				const invocation = this.session.resolveControlCommand(token);
+				if (invocation?.source === "builtin") {
+					const dispatch = this.builtinControlDispatch();
+					if (isBuiltinCommandName(invocation.name, dispatch)) {
+						const entry = dispatch[invocation.name];
+						switch (entry.arg) {
+							case "none":
+								// Exact-only: a trailing argument is not a control invocation.
+								if (spaceIndex === -1) {
+									await entry.run();
+									return;
+								}
+								break;
+							case "remainder":
+								await entry.run(spaceIndex === -1 ? undefined : text.slice(spaceIndex + 1).trim());
+								return;
+							case "full":
+								await entry.run(text);
+								return;
+						}
+					}
+				}
 			}
 
 			// Handle bash command (! for normal, !! for excluded from context)
@@ -3061,6 +2998,193 @@ export class InteractiveMode {
 		};
 	}
 
+	/**
+	 * Name→handler table total over BUILTIN_SLASH_COMMANDS: BuiltinCommandName is
+	 * derived from that array, so a registry built-in without a handler here is a
+	 * compile-time error and the dispatch list cannot drift from the registry.
+	 * Each entry replicates the pre-registry hardcoded branch exactly, including
+	 * its editor-clear ordering.
+	 */
+	private builtinControlDispatch(): Record<BuiltinCommandName, ControlDispatchEntry> {
+		return {
+			settings: {
+				arg: "none",
+				run: () => {
+					this.showSettingsSelector();
+					this.editor.setText("");
+				},
+			},
+			model: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleModelCommand(arg);
+				},
+			},
+			"scoped-models": {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.showModelsSelector();
+				},
+			},
+			skills: {
+				arg: "none",
+				run: () => {
+					this.editor.setText("");
+					this.showSkillsSelector();
+				},
+			},
+			export: {
+				arg: "full",
+				run: async (text) => {
+					await this.handleExportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			import: {
+				arg: "full",
+				run: async (text) => {
+					await this.handleImportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			share: {
+				arg: "none",
+				run: async () => {
+					await this.handleShareCommand();
+					this.editor.setText("");
+				},
+			},
+			copy: {
+				arg: "none",
+				run: async () => {
+					await this.handleCopyCommand();
+					this.editor.setText("");
+				},
+			},
+			name: {
+				arg: "full",
+				run: (text) => {
+					this.handleNameCommand(text);
+					this.editor.setText("");
+				},
+			},
+			session: {
+				arg: "none",
+				run: () => {
+					this.handleSessionCommand();
+					this.editor.setText("");
+				},
+			},
+			changelog: {
+				arg: "none",
+				run: () => {
+					this.handleChangelogCommand();
+					this.editor.setText("");
+				},
+			},
+			hotkeys: {
+				arg: "none",
+				run: () => {
+					this.handleHotkeysCommand();
+					this.editor.setText("");
+				},
+			},
+			fork: {
+				arg: "none",
+				run: () => {
+					this.showUserMessageSelector();
+					this.editor.setText("");
+				},
+			},
+			clone: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleCloneCommand();
+				},
+			},
+			tree: {
+				arg: "none",
+				run: () => {
+					this.showTreeSelector();
+					this.editor.setText("");
+				},
+			},
+			trust: {
+				arg: "none",
+				run: () => {
+					this.showTrustSelector();
+					this.editor.setText("");
+				},
+			},
+			login: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleLoginCommand(arg);
+				},
+			},
+			logout: {
+				arg: "none",
+				run: () => {
+					this.showOAuthSelector("logout");
+					this.editor.setText("");
+				},
+			},
+			new: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleClearCommand();
+				},
+			},
+			compact: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleCompactCommand(arg);
+				},
+			},
+			resume: {
+				arg: "none",
+				run: () => {
+					this.showSessionSelector();
+					this.editor.setText("");
+				},
+			},
+			reload: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleReloadCommand();
+				},
+			},
+			quit: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.shutdown();
+				},
+			},
+		};
+	}
+
+	/** Hidden easter-egg control commands; exact-match only, dispatched ahead of the registry. */
+	private runHiddenControlCommand(name: HiddenControlCommand): void {
+		switch (name) {
+			case "debug":
+				this.handleDebugCommand();
+				break;
+			case "arminsayshi":
+				this.handleArminSaysHi();
+				break;
+			case "dementedelves":
+				this.handleDementedDelves();
+				break;
+		}
+	}
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);

@@ -65,6 +65,8 @@ import {
 	type CommandRegistry,
 	type ExtensionCommandInfo,
 	formatNestedVariantsNote,
+	type ResolvedBuiltinInvocation,
+	type ResolvedExtensionInvocation,
 } from "./commands/registry.ts";
 import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
 import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
@@ -2139,6 +2141,21 @@ export class AgentSession {
 	/** Resolve an extension command for UI gating (bare or `ext:`-qualified). */
 	resolveExtensionCommand(commandName: string): ResolvedCommand | undefined {
 		return this._resolveExtensionCommand(commandName);
+	}
+
+	/**
+	 * Resolve a control invocation (built-in or extension) by bare or qualified name,
+	 * routed through the A.1 registry with the same precedence autocomplete and listing
+	 * use: built-ins outrank extensions, a bare-name loser stays reachable via its
+	 * `ext:` qualifier. Returns undefined for prompt-producing entries (skills,
+	 * commands, templates), unregistered names, and any non-control resolution.
+	 */
+	resolveControlCommand(name: string): ResolvedBuiltinInvocation | ResolvedExtensionInvocation | undefined {
+		const invocation = this._buildCommandRegistry().resolve(name, { messageInitial: true });
+		if (invocation?.source !== "builtin" && invocation?.source !== "extension") {
+			return undefined;
+		}
+		return invocation;
 	}
 
 	/** Render one invocation through the C1b pipeline with the session's live context. */

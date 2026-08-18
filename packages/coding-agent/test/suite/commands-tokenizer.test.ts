@@ -253,6 +253,14 @@ describe("A.1 control gate (rule 7)", () => {
 		expect(reg.resolve("model", { messageInitial: true })?.control).toBe(true);
 		expect(reg.resolve("model", { messageInitial: false })).toBeUndefined();
 	});
+
+	it("gates extension controls message-initial-only as well", () => {
+		const reg = registry({
+			extensionCommands: [{ name: "deploy", invocationName: "deploy" }],
+		});
+		expect(reg.resolve("deploy", { messageInitial: true })?.source).toBe("extension");
+		expect(reg.resolve("deploy", { messageInitial: false })).toBeUndefined();
+	});
 });
 
 describe("namespace precedence and collisions", () => {

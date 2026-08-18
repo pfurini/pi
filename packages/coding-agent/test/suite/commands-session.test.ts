@@ -327,6 +327,49 @@ describe("extension command dispatch via the ext: qualifier (Fix #1)", () => {
 	});
 });
 
+describe("resolveControlCommand (c4e dispatch precedence)", () => {
+	it("resolves the built-in for a bare colliding name, the extension for unique and ext:-qualified names", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					// "model" collides with the built-in /model, which outranks extensions.
+					pi.registerCommand("model", {
+						description: "Extension model command",
+						handler: async () => {},
+					});
+					pi.registerCommand("unique", {
+						description: "Non-colliding extension command",
+						handler: async () => {},
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		expect(harness.session.resolveControlCommand("model")?.source).toBe("builtin");
+		expect(harness.session.resolveControlCommand("unique")?.source).toBe("extension");
+		expect(harness.session.resolveControlCommand("ext:model")?.source).toBe("extension");
+	});
+
+	it("returns undefined for prompt-producing entries and unregistered names", async () => {
+		const harness = await createSession({ skills: [{ name: "rev", body: "b" }] });
+
+		// A skill is prompt-producing, not a control; the seam must not return it.
+		expect(harness.session.resolveControlCommand("rev")).toBeUndefined();
+		expect(harness.session.resolveControlCommand("nonexistent")).toBeUndefined();
+	});
+
+	it("keeps the hidden control commands out of the listing and the registry", async () => {
+		const harness = await createSession({});
+		const names = harness.session.getCommands().map((entry) => entry.name);
+
+		expect(names).not.toContain("debug");
+		expect(names).not.toContain("arminsayshi");
+		expect(names).not.toContain("dementedelves");
+		expect(harness.session.resolveControlCommand("debug")).toBeUndefined();
+	});
+});
+
 describe("queued mixed invocations (A.5 deferred rendering)", () => {
 	it("queues literal text, then composes skill + command spans on consumption with images intact", async () => {
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createWaitingSession({

@@ -682,7 +682,15 @@ function getOverridePatterns(entries: string[]): string[] {
 	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
 }
 
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
+/** A retained skill-discovery root and the settings overrides that governed its leaves (c4d). */
+export interface SkillDiscoveryRootRecord {
+	root: string;
+	metadata: PathMetadata;
+	/** Settings patterns + their baseDir; absent for roots no settings pattern governs. */
+	overrides?: { patterns: string[]; baseDir: string };
+}
+
+export function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
 	const overrides = getOverridePatterns(patterns);
 	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
 	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
@@ -790,8 +798,8 @@ export class DefaultPackageManager implements PackageManager {
 	 * Keyed by canonical root; the main bucket is rebuilt by resolve(), the temporary
 	 * bucket by resolveExtensionSources().
 	 */
-	private skillDiscoveryRoots = new Map<string, { root: string; metadata: PathMetadata }>();
-	private temporarySkillDiscoveryRoots = new Map<string, { root: string; metadata: PathMetadata }>();
+	private skillDiscoveryRoots = new Map<string, SkillDiscoveryRootRecord>();
+	private temporarySkillDiscoveryRoots = new Map<string, SkillDiscoveryRootRecord>();
 	private skillRootsBucket = this.skillDiscoveryRoots;
 
 	constructor(options: PackageManagerOptions) {
@@ -809,15 +817,24 @@ export class DefaultPackageManager implements PackageManager {
 	 * resolveExtensionSources() (c4d): configured and auto-discovery candidate roots
 	 * (including empty or not-yet-existing ones) with their trust/source metadata.
 	 */
-	getSkillDiscoveryRoots(): Array<{ root: string; metadata: PathMetadata }> {
+	getSkillDiscoveryRoots(): Array<SkillDiscoveryRootRecord> {
 		return [...this.skillDiscoveryRoots.values(), ...this.temporarySkillDiscoveryRoots.values()];
 	}
 
-	private recordSkillDiscoveryRoot(root: string, metadata: PathMetadata): void {
+	/**
+	 * `overrides` carries the settings patterns that governed the root's leaves at
+	 * resolve time, so a c4d root re-scan can re-evaluate a leaf created later
+	 * (the resolved-leaf snapshot only covers leaves that already existed).
+	 */
+	private recordSkillDiscoveryRoot(
+		root: string,
+		metadata: PathMetadata,
+		overrides?: SkillDiscoveryRootRecord["overrides"],
+	): void {
 		if (!root) return;
 		const key = canonicalizePath(root);
 		if (!this.skillRootsBucket.has(key)) {
-			this.skillRootsBucket.set(key, { root, metadata });
+			this.skillRootsBucket.set(key, { root, metadata, ...(overrides && { overrides }) });
 		}
 	}
 
@@ -2464,7 +2481,10 @@ export class DefaultPackageManager implements PackageManager {
 			);
 
 			// Project skills from .pi/
-			this.recordSkillDiscoveryRoot(projectDirs.skills, projectMetadata);
+			this.recordSkillDiscoveryRoot(projectDirs.skills, projectMetadata, {
+				patterns: projectOverrides.skills,
+				baseDir: projectBaseDir,
+			});
 			addResources(
 				"skills",
 				collectAutoSkillEntries(projectDirs.skills, "pi"),
@@ -2481,7 +2501,10 @@ export class DefaultPackageManager implements PackageManager {
 				...projectMetadata,
 				baseDir: agentsBaseDir,
 			};
-			this.recordSkillDiscoveryRoot(agentsSkillsDir, agentsMetadata);
+			this.recordSkillDiscoveryRoot(agentsSkillsDir, agentsMetadata, {
+				patterns: projectOverrides.skills,
+				baseDir: projectBaseDir,
+			});
 			addResources(
 				"skills",
 				collectAutoSkillEntries(agentsSkillsDir, "agents"),
@@ -2518,7 +2541,10 @@ export class DefaultPackageManager implements PackageManager {
 		);
 
 		// User skills from ~/.pi/agent/
-		this.recordSkillDiscoveryRoot(userDirs.skills, userMetadata);
+		this.recordSkillDiscoveryRoot(userDirs.skills, userMetadata, {
+			patterns: userOverrides.skills,
+			baseDir: globalBaseDir,
+		});
 		addResources(
 			"skills",
 			collectAutoSkillEntries(userDirs.skills, "pi"),
@@ -2533,7 +2559,10 @@ export class DefaultPackageManager implements PackageManager {
 			...userMetadata,
 			baseDir: userAgentsBaseDir,
 		};
-		this.recordSkillDiscoveryRoot(userAgentsSkillsDir, userAgentsMetadata);
+		this.recordSkillDiscoveryRoot(userAgentsSkillsDir, userAgentsMetadata, {
+			patterns: userOverrides.skills,
+			baseDir: globalBaseDir,
+		});
 		addResources(
 			"skills",
 			collectAutoSkillEntries(userAgentsSkillsDir, "agents"),

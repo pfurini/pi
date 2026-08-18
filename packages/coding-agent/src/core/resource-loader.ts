@@ -20,6 +20,7 @@ import type { Extension, ExtensionRuntime, InlineExtension, LoadExtensionsResult
 import { findGitPaths } from "./footer-data-provider.ts";
 import {
 	DefaultPackageManager,
+	isEnabledByOverrides,
 	type PathMetadata,
 	type ResolvedResource,
 	resourcePrecedenceRank,
@@ -60,6 +61,13 @@ export interface ScannedSkillRoot {
 	file?: string;
 	/** Trust/source metadata from the package manager (or the loader's CLI/nested defaults). */
 	metadata?: PathMetadata;
+	/**
+	 * Settings override patterns that governed this root's leaves at resolve time.
+	 * A root re-scan re-evaluates them so a leaf created mid-session is filtered the
+	 * same way `/reload` would filter it (the disabled-leaf snapshot only knows leaves
+	 * that already existed).
+	 */
+	overrides?: { patterns: string[]; baseDir: string };
 }
 
 /** Session-facing notification emitted by the loader's watch/discovery machinery (c4d). */
@@ -104,6 +112,16 @@ function skillRootPrecedenceRank(root: ScannedSkillRoot): number {
 	if (root.metadata === undefined) return 0;
 	if (root.metadata.scope === "temporary") return -1;
 	return resourcePrecedenceRank(root.metadata);
+}
+
+/**
+ * Coalescing compares the whole published state, not just the resource array: a
+ * refresh can leave the winner set byte-identical while producing a new diagnostic
+ * (a newly added skill that *loses* a name collision is the motivating case), and
+ * that diagnostic is the only signal the user gets.
+ */
+function diagnosticsSignature(diagnostics: readonly ResourceDiagnostic[]): string {
+	return diagnostics.map((d) => `${d.type}|${d.path ?? ""}|${d.message}`).join("\n");
 }
 
 /** Semantic equality for the c4d coalescing refresh: duplicate states assign but never publish/notify. */
@@ -370,6 +388,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private skillDiscoveryRootEntries: ScannedSkillRoot[];
 	/** c4d: nested roots registered by tool-touch discovery, keyed by canonical root; persist across reload until trust is revoked. */
 	private nestedSkillRoots: Map<string, { root: string; qualifier: string }>;
+	/** c4d: last emitted scan-error per unregistered nested root, so per-tool-call retries do not re-warn identically. */
+	private failedNestedScanErrors = new Map<string, string>();
 	/** c4d: canonical leaf paths the last resolve() resolved as disabled; root re-scans must not resurrect them. */
 	private disabledSkillLeafPaths: Set<string>;
 	/** c4d: the loader-owned watcher; created lazily at the end of the first reload. */
@@ -520,16 +540,23 @@ export class DefaultResourceLoader implements ResourceLoader {
 			if (this.nestedSkillRoots.has(canonical)) continue;
 			const scan = scanNestedSkillRoot(candidate.root);
 			if (scan.error !== undefined) {
-				this.notifyResourceChange({
-					kind: "diagnostic",
-					diagnostic: {
-						type: "warning",
-						message: `nested skill root could not be scanned: ${scan.error}`,
-						path: candidate.root,
-					},
-				});
+				// A failed root stays unregistered so a later touch retries, and touches fire
+				// after every single-file tool call — so emit only when the failure is new or
+				// its message changed, matching the watcher's one-per-episode dedup.
+				if (this.failedNestedScanErrors.get(canonical) !== scan.error) {
+					this.failedNestedScanErrors.set(canonical, scan.error);
+					this.notifyResourceChange({
+						kind: "diagnostic",
+						diagnostic: {
+							type: "warning",
+							message: `nested skill root could not be scanned: ${scan.error}`,
+							path: candidate.root,
+						},
+					});
+				}
 				continue;
 			}
+			this.failedNestedScanErrors.delete(canonical);
 			this.nestedSkillRoots.set(canonical, candidate);
 			try {
 				this.refreshSkillsAndCommands();
@@ -663,7 +690,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		// re-scan does not resurrect what a settings pattern disabled.
 		this.skillDiscoveryRootEntries = this.packageManager
 			.getSkillDiscoveryRoots()
-			.map(({ root, metadata }) => this.toScannedSkillRoot(root, metadata))
+			.map(({ root, metadata, overrides }) => this.toScannedSkillRoot(root, metadata, overrides))
 			// Roots scan in the same precedence order the resolved leaves scan in, so a
 			// root re-scan cannot change collision winners: temporary (CLI) sources first,
 			// then project-local, project-auto, user-local, user-auto, package.
@@ -978,12 +1005,19 @@ export class DefaultResourceLoader implements ResourceLoader {
 				qualifiedRoots: [...this.nestedSkillRoots.values()],
 			});
 		}
-		// Root re-scans rediscover leaves a settings pattern disabled at resolve time; drop them again.
-		if (this.disabledSkillLeafPaths.size > 0) {
+		// Root re-scans rediscover leaves a settings pattern disabled at resolve time; drop them
+		// again. The path snapshot only covers leaves that existed at resolve time, so a leaf
+		// created mid-session is re-evaluated against its root's retained override patterns —
+		// otherwise the light refresh would publish what `/reload` filters out.
+		if (this.disabledSkillLeafPaths.size > 0 || this.skillDiscoveryRootEntries.some((root) => root.overrides)) {
 			skillsResult = {
-				skills: skillsResult.skills.filter(
-					(skill) => !this.disabledSkillLeafPaths.has(canonicalizePath(skill.filePath)),
-				),
+				skills: skillsResult.skills.filter((skill) => {
+					const canonical = canonicalizePath(skill.filePath);
+					if (this.disabledSkillLeafPaths.has(canonical)) return false;
+					const governing = this.governingSkillRoot(canonical);
+					if (!governing?.overrides) return true;
+					return isEnabledByOverrides(skill.filePath, governing.overrides.patterns, governing.overrides.baseDir);
+				}),
 				diagnostics: skillsResult.diagnostics,
 			};
 		}
@@ -1003,7 +1037,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return normalized.skill;
 		});
 		const nextDiagnostics = [...resolvedSkills.diagnostics, ...normalizationDiagnostics];
-		if (options?.coalesce && skillsSemanticallyEqual(nextSkills, this.skills)) {
+		if (
+			options?.coalesce &&
+			skillsSemanticallyEqual(nextSkills, this.skills) &&
+			diagnosticsSignature(nextDiagnostics) === diagnosticsSignature(this.skillDiagnostics)
+		) {
 			this.skills = nextSkills;
 			this.skillDiagnostics = nextDiagnostics;
 			return false;
@@ -1067,7 +1105,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		commands.push(...adapted.commands);
 		diagnostics.push(...adapted.diagnostics);
 
-		if (options?.coalesce && commandsSemanticallyEqual(commands, this.commands)) {
+		if (
+			options?.coalesce &&
+			commandsSemanticallyEqual(commands, this.commands) &&
+			diagnosticsSignature(diagnostics) === diagnosticsSignature(this.commandDiagnostics)
+		) {
 			// Semantically identical: keep the fresh objects (matching the skills
 			// branch's `this.skills = nextSkills`) but publish/notify nothing.
 			this.commands = commands;
@@ -1227,8 +1269,30 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return resolvePath(p, this.cwd, { trim: true });
 	}
 
+	/**
+	 * The retained root that governs a leaf: the longest matching root directory, so a
+	 * nested root's own patterns win over an ancestor's.
+	 */
+	private governingSkillRoot(canonicalLeafPath: string): ScannedSkillRoot | undefined {
+		let best: ScannedSkillRoot | undefined;
+		let bestLength = -1;
+		for (const root of this.skillDiscoveryRootEntries) {
+			const dir = canonicalizePath(root.dir);
+			if (canonicalLeafPath !== dir && !canonicalLeafPath.startsWith(`${dir}/`)) continue;
+			if (dir.length > bestLength) {
+				best = root;
+				bestLength = dir.length;
+			}
+		}
+		return best;
+	}
+
 	/** Normalize a configured skill path (dir or direct file) into a scanned-root entry (c4d). */
-	private toScannedSkillRoot(path: string, metadata?: PathMetadata): ScannedSkillRoot {
+	private toScannedSkillRoot(
+		path: string,
+		metadata?: PathMetadata,
+		overrides?: ScannedSkillRoot["overrides"],
+	): ScannedSkillRoot {
 		let isFile = false;
 		try {
 			isFile = statSync(path).isFile();
@@ -1236,10 +1300,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 			// A not-yet-existing `.md` path is a direct skill file watched via its parent.
 			isFile = path.endsWith(".md");
 		}
+		const extra = { ...(metadata && { metadata }), ...(overrides && { overrides }) };
 		if (isFile) {
-			return { scanPath: path, dir: dirname(path), file: path, ...(metadata && { metadata }) };
+			return { scanPath: path, dir: dirname(path), file: path, ...extra };
 		}
-		return { scanPath: path, dir: path, ...(metadata && { metadata }) };
+		return { scanPath: path, dir: path, ...extra };
 	}
 
 	/**

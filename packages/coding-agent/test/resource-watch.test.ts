@@ -1,5 +1,5 @@
 import type { FSWatcher } from "node:fs";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -164,13 +164,45 @@ describe("ResourceWatcher", () => {
 		mkdirSync(join(skills, "newskill"));
 		factory.emit(skills, "newskill");
 		timers.flush();
-		expect(refreshes).toHaveLength(1);
+		// Two refreshes: the scan that discovered the child dir, then the catch-up scan the
+		// cycle runs once its watcher is attached (a write in that gap is otherwise lost).
+		expect(refreshes).toHaveLength(2);
 		expect(factory.live().some((w) => w.dir === join(skills, "newskill"))).toBe(true);
 
 		writeFileSync(join(skills, "newskill", "SKILL.md"), "---\ndescription: y\n---\n");
 		factory.emit(join(skills, "newskill"), "SKILL.md");
 		timers.flush();
-		expect(refreshes).toHaveLength(2);
+		// No new topology this time, so the edit costs exactly one refresh.
+		expect(refreshes).toHaveLength(3);
+		watcher.dispose();
+	});
+
+	it("re-scans after attaching a new watcher so a write landing in the attach gap is not lost", () => {
+		const root = tempDir();
+		const skills = join(root, ".pi", "skills");
+		mkdirSync(join(skills, "existing"), { recursive: true });
+		writeFileSync(join(skills, "existing", "SKILL.md"), "---\ndescription: x\n---\n");
+		const newSkillDir = join(skills, "newskill");
+
+		// Each refresh records what a loader scanning right then would have seen.
+		const sawNewSkill: boolean[] = [];
+		const { watcher, factory, timers } = makeWatcher({
+			onRefreshNeeded: () => {
+				sawNewSkill.push(existsSync(join(newSkillDir, "SKILL.md")));
+				if (sawNewSkill.length === 1) {
+					// The gap: the write lands after the discovering scan but before the new
+					// directory's own watcher exists, so no further event will announce it.
+					writeFileSync(join(newSkillDir, "SKILL.md"), "---\ndescription: y\n---\n");
+				}
+			},
+		});
+		watcher.setRoots([{ dir: skills }]);
+
+		mkdirSync(newSkillDir);
+		factory.emit(skills, "newskill");
+		timers.flush();
+
+		expect(sawNewSkill).toEqual([false, true]);
 		watcher.dispose();
 	});
 
@@ -184,7 +216,8 @@ describe("ResourceWatcher", () => {
 		mkdirSync(join(base, "later", ".pi", "skills"), { recursive: true });
 		factory.emit(base, "later");
 		timers.flush();
-		expect(refreshes).toHaveLength(1);
+		// The root's own watcher is new topology, so a catch-up scan follows the first.
+		expect(refreshes).toHaveLength(2);
 		expect(factory.live().some((w) => w.dir === missing)).toBe(true);
 		watcher.dispose();
 	});
@@ -246,7 +279,9 @@ describe("ResourceWatcher", () => {
 		rmSync(root, { recursive: true, force: true });
 		factory.emit(root, null);
 		timers.flush();
-		expect(refreshes).toHaveLength(1);
+		// Re-anchoring attaches a watcher on the ancestor, which triggers the catch-up scan;
+		// it is a no-op for state, and the loader coalesces it away.
+		expect(refreshes).toHaveLength(2);
 		expect(factory.live().map((w) => w.dir)).toEqual([base]);
 		watcher.dispose();
 	});

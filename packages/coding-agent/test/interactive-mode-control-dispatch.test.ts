@@ -387,6 +387,36 @@ describe("B4: per-command argument conventions", () => {
 		expect(handler(streaming, "handleCompactCommand")).toHaveBeenCalledWith("focus on tests");
 		expect(streaming.session.prompt).not.toHaveBeenCalled();
 	});
+
+	it("normalizes remainder whitespace and treats a trailing-space bare form as bare", async () => {
+		// Internal padding collapses: text.slice(spaceIndex + 1).trim() yields "gpt-5".
+		const padded = createDispatchContext();
+		await submit(padded, "/model   gpt-5");
+		expect(handler(padded, "handleModelCommand")).toHaveBeenCalledWith("gpt-5");
+
+		// Outer trim reduces "/model " to bare "/model", so the remainder is undefined, not "".
+		const trailingSpace = createDispatchContext();
+		await submit(trailingSpace, "/model ");
+		expect(handler(trailingSpace, "handleModelCommand")).toHaveBeenCalledWith(undefined);
+	});
+
+	it("clears the editor with each built-in's pre-registry ordering (before vs after the handler)", async () => {
+		// "remainder"/before-clear: /model clears the editor before opening the selector.
+		const before = createDispatchContext();
+		await submit(before, "/model");
+		const modelHandler = handler(before, "handleModelCommand");
+		const beforeSetText = vi.mocked(before.editor.setText);
+		expect(beforeSetText).toHaveBeenCalledWith("");
+		expect(beforeSetText.mock.invocationCallOrder[0]).toBeLessThan(modelHandler.mock.invocationCallOrder[0]);
+
+		// "full"/after-clear: /export keeps the editor text until its async handler resolves.
+		const after = createDispatchContext();
+		await submit(after, "/export ./out.json");
+		const exportHandler = handler(after, "handleExportCommand");
+		const afterSetText = vi.mocked(after.editor.setText);
+		expect(afterSetText).toHaveBeenCalledWith("");
+		expect(exportHandler.mock.invocationCallOrder[0]).toBeLessThan(afterSetText.mock.invocationCallOrder[0]);
+	});
 });
 
 describe("B4 eligibility: exact-only built-in with a trailing argument falls through in every state", () => {

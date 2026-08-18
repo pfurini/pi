@@ -3183,8 +3183,14 @@ export class InteractiveMode {
 			case "dementedelves":
 				this.handleDementedDelves();
 				break;
+			default: {
+				// Exhaustiveness: adding a HIDDEN_CONTROL_COMMANDS member without a
+				// handler here is a compile error, mirroring the built-in table's guarantee.
+				const _exhaustive: never = name;
+			}
 		}
 	}
+
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);

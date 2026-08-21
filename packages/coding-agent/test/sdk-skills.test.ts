@@ -184,3 +184,109 @@ describe("createAgentSession loader ownership (c4d)", () => {
 		expect(dispose).not.toHaveBeenCalled();
 	});
 });
+
+describe("createAgentSession default active tools", () => {
+	let tempDir: string;
+
+	function writeSkill(): void {
+		const dir = join(tempDir, "skills", "greet-skill");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			join(dir, "SKILL.md"),
+			`---\nname: greet-skill\ndescription: A skill for active-tool tests.\n---\n\n# Greet\n\nSay hello.\n`,
+		);
+	}
+
+	function emptyResourceLoader(): ResourceLoader {
+		return {
+			getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+			getSkills: () => ({ skills: [], diagnostics: [] }),
+			getPrompts: () => ({ prompts: [], diagnostics: [] }),
+			getThemes: () => ({ themes: [], diagnostics: [] }),
+			getAgentsFiles: () => ({ agentsFiles: [] }),
+			getSystemPrompt: () => undefined,
+			getSystemPromptSource: () => undefined,
+			getAppendSystemPrompt: () => [],
+			getAppendSystemPromptSources: () => [],
+			extendResources: () => {},
+			reload: async () => {},
+		};
+	}
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `pi-sdk-tools-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		if (tempDir) {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("activates the skill tool on a default launch when a model-visible skill exists", async () => {
+		writeSkill();
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+		});
+		expect(session.getActiveToolNames()).toContain("skill");
+		session.dispose();
+	});
+
+	it("leaves the active set at the four built-ins when no skills or commands exist", async () => {
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+			resourceLoader: emptyResourceLoader(),
+		});
+		// Hermetic: the stub loader supplies no extension/custom tools, so the active
+		// set is exactly the default built-ins.
+		expect(session.getActiveToolNames().sort()).toEqual(["bash", "edit", "read", "write"]);
+		expect(session.getActiveToolNames()).not.toContain("skill");
+		expect(session.getActiveToolNames()).not.toContain("slash_command");
+		session.dispose();
+	});
+
+	it("does not activate the skill tool when an explicit --tools allowlist omits it", async () => {
+		writeSkill();
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+			tools: ["read", "bash"],
+		});
+		expect(session.getActiveToolNames().sort()).toEqual(["bash", "read"]);
+		expect(session.getActiveToolNames()).not.toContain("skill");
+		session.dispose();
+	});
+
+	it("honors --exclude-tools skill through the default active-set path", async () => {
+		writeSkill();
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+			excludeTools: ["skill"],
+		});
+		const active = session.getActiveToolNames();
+		expect(active).not.toContain("skill");
+		expect(active).toEqual(expect.arrayContaining(["read", "bash", "edit", "write"]));
+		session.dispose();
+	});
+
+	it("activates the slash_command tool on a default launch when a model-visible command exists", async () => {
+		const commandsDir = join(tempDir, "commands");
+		mkdirSync(commandsDir, { recursive: true });
+		writeFileSync(join(commandsDir, "greet.md"), `---\ndescription: Greet command for SDK tests.\n---\nSay hello.\n`);
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+		});
+		expect(session.getActiveToolNames()).toContain("slash_command");
+		session.dispose();
+	});
+});

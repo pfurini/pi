@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { parseArgs } from "../src/cli/args.ts";
+import { describe, expect, test, vi } from "vitest";
+import { parseArgs, printHelp } from "../src/cli/args.ts";
 
 describe("parseArgs", () => {
 	describe("--version flag", () => {
@@ -462,5 +462,20 @@ describe("parseArgs", () => {
 			expect(result.fileArgs).toEqual(["prompt.md"]);
 			expect(result.messages).toEqual(["Do the task"]);
 		});
+	});
+});
+
+describe("printHelp", () => {
+	test("lists skill and slash_command under Built-in Tool Names", () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		try {
+			printHelp();
+			const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+			expect(output).toContain("Built-in Tool Names:");
+			expect(output).toMatch(/\n\s*skill\s+- /);
+			expect(output).toMatch(/\n\s*slash_command\s+- /);
+		} finally {
+			logSpy.mockRestore();
+		}
 	});
 });

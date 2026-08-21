@@ -34,7 +34,6 @@ import {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
-	type ToolName,
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
@@ -73,8 +72,9 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi enables the default built-in tools (read, bash, edit, write)
-	 * and leaves extension/custom tools enabled unless `noTools` changes that default.
+	 * When omitted, pi enables the default built-in tools (read, bash, edit, write) — plus
+	 * the `skill` / `slash_command` tools when a model-visible skill or command exists — and
+	 * leaves extension/custom tools enabled unless `noTools` changes that default.
 	 * When provided, only the listed tool names are enabled.
 	 */
 	tools?: string[];
@@ -261,13 +261,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
-	const initialActiveToolNames: string[] = (
-		options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
-	).filter((name) => !excludedToolNameSet?.has(name));
+	// Default launch (no --tools / --no-tools / --no-builtin-tools) passes `undefined` so
+	// AgentSession._buildRuntime uses its own default active set, which appends the `skill` /
+	// `slash_command` tools when a model-visible skill or command exists. A hardcoded
+	// ["read","bash","edit","write"] here shadowed that branch, so those two tools were never
+	// active on a real launch (only in harnesses that set baseToolsOverride).
+	const initialActiveToolNames: string[] | undefined = options.tools
+		? [...options.tools].filter((name) => !excludedToolNameSet?.has(name))
+		: options.noTools
+			? []
+			: undefined;
 
 	let agent: Agent;
 

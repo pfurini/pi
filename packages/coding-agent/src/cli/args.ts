@@ -414,5 +414,7 @@ ${chalk.bold("Built-in Tool Names:")}
   grep   - Search file contents (read-only, off by default)
   find   - Find files by glob pattern (read-only, off by default)
   ls     - List directory contents (read-only, off by default)
+  skill  - Invoke a loaded skill (active when model-visible skills are loaded)
+  slash_command - Run a loaded command (active when model-visible commands are loaded)
 `);
 }

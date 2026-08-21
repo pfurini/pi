@@ -11,16 +11,15 @@ The two columns have **different evidence strength**, deliberately:
 | Column | Source | Strength |
 | --- | --- | --- |
 | **Pi** | Read from source at commit `9168d8a31` (2026-08-21), file references given per row | Verified now |
-| **Claude Code** | Inherited from the v5 gap analysis in [`pi-vs-claude-code-skill-parity.md`](./pi-vs-claude-code-skill-parity.md), extracted from binary `2.1.220` on 2026-08-02 | **Not re-verified**; may have drifted |
+| **Claude Code** | Inherited from [`claude-code-skill-system-reference.md`](./claude-code-skill-system-reference.md), extracted from binary `2.1.220` on 2026-08-02 | **Not re-verified**; may have drifted |
 
 Treat the CC column as a well-sourced snapshot, not current ground truth. Where
 a decision depends on exact CC behavior today, re-check against a current
 binary. The Pi column is authoritative as of the stated commit.
 
-`pi-vs-claude-code-skill-parity.md` remains the historical record: it is a
-pre-C1 document with status notes appended, so its §4 matrix and §5 gap list
-describe a Pi that no longer exists. This document supersedes those two
-sections. Its CC sections (§3) and open questions (§8) are still useful.
+For CC-side depth beyond a table cell — the full frontmatter schema, the exact
+render-pipeline ordering, hook wire formats — see
+[`claude-code-skill-system-reference.md`](./claude-code-skill-system-reference.md).
 
 ---
 

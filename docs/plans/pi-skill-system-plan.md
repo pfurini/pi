@@ -3,7 +3,7 @@
 **Version 6** (2026-08-11, frozen). This document is **self-contained**: together with the ADRs
 it cites, it is sufficient to write detailed per-phase implementation plans — Appendix A is the
 normative behavior specification, Appendix B the Pi code anchor map. The v5 gap analysis
-(`docs/pi-vs-claude-code-skill-parity.md`) is historical background only, not required reading
+(`docs/claude-code-skill-system-reference.md`) is CC-side background only, not required reading
 (and see Appendix B.9 before citing its ASE numbers). Frozen: further refinement happens in the
 per-phase implementation plans, which are checked against this spec.
 

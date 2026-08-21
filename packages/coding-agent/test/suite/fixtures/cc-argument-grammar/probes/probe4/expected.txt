@@ -1,0 +1,10 @@
+BEGIN
+raw=[b]
+one=[b]
+zero=[a]
+issue=[a]
+branch=[c]
+nope=[$nope]
+END
+
+Reply with exactly: done

@@ -1,0 +1,5 @@
+BEGIN
+g=[]
+END
+
+Reply with exactly: done

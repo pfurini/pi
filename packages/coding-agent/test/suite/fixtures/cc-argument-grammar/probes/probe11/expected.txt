@@ -1,0 +1,9 @@
+BEGIN
+authored=[@notes/local.md]
+authored_dot=[@./notes/local.md]
+authored_abs=[@/tmp/absolute.md]
+fromargs=[@docs/handoff.md]
+fromindex=[@docs/handoff.md]
+END
+
+Reply with exactly: done

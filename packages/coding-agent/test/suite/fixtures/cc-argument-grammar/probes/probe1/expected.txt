@@ -1,0 +1,12 @@
+BEGIN
+a=[alpha]
+b=[beta]
+c=[alpha beta[-1]]
+d=[alpha beta[x]]
+e=[beta]
+f=[alpha beta[ 0 ]]
+g=[$ARGUMENTS[99]]
+h=[alpha beta[]]
+END
+
+Reply with exactly: done

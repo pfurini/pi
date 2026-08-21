@@ -1,0 +1,8 @@
+BEGIN
+only=[$5]
+END
+
+Reply with exactly: done
+
+
+ARGUMENTS: alpha beta

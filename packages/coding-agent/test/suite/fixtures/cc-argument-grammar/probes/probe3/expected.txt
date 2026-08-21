@@ -1,0 +1,5 @@
+BEGIN
+first=[alpha]
+END
+
+Reply with exactly: done

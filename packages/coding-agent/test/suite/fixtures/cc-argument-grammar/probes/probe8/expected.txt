@@ -1,0 +1,6 @@
+BEGIN
+one=[x]
+three=[y]
+END
+
+Reply with exactly: done

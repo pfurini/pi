@@ -1,0 +1,18 @@
+BEGIN
+plain=[a]
+inline=[`a`]
+inlineargs=[`a b`]
+
+```bash
+fenced_zero="a"
+fenced_args="a b"
+fenced_at="$@"
+fenced_default="${DIR:-/tmp}"
+```
+
+~~~
+tilde_zero=a
+~~~
+END
+
+Reply with exactly: done

@@ -1,0 +1,7 @@
+BEGIN
+a=[one]
+b=[two]
+g=[]
+END
+
+Reply with exactly: done

@@ -1,0 +1,12 @@
+BEGIN
+p=[$1]
+q=[$ARGUMENTS]
+r=[$issue]
+s=[\$nope]
+t=[$100.00]
+u=[\\b]
+v=[$@]
+w=[a b]
+END
+
+Reply with exactly: done

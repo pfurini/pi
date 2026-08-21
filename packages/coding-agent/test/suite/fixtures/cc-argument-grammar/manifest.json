@@ -1,0 +1,57 @@
+[
+  {
+    "skill": "probe1",
+    "args": "alpha beta",
+    "covers": "Indexed placeholder: 0-based, leading zeros, out-of-range, non-numeric brackets"
+  },
+  {
+    "skill": "probe2",
+    "args": "alpha beta",
+    "covers": "Unmatched index stays literal AND the append fallback fires"
+  },
+  {
+    "skill": "probe3",
+    "args": "alpha beta",
+    "covers": "A substituted $0 suppresses the append fallback"
+  },
+  {
+    "skill": "probe4",
+    "args": "a b c d",
+    "covers": "Declared ARGUMENTS shadows the built-in; digit-like declared name is dropped"
+  },
+  {
+    "skill": "probe5",
+    "args": "one two",
+    "covers": "Whitespace-separated arguments string; unmatched declared name renders empty"
+  },
+  {
+    "skill": "probe6",
+    "args": "one two",
+    "covers": "An empty-rendering named placeholder still suppresses the append fallback"
+  },
+  {
+    "skill": "probe7",
+    "args": "a b",
+    "covers": "Escaping rules; bare $@ is not a placeholder"
+  },
+  {
+    "skill": "probe8",
+    "args": "x y z",
+    "covers": "Confirms the digit-like declared name is dropped from the slot mapping"
+  },
+  {
+    "skill": "probe9",
+    "args": "a b c",
+    "covers": "No braced form of any kind is recognized"
+  },
+  {
+    "skill": "probe10",
+    "args": "a b",
+    "covers": "Substitution applies inside inline code spans and fenced code blocks"
+  },
+  {
+    "skill": "probe11",
+    "args": "@docs/handoff.md",
+    "covers": "CC performs no @path absolutization, authored or argument-derived. Pins the stage-4 deviation behind issue #6; not an argument-grammar rule."
+  }
+]

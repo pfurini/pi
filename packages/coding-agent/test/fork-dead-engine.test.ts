@@ -6,9 +6,10 @@ import { describe, expect, it } from "vitest";
  * Fork quarantine guard for the legacy argument engine.
  *
  * This fork replaced the CC-inexact argument substitution with `substituteSkillArguments`
- * (0-based, no `$@`, no braced forms). The legacy engine — `substituteArgs`,
- * `expandPromptTemplate`, `formatPromptTemplateInvocation` — is kept byte-identical to
- * `upstream/main` so it merges for free, but it must never be re-wired to a live path:
+ * (0-based, no `$@`, no braced forms). The legacy engine functions — `substituteArgs`,
+ * `expandPromptTemplate`, `formatPromptTemplateInvocation` — are unmodified from
+ * `upstream/main` (the harness copy is byte-identical; the coding-agent copy differs only
+ * in the live loader that shares the file), but they must never be re-wired to a live path:
  * two grammars with different index bases cannot both be reachable.
  *
  * The definitions live in two modules and legitimately call each other internally:

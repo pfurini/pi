@@ -497,7 +497,11 @@ Input: one raw string `R` (everything after the command name for user invocation
    not `R`. A digit-like declared name is **dropped from the mapping entirely**,
    shifting every later name down one slot (`arguments: [one, "2", three]` with args
    `x y z` gives `$one` = `x`, `$three` = `y`); `$1` keeps its positional meaning
-   throughout (probes 4, 8).
+   throughout (probes 4, 8). Whether a declared `ARGUMENTS` also shadows the indexed
+   form `$ARGUMENTS[N]` (rendering `b[0]`) or leaves it as positional access (rendering
+   `a`) is not observed *(derived, unprobed)*: no probe combines a declared `ARGUMENTS`
+   with `$ARGUMENTS[N]`. Phase 2 must capture such a probe before implementing, and
+   until then treats indexed access as unaffected by shadowing (the `a` reading).
 7. Escaping. `\$` before a digit, `ARGUMENTS`, or a declared name renders the
    placeholder literally with the backslash removed (`\$1` → `$1`, `\$100.00` →
    `$100.00`). Before anything else the backslash is retained (`\$nope` → `\$nope`).
@@ -521,23 +525,31 @@ Input: one raw string `R` (everything after the command name for user invocation
    untouched.
 10. No `$@`. No braced forms of any kind. `$@`, `${@:N}`, `${@:N:L}`, `${@:-def}`,
     `${ARGUMENTS:N}`, `${ARGUMENTS:-def}`, `${0:-def}`, and `${name:-def}` are not
-    placeholders and render literally (probes 7, 9). There is no `name=value` binding
-    and no positional compaction: declared names are positional aliases in declaration
-    order (rules 4-5) and nothing else.
+    placeholders and render literally (probes 7, 9). Declared names are positional
+    aliases in declaration order (rules 4-5) and nothing else; there is no `name=value`
+    binding and no positional compaction *(derived, unprobed: no probe passes a
+    `name=value` token)*.
 
 Empty or whitespace-only `R` *(derived, unprobed: no probe exercises it)*: the append
 fallback does not fire (rule 8 requires non-empty `R`); `$ARGUMENTS` substitutes the
 empty string and unmatched declared names render empty (rules 1, 4); indexed
 placeholders are out of range and stay literal (rules 2-3) — they do not render empty.
 
-Single pass, and no cross-stage reinterpretation. Substitution is one pass over the
-body: substituted values are never re-scanned for placeholders, and repeated
-placeholders substitute repeatedly. Later A.3.1 stages do not reinterpret substituted
-argument text as skill-authored syntax. **Known violation:** the `@path` absolutization
-stage (`core/skills/render.ts`) rewrites argument-supplied `@path` values against the
-skill base directory, tracked at https://github.com/pfurini/pi/issues/6. CC performs no
-`@path` absolutization at all (corpus probe 11), so the stage is itself a deviation
-the issue tracks.
+Single pass. Substitution is one pass over the body: repeated placeholders substitute
+repeatedly (probes 1, 10), and substituted values are never re-scanned for placeholders
+*(derived, unprobed)*.
+
+Cross-stage reinterpretation. Two later A.3.1 stages deliberately process the whole
+rendered body and so reach substituted argument text by design: agent-name rewrite
+(A.3.4) and shell injection (A.3.5). A.3.5's post-substitution scanning of argument text
+is CC parity — an argument-supplied `` !`cmd` `` executes, including inside the rule-8
+`ARGUMENTS: R` append — and the A.3.5 security note states this is by design. Outside
+those deliberate stages, later stages do not reinterpret substituted argument text as
+skill-authored syntax. **Known violation** of that rule: the `@path` absolutization stage
+(`core/skills/render.ts`) rewrites argument-supplied `@path` values against the skill
+base directory, tracked at https://github.com/pfurini/pi/issues/6. CC performs no `@path`
+absolutization at all (corpus probe 11), so the stage is itself a deviation the issue
+tracks.
 
 Pi deviations (deliberate):
 

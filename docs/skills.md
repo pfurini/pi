@@ -2,9 +2,10 @@
 
 Skills are markdown instruction packs (`SKILL.md` plus supporting files) that
 the model can invoke when a task matches their description, and that you can
-invoke directly as `/name` commands. This guide covers the operator-facing
-surface: where skills live, how invocation works, and how to control
-visibility and listing cost.
+invoke directly as `/name`. Commands are plain prompt files that share the same
+namespace. This guide covers the operator-facing surface: where they live, the
+frontmatter contract, how invocation and precedence work, what a skill may
+change while it runs, and how to control visibility and listing cost.
 
 ## Locations and loading
 
@@ -16,10 +17,58 @@ Pi loads `SKILL.md` files recursively from its own locations (per ADR-0002,
 - Skills contributed by installed packages, extensions, the `skills` settings
   array, and `--skill` CLI flags
 
-A skill's frontmatter (`name`, `description`, `when_to_use`,
-`disable-model-invocation`, `user-invocable`, `paths`, and the rest of the
-CC-class contract) is normalized at load; unknown fields are preserved.
-Malformed values produce load warnings, never load failures.
+Frontmatter is normalized at load; unknown fields are preserved verbatim, and a
+malformed value produces a load warning and falls back to the default, never a
+load failure. See [Frontmatter reference](#frontmatter-reference) for the full
+field set.
+
+## Frontmatter reference
+
+| field | type | effect |
+| --- | --- | --- |
+| `name` | string | Invocation name; defaults to the skill's directory name. |
+| `description` | string | Listing text the model matches a task against. |
+| `when_to_use` | string | Extra listing context beyond the description. |
+| `argument-hint` | string | Placeholder shown in `/` autocomplete. |
+| `arguments` | string \| string[] \| object | Declares argument names for body substitution (see [Arguments and variables](#arguments-and-variables)). |
+| `disable-model-invocation` | boolean | Hides the skill from the listing and the `skill` tool. |
+| `user-invocable` | boolean | `false` removes the skill from the `/name` namespace. |
+| `paths` | string \| string[] | Globs that boost listing order when matching files are touched. |
+| `model` | string | Runs the invocation under a different model. |
+| `effort` | string \| number | Reasoning effort for the invocation; a number maps to a level. |
+| `disallowed-tools` | string \| string[] | Tools the model may not call while the skill is active. Enforced. |
+| `context` | `inline` \| `fork` | `fork` runs the skill in a subagent instead of the current context. |
+| `agent` | string | Which subagent a forked skill runs in. |
+| `background` | boolean | Runs a forked skill without blocking the session. |
+| `shell` | string | Shell used for `!`-injected commands in the body (default `bash`). |
+| `license`, `compatibility`, `metadata` | — | Carried for interop; no runtime effect. |
+
+`disallowedTools` is accepted as a camelCase alias; when both spellings are
+present the kebab-case `disallowed-tools` wins.
+
+Two fields of the CC-class contract are **parsed but inert** in pi:
+
+- **`allowed-tools`** — pi has no permission layer (ADR-0007). Use
+  `disallowed-tools` to restrict a skill instead.
+- **`hooks`** — retained in frontmatter, never executed.
+
+Both are preserved rather than stripped so a ported skill round-trips unchanged.
+
+## Arguments and variables
+
+Everything after `/name` is the raw argument string `R`, substituted into the
+body before delivery:
+
+- `$ARGUMENTS` and `$@` substitute `R` verbatim.
+- Positional and named placeholders substitute from `R` according to the names
+  declared in `arguments`.
+- `\$` renders a placeholder literally.
+- If `R` is non-empty and no placeholder consumed it, `R` is appended to the
+  body, so a skill that declares nothing still receives its arguments.
+
+Four interop variables are substituted under both the `PI_` and `CLAUDE_`
+prefixes, so a ported skill referencing either name works: `PI_SKILL_DIR`,
+`PI_PROJECT_DIR`, `PI_SESSION_ID`, and `PI_EFFORT`.
 
 ## Watching
 
@@ -69,6 +118,70 @@ The listing is budgeted: descriptions are trimmed to fit
 `floor(contextWindow × skillListingBudgetFraction)` (default 0.01), falling
 back to name+location entries at the floor. Skills whose `paths` glob matches
 recently touched files are listed first and truncated last.
+
+## Commands and the `/name` namespace
+
+Commands are markdown prompt files that share one namespace with skills. They
+load from `~/.pi/agent/commands/` (user scope) and the trust-gated
+`.pi/commands/` (project scope), and are watched live like skills.
+
+Everything invocable by `/name` — built-ins, extension commands, commands,
+prompt templates, and skills — resolves through a single registry under a fixed
+precedence. The lowest tier wins the bare name:
+
+| tier | source |
+| --- | --- |
+| 0 | built-in control commands (`/model`, `/skills`, `/quit`, …) |
+| 1 | extension commands |
+| 2 | commands and prompt templates |
+| 3 | skills |
+
+A name claimed by a higher-precedence source is never silently swallowed: every
+entry keeps a reserved qualifier, so the loser stays reachable explicitly.
+
+- `skill:name` — the skill
+- `prompt:name` — the prompt template
+- `ext:name` — the extension command
+- `dir:name` — a nested skill under its directory-qualified name
+
+Control commands are **message-initial only**: `/model` at the start of a
+message is a command, while the same text mid-message is literal. Skills and
+commands, by contrast, expand anywhere in a message. An unknown `/name` is
+always literal text, never an error.
+
+## Execution semantics
+
+An invocation can carry overrides that apply only for its duration:
+
+- **`model` and `effort`** switch the model and reasoning effort for the
+  invocation, then revert.
+- **`disallowed-tools`** blocks the named tools while the skill is active. When
+  several skills are active at once, their `disallowed-tools` are **unioned** —
+  restrictions accumulate and never cancel each other out.
+- **`context: fork`** runs the skill in a subagent over the pi-subagents RPC
+  instead of the current context, optionally in a named `agent` and, with
+  `background: true`, without blocking the session.
+
+When invocations stack, the most recent one wins for the environment and for
+the `model`/`effort` overrides; conflicting overrides on superseded records
+produce a diagnostic and are preserved rather than applied. `disallowed-tools`
+is the deliberate exception, since relaxing a restriction because a later skill
+did not repeat it would be the unsafe direction.
+
+## Re-invocation and compaction
+
+Invoking the same skill twice does not re-send its body. Delivery is deduped on
+the tuple of skill ID, raw arguments, and the byte-identical rendered body,
+checked against the last full inline delivery of that skill still present in
+context. Change the arguments or edit the skill and the next invocation
+delivers in full again.
+
+After compaction — automatic or `/compact` — the most recent inline delivery of
+each invoked skill is re-attached, most-recently-used first, budgeted at 5,000
+code units per skill and 25,000 combined. Skills you have actually been using
+survive compaction; the rest fall away. The set is recomputed from the session
+branch on every rebuild and never persisted, so it always reflects the current
+history rather than a stale snapshot.
 
 ## Visibility (`skillVisibility` and `/skills`)
 

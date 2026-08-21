@@ -113,8 +113,9 @@ receives the A.9 snapshot and change events (including the query round-trip);
    on `find`.
 
 *Acceptance:* ASE-style fixture (args + `${CLAUDE_SKILL_DIR}` includes convention + effort
-frontmatter) renders correctly on each supported transport; argument-grammar fixture covers the
-A.3.2 examples verbatim; shell-policy fixtures cover `--no-tools`, excluded `bash`, and
+frontmatter) renders correctly on each supported transport; argument-grammar fixtures reproduce
+the committed A.3.2 conformance corpus (`test/suite/fixtures/cc-argument-grammar/`, probes
+1-10) verbatim; shell-policy fixtures cover `--no-tools`, excluded `bash`, and
 `disallowed-tools` blocking injection; a queued steer/follow-up invocation activates its
 overrides when consumed; redirect fixture verifies the corrective reply for
 `Task`/`AskUserQuestion` misses, and that a mapped entry whose target is unregistered falls
@@ -281,7 +282,7 @@ Worked examples to be maintained in the framework forks, not here:
 ## 7. Conformance & validation
 
 - **Fixture pack** (in `packages/coding-agent/test/suite/`, faux provider): synthetic skills
-  exercising each CC feature — one per frontmatter field, each A.3.2 argument-grammar example,
+  exercising each CC feature — one per frontmatter field, each committed A.3.2 corpus probe,
   each A.1 tokenizer example, each A.7.1 include edge case, injection forms incl. tool-policy
   gating, message-block transport, lifecycle behaviors, and stub-RPC fork flows (incl. the
   completion race). Framework frontmatter conformance runs against **committed metadata-only
@@ -415,7 +416,7 @@ extensions. `license`, `compatibility`, `metadata` are parsed and preserved.
 | `description` | Required: missing/empty → skill not loaded (diagnostic). >1024 chars → warning only. |
 | `when_to_use` | Appended to the listing entry; combined description + when_to_use capped at 1,536 chars in listings. |
 | `argument-hint` | Shown in autocomplete/menus; no semantic effect. |
-| `arguments` | Declares named arguments for `$name` substitution (grammar in A.3.2). |
+| `arguments` | Declares named arguments as positional aliases for `$name` substitution, resolved in declaration order (grammar in A.3.2). |
 | `disable-model-invocation` | `true` → excluded from listing and `skill` tool; still user-invocable. Upper bound — see A.6 visibility table. |
 | `user-invocable` | `false` → hidden from menus and command expansion; still model-invocable. Upper bound — see A.6 visibility table. |
 | `model` | Ephemeral per-request model override (A.5); value is a Pi model id. CC values from imported skills: `inherit` = no-op; `haiku`/`sonnet`/`opus`/`fable` resolve best-effort against available models, else diagnostic + ignore. |
@@ -449,40 +450,190 @@ delivered (A.4) and persists in context for the session.
 
 #### A.3.2 Argument grammar (normative)
 
-Input: one raw string `R` (everything after the command name for user invocation; the `args`
-value for the `skill` tool). Rules:
+**Amended 2026-08-21 (appended by the cc-exact-argument-grammar PRD, Phase 1 — spec
+amendment — not original frozen-v6 text):** the previous text of this section specified a
+grammar Claude Code does not implement (a 1-based index base, `$@`, braced slice and
+default forms, `name=value` binding with positional compaction, and an append-fallback
+trigger the corpus falsifies) and is replaced in full by the CC-exact grammar below.
+Implementation status: the engine (`core/skills/arguments.ts`) still implements the
+superseded grammar; the PRD's Phase 2 rewrites it against this section and removes this
+status line. Until then this section deliberately leads the code.
 
-1. `$ARGUMENTS` — and its alias `$@` — substitute `R` **verbatim** (quotes, spacing,
-   everything).
-2. Positional tokenization of `R`: split on whitespace; double or single quotes group a token
-   (quotes stripped); backslash escapes the next character everywhere; an unterminated quote
-   runs to end of string (no error). Tokens are 1-based: `$1` ≡ `$ARGUMENTS[1]`. Out-of-range
-   → empty string.
-3. Named arguments: `arguments:` frontmatter is a list of names (or a map name → description).
-   Tokens of the form `name=value` where `name` is declared bind that name and are **removed
-   from the positional sequence, which is then renumbered (compacted)**. `$name` placeholders
-   substitute bound values, matched longest-name-first (`$outdir` before `$out`). Undeclared
-   `x=y` tokens stay positional.
-4. Slicing over the post-binding positional sequence: `${@:N}` substitutes tokens N onward,
-   space-joined; `${@:N:L}` substitutes L tokens starting at N (bash-style; inherited from the
-   engine, Appendix B.2).
-5. Defaults: `${ARGUMENTS:-default}`, `${@:-default}`, `${N:-default}`, `${name:-default}`
-   substitute the default when the value is empty/absent.
-6. Escaping placeholders (template side): `\$ARGUMENTS`, `\$@`, `\$1`, `\$name` render
-   literally, backslash removed.
-7. Append fallback: if `R` is non-empty and **no** placeholder consumed anything, append
-   `\n\nARGUMENTS: R` to the rendered body. If `R` is empty, placeholders render empty and
-   nothing is appended.
-8. Substitution is a single pass over the template; substituted values are never re-scanned
-   for placeholders. Repeated placeholders substitute repeatedly.
+**Provenance.** This section derives from the committed conformance corpus at
+`packages/coding-agent/test/suite/fixtures/cc-argument-grammar/` (eleven probe skills
+with byte-exact captured output, a `manifest.json` of invocation args, and a README
+recording the capture method and re-capture procedure), captured 2026-08-21 against
+Claude Code 2.1.237. Probes 1-10 establish the grammar below; probe 11 pins the
+neighbouring `@path` absolutization stage. For this section only, the corpus supersedes
+the appendix-wide CC 2.1.220 anchor in the Appendix A preamble; the binary-extracted
+reference behind that anchor never recorded the index base, which is what admitted the
+defect this amendment removes. The preamble's governance clause is unchanged: where CC
+changes later, this spec, not CC, governs. Each rule below cites the probe(s) that
+demonstrate it; statements marked *(derived, unprobed)* follow from the cited rules but
+no probe exercises them.
 
-Examples (fixtures must cover each): with declared `arguments: [name]` and
-`R = alpha "b c" name=x \$lit` — `$ARGUMENTS` = `alpha "b c" name=x \$lit` (verbatim, rule 1);
-positional tokens after named-binding and compaction are `alpha`, `b c`, `$lit` (the `\$` here
-is R-side tokenization escaping, rule 2): `$1` = `alpha`, `$2` = `b c`, `$3` = `$lit`, `$4` =
-`` (empty); `$name` = `x`; `${@:2}` = `b c $lit`. Template-side: a literal `\$1` in the skill
-body renders `$1` (rule 6).
+Input: one raw string `R` (everything after the command name for user invocation; the
+`args` value for the `skill` tool). Rules:
 
+1. `$ARGUMENTS` substitutes `R` verbatim: quotes, spacing, everything (probes 7, 10; the
+   appended blocks of probes 2 and 9 echo `R` verbatim).
+2. `$ARGUMENTS[N]`, where `N` matches `\d+` (leading zeros accepted: `[01]` ≡ `[1]`),
+   substitutes positional token `N`, **0-based**. Out of range leaves the **entire
+   match** literal (`$ARGUMENTS[99]` renders as `$ARGUMENTS[99]`). A non-numeric bracket
+   is not a placeholder at all: bare `$ARGUMENTS` matches and expands, leaving the
+   bracket text behind (`$ARGUMENTS[x]` with args `alpha beta` renders `alpha beta[x]`;
+   same for `[-1]`, `[ 0 ]`, `[]`) (probe 1).
+3. `$N` is shorthand for `$ARGUMENTS[N]`, 0-based; out of range stays literal (probes 2,
+   3, 4).
+4. `$name` substitutes the declared name's positional slot. Declared but unmatched
+   renders empty; undeclared stays literal. Note the asymmetry with rule 3: an unmatched
+   *indexed* placeholder stays literal, an unmatched *named* one renders empty (probes
+   4, 5).
+5. `arguments:` frontmatter accepts a YAML list or a whitespace-separated string
+   (`arguments: alpha beta gamma` declares three names). Names map to positional slots
+   in declaration order (probes 4, 5, 8).
+6. Collisions. A declared name `ARGUMENTS` **shadows the built-in**: with
+   `arguments: [issue, ARGUMENTS, ...]` and args `a b c d`, `$ARGUMENTS` renders `b`,
+   not `R`. A digit-like declared name is **dropped from the mapping entirely**,
+   shifting every later name down one slot (`arguments: [one, "2", three]` with args
+   `x y z` gives `$one` = `x`, `$three` = `y`); `$1` keeps its positional meaning
+   throughout (probes 4, 8).
+7. Escaping. `\$` before a digit, `ARGUMENTS`, or a declared name renders the
+   placeholder literally with the backslash removed (`\$1` → `$1`, `\$100.00` →
+   `$100.00`). Before anything else the backslash is retained (`\$nope` → `\$nope`).
+   A doubled backslash retains both and the placeholder still expands (`\\$1` with
+   args `a b` → `\\b`) (probe 7).
+8. Append fallback. If `R` is non-empty and **no placeholder was substituted**, append
+   `\n\nARGUMENTS: R` (no trailing newline). A substitution counts even when it
+   produces an empty string: a body whose only placeholder is a declared-but-unmatched
+   `$gamma` renders `[]` and gets no append. An unmatched indexed placeholder is left
+   literal and therefore does not count as substituted, so `only=[$5]` with args `alpha
+   beta` gets both the literal `$5` and the appended block (probes 2, 3, 6, 9). CC's
+   published wording ("if `$ARGUMENTS` is not present in the content") is a
+   simplification: it is wrong for `$0`-only bodies (probe 3 substitutes and gets no
+   append despite containing no `$ARGUMENTS`) and for empty-rendering named
+   placeholders (probe 6).
+9. Scope. Substitution applies to the whole body, including inline code spans and
+   fenced code blocks (both `` ``` `` and `~~~` fences); there is no code-block
+   exemption (probe 10). Consequence: shell snippets in a skill body are substituted
+   like any other text, which is exactly why this grammar recognizes CC's forms and
+   nothing more: any bash-shaped extension would rewrite shell code that CC leaves
+   untouched.
+10. No `$@`. No braced forms of any kind. `$@`, `${@:N}`, `${@:N:L}`, `${@:-def}`,
+    `${ARGUMENTS:N}`, `${ARGUMENTS:-def}`, `${0:-def}`, and `${name:-def}` are not
+    placeholders and render literally (probes 7, 9). There is no `name=value` binding
+    and no positional compaction: declared names are positional aliases in declaration
+    order (rules 4-5) and nothing else.
+
+Empty or whitespace-only `R` *(derived, unprobed: no probe exercises it)*: the append
+fallback does not fire (rule 8 requires non-empty `R`); `$ARGUMENTS` substitutes the
+empty string and unmatched declared names render empty (rules 1, 4); indexed
+placeholders are out of range and stay literal (rules 2-3) — they do not render empty.
+
+Single pass, and no cross-stage reinterpretation. Substitution is one pass over the
+body: substituted values are never re-scanned for placeholders, and repeated
+placeholders substitute repeatedly. Later A.3.1 stages do not reinterpret substituted
+argument text as skill-authored syntax. **Known violation:** the `@path` absolutization
+stage (`core/skills/render.ts`) rewrites argument-supplied `@path` values against the
+skill base directory, tracked at https://github.com/pfurini/pi/issues/6. CC performs no
+`@path` absolutization at all (corpus probe 11), so the stage is itself a deviation
+the issue tracks.
+
+Pi deviations (deliberate):
+
+- **Tokenization of `R`.** CC does not document how `R` splits into positional tokens
+  beyond "shell-style quoting". Pi pins its existing tokenizer (`tokenizeSkillArgs`,
+  unchanged): split on whitespace; double or single quotes group a token (quotes
+  stripped); backslash escapes the next character everywhere; an unterminated quote
+  runs to end of string (no error). This clause is Pi's specification, not an observed
+  CC rule.
+- **Map form of `arguments:`.** `arguments:` also accepts a map of name → description;
+  only the names participate in the grammar and the descriptions are metadata.
+  Frontmatter shape only, with no placeholder-grammar effect.
+- **Digit-name load diagnostic.** Rule 6's drop-and-shift rendering is byte-identical
+  to CC's; Pi additionally emits a load diagnostic naming the dropped digit-like
+  declared name so the author is not left debugging a silently skipped slot.
+
+Worked examples (reproduced verbatim from the corpus; Phase 2 asserts against these
+fixtures byte-for-byte):
+
+Example 1 — probe 4, invoked with args `a b c d` (per `manifest.json`).
+`probes/probe4/SKILL.md`:
+
+```markdown
+---
+name: probe4
+description: Probe declared-name collisions with ARGUMENTS and digits
+arguments: [issue, ARGUMENTS, "1", branch]
+---
+
+BEGIN
+raw=[$ARGUMENTS]
+one=[$1]
+zero=[$0]
+issue=[$issue]
+branch=[$branch]
+nope=[$nope]
+END
+
+Reply with exactly: done
+```
+
+Rendered output, `probes/probe4/expected.txt`:
+
+```text
+BEGIN
+raw=[b]
+one=[b]
+zero=[a]
+issue=[a]
+branch=[c]
+nope=[$nope]
+END
+
+Reply with exactly: done
+```
+
+Example 2 — probe 7, invoked with args `a b` (per `manifest.json`).
+`probes/probe7/SKILL.md`:
+
+```markdown
+---
+name: probe7
+description: Probe escaping and dollar-at
+arguments: [issue]
+---
+
+BEGIN
+p=[\$1]
+q=[\$ARGUMENTS]
+r=[\$issue]
+s=[\$nope]
+t=[\$100.00]
+u=[\\$1]
+v=[$@]
+w=[$ARGUMENTS]
+END
+
+Reply with exactly: done
+```
+
+Rendered output, `probes/probe7/expected.txt`:
+
+```text
+BEGIN
+p=[$1]
+q=[$ARGUMENTS]
+r=[$issue]
+s=[\$nope]
+t=[$100.00]
+u=[\\b]
+v=[$@]
+w=[a b]
+END
+
+Reply with exactly: done
+```
 #### A.3.3 (reserved)
 
 #### A.3.4 Agent-name rewrite rule (ADR-0008)
@@ -688,7 +839,8 @@ share the skill render pipeline with these differences:
   args?: string}`), subject to `disable-model-invocation`. CC's `SlashCommand` name reaches it
   through the redirect map (A.8).
 - Existing prompt templates are grandfathered as command sources (same engine, same argument
-  grammar incl. `$@`/slicing — A.3.2); migration note in docs.
+  grammar — A.3.2, declared names included); migration note in docs. One grammar across all
+  three tiers: skills, commands, and prompt templates share A.3.2 exactly.
 
 #### A.7.1 Command include inlining (normative)
 
@@ -806,12 +958,15 @@ Facts an implementer builds on; re-locate by symbol name if lines drift.
    (`agent-session.ts` ~1459). Model invocation: system-prompt `<available_skills>` block
    instructing the model to `read` the file. The expansion and model-read paths are what C1
    retires.
-2. **Argument engine to absorb:** `core/prompt-templates.ts` — `substituteArgs` supports
+2. **Legacy argument engine:** `core/prompt-templates.ts` — `substituteArgs` supports
    `$ARGUMENTS`/`$@`, `$N`, `${@:N}`, `${@:N:L}`, and `${…:-default}` (regex at ~line 74):
    whitespace tokenization with quote-grouping and quote-stripping, 1-based positionals;
-   **no** backslash-escape handling today (A.3.2 rules 2/6 are new); accepts exactly one
-   message-initial command and assigns all trailing text as args (the A.1 tokenizer
-   generalizes this).
+   **no** backslash-escape handling; accepts exactly one message-initial command and
+   assigns all trailing text as args (the A.1 tokenizer generalizes this).
+   **Correction (2026-08-21, cc-exact-argument-grammar PRD Phase 1):** this describes the
+   *legacy* engine, kept as historical record. It is not the engine A.3.2 specifies: its
+   1-based positionals, `$@` alias, and braced slice/default forms are not CC grammar,
+   and the amended A.3.2 supersedes it (the CC-exact engine lands in PRD Phase 2).
 3. **Resource loading:** `core/resource-loader.ts` — `getSkills(): {skills, diagnostics}`;
    internal `skillsOverride` option (not extension-exposed); event bus via `createEventBus`
    (`core/event-bus.ts` — untyped, fire-and-forget, synchronous, no replay/buffering; A.9's

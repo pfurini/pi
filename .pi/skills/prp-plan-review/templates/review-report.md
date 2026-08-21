@@ -15,9 +15,9 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 | Reviewed | {ISO-8601 timestamp with real time — archive suffixes derive from it} |
 | Pass | {first review / re-review verifying the {date} dispositions} |
 
-## Verdict: {READY / REVISE}
+## Verdict: {READY / READY (amendments) / REVISE}
 
-{One-line rationale: what tipped the verdict. REVISE names the blocking findings by title; READY states what was checked and held.}
+{One-line rationale: what tipped the verdict. REVISE names the blocking findings or open decisions by title; READY (amendments) counts the amendment-class findings to fold; READY states what was checked and held.}
 
 **Findings**: {N} blocking · {N} decision · {N} important · {N} suggestions
 
@@ -43,7 +43,7 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 
 ## Blocking Findings
 
-{Finding blocks from the agents, verbatim (angle, location, evidence, impact, recommendation). "None" when empty — then the verdict must be READY.}
+{Finding blocks from the agents, verbatim (angle, location, evidence, impact, recommendation). Design-level blockers only — per the skill's amendment-class filter. "None" when empty; then the verdict is READY or READY (amendments) unless a Decision is open.}
 
 ## Important Findings
 
@@ -60,4 +60,5 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 ## Next Step
 
 {REVISE: answer the Decisions Required items, then `/skill:prp-plan` revise-from-review with this report as input — paste this file's path and address the Blocking Findings; re-run `/skill:prp-plan-review` after (it will run as a re-review against the plan's dispositions).
+READY (amendments): fold the listed findings mechanically via `/skill:prp-plan` revise-from-review with this report — they are binding notes for the implementer — then `/skill:prp-implement {plan path}`. No re-review round.
 READY: `/skill:prp-implement {plan path}`.}

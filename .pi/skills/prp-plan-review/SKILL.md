@@ -80,11 +80,12 @@ Wait for all agents to return.
 
 1. Collect every agent's finding blocks and `ANGLE_VERDICT` line.
 2. Deduplicate: when two angles surface the same defect (common between completeness and validation), keep the finding under the angle with the stronger evidence and note the overlap.
-3. Downgrade implementation-resolvable defects: a finding whose defect would surface within minutes of implementation — plan pseudo-code that would not compile, a mechanism detail a direct test settles, a trivial mechanical inconsistency between plan sections — is IMPORTANT at most, never BLOCKING. Plan review blocks on building the wrong thing or wasting major work; details the implementer's compiler and tests resolve for free do not gate a plan.
+3. Downgrade amendment-class defects: BLOCKING is reserved for a finding whose fix changes the plan's design — its task set, seams, invariants, or the product behavior it commits to (wrong thing built, wrong architecture, major rework). A finding whose fix only edits plan prose is amendment-class: IMPORTANT at most, never BLOCKING. Amendment-class covers implementation-resolvable detail (plan pseudo-code that would not compile, a mechanism detail a direct test settles, a mechanical inconsistency between plan sections), assertion-level test design (an enumerated test matrix missing cases, planned assertions that would pass against current behavior, a test file the gates never name), citation drift, and plan bookkeeping (missing restatements, provenance notes, changelog ownership). The implementer's compiler and tests and the code-review loop resolve these for free; they do not gate a plan.
 4. Reclassify decisions: a finding whose resolution is a user choice — an unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` item, scope or slice ownership, a spec interpretation only the user can settle — is class **DECISION**, reported and counted separately from plan defects. It still forces REVISE (an undecided plan cannot be implemented), but the Next Step tells the user to decide, not the planner to fix.
-5. Compute the overall verdict:
-   - Any BLOCKING or DECISION finding, or any `ANGLE_VERDICT: FAIL` → **REVISE**.
-   - Otherwise → **READY** (findings, if any, are advisory).
+5. Compute the overall verdict from the finding classes after steps 2–4. An `ANGLE_VERDICT: FAIL` informs the angle summary but does not force the verdict:
+   - Any BLOCKING (design-level, per step 3) or DECISION finding → **REVISE**.
+   - Findings, but none blocking and no open decision → **READY (amendments)** — the design is approved; the remaining findings are binding amendments that fold mechanically, with no further review round.
+   - No findings → **READY**.
 6. Read `templates/review-report.md` now (mandatory) and write the aggregated report in exactly that structure to:
 
 ```bash
@@ -98,17 +99,17 @@ mkdir -p "$PRP_DIR/reviews"
 Report to the user:
 
 - The expanded absolute report path.
-- The verdict (READY / REVISE) with the one-line rationale.
+- The verdict (READY / READY (amendments) / REVISE) with the one-line rationale.
 - The traceability headline when it ran (N covered / N partial / N uncovered / N contradicted), or the loud SKIPPED note when it did not.
 - Finding counts by class (blocking / decision / important / suggestion).
-- Next step: **REVISE on a first review** → answer any Decisions Required, then `/skill:prp-plan` revise-from-review with the report path, then one re-review. **REVISE on a re-review** → the loop is capped: fold remaining findings mechanically (raising altitude where a finding demands more mechanism) and proceed to `/skill:prp-implement` — no further verification round unless the user explicitly asks. **READY** → `/skill:prp-implement <plan path>`.
+- Next step: **REVISE on a first review** → answer any Decisions Required, then `/skill:prp-plan` revise-from-review with the report path, then one re-review. **REVISE on a re-review** → the loop is capped: fold remaining findings mechanically and proceed to `/skill:prp-implement` — no further verification round unless the user explicitly asks. **READY (amendments)** → fold the findings mechanically via `/skill:prp-plan` revise-from-review with the report path (they are binding notes for the implementer), then `/skill:prp-implement <plan path>` — no re-review round. **READY** → `/skill:prp-implement <plan path>`.
 
 ## Gotchas
 
 - **Advisory only.** Never edit the plan, the PRD, or code, and never commit — findings feed a human or a `/skill:prp-plan` revision pass.
 - **Traceability is directional both ways.** Coverage (PRD→plan) alone is half the check; provenance (plan→PRD) catches scope creep the other direction. The brief encodes both — do not drop provenance to save tokens.
 - **Feasibility findings require a codebase check.** A cited pattern flagged as missing without actually looking is worse than no review; the agent brief enforces this, hold the aggregate to it.
-- **Do not soften on aggregation** beyond the step-3 implementation-resolvable filter. A BLOCKING finding with solid evidence that plan review must own — wrong thing built, major rework, an unsettled contract — stays BLOCKING even when the overall picture is positive.
+- **Do not soften on aggregation** beyond the step-3 amendment-class filter. A design-level BLOCKING finding with solid evidence — wrong thing built, major rework, an unsettled contract — stays BLOCKING even when the overall picture is positive. The inverse holds too: never promote an amendment-class finding to BLOCKING to force another round.
 
 ## Resources
 

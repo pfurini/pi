@@ -2188,9 +2188,9 @@ export class AgentSession {
 			return loader.getCommands().commands;
 		}
 		// The retained snapshot replaces rather than appends, so repeated
-		// registry builds never accumulate diagnostics. Declaration reads are
-		// cached on the template objects (loader.ts), so re-adapting an
-		// unchanged prompt snapshot performs no additional file I/O.
+		// registry builds never accumulate diagnostics. Adapting a template is
+		// pure (its `arguments:` is parsed onto the snapshot at load), so
+		// re-adapting an unchanged prompt snapshot performs no file I/O.
 		const adapted = adaptPromptTemplates([...this.promptTemplates]);
 		this._fallbackCommandDiagnostics = adapted.diagnostics;
 		return adapted.commands;

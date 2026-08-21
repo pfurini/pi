@@ -13,7 +13,8 @@ import { inlineCommandIncludes } from "../../src/core/commands/include.ts";
 import type { LoadedCommand } from "../../src/core/commands/loader.ts";
 import { adaptPromptTemplate, adaptPromptTemplates, loadCommandsFromDir } from "../../src/core/commands/loader.ts";
 import { type RenderCommandContext, renderCommand } from "../../src/core/commands/render.ts";
-import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
+import { loadPromptTemplates, type PromptTemplate } from "../../src/core/prompt-templates.ts";
+import type { SkillArguments } from "../../src/core/skills/frontmatter.ts";
 import type { SourceInfo } from "../../src/core/source-info.ts";
 import type { BashOperations } from "../../src/core/tools/bash.ts";
 
@@ -335,6 +336,7 @@ describe("digit-like declared argument names (A.3.2 rule 6 load diagnostic)", ()
 				content: "one=[$one] three=[$three]",
 				filePath,
 				sourceInfo: sourceInfo(filePath),
+				arguments: ["one", "2", "three"],
 			},
 		]);
 		const warnings = result.diagnostics.filter((d) => d.message.includes('"2"'));
@@ -347,58 +349,51 @@ describe("digit-like declared argument names (A.3.2 rule 6 load diagnostic)", ()
 });
 
 describe("prompt-template arguments: declaration (A.3.2 tier parity)", () => {
-	const templateAt = (filePath: string): PromptTemplate => ({
+	// Snapshots carry `arguments:` parsed at load (loadPromptTemplates); adaptation
+	// never re-reads the file, so these fixtures set the declaration directly.
+	const templateAt = (filePath: string, args?: SkillArguments): PromptTemplate => ({
 		name: basename(filePath).replace(/\.md$/, ""),
 		description: "Template",
-		// The adapted body is the template's parsed content; these fixtures keep
-		// content identical to the file body for readability.
 		content: "[$alpha][$beta][$gamma]",
 		filePath,
 		sourceInfo: sourceInfo(filePath),
+		...(args !== undefined && { arguments: args }),
 	});
 
-	it("a template declaring arguments: gets the declared-name mapping (probe 5 shape)", async () => {
-		const dir = makeTempDir();
-		const filePath = join(dir, "named.md");
-		writeFileSync(filePath, "---\narguments: alpha beta gamma\n---\n[$alpha][$beta][$gamma]\n");
-		const result = adaptPromptTemplates([templateAt(filePath)]);
+	it("a snapshot carrying arguments: gets the declared-name mapping (probe 5 shape)", async () => {
+		const filePath = join(makeTempDir(), "named.md");
+		const result = adaptPromptTemplates([templateAt(filePath, "alpha beta gamma")]);
 		expect(result.diagnostics).toEqual([]);
 		const rendered = await renderCommand(result.commands[0], "one two", renderContext());
 		expect(rendered.text).toBe("[one][two][]");
 	});
 
-	it("a template whose file is missing adapts with no declared names", () => {
-		const result = adaptPromptTemplates([templateAt(join(makeTempDir(), "missing.md"))]);
+	it("a snapshot without arguments: adapts to an empty A.7 frontmatter", () => {
+		const result = adaptPromptTemplates([templateAt(join(makeTempDir(), "plain.md"))]);
 		expect(result.commands[0].frontmatter).toEqual({});
 		expect(result.diagnostics).toEqual([]);
 	});
 
-	it("a template with malformed frontmatter adapts with no declared names and does not throw", () => {
+	it("loadPromptTemplates parses arguments: onto the snapshot and drops a malformed template at load", () => {
 		const dir = makeTempDir();
-		const filePath = join(dir, "broken.md");
-		writeFileSync(filePath, "---\narguments: [unterminated\n---\n[$alpha]\n");
-		const result = adaptPromptTemplates([templateAt(filePath)]);
-		expect(result.commands[0].frontmatter).toEqual({});
-		expect(result.diagnostics).toEqual([]);
-	});
+		const goodPath = join(dir, "good.md");
+		writeFileSync(goodPath, "---\narguments: alpha beta gamma\n---\n[$alpha][$beta][$gamma]\n");
+		const brokenPath = join(dir, "broken.md");
+		writeFileSync(brokenPath, "---\narguments: [unterminated\n---\n[$alpha]\n");
 
-	it("a non-ENOENT read failure is tolerated the same way", () => {
-		// EISDIR: a directory passed as the template file path.
-		const result = adaptPromptTemplates([templateAt(makeTempDir())]);
-		expect(result.commands[0].frontmatter).toEqual({});
-		expect(result.diagnostics).toEqual([]);
-	});
+		const loaded = loadPromptTemplates({
+			cwd: dir,
+			agentDir: dir,
+			promptPaths: [goodPath, brokenPath],
+			includeDefaults: false,
+		});
+		// Malformed frontmatter drops the whole template at load (parse throws → null),
+		// so a broken file can never reach adaptation with a half-applied declaration.
+		expect(loaded.map((template) => template.name)).toEqual(["good"]);
+		expect(loaded[0].arguments).toBe("alpha beta gamma");
 
-	it("caches the declaration on the template snapshot: edits without a new snapshot are not re-read", () => {
-		const dir = makeTempDir();
-		const filePath = join(dir, "cached.md");
-		writeFileSync(filePath, "---\narguments: alpha\n---\nbody\n");
-		const template = templateAt(filePath);
-		expect(adaptPromptTemplates([template]).commands[0].frontmatter).toEqual({ arguments: "alpha" });
-		// Same snapshot object: no second read, so an on-disk edit is invisible.
-		writeFileSync(filePath, "---\narguments: beta\n---\nbody\n");
-		expect(adaptPromptTemplates([template]).commands[0].frontmatter).toEqual({ arguments: "alpha" });
-		// A replaced snapshot invalidates the cache by construction.
-		expect(adaptPromptTemplates([templateAt(filePath)]).commands[0].frontmatter).toEqual({ arguments: "beta" });
+		const adapted = adaptPromptTemplates(loaded);
+		expect(adapted.diagnostics).toEqual([]);
+		expect(adapted.commands[0].frontmatter).toEqual({ arguments: "alpha beta gamma" });
 	});
 });

@@ -168,45 +168,16 @@ export function loadCommandsFromDir(dir: string, getSourceInfo: (filePath: strin
 }
 
 /**
- * Read the `arguments:` declaration from a prompt template's own file. The
- * result is cached on the template snapshot (keyed by object identity): the
- * resource loader rebuilds its prompt list on every `/reload`, so a replaced
- * snapshot invalidates by construction, while repeated adaptation of an
- * unchanged snapshot — the `_getLoadedCommands` fallback re-adapts on every
- * command-registry build — performs zero additional reads.
- *
- * Failure contract (mirrors `loadTemplateFromFile`): a missing file, an
- * unreadable file, or malformed frontmatter YAML all mean "no declaration" —
- * no throw, no diagnostic, no behavior change beyond the absent declaration.
- */
-const templateArgumentsCache = new WeakMap<PromptTemplate, SkillArguments | undefined>();
-
-function readTemplateArguments(template: PromptTemplate): SkillArguments | undefined {
-	const cached = templateArgumentsCache.get(template);
-	if (cached !== undefined || templateArgumentsCache.has(template)) {
-		return cached;
-	}
-	let declaration: SkillArguments | undefined;
-	try {
-		const rawContent = readFileSync(template.filePath, "utf-8");
-		const { frontmatter } = parseFrontmatter<Record<string, unknown>>(rawContent);
-		declaration = frontmatter.arguments as SkillArguments | undefined;
-	} catch {
-		declaration = undefined;
-	}
-	templateArgumentsCache.set(template, declaration);
-	return declaration;
-}
-
-/**
  * Adapt one already-resolved prompt template into a `LoadedCommand`. Only the
- * `arguments:` declaration is carried into the A.7 frontmatter (read from the
- * template's own file, cached per snapshot); the remaining A.7 fields default
- * (user-invocable true, model-invocable, no shell override).
+ * `arguments:` declaration is carried into the A.7 frontmatter — parsed onto the
+ * snapshot at load (`loadPromptTemplates`), never re-read here — so a template
+ * whose file changes or disappears after load cannot silently diverge; the
+ * remaining A.7 fields default (user-invocable true, model-invocable, no shell
+ * override).
  */
 export function adaptPromptTemplate(template: PromptTemplate): LoadedCommand {
 	const commandNameValid = isBareSkillCommandName(template.name);
-	const declaredArguments = readTemplateArguments(template);
+	const declaredArguments = template.arguments;
 	return {
 		kind: "prompt",
 		name: template.name,
@@ -232,7 +203,7 @@ export function adaptPromptTemplates(templates: readonly PromptTemplate[]): Load
 		if (!command.commandNameValid) {
 			diagnostics.push(invalidNameDiagnostic(command.name, command.filePath));
 		}
-		for (const digitName of digitLikeDeclaredArgumentNames(readTemplateArguments(template))) {
+		for (const digitName of digitLikeDeclaredArgumentNames(template.arguments)) {
 			diagnostics.push(digitArgumentNameDiagnostic(digitName, template.filePath));
 		}
 		commands.push(command);

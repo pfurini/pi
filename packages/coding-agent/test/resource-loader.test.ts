@@ -104,6 +104,33 @@ Prompt content.`,
 			expect(prompts.some((p) => p.name === "test-prompt")).toBe(true);
 		});
 
+		it("getCommands() surfaces one digit-name warning per name across native commands and adapted templates", async () => {
+			const commandsDir = join(agentDir, "commands");
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(commandsDir, { recursive: true });
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(
+				join(commandsDir, "native.md"),
+				'---\nname: native\ndescription: Native\narguments: [a, "1", "2", b]\n---\nbody\n',
+			);
+			writeFileSync(join(promptsDir, "tpl.md"), '---\narguments: [c, "3", "4", d]\n---\nbody\n');
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			// Exercises the real updateCommands() composition of native-command and
+			// adapted-template diagnostics — not a mocked getCommands().
+			const digitWarnings = loader.getCommands().diagnostics.filter((d) => d.message.includes("digit-like"));
+			const forName = (name: string) => digitWarnings.filter((d) => d.message.includes(`"${name}"`));
+			expect(forName("1")).toHaveLength(1);
+			expect(forName("2")).toHaveLength(1);
+			expect(forName("3")).toHaveLength(1);
+			expect(forName("4")).toHaveLength(1);
+			expect(digitWarnings).toHaveLength(4);
+			expect(forName("1")[0].path?.endsWith("native.md")).toBe(true);
+			expect(forName("3")[0].path?.endsWith("tpl.md")).toBe(true);
+		});
+
 		it("should prefer project resources over user on name collisions", async () => {
 			const userPromptsDir = join(agentDir, "prompts");
 			const projectPromptsDir = join(cwd, ".pi", "prompts");

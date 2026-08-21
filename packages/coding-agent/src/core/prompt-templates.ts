@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve, sep } from "path";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
+import type { SkillArguments } from "./skills/frontmatter.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 
 /**
@@ -15,6 +16,8 @@ export interface PromptTemplate {
 	content: string;
 	sourceInfo: SourceInfo;
 	filePath: string; // Absolute path to the template file
+	/** `arguments:` declaration parsed at load (A.3.2 named positional aliases); undefined when absent. */
+	arguments?: SkillArguments;
 }
 
 /**
@@ -119,10 +122,12 @@ function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptT
 			}
 		}
 
+		const declaredArguments = (frontmatter as Record<string, unknown>).arguments as SkillArguments | undefined;
 		return {
 			name,
 			description,
 			...(frontmatter["argument-hint"] && { argumentHint: frontmatter["argument-hint"] }),
+			...(declaredArguments !== undefined && { arguments: declaredArguments }),
 			content: body,
 			sourceInfo,
 			filePath,

@@ -17,13 +17,14 @@ import { Container } from "../../../tui/src/tui.ts";
 import { adaptPromptTemplates, loadCommandsFromDir } from "../../src/core/commands/loader.ts";
 import { type RenderCommandContext, renderCommand } from "../../src/core/commands/render.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
-import { normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
+import { normalizeSkillInput, type SkillArguments } from "../../src/core/skills/frontmatter.ts";
 import { type RenderSkillContext, renderSkillInvocation } from "../../src/core/skills/render.ts";
 import type { SkillInvocation } from "../../src/core/skills/runtime.ts";
 import { DEFAULT_SKILL_SHELL_SETTINGS } from "../../src/core/skills/shell-injection.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "../../src/core/source-info.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { parseFrontmatter } from "../../src/utils/frontmatter.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
@@ -113,7 +114,7 @@ describe("per-tier identity (AC5)", () => {
 		};
 		const commandRendered = (await renderCommand(loaded.commands[0], ARGS, commandContext)).text;
 
-		// Prompt-template tier (declaration read from the template's own file).
+		// Prompt-template tier (declaration carried on the snapshot, parsed at load).
 		const templatePath = join(dir, "tier-template.md");
 		writeFileSync(templatePath, `---\narguments: [issue]\n---\n${BODY}\n`);
 		const template: PromptTemplate = {
@@ -122,6 +123,7 @@ describe("per-tier identity (AC5)", () => {
 			content: BODY,
 			filePath: templatePath,
 			sourceInfo: sourceInfo(templatePath),
+			arguments: ["issue"],
 		};
 		const adapted = adaptPromptTemplates([template]);
 		expect(adapted.diagnostics).toEqual([]);
@@ -153,6 +155,7 @@ describe("prompt-template arguments: through AgentSession", () => {
 			content: "[$alpha][$beta][$gamma]",
 			filePath,
 			sourceInfo: sourceInfo(filePath),
+			arguments: "alpha beta gamma",
 		};
 		const resourceLoader = {
 			...createTestResourceLoader(),
@@ -195,6 +198,7 @@ function digitWarningDiagnostics() {
 			content: "body",
 			filePath: templatePath,
 			sourceInfo: sourceInfo(templatePath),
+			arguments: ["one", "3"],
 		},
 	]);
 	return [...commandResult.diagnostics, ...templateResult.diagnostics];
@@ -265,8 +269,19 @@ describe("digit-name warning on the lightweight-loader fallback", () => {
 
 	function writeTemplate(dir: string, name: string, declaration: string): PromptTemplate {
 		const filePath = join(dir, `${name}.md`);
-		writeFileSync(filePath, `---\n${declaration}\n---\nbody\n`);
-		return { name, description: "Template", content: "body", filePath, sourceInfo: sourceInfo(filePath) };
+		const content = `---\n${declaration}\n---\nbody\n`;
+		writeFileSync(filePath, content);
+		// Mirror loadTemplateFromFile: the `arguments:` declaration is parsed onto
+		// the snapshot at load, so a rebuilt snapshot reflects a file edit.
+		const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content);
+		return {
+			name,
+			description: "Template",
+			content: "body",
+			filePath,
+			sourceInfo: sourceInfo(filePath),
+			...(frontmatter.arguments !== undefined && { arguments: frontmatter.arguments as SkillArguments }),
+		};
 	}
 
 	it("surfaces the warning exactly once across repeated registry builds and snapshot replacement", async () => {
@@ -302,7 +317,7 @@ describe("digit-name warning on the lightweight-loader fallback", () => {
 		expect(diagnostics[0].message).toContain('"2"');
 	});
 
-	it("declaration reads are cached on the snapshot: no re-read without a new snapshot", async () => {
+	it("the declaration is fixed on the snapshot at load: a file edit without a new snapshot is ignored", async () => {
 		const dir = makeTempDir();
 		const template = writeTemplate(dir, "cached", 'arguments: [one, "2", three]');
 		const holder = { prompts: [template] };
@@ -312,14 +327,14 @@ describe("digit-name warning on the lightweight-loader fallback", () => {
 		harness.session.getCommands();
 		expect(harness.session.getCommandLoadDiagnostics()).toHaveLength(1);
 
-		// Edit the file but keep the snapshot object: zero new reads, so the
-		// registry still sees the original declaration …
+		// Edit the file but keep the snapshot object: adaptation never re-reads,
+		// so the registry still sees the original declaration …
 		writeFileSync(template.filePath, "---\narguments: [one, two, three]\n---\nbody\n");
 		harness.session.getCommands();
 		expect(harness.session.getCommandLoadDiagnostics()).toHaveLength(1);
 
-		// … while a replaced snapshot performs exactly one new read and picks the edit up.
-		holder.prompts = [{ ...template }];
+		// … while a snapshot rebuilt from the edited file reflects the edit.
+		holder.prompts = [writeTemplate(dir, "cached", "arguments: [one, two, three]")];
 		harness.session.getCommands();
 		expect(harness.session.getCommandLoadDiagnostics()).toEqual([]);
 	});

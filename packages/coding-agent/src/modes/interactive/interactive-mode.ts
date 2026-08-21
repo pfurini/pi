@@ -92,9 +92,11 @@ import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { extractUserMessageText, loadProjectPromptHistory } from "../../core/prompt-history.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
+import type { SkillInvocationEntry } from "../../core/session-manager.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
-import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
+import { sliceSkillInvocationSegments } from "../../core/skills/delivery.ts";
+import type { BuiltinCommandName } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -139,6 +141,7 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.ts";
+import { SkillsSelectorComponent } from "./components/skills-selector.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,
@@ -209,6 +212,38 @@ type RenderSessionItem = AgentMessage | Extract<SessionEntry, { type: "custom" }
 
 function isCustomSessionEntry(item: RenderSessionItem): item is Extract<SessionEntry, { type: "custom" }> {
 	return "type" in item && item.type === "custom";
+}
+
+/**
+ * Hidden easter-egg control commands: exact-match dispatch ahead of registry
+ * resolution, deliberately absent from BUILTIN_SLASH_COMMANDS so they never
+ * appear in listing/autocomplete and can never be shadowed by an extension.
+ */
+const HIDDEN_CONTROL_COMMANDS = ["debug", "arminsayshi", "dementedelves"] as const;
+type HiddenControlCommand = (typeof HIDDEN_CONTROL_COMMANDS)[number];
+
+function isHiddenControlCommand(name: string): name is HiddenControlCommand {
+	return (HIDDEN_CONTROL_COMMANDS as readonly string[]).includes(name);
+}
+
+/**
+ * One built-in control dispatch entry. `arg` replicates the eligibility predicate
+ * of the pre-registry hardcoded chain: "none" rejects any trailing text (so
+ * `/quit now` is not a control invocation); "remainder" accepts trailing text and
+ * passes the trimmed post-name remainder (undefined on the bare form); "full"
+ * passes the whole submitted text.
+ */
+type ControlDispatchEntry =
+	| { arg: "none"; run(): void | Promise<void> }
+	| { arg: "remainder"; run(arg: string | undefined): void | Promise<void> }
+	| { arg: "full"; run(text: string): void | Promise<void> };
+
+/** Narrow a registry-resolved built-in name to the table's key union via the table itself. */
+function isBuiltinCommandName(
+	name: string,
+	table: Record<BuiltinCommandName, ControlDispatchEntry>,
+): name is BuiltinCommandName {
+	return name in table;
 }
 
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
@@ -452,9 +487,6 @@ export class InteractiveMode {
 		theme,
 	});
 
-	// Skill commands: command name -> skill file path
-	private skillCommands = new Map<string, string>();
-
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
@@ -629,104 +661,67 @@ export class InteractiveMode {
 		return description ? `[${sourceTag}] ${description}` : `[${sourceTag}]`;
 	}
 
-	private getBuiltInCommandConflictDiagnostics(extensionRunner: ExtensionRunner): ResourceDiagnostic[] {
-		const builtinNames = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name));
-		return extensionRunner
-			.getRegisteredCommands()
-			.filter((command) => builtinNames.has(command.name))
-			.map((command) => ({
-				type: "warning" as const,
-				message:
-					command.invocationName === command.name
-						? `Extension command '/${command.name}' conflicts with built-in interactive command. Skipping in autocomplete.`
-						: `Extension command '/${command.name}' conflicts with built-in interactive command. Available as '/${command.invocationName}'.`,
-				path: command.sourceInfo.path,
-			}));
-	}
-
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
-		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
-			name: command.name,
-			description: command.description,
-			...(command.argumentHint && { argumentHint: command.argumentHint }),
-		}));
+		// Argument completers keyed by command name. The unified getCommands() listing carries
+		// no completers, so reattach the built-in and extension ones by resolved name.
+		const argumentCompleters = new Map<string, NonNullable<SlashCommand["getArgumentCompletions"]>>();
 
-		const modelCommand = slashCommands.find((command) => command.name === "model");
-		if (modelCommand) {
-			modelCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const models =
-					this.session.scopedModels.length > 0
-						? this.session.scopedModels.map((s) => s.model)
-						: this.session.modelRuntime.getAvailableSnapshot();
+		argumentCompleters.set("model", (prefix: string): AutocompleteItem[] | null => {
+			const models =
+				this.session.scopedModels.length > 0
+					? this.session.scopedModels.map((s) => s.model)
+					: this.session.modelRuntime.getAvailableSnapshot();
 
-				if (models.length === 0) return null;
+			if (models.length === 0) return null;
 
-				// Create items with provider/id format
-				const items = models.map((m) => ({
-					id: m.id,
-					provider: m.provider,
-					name: m.name,
-					label: `${m.provider}/${m.id}`,
-				}));
-
-				return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
-					value: item.label,
-					label: item.id,
-					description: item.provider,
-				}));
-			};
-		}
-
-		const loginCommand = slashCommands.find((command) => command.name === "login");
-		if (loginCommand) {
-			loginCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
-				return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
-					value: provider.id,
-					label: provider.id,
-					description: formatLoginProviderCompletionDescription(provider),
-				}));
-			};
-		}
-
-		// Convert prompt templates to SlashCommand format for autocomplete
-		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
-			name: cmd.name,
-			description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-			...(cmd.argumentHint && { argumentHint: cmd.argumentHint }),
-		}));
-
-		// Convert extension commands to SlashCommand format
-		const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
-		const extensionCommands: SlashCommand[] = this.session.extensionRunner
-			.getRegisteredCommands()
-			.filter((cmd) => !builtinCommandNames.has(cmd.name))
-			.map((cmd) => ({
-				name: cmd.invocationName,
-				description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-				getArgumentCompletions: cmd.getArgumentCompletions,
+			// Create items with provider/id format
+			const items = models.map((m) => ({
+				id: m.id,
+				provider: m.provider,
+				name: m.name,
+				label: `${m.provider}/${m.id}`,
 			}));
 
-		// Build skill commands from session.skills (if enabled)
-		this.skillCommands.clear();
-		const skillCommandList: SlashCommand[] = [];
-		if (this.settingsManager.getEnableSkillCommands()) {
-			for (const skill of this.session.resourceLoader.getSkills().skills) {
-				const commandName = `skill:${skill.name}`;
-				this.skillCommands.set(commandName, skill.filePath);
-				skillCommandList.push({
-					name: commandName,
-					description: this.prefixAutocompleteDescription(skill.description, skill.sourceInfo),
-				});
-			}
+			return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
+				value: item.label,
+				label: item.id,
+				description: item.provider,
+			}));
+		});
+
+		argumentCompleters.set("login", (prefix: string): AutocompleteItem[] | null => {
+			const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
+			return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
+				value: provider.id,
+				label: provider.id,
+				description: formatLoginProviderCompletionDescription(provider),
+			}));
+		});
+
+		for (const command of this.session.extensionRunner.getRegisteredCommands()) {
+			if (!command.getArgumentCompletions) continue;
+			// Register under both the bare invocation name and the qualified fallback the
+			// registry assigns when an extension command collides with a built-in.
+			argumentCompleters.set(command.invocationName, command.getArgumentCompletions);
+			argumentCompleters.set(`ext:${command.name}`, command.getArgumentCompletions);
 		}
 
-		return new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
-			this.sessionManager.getCwd(),
-			this.fdPath,
-		);
+		// Project the sole complete A.1 listing (built-ins once, extension commands, native
+		// commands and grandfathered templates, invocable skills) with winner bare names,
+		// qualified fallbacks, and structural source values — the same namespace the tokenizer
+		// dispatches, so the mid-prompt menu and the source badges never diverge from execution.
+		const slashCommands: SlashCommand[] = this.session.getCommands().map((command) => {
+			const completer = argumentCompleters.get(command.name);
+			return {
+				name: command.name,
+				description: this.prefixAutocompleteDescription(command.description, command.sourceInfo),
+				source: command.source,
+				...(command.argumentHint && { argumentHint: command.argumentHint }),
+				...(completer && { getArgumentCompletions: completer }),
+			};
+		});
+
+		return new CombinedAutocompleteProvider(slashCommands, this.sessionManager.getCwd(), this.fdPath);
 	}
 
 	private setupAutocompleteProvider(): void {
@@ -1796,7 +1791,13 @@ export class InteractiveMode {
 
 			const commandDiagnostics = this.session.extensionRunner.getCommandDiagnostics();
 			extensionDiagnostics.push(...commandDiagnostics);
-			extensionDiagnostics.push(...this.getBuiltInCommandConflictDiagnostics(this.session.extensionRunner));
+			// A.1 unified namespace: one aggregated collision line from the registry
+			// (built-in / extension / command / prompt / skill), replacing the old
+			// built-in-vs-extension-only pass.
+			const commandCollision = this.session.getCommandCollisionDiagnostic();
+			if (commandCollision) {
+				extensionDiagnostics.push(commandCollision);
+			}
 
 			const shortcutDiagnostics = this.session.extensionRunner.getShortcutDiagnostics();
 			extensionDiagnostics.push(...shortcutDiagnostics);
@@ -2904,134 +2905,43 @@ export class InteractiveMode {
 			text = text.trim();
 			if (!text) return;
 
-			// Handle commands
-			if (text === "/settings") {
-				this.showSettingsSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleModelCommand(searchTerm);
-				return;
-			}
-			if (text === "/export" || text.startsWith("/export ")) {
-				await this.handleExportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/import" || text.startsWith("/import ")) {
-				await this.handleImportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.handleShareCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/copy") {
-				await this.handleCopyCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.handleNameCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/session") {
-				this.handleSessionCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/changelog") {
-				this.handleChangelogCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/hotkeys") {
-				this.handleHotkeysCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/fork") {
-				this.showUserMessageSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.handleCloneCommand();
-				return;
-			}
-			if (text === "/tree") {
-				this.showTreeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/trust") {
-				this.showTrustSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/login" || text.startsWith("/login ")) {
-				const providerRef = text.startsWith("/login ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleLoginCommand(providerRef);
-				return;
-			}
-			if (text === "/logout") {
-				this.showOAuthSelector("logout");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/new") {
-				this.editor.setText("");
-				await this.handleClearCommand();
-				return;
-			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
-			if (text === "/debug") {
-				this.handleDebugCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/arminsayshi") {
-				this.handleArminSaysHi();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/dementedelves") {
-				this.handleDementedDelves();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume") {
-				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/quit") {
-				this.editor.setText("");
-				await this.shutdown();
-				return;
+			// Control commands: hidden easter-eggs first (exact match, unlisted and
+			// unshadowable), then built-in dispatch routed through the same A.1 registry
+			// resolution autocomplete/listing use (built-ins outrank extensions). A
+			// non-builtin resolution falls through to the extension/bash/compaction/
+			// streaming/normal branches below, which dispatch it as they already do.
+			if (text.startsWith("/")) {
+				const hiddenName = text.slice(1);
+				if (isHiddenControlCommand(hiddenName)) {
+					this.runHiddenControlCommand(hiddenName);
+					this.editor.setText("");
+					return;
+				}
+
+				const spaceIndex = text.indexOf(" ");
+				const token = spaceIndex === -1 ? hiddenName : text.slice(1, spaceIndex);
+				const invocation = this.session.resolveControlCommand(token);
+				if (invocation?.source === "builtin") {
+					const dispatch = this.builtinControlDispatch();
+					if (isBuiltinCommandName(invocation.name, dispatch)) {
+						const entry = dispatch[invocation.name];
+						switch (entry.arg) {
+							case "none":
+								// Exact-only: a trailing argument is not a control invocation.
+								if (spaceIndex === -1) {
+									await entry.run();
+									return;
+								}
+								break;
+							case "remainder":
+								await entry.run(spaceIndex === -1 ? undefined : text.slice(spaceIndex + 1).trim());
+								return;
+							case "full":
+								await entry.run(text);
+								return;
+						}
+					}
+				}
 			}
 
 			// Handle bash command (! for normal, !! for excluded from context)
@@ -3086,6 +2996,199 @@ export class InteractiveMode {
 			}
 			this.recordPromptHistory(text);
 		};
+	}
+
+	/**
+	 * Name→handler table total over BUILTIN_SLASH_COMMANDS: BuiltinCommandName is
+	 * derived from that array, so a registry built-in without a handler here is a
+	 * compile-time error and the dispatch list cannot drift from the registry.
+	 * Each entry replicates the pre-registry hardcoded branch exactly, including
+	 * its editor-clear ordering.
+	 */
+	private builtinControlDispatch(): Record<BuiltinCommandName, ControlDispatchEntry> {
+		return {
+			settings: {
+				arg: "none",
+				run: () => {
+					this.showSettingsSelector();
+					this.editor.setText("");
+				},
+			},
+			model: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleModelCommand(arg);
+				},
+			},
+			"scoped-models": {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.showModelsSelector();
+				},
+			},
+			skills: {
+				arg: "none",
+				run: () => {
+					this.editor.setText("");
+					this.showSkillsSelector();
+				},
+			},
+			export: {
+				arg: "full",
+				run: async (text) => {
+					await this.handleExportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			import: {
+				arg: "full",
+				run: async (text) => {
+					await this.handleImportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			share: {
+				arg: "none",
+				run: async () => {
+					await this.handleShareCommand();
+					this.editor.setText("");
+				},
+			},
+			copy: {
+				arg: "none",
+				run: async () => {
+					await this.handleCopyCommand();
+					this.editor.setText("");
+				},
+			},
+			name: {
+				arg: "full",
+				run: (text) => {
+					this.handleNameCommand(text);
+					this.editor.setText("");
+				},
+			},
+			session: {
+				arg: "none",
+				run: () => {
+					this.handleSessionCommand();
+					this.editor.setText("");
+				},
+			},
+			changelog: {
+				arg: "none",
+				run: () => {
+					this.handleChangelogCommand();
+					this.editor.setText("");
+				},
+			},
+			hotkeys: {
+				arg: "none",
+				run: () => {
+					this.handleHotkeysCommand();
+					this.editor.setText("");
+				},
+			},
+			fork: {
+				arg: "none",
+				run: () => {
+					this.showUserMessageSelector();
+					this.editor.setText("");
+				},
+			},
+			clone: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleCloneCommand();
+				},
+			},
+			tree: {
+				arg: "none",
+				run: () => {
+					this.showTreeSelector();
+					this.editor.setText("");
+				},
+			},
+			trust: {
+				arg: "none",
+				run: () => {
+					this.showTrustSelector();
+					this.editor.setText("");
+				},
+			},
+			login: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleLoginCommand(arg);
+				},
+			},
+			logout: {
+				arg: "none",
+				run: () => {
+					this.showOAuthSelector("logout");
+					this.editor.setText("");
+				},
+			},
+			new: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleClearCommand();
+				},
+			},
+			compact: {
+				arg: "remainder",
+				run: async (arg) => {
+					this.editor.setText("");
+					await this.handleCompactCommand(arg);
+				},
+			},
+			resume: {
+				arg: "none",
+				run: () => {
+					this.showSessionSelector();
+					this.editor.setText("");
+				},
+			},
+			reload: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.handleReloadCommand();
+				},
+			},
+			quit: {
+				arg: "none",
+				run: async () => {
+					this.editor.setText("");
+					await this.shutdown();
+				},
+			},
+		};
+	}
+
+	/** Hidden easter-egg control commands; exact-match only, dispatched ahead of the registry. */
+	private runHiddenControlCommand(name: HiddenControlCommand): void {
+		switch (name) {
+			case "debug":
+				this.handleDebugCommand();
+				break;
+			case "arminsayshi":
+				this.handleArminSaysHi();
+				break;
+			case "dementedelves":
+				this.handleDementedDelves();
+				break;
+			default: {
+				// Exhaustiveness: adding a HIDDEN_CONTROL_COMMANDS member without a
+				// handler here is a compile error, mirroring the built-in table's guarantee.
+				const _exhaustive: never = name;
+			}
+		}
 	}
 
 	private subscribeToAgent(): void {
@@ -3150,12 +3253,18 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				break;
 
+			case "resources_changed":
+				// c4d: a watched or nested skill/command change reaches the mid-prompt
+				// `/` menu without /reload; the provider resnapshots session.getCommands().
+				this.setupAutocompleteProvider();
+				break;
+
 			case "message_start":
 				if (event.message.role === "custom") {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
-					this.addMessageToChat(event.message);
+					this.addMessageToChat(event.message, this.session.getMessageSkillInvocations(event.message));
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
@@ -3431,7 +3540,7 @@ export class InteractiveMode {
 
 	/** Record an accepted live editor submission into the prompt-history cache and the active editor. */
 	private recordPromptHistory(text: string): void {
-		this.promptHistoryController.record(text, this.editor);
+		this.promptHistoryController.record(text);
 	}
 
 	/**
@@ -3482,7 +3591,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(component);
 	}
 
-	private addMessageToChat(message: AgentMessage): void {
+	private addMessageToChat(message: AgentMessage, skillInvocations?: readonly SkillInvocationEntry[]): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -3532,6 +3641,12 @@ export class InteractiveMode {
 				if (textContent) {
 					if (this.chatContainer.children.length > 0) {
 						this.chatContainer.addChild(new Spacer(1));
+					}
+					if (skillInvocations !== undefined) {
+						// B.12 metadata-first path: the entry field is authoritative;
+						// the legacy parser is never consulted when it is present.
+						this.addSkillInvocationSegmentsToChat(textContent, skillInvocations);
+						break;
 					}
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {
@@ -3587,7 +3702,59 @@ export class InteractiveMode {
 		}
 	}
 
-	private renderSessionItems(items: readonly RenderSessionItem[], options: { updateFooter?: boolean } = {}): void {
+	/**
+	 * Metadata-first (B.12) rendering of a user message carrying skill
+	 * invocation blocks: slice the text by UTF-16 offsets and render each block
+	 * collapsibly, with surrounding text in order. Malformed present-metadata
+	 * renders the ordinary message plus one non-fatal diagnostic and never
+	 * consults the legacy parser (absent-field fallback only).
+	 */
+	private addSkillInvocationSegmentsToChat(textContent: string, invocations: readonly SkillInvocationEntry[]): void {
+		const segments = sliceSkillInvocationSegments(textContent, invocations);
+		if (!segments) {
+			const userComponent = new UserMessageComponent(
+				textContent,
+				this.getMarkdownThemeWithSettings(),
+				this.outputPad,
+				this.getMarkdownTransformers(),
+			);
+			this.chatContainer.addChild(userComponent);
+			this.chatContainer.addChild(
+				new Text(theme.fg("warning", "[skill invocation metadata malformed; showing raw message]"), 0, 0),
+			);
+			return;
+		}
+		for (const segment of segments) {
+			if (segment.type === "block") {
+				const component = new SkillInvocationMessageComponent(
+					{
+						name: segment.invocation.name,
+						location: segment.invocation.skillId,
+						content: segment.content,
+						userMessage: undefined,
+					},
+					this.getMarkdownThemeWithSettings(),
+				);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+			} else if (segment.text.trim().length > 0) {
+				this.chatContainer.addChild(
+					new UserMessageComponent(
+						segment.text,
+						this.getMarkdownThemeWithSettings(),
+						this.outputPad,
+						this.getMarkdownTransformers(),
+					),
+				);
+			}
+		}
+	}
+
+	private renderSessionItems(
+		items: readonly RenderSessionItem[],
+		options: { updateFooter?: boolean } = {},
+		invocationsByMessage?: ReadonlyMap<AgentMessage, readonly SkillInvocationEntry[]>,
+	): void {
 		this.pendingTools.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache-miss notices are not persisted; re-derive them from the full entry
@@ -3659,7 +3826,7 @@ export class InteractiveMode {
 				}
 			} else {
 				// All other messages use standard rendering
-				this.addMessageToChat(message);
+				this.addMessageToChat(message, invocationsByMessage?.get(message));
 			}
 		}
 
@@ -3675,15 +3842,21 @@ export class InteractiveMode {
 	 * @param options.updateFooter Update footer state
 	 */
 	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
-		const items = entries.flatMap((entry): RenderSessionItem[] => {
+		// Keep B.12 entry metadata attached for display; context projection drops it.
+		const invocationsByMessage = new Map<AgentMessage, readonly SkillInvocationEntry[]>();
+		const items: RenderSessionItem[] = [];
+		for (const entry of entries) {
 			if (entry.type === "custom") {
-				return [entry];
+				items.push(entry);
+				continue;
 			}
-			return sessionEntryToContextMessages(entry);
-		});
-		this.renderSessionItems(items, options);
+			if (entry.type === "message" && entry.invocations) {
+				invocationsByMessage.set(entry.message, entry.invocations);
+			}
+			items.push(...sessionEntryToContextMessages(entry));
+		}
+		this.renderSessionItems(items, options, invocationsByMessage);
 	}
-
 	/**
 	 * Show a transcript notice when a completed assistant message paid for a
 	 * significant cache miss. Only states observable facts: the miss itself,
@@ -4260,11 +4433,9 @@ export class InteractiveMode {
 	private isExtensionCommand(text: string): boolean {
 		if (!text.startsWith("/")) return false;
 
-		const extensionRunner = this.session.extensionRunner;
-
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		return !!extensionRunner.getCommand(commandName);
+		return this.session.resolveExtensionCommand(commandName) !== undefined;
 	}
 
 	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
@@ -4918,6 +5089,50 @@ export class InteractiveMode {
 					clearTimeout(timeout);
 					controller.abort();
 				},
+			};
+		});
+	}
+
+	/** `/skills` (c4c): per-skill A.6 visibility management overlay. Each cycle persists through the session apply seam and reflects failures instead of claiming a save. */
+	private showSkillsSelector(): void {
+		this.showSelector((done) => {
+			const selector = new SkillsSelectorComponent(
+				{
+					rows: this.session.getSkillsManagementView(),
+					initialScope: "global",
+				},
+				{
+					onChange: (id, state, scope) => {
+						void this.session
+							.applySkillVisibilityChange(id, state, scope)
+							.then((result) => {
+								if (result.ok) {
+									selector.setStatus(`saved "${state}" (${scope}) — applies next request`, "success");
+									selector.updateRows(this.session.getSkillsManagementView());
+								} else {
+									selector.setStatus(`could not apply: ${result.error}`, "warning");
+									selector.revertPending(id);
+								}
+								this.ui.requestRender();
+							})
+							.catch((error: unknown) => {
+								selector.setStatus(
+									`could not apply: ${error instanceof Error ? error.message : String(error)}`,
+									"warning",
+								);
+								selector.revertPending(id);
+								this.ui.requestRender();
+							});
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return {
+				component: selector,
+				focus: selector,
 			};
 		});
 	}

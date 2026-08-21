@@ -3,7 +3,7 @@ import { readdir } from "fs/promises";
 import { join } from "path";
 import { createInterface } from "readline";
 import { resolvePath } from "../utils/paths.ts";
-import { parseSessionEntryLine, type SessionEntry, type SessionHeader } from "./session-manager.ts";
+import { type FileEntry, parseSessionEntryLine, type SessionEntry, type SessionHeader } from "./session-manager.ts";
 
 export interface PromptHistoryRecord {
 	/** Trimmed prompt text, matching what PromptHistoryController caches for live submissions. */
@@ -74,6 +74,24 @@ function deriveOrderingTime(message: unknown, entryTimestampIso: string, headerT
 	return 0;
 }
 
+function recordFromEntry(
+	entry: FileEntry,
+	sessionPath: string,
+	ordinal: number,
+	fallbackTimestampIso: string,
+): PromptHistoryRecord | null {
+	if (entry.type !== "message") return null;
+	const text = extractUserMessageText(entry.message)?.trim();
+	if (!text) return null;
+	return {
+		text,
+		timestamp: deriveOrderingTime(entry.message, entry.timestamp, fallbackTimestampIso),
+		sessionPath,
+		ordinal,
+		entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,
+	};
+}
+
 async function listJsonlFiles(dir: string): Promise<string[]> {
 	try {
 		const dirents = await readdir(dir, { withFileTypes: true });
@@ -111,21 +129,10 @@ async function scanSessionFile(filePath: string, resolvedCwd: string): Promise<P
 				continue;
 			}
 
-			if (entry.type !== "message") continue;
-
-			const text = extractUserMessageText(entry.message);
-			if (text === null) continue;
-			const trimmed = text.trim();
-			if (!trimmed) continue;
-
-			const timestamp = deriveOrderingTime(entry.message, entry.timestamp, header.timestamp);
-			records.push({
-				text: trimmed,
-				timestamp,
-				sessionPath: filePath,
-				ordinal: ordinal++,
-				entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,
-			});
+			const record = recordFromEntry(entry, filePath, ordinal, header.timestamp);
+			if (!record) continue;
+			records.push(record);
+			ordinal++;
 		}
 
 		if (rejected || !header) return [];
@@ -180,19 +187,10 @@ function extractRecordsFromCurrentEntries(
 	const records: PromptHistoryRecord[] = [];
 	let ordinal = 0;
 	for (const entry of entries) {
-		if (entry.type !== "message") continue;
-		const text = extractUserMessageText(entry.message);
-		if (text === null) continue;
-		const trimmed = text.trim();
-		if (!trimmed) continue;
-		const timestamp = deriveOrderingTime(entry.message, entry.timestamp, entry.timestamp);
-		records.push({
-			text: trimmed,
-			timestamp,
-			sessionPath: sessionPathLabel,
-			ordinal: ordinal++,
-			entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,
-		});
+		const record = recordFromEntry(entry, sessionPathLabel, ordinal, entry.timestamp);
+		if (!record) continue;
+		records.push(record);
+		ordinal++;
 	}
 	return records;
 }

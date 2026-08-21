@@ -1,7 +1,9 @@
 # Skill Support: Pi vs Claude Code — Gap Analysis and Feature-Parity Roadmap
 
 **Version 5** (2026-08-02). Scope: **the skill system only**, framed to drive a multi-phase implementation plan. v5 changes the skill-bundled agents plan: the fragile materialize-into-discovery-dirs approach is dropped in favor of **forking pi-subagents and folding native support into it as a follow-up feature** — with v1 of the extension shipping the seams the fork will consume (§7.2, roadmap items 10–11, OQ-4). v4 added §7 (**implementation vehicle: extension-first feasibility**). Out of scope per direction: CC's plugin system, the general hook system, statusline, bundled skills, marketplaces (§3.8).
-
+> **Status (2026-08-13, Phase C1 shipped):** this report is a pre-C1 snapshot. Since it was written, Pi shipped the C1 skill system: the full frontmatter contract is parsed and preserved (roadmap Phase 0), every invocation path renders through the A.3 pipeline (argument grammar, `${PI_*}`/`${CLAUDE_*}` variables, `@path` absolutization, tool-policy-gated `` !` `` shell injection), a dedicated `skill` tool gives reliable model invocation, and delivery uses the A.4 message-block/synthetic-pair transports with structured entry metadata. The "no dedicated `Skill` tool" and "the model must `read` the file" gap claims below are therefore retired, and the §2 `_expandSkillCommand`/`input`-hook description is historical. What remains open matches the later phases: turn-scoped `disallowed-tools`/`allowed-tools` enforcement, per-skill `model`/`effort` request overrides, `context: fork`/`agent`/`background`, `paths` activation, and hooks. Current behavior is documented in `packages/coding-agent/docs/skills.md`.
+>
+> **Status (2026-08-14, Phase C3 shipped):** per-skill `model`/`effort` overrides (turn-scoped, ephemeral), `disallowed-tools` (redirect-canonicalized union, schema removal + pre-lookup block), `context: fork`, and `paths` listing boost now land. **Fork:** shipped against pi-subagents **v0.15.1 as shipped** (`PROTOCOL_VERSION = 2`, `subagents:completed`/`failed`), not the frozen A.9 v3/`skillAgents`/`agent-ended` contract described in §7.2/OQ-4 — a future v3 upgrade is absorbed later at the single `normalizeSubagentCompletion()` seam. **A.8 fork substitutions** (`${PI_SKILL_DIR}` etc.) are rendered into the fork prompt in the parent, since v0.15.1 `SpawnOptions` carries only `model`/`isBackground`, no `env`. `allowed-tools` remains advisory-only and `hooks` remain parsed-never-executed (ADR-0007).
 **Sources:**
 
 - Pi: this repository (`packages/coding-agent/src/core/skills.ts`, `agent-session.ts`, `resource-loader.ts`, `settings-manager.ts`, `core/extensions/types.ts`, `packages/agent/src/harness/{skills,system-prompt,types}.ts`, `docs/skills.md`, CHANGELOG), plus the installed `@tintinweb/pi-subagents` extension source
@@ -17,7 +19,7 @@ Both harnesses implement the Agent Skills standard (SKILL.md + YAML frontmatter 
 
 Claude Code treats a skill as a **first-class executable capability**: a dedicated `Skill` tool with structured arguments, per-turn tool grants, model/effort overrides, forked-subagent execution, dynamic shell injection, a 7-stage content-substitution pipeline, and full lifecycle management (live reload, listing budgets, compaction carry-forward, visibility states).
 
-Pi treats a skill as **prompt expansion**: the model is told to `read` the SKILL.md file itself; `/skill:name` expands inline into the outgoing message. Pi's frontmatter parser reads exactly **three fields** (`name`, `description`, `disable-model-invocation`). `allowed-tools` is documented in `docs/skills.md` as experimental but is **not implemented anywhere in the code**.
+Pi treats a skill as **prompt expansion**: the model is told to `read` the SKILL.md file itself; `/skill:name` expands inline into the outgoing message. Pi's frontmatter parser reads exactly **three fields** (`name`, `description`, `disable-model-invocation`). `allowed-tools` is documented in `docs/skills.md` as experimental but is **not implemented anywhere in the code**. *(Pre-C1; see the status note at the top — the `skill` tool, full frontmatter parsing, and the render pipeline shipped in C1.)*
 
 The ASE case study quantifies the consequence: dropped into `~/.pi/agent/skills/` as-is, **all 47 ASE skills are inert in Pi** — every one depends on `${CLAUDE_SKILL_DIR}` substitution, `$ARGUMENTS`, and CC's include-file convention.
 
@@ -25,7 +27,7 @@ The ASE case study quantifies the consequence: dropped into `~/.pi/agent/skills/
 
 ---
 
-## 2. What Pi has today (verified in source)
+## 2. What Pi had pre-C1 (verified in source; historical — see the status note at the top)
 
 ### Discovery & locations
 
@@ -139,18 +141,19 @@ The CC **plugin system** (components, manifest, `userConfig`, marketplaces, `plu
 | Variable substitution in skill text | `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_SESSION_ID}`, `${CLAUDE_EFFORT}` (+ plugin vars) | None |
 | Shell injection (`` !`cmd` ``) | Yes, permission-gated, policy kill-switch, `shell` field | No |
 | `@file` include convention | Model-interpreted read + hook auto-approval; install-time inlining viable | No convention |
-| Forked subagent execution | `context: fork`, `agent`, `background` | No |
+| Forked subagent execution | `context: fork`, `agent`, `background` | Yes (via pi-subagents **v0.15.1 as shipped**: `PROTOCOL_VERSION = 2`, `subagents:completed`/`failed`; background default, 15-min foreground cap; degrades to inline+diagnostic when absent/headless) |
 | Skill-bundled agent definitions | Yes, via skills-dir plugins (`<skill-folder>/agents/`) | No |
-| Per-skill model/effort | Yes (turn-scoped) | No |
+| Per-skill model/effort | Yes (turn-scoped) | Yes (turn-scoped, ephemeral; expires at `agent_settled`, not resurrected by compaction) |
 | `allowed-tools` | Turn-scoped grants; also gates `` !` `` injection | Documented, **not implemented** (and see OQ-2: no approval flow to grant against) |
-| `disallowed-tools` | Turn-scoped removal from tool pool | No |
+| `disallowed-tools` | Turn-scoped removal from tool pool | Yes (redirect-canonicalized union, schema removal + pre-lookup block, same-batch siblings exempt) |
 | `user-invocable` | Yes | No (only `disable-model-invocation`) |
-| `when_to_use` / `argument-hint` / `paths` / `hooks` / `shell` | Yes | No |
+| `when_to_use` / `argument-hint` / `hooks` / `shell` | Yes | No |
+| `paths` | Glob-gated auto-activation | Yes (listing boost: boosted-first ordering + `exempt` flag on a recently tool-touched match; budget-consuming exemption is a later phase) |
 | Listing budget | 1% of window, per-skill 1,536 cap, least-invoked-first truncation | None |
 | Compaction carry-forward | Re-attach MRU invocation per skill (5k/25k budgets) | None |
 | Re-invocation dedup | "Already loaded" note | Full content re-appended |
-| Live reload | Watchers + `/reload-skills` | `/reload` covers skills (no watching) |
-| Nested/monorepo names | Runtime discovery + `dir:name` qualification | Ancestor discovery; first-wins collisions |
+| Live reload | Watchers + `/reload-skills` | Yes (C4d: debounced per-directory watchers over every scanned skill/command root; `/reload` still covers the rest) |
+| Nested/monorepo names | Runtime discovery + `dir:name` qualification | Yes (C4d: tool-touch-triggered discovery of nested `.pi/skills`/`.agents/skills` roots between cwd and the touched file, `dir:name` on collision) |
 | Visibility management | `/skills` menu + 4-state `skillOverrides` | Enable/disable via `pi config` |
 | Skill stacking (one message) | Up to 6 | No |
 | Expansion-time extension seam | `UserPromptExpansion` hook (augment/block) | `input` transform (pre-expansion) |
@@ -166,17 +169,17 @@ The CC **plugin system** (components, manifest, `userConfig`, marketplaces, `plu
 2. **No argument substitution** in skills (ASE: 47/47 fatal).
 3. **No variable substitution** (`${CLAUDE_SKILL_DIR}` etc.; ASE: 47/47 fatal).
 4. **No `@`-include convention / load-time inlining** (ASE: 47/47 fatal — includes carry the control language).
-5. **No `allowed-tools`/`disallowed-tools` implementation** (documented but dead; ASE: 24/47 declare 108 Bash patterns).
-6. **No per-skill `effort`/`model`** (ASE: 46/47 set `effort: xhigh`).
-7. **No `context: fork` / `agent` / `background`** subagent execution.
+5. ~~No `disallowed-tools` implementation~~ **Shipped (C3a).** `allowed-tools` remains documented but dead (OQ-2: no approval flow to grant against).
+6. ~~No per-skill `effort`/`model`~~ **Shipped (C3a).** Turn-scoped, ephemeral; expires at `agent_settled`, not resurrected by compaction (ASE: 46/47 set `effort: xhigh`).
+7. ~~No `context: fork` / `agent` / `background` subagent execution~~ **Shipped (C3b)**, against pi-subagents v0.15.1 as shipped (not the frozen A.9 v3 contract).
 8. **No skill-bundled agent definitions** (`<skill>/agents/`; ASE ships 8 agents alongside its 47 skills).
-9. **No `user-invocable`, `argument-hint`, `when_to_use`, `paths`, `shell`, `hooks` fields.**
+9. **No `user-invocable`, `argument-hint`, `when_to_use`, `hooks`, `shell` fields.** ~~`paths`~~ **shipped (C3c, listing boost).**
 10. **No shell injection** (`` !`cmd` ``) with policy control.
 11. **No listing budget / compaction carry-forward / re-invocation dedup** (context-lifecycle hygiene).
 12. **No `/skills` management UX** with 4-state visibility.
-13. **No nested/monorepo runtime discovery** with dir-qualified names.
+13. ~~No nested/monorepo runtime discovery~~ **Shipped (C4d)** with dir-qualified names.
 14. **No skill stacking.**
-15. **No live watching** (manual `/reload` covers skills but requires user action).
+15. ~~No live watching~~ **Shipped (C4d)** — skill/command roots are watched in-session; `/reload` remains the fallback and covers non-skill resources.
 16. **Interop warts**: strict boolean parsing; CC tool names (`Glob`, `Read`, `EnterPlanMode`) in imported skill prose need translation.
 
 ---
@@ -210,8 +213,8 @@ Implementation vehicle note: per §7, Phases 1–2 are deliverable almost entire
 15. Compaction carry-forward (re-attach MRU invocation per skill, bounded budget) — investigate the `session_before_compact` customization surface first (§7.3).
 16. Re-invocation dedup ("already loaded" note).
 17. `/skills` menu + `skillOverrides`-style setting (on / name-only / user-invocable-only / off).
-18. Live watching of skill dirs (`fs.watch` + `ctx.reload()` — extension-deliverable, §7.1).
-19. Nested/monorepo dir-qualified names (`apps/web:deploy`).
+18. ~~Live watching of skill dirs~~ **Shipped (C4d, core)**: debounced per-directory watchers over every scanned skill/command root driving a light skills+commands refresh.
+19. ~~Nested/monorepo dir-qualified names (`apps/web:deploy`)~~ **Shipped (C4d, core)**: tool-touch-triggered nested discovery with collision-conditional qualification.
 
 **Phase 4 — ecosystem polish:**
 20. Skill-scoped hooks (per OQ-1 decision), `shell` powershell support, eval/iteration tooling, CC tool-name translation guide for imported skills.
@@ -312,10 +315,11 @@ Design questions for the follow-up fork (§7.2): (a) **discovery scope** — ski
 - **`@file` in skills:** the first version of this report implied CC inlines `@path` at render time. It does not (§3.7.3) — the gap for pi is real but shaped as *convention + auto-approval*, or solvable by load-time inlining.
 - **Upstream status (2026-08-02):** pi upstream has 151 commits since the local merge-base, zero touching skills machinery (verified by path + message scan). Claude Code `2.1.220` remains the latest release — the analyzed binary is current.
 - **Docs caveat:** several behaviors described here are binary-only (pipeline ordering, `` !` `` permission-gating via the skill's own `allowed-tools`, `user_config` masking, hook wire details); the rest is documented but scattered across at least six doc pages.
+- **C1 shipped (2026-08-13):** the "no dedicated `Skill` tool" and model-read-delivery gaps are retired (the `skill` tool plus the A.4 message-block/synthetic-pair delivery landed), and the `_expandSkillCommand` expansion described in §2 no longer exists. "Pi (pre-C1)" columns and §2/§7.1 statements to that effect are historical; the pre-C1 `input`-hook-fires-before-expansion observation is likewise superseded by the C1 consumption seam. Open items are the C2+ semantics listed in the status note at the top.
 
 ## 10. Appendix A — frontmatter field support
 
-| Field | Spec | Claude Code | Pi (today) | Pi (Phase 0 target) |
+| Field | Spec | Claude Code | Pi (pre-C1) | Pi (Phase 0 target) |
 | --- | --- | --- | --- | --- |
 | `name` | required, == dir | optional display label; command = dir | optional; command name; needn't match dir | unchanged (deliberate) |
 | `description` | required ≤1024 | optional (first-paragraph fallback); ≤1536 w/ `when_to_use` | required; ≤1024 warn | unchanged (deliberate) |

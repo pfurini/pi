@@ -12,7 +12,7 @@ import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createEventBus } from "../src/core/event-bus.ts";
+import { createEventBus, type EventBus } from "../src/core/event-bus.ts";
 import type {
 	Extension,
 	ExtensionFactory,
@@ -184,9 +184,9 @@ type TestExtensionInput = InlineExtension | CreateTestExtensionsResultInput;
 export async function createTestExtensionsResult(
 	inputs: TestExtensionInput[],
 	cwd = process.cwd(),
+	eventBus: EventBus = createEventBus(),
 ): Promise<LoadExtensionsResult> {
 	const runtime = createExtensionRuntime();
-	const eventBus = createEventBus();
 	const extensions: Extension[] = [];
 
 	for (const [index, input] of inputs.entries()) {
@@ -208,6 +208,8 @@ export async function createTestExtensionsResult(
 
 export interface CreateTestResourceLoaderOptions {
 	extensionsResult?: LoadExtensionsResult;
+	/** Cross-extension event bus surfaced via `getEventBus()` (shared with loaded extensions). */
+	eventBus?: EventBus;
 }
 
 export function createTestResourceLoader(options: CreateTestResourceLoaderOptions = {}): ResourceLoader {
@@ -216,9 +218,11 @@ export function createTestResourceLoader(options: CreateTestResourceLoaderOption
 		errors: [],
 		runtime: createExtensionRuntime(),
 	};
+	const eventBus = options.eventBus;
 
 	return {
 		getExtensions: () => extensionsResult,
+		...(eventBus && { getEventBus: () => eventBus }),
 		getSkills: () => ({ skills: [], diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),

@@ -376,19 +376,25 @@ describe("InteractiveMode.setupAutocompleteProvider", () => {
 	});
 });
 
+type CommandListingEntry = {
+	name: string;
+	description?: string;
+	argumentHint?: string;
+	source: "builtin" | "extension" | "command" | "prompt" | "skill";
+	sourceInfo?: SourceInfo;
+};
+
 describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 	test("matches model command arguments across provider/model order", async () => {
 		type TestModel = { id: string; provider: string; name: string };
 		type FakeInteractiveMode = {
 			session: {
+				getCommands: () => CommandListingEntry[];
 				scopedModels: Array<{ model: TestModel }>;
 				modelRuntime: { getAvailableSnapshot: () => TestModel[] };
-				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: { getSkills: () => { skills: [] } };
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 			sessionManager: { getCwd: () => string };
 			fdPath: null;
 		};
@@ -404,14 +410,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		];
 		const fakeThis: FakeInteractiveMode = {
 			session: {
+				getCommands: () => [{ name: "model", source: "builtin", description: "Select model" }],
 				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => models },
-				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: { getSkills: () => ({ skills: [] }) },
 			},
-			settingsManager: { getEnableSkillCommands: () => false },
-			skillCommands: new Map(),
+			prefixAutocompleteDescription: (description) => description,
 			sessionManager: { getCwd: () => "/tmp" },
 			fdPath: null,
 		};
@@ -431,14 +435,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 	test("matches login command arguments by provider id and name", async () => {
 		type FakeInteractiveMode = {
 			session: {
+				getCommands: () => CommandListingEntry[];
 				scopedModels: [];
 				modelRuntime: { getAvailableSnapshot: () => [] };
-				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
-				resourceLoader: { getSkills: () => { skills: [] } };
 			};
-			settingsManager: { getEnableSkillCommands: () => boolean };
-			skillCommands: Map<string, string>;
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
 			sessionManager: { getCwd: () => string };
 			fdPath: null;
 			getLoginProviderOptions: () => AuthSelectorProvider[];
@@ -451,14 +453,12 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		).prototype.createBaseAutocompleteProvider;
 		const fakeThis: FakeInteractiveMode = {
 			session: {
+				getCommands: () => [{ name: "login", source: "builtin", description: "Configure auth" }],
 				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => [] },
-				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
-				resourceLoader: { getSkills: () => ({ skills: [] }) },
 			},
-			settingsManager: { getEnableSkillCommands: () => false },
-			skillCommands: new Map(),
+			prefixAutocompleteDescription: (description) => description,
 			sessionManager: { getCwd: () => "/tmp" },
 			fdPath: null,
 			getLoginProviderOptions: () => [
@@ -481,6 +481,72 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 				description: "Anthropic · subscription/API key",
 			},
 		]);
+	});
+
+	test("projects the unified getCommands listing with bare names and source badges", async () => {
+		type FakeInteractiveMode = {
+			session: {
+				getCommands: () => CommandListingEntry[];
+				scopedModels: [];
+				modelRuntime: { getAvailableSnapshot: () => [] };
+				extensionRunner: { getRegisteredCommands: () => [] };
+			};
+			prefixAutocompleteDescription: (description: string | undefined) => string | undefined;
+			sessionManager: { getCwd: () => string };
+			fdPath: null;
+		};
+
+		const createBaseAutocompleteProvider = (
+			InteractiveMode as unknown as {
+				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
+			}
+		).prototype.createBaseAutocompleteProvider;
+		const sourceInfo: SourceInfo = {
+			path: "/tmp/x.md",
+			source: "local",
+			scope: "project",
+			origin: "top-level",
+		};
+		// The registry hands the provider bare winner names and a `command` source for native
+		// `commands/` entries; the provider must project them verbatim (no `skill:` requalifying,
+		// no separate built-in assembly) so the [command] badge is reachable and precedence
+		// stays consistent with dispatch.
+		const fakeThis: FakeInteractiveMode = {
+			session: {
+				getCommands: () => [
+					{ name: "model", source: "builtin", description: "Select model" },
+					{ name: "deploy", source: "extension", description: "Deploy", sourceInfo },
+					{ name: "note", source: "command", description: "Take a note", argumentHint: "<text>", sourceInfo },
+					{ name: "review", source: "skill", description: "Review code", sourceInfo },
+				],
+				scopedModels: [],
+				modelRuntime: { getAvailableSnapshot: () => [] },
+				extensionRunner: { getRegisteredCommands: () => [] },
+			},
+			prefixAutocompleteDescription: (description) => description,
+			sessionManager: { getCwd: () => "/tmp" },
+			fdPath: null,
+		};
+
+		const provider = createBaseAutocompleteProvider.call(fakeThis);
+
+		// Message-initial "/" offers every source, including the native `command` and a bare skill.
+		const initial = await provider.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+		const bySource = new Map((initial?.items ?? []).map((item) => [item.value, item.source]));
+		expect(bySource.get("model")).toBe("builtin");
+		expect(bySource.get("deploy")).toBe("extension");
+		expect(bySource.get("note")).toBe("command");
+		expect(bySource.get("review")).toBe("skill");
+		const note = initial?.items.find((item) => item.value === "note");
+		expect(note?.description).toContain("<text>");
+
+		// Mid-prompt only prompt-producing sources survive: builtin and extension controls drop.
+		const midLine = await provider.getSuggestions(["hey /"], 0, 5, { signal: new AbortController().signal });
+		const midValues = (midLine?.items ?? []).map((item) => item.value);
+		expect(midValues).toContain("note");
+		expect(midValues).toContain("review");
+		expect(midValues).not.toContain("model");
+		expect(midValues).not.toContain("deploy");
 	});
 });
 describe("InteractiveMode.showLoadedResources", () => {
@@ -514,6 +580,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 			},
 			session: {
 				promptTemplates: [],
+				getCommandCollisionDiagnostic: () => undefined,
 				extensionRunner: {
 					getCommandDiagnostics: () => [],
 					getShortcutDiagnostics: () => [],
@@ -1223,5 +1290,41 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const output = renderAll(fakeThis.loadedResourcesContainer);
 		expect(output).toContain("[Skill conflicts]");
 		expect(output).not.toContain("[Skills]");
+	});
+});
+
+describe("InteractiveMode resources_changed autocomplete refresh (c4d)", () => {
+	test("rebuilds the autocomplete provider exactly once per event, with the changed /name included", async () => {
+		const defaultEditor = { setAutocompleteProvider: vi.fn() };
+		const customEditor = { setAutocompleteProvider: vi.fn() };
+		const proto = (InteractiveMode as any).prototype;
+		const fakeThis = {
+			isInitialized: true,
+			footer: { invalidate: vi.fn() },
+			ui: { requestRender: vi.fn() },
+			session: {
+				getCommands: () => [{ name: "fresh-cmd", source: "command", description: "Fresh command" }],
+				scopedModels: [],
+				modelRuntime: { getAvailableSnapshot: () => [] },
+				extensionRunner: { getRegisteredCommands: () => [] },
+			},
+			prefixAutocompleteDescription: (description: string | undefined) => description,
+			sessionManager: { getCwd: () => "/tmp" },
+			fdPath: null,
+			autocompleteProviderWrappers: [],
+			defaultEditor,
+			editor: customEditor,
+			setupAutocompleteProvider: vi.fn(),
+			createBaseAutocompleteProvider: proto.createBaseAutocompleteProvider,
+		};
+		// Route the (spied) method through the real implementation against the stubbed session.
+		fakeThis.setupAutocompleteProvider = vi.fn(() => proto.setupAutocompleteProvider.call(fakeThis));
+
+		await proto.handleEvent.call(fakeThis, { type: "resources_changed" });
+
+		expect(fakeThis.setupAutocompleteProvider).toHaveBeenCalledTimes(1);
+		const provider = defaultEditor.setAutocompleteProvider.mock.calls[0]![0] as AutocompleteProvider;
+		const suggestions = await provider.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+		expect((suggestions?.items ?? []).map((item) => item.value)).toContain("fresh-cmd");
 	});
 });

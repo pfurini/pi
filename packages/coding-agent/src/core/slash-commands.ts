@@ -1,13 +1,15 @@
 import { APP_NAME } from "../config.ts";
 import type { SourceInfo } from "./source-info.ts";
 
-export type SlashCommandSource = "extension" | "prompt" | "skill";
+export type SlashCommandSource = "builtin" | "extension" | "command" | "prompt" | "skill";
 
 export interface SlashCommandInfo {
 	name: string;
 	description?: string;
+	argumentHint?: string;
 	source: SlashCommandSource;
-	sourceInfo: SourceInfo;
+	/** Absent for built-in commands, which have no source file. */
+	sourceInfo?: SourceInfo;
 }
 
 export interface BuiltinSlashCommand {
@@ -16,10 +18,11 @@ export interface BuiltinSlashCommand {
 	argumentHint?: string;
 }
 
-export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+export const BUILTIN_SLASH_COMMANDS = [
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)", argumentHint: "<provider/model>" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+	{ name: "skills", description: "Manage skill visibility and listing cost" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import and resume a session from a JSONL file" },
 	{ name: "share", description: "Share session as a secret GitHub gist" },
@@ -39,4 +42,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, themes, and context files" },
 	{ name: "quit", description: `Quit ${APP_NAME}` },
-];
+] as const satisfies readonly BuiltinSlashCommand[];
+
+/** Literal union of every built-in control-command name (derived; do not hand-write). */
+export type BuiltinCommandName = (typeof BUILTIN_SLASH_COMMANDS)[number]["name"];

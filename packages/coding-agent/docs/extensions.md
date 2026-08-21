@@ -900,14 +900,13 @@ pi.on("user_bash", (event, ctx) => {
 
 #### input
 
-Fired when user input is received, after extension commands are checked but before skill and template expansion. The event sees the raw input text, so `/skill:foo` and `/template` are not yet expanded.
+Fired when user input is received, after extension commands are checked but before command/skill expansion. The event sees the raw input text, so `/review`, `/skill:foo`, and `/template` are not yet expanded.
 
 **Processing order:**
-1. Extension commands (`/cmd`) checked first - if found, handler runs and input event is skipped
+1. Extension commands checked first — bare `/cmd` or the disambiguating `/ext:cmd` qualifier; if found, the handler runs and the `input` event is skipped
 2. `input` event fires - can intercept, transform, or handle
-3. If not handled: skill commands (`/skill:name`) expanded to skill content
-4. If not handled: prompt templates (`/template`) expanded to template content
-5. Agent processing begins (`before_agent_start`, etc.)
+3. If not handled: the message is tokenized and prompt-producing invocations expand — commands and prompt templates splice their rendered text, skills splice `<skill>` blocks, anywhere in the message (mid-prompt); control commands (built-ins, extension commands) are recognized message-initial only and otherwise stay literal
+4. Agent processing begins (`before_agent_start`, etc.)
 
 ```typescript
 pi.on("input", async (event, ctx) => {

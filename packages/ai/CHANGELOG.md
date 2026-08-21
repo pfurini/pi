@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional `Model.syntheticToolResultReplay` capability, generated from a verified converter matrix, marking built-in models whose API path correctly replays a synthetic assistant tool-call/tool-result pair.
+
 ### Changed
 
 - Changed OpenAI Responses deferred tool loading to prefer message-anchored `additional_tools` where supported while retaining tool-search and top-level fallbacks ([#7709](https://github.com/earendil-works/pi/issues/7709)).

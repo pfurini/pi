@@ -15,6 +15,7 @@ import type {
 	AgentContext,
 	AgentEvent,
 	AgentLoopConfig,
+	AgentLoopTurnUpdate,
 	AgentMessage,
 	AgentTool,
 	AgentToolCall,
@@ -100,20 +101,22 @@ export async function runAgentLoop(
 	signal: AbortSignal | undefined,
 	streamFn: StreamFn,
 ): Promise<AgentMessage[]> {
-	const newMessages: AgentMessage[] = [...prompts];
+	const deliveredPrompts = config.transformInjectedMessages
+		? await config.transformInjectedMessages(prompts, signal)
+		: prompts;
+	const newMessages: AgentMessage[] = [...deliveredPrompts];
 	const currentContext: AgentContext = {
 		...context,
-		messages: [...context.messages, ...prompts],
+		messages: [...context.messages, ...deliveredPrompts],
 	};
-
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
-	for (const prompt of prompts) {
+	for (const prompt of deliveredPrompts) {
 		await emit({ type: "message_start", message: prompt });
 		await emit({ type: "message_end", message: prompt });
 	}
 
-	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
+	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn(), true);
 	return newMessages;
 }
 
@@ -138,7 +141,7 @@ export async function runAgentLoopContinue(
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
 
-	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
+	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn(), false);
 	return newMessages;
 }
 
@@ -147,6 +150,26 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
+}
+
+/**
+ * Merge an {@link AgentLoopTurnUpdate}'s model/thinking state into the loop
+ * config. Shared by the post-injection refresh and the per-turn prepareNextTurn
+ * hook, which apply the identical model/reasoning merge (they differ only in
+ * how they handle the replacement context). `thinkingLevel: "off"` clears
+ * reasoning; an undefined `thinkingLevel` keeps the current value.
+ */
+function applyTurnUpdateToConfig(config: AgentLoopConfig, update: AgentLoopTurnUpdate): AgentLoopConfig {
+	return {
+		...config,
+		model: update.model ?? config.model,
+		reasoning:
+			update.thinkingLevel === undefined
+				? config.reasoning
+				: update.thinkingLevel === "off"
+					? undefined
+					: update.thinkingLevel,
+	};
 }
 
 /**
@@ -159,10 +182,17 @@ async function runLoop(
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 	streamFunction: StreamFn,
+	// True when the request that will stream first was preceded by an injection
+	// (runAgentLoop's top-level transformInjectedMessages). False for a
+	// continuation/retry, which rebuilds config and reads the override directly.
+	initialInjected: boolean,
 ): Promise<void> {
 	let currentContext = initialContext;
 	let config = initialConfig;
 	let firstTurn = true;
+	// Fires refreshTurnAfterInjection before the next stream when set: seeded by
+	// the top-level injection and re-set after every inner-loop injection.
+	let injectionPending = initialInjected;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -180,6 +210,9 @@ async function runLoop(
 
 			// Process pending messages (inject before next assistant response)
 			if (pendingMessages.length > 0) {
+				if (config.transformInjectedMessages) {
+					pendingMessages = await config.transformInjectedMessages(pendingMessages, signal);
+				}
 				for (const message of pendingMessages) {
 					await emit({ type: "message_start", message });
 					await emit({ type: "message_end", message });
@@ -187,6 +220,34 @@ async function runLoop(
 					newMessages.push(message);
 				}
 				pendingMessages = [];
+				injectionPending = true;
+			}
+
+			// A just-injected request may activate an override (e.g. a queued
+			// skill) only now, after the loop config was already built. Re-resolve
+			// model, reasoning, tools, and the system prompt for the consuming request.
+			// Skipped for retries.
+			if (injectionPending) {
+				injectionPending = false;
+				// The callback is contracted not to throw, but it is application
+				// supplied; contain a faulty implementation so it degrades to "no
+				// override" instead of rejecting the whole loop.
+				let injectionSnapshot: AgentLoopTurnUpdate | undefined;
+				try {
+					injectionSnapshot = await config.refreshTurnAfterInjection?.(signal);
+				} catch {
+					injectionSnapshot = undefined;
+				}
+				if (injectionSnapshot) {
+					if (injectionSnapshot.context !== undefined) {
+						currentContext = {
+							...currentContext,
+							systemPrompt: injectionSnapshot.context.systemPrompt,
+							tools: injectionSnapshot.context.tools,
+						};
+					}
+					config = applyTurnUpdateToConfig(config, injectionSnapshot);
+				}
 			}
 
 			// Stream assistant response
@@ -232,16 +293,7 @@ async function runLoop(
 			const nextTurnSnapshot = await config.prepareNextTurn?.(nextTurnContext);
 			if (nextTurnSnapshot) {
 				currentContext = nextTurnSnapshot.context ?? currentContext;
-				config = {
-					...config,
-					model: nextTurnSnapshot.model ?? config.model,
-					reasoning:
-						nextTurnSnapshot.thinkingLevel === undefined
-							? config.reasoning
-							: nextTurnSnapshot.thinkingLevel === "off"
-								? undefined
-								: nextTurnSnapshot.thinkingLevel,
-				};
+				config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
 			}
 
 			if (
@@ -604,11 +656,43 @@ async function prepareToolCall(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
+	// Pre-lookup policy gate: runs before the registry lookup and before
+	// beforeToolCall, so a call to a tool already removed from the schema still
+	// returns a policy block that names the tool instead of a generic not-found.
+	if (config.isToolCallDisallowed) {
+		let disallowedReason: string | undefined;
+		try {
+			disallowedReason = config.isToolCallDisallowed(toolCall.name);
+		} catch {
+			// Fail closed: this gate is the only block that catches a tool the
+			// schema filter never saw (e.g. added mid-turn), so a throwing policy
+			// blocks rather than allows. Returning an error result (not rethrowing)
+			// keeps the "advisory policy never interrupts the loop" property.
+			disallowedReason = `Tool "${toolCall.name}" was blocked: the disallowed-tools policy check failed.`;
+		}
+		if (disallowedReason) {
+			return { kind: "immediate", result: createErrorToolResult(disallowedReason), isError: true };
+		}
+	}
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
+		let errorText = `Tool ${toolCall.name} not found`;
+		if (config.resolveToolRedirect) {
+			try {
+				// Advisory correction only: returned text replaces the error message;
+				// the loop still returns an immediate error and never executes a target.
+				errorText =
+					config.resolveToolRedirect({
+						attemptedName: toolCall.name,
+						registeredToolNames: (currentContext.tools ?? []).map((t) => t.name),
+					}) ?? errorText;
+			} catch {
+				// A throwing resolver falls back to the default not-found error.
+			}
+		}
 		return {
 			kind: "immediate",
-			result: createErrorToolResult(`Tool ${toolCall.name} not found`),
+			result: createErrorToolResult(errorText),
 			isError: true,
 		};
 	}

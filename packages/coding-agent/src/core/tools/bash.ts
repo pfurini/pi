@@ -9,9 +9,11 @@ import { truncateToVisualLines } from "../../modes/interactive/components/visual
 import { theme } from "../../modes/interactive/theme/theme.ts";
 import { waitForChildProcess } from "../../utils/child-process.ts";
 import {
+	buildSpawnShellEnv,
 	getShellConfig,
 	getShellEnv,
 	killProcessTree,
+	type ShellConfig,
 	trackDetachedChildPid,
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
@@ -84,14 +86,14 @@ export interface BashOperations {
  * This is useful for extensions that intercept user_bash and still want pi's
  * standard local shell behavior while wrapping or rewriting commands.
  */
-export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
+export function createLocalBashOperations(options?: { shellPath?: string; shellConfig?: ShellConfig }): BashOperations {
 	return {
 		exec: async (command, cwd, { onData, signal, timeout, env }) => {
 			const timeoutMs = resolveTimeoutMs(timeout);
 			if (signal?.aborted) {
 				throw new Error("aborted");
 			}
-			const shellConfig = getShellConfig(options?.shellPath);
+			const shellConfig = options?.shellConfig ?? getShellConfig(options?.shellPath);
 			try {
 				await fsAccess(cwd, constants.F_OK);
 			} catch {
@@ -160,6 +162,34 @@ export interface BashSpawnContext {
 
 export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
 
+/**
+ * Process-wide spawn-context composers, applied to EVERY bash execution that
+ * flows through createBashToolDefinition (built-in or extension/SDK
+ * replacement alike): after the per-execution env snapshot is built, before
+ * the tool's own spawnHook. This is the seam that lets session-scoped state
+ * (A.8 skill env) reach a replacement `bash` tool that carries its own
+ * spawnHook. Composers must scope themselves to their session via the
+ * ExtensionContext identity and must never mutate the passed context.
+ */
+export type BashSpawnContextComposer = (
+	context: BashSpawnContext,
+	ctx: ExtensionContext | undefined,
+) => BashSpawnContext;
+
+const spawnContextComposers: BashSpawnContextComposer[] = [];
+
+/** Register a composer; returns an unregister function (idempotent). */
+export function registerBashSpawnContextComposer(composer: BashSpawnContextComposer): () => void {
+	spawnContextComposers.push(composer);
+	let unregistered = false;
+	return () => {
+		if (unregistered) return;
+		unregistered = true;
+		const index = spawnContextComposers.indexOf(composer);
+		if (index !== -1) spawnContextComposers.splice(index, 1);
+	};
+}
+
 function resolveSpawnContext(
 	command: string,
 	cwd: string,
@@ -167,12 +197,7 @@ function resolveSpawnContext(
 	exposeSessionEnvironment: boolean,
 	ctx: ExtensionContext | undefined,
 ): BashSpawnContext {
-	const env = { ...getShellEnv() };
-	delete env.PI_SESSION_ID;
-	delete env.PI_SESSION_FILE;
-	delete env.PI_PROVIDER;
-	delete env.PI_MODEL;
-	delete env.PI_REASONING_LEVEL;
+	const env = buildSpawnShellEnv();
 	if (exposeSessionEnvironment && ctx) {
 		const model = ctx.model;
 		env.PI_SESSION_ID = ctx.sessionManager.getSessionId();
@@ -184,7 +209,10 @@ function resolveSpawnContext(
 		}
 		if (ctx.thinkingLevel) env.PI_REASONING_LEVEL = ctx.thinkingLevel;
 	}
-	const baseContext: BashSpawnContext = { command, cwd, env };
+	let baseContext: BashSpawnContext = { command, cwd, env };
+	for (const composer of spawnContextComposers) {
+		baseContext = composer(baseContext, ctx);
+	}
 	return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 

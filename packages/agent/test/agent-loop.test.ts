@@ -1482,6 +1482,122 @@ describe("agentLoop with AgentMessage", () => {
 	});
 });
 
+describe("resolveToolRedirect", () => {
+	function createEchoTool(executed: string[]) {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		return tool;
+	}
+
+	async function runUnknownToolCall(config: AgentLoopConfig, tools: AgentTool<any>[]): Promise<AgentMessage[]> {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools };
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("call a missing tool")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "toolUse",
+						message: createAssistantMessage(
+							[{ type: "toolCall", id: "tool-1", name: "Task", arguments: {} }],
+							"toolUse",
+						),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		for await (const _event of stream) {
+			// consume
+		}
+		return stream.result();
+	}
+
+	function toolResultText(messages: AgentMessage[]): string | undefined {
+		const toolResult = messages.find((message) => message.role === "toolResult");
+		if (toolResult?.role !== "toolResult") return undefined;
+		const text = toolResult.content.find((part) => part.type === "text");
+		return text?.type === "text" ? text.text : undefined;
+	}
+
+	it("replaces the not-found error with resolver text without executing any tool or hook", async () => {
+		const executed: string[] = [];
+		let beforeToolCallCalls = 0;
+		const messages = await runUnknownToolCall(
+			{
+				model: createModel(),
+				convertToLlm: identityConverter,
+				beforeToolCall: async () => {
+					beforeToolCallCalls++;
+					return undefined;
+				},
+				resolveToolRedirect: ({ attemptedName, registeredToolNames }) => {
+					expect(attemptedName).toBe("Task");
+					expect(registeredToolNames).toEqual(["echo"]);
+					return "Tool Task is not available — use Agent instead";
+				},
+			},
+			[createEchoTool(executed)],
+		);
+		expect(toolResultText(messages)).toBe("Tool Task is not available — use Agent instead");
+		expect(executed).toEqual([]);
+		expect(beforeToolCallCalls).toBe(0);
+	});
+
+	it("keeps the default not-found error when no resolver is configured", async () => {
+		const messages = await runUnknownToolCall({ model: createModel(), convertToLlm: identityConverter }, [
+			createEchoTool([]),
+		]);
+		expect(toolResultText(messages)).toBe("Tool Task not found");
+	});
+
+	it("keeps the default not-found error when the resolver returns undefined", async () => {
+		const messages = await runUnknownToolCall(
+			{
+				model: createModel(),
+				convertToLlm: identityConverter,
+				resolveToolRedirect: () => undefined,
+			},
+			[createEchoTool([])],
+		);
+		expect(toolResultText(messages)).toBe("Tool Task not found");
+	});
+
+	it("keeps the default not-found error when the resolver throws", async () => {
+		const messages = await runUnknownToolCall(
+			{
+				model: createModel(),
+				convertToLlm: identityConverter,
+				resolveToolRedirect: () => {
+					throw new Error("resolver bug");
+				},
+			},
+			[createEchoTool([])],
+		);
+		expect(toolResultText(messages)).toBe("Tool Task not found");
+	});
+});
+
 describe("agentLoopContinue with AgentMessage", () => {
 	it("should throw when context has no messages", () => {
 		const context: AgentContext = {

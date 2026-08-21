@@ -1,6 +1,6 @@
 # Plan Review Report Template
 
-The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{name}-review.md`. Fill every `{placeholder}`; keep every section heading. Omit only the Traceability Matrix section when traceability did not run (its SKIPPED status still appears in the header). The report is a snapshot — overwritten on re-run, no lifecycle to maintain.
+The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{name}-review.md`. Fill every `{placeholder}`; keep every section heading. Omit only the Traceability Matrix section when traceability did not run (its SKIPPED status still appears in the header). The report is a snapshot of one pass — on re-run the previous report is archived under its Reviewed timestamp (see the skill's Phase 5 path rule) and this canonical path always holds the latest.
 
 ---
 
@@ -12,13 +12,14 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 | Source PRD | `{absolute PRD path}` + phase row, or `none found` |
 | Traceability | RAN / **SKIPPED — no source PRD found** |
 | Angles run | {comma-separated list} |
-| Reviewed | {ISO-8601 date} |
+| Reviewed | {ISO-8601 timestamp with real time — archive suffixes derive from it} |
+| Pass | {first review / re-review verifying the {date} dispositions} |
 
 ## Verdict: {READY / REVISE}
 
 {One-line rationale: what tipped the verdict. REVISE names the blocking findings by title; READY states what was checked and held.}
 
-**Findings**: {N} blocking · {N} important · {N} suggestions
+**Findings**: {N} blocking · {N} decision · {N} important · {N} suggestions
 
 | Angle | Verdict |
 |-------|---------|
@@ -35,6 +36,10 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 **Unjustified plan tasks (provenance)**: {list of task numbers with no PRD justification, each with a one-line note, or "none"}
 
 **Fidelity drift**: {list: PRD commitment → plan wording, weakened or strengthened, or "none"}
+
+## Decisions Required
+
+{Finding blocks whose resolution is a user choice (class DECISION): unconfirmed `[DECISION REQUIRED]`/`[CONFIRM]` items, scope or slice ownership, spec interpretations. Each names the decision, the options, and what it gates. "None" when empty.}
 
 ## Blocking Findings
 
@@ -54,5 +59,5 @@ The exact structure of the aggregated report written to `$PRP_DIR/reviews/plan-{
 
 ## Next Step
 
-{REVISE: `/prp-plan` revision with this report as input — paste this file's path and address the Blocking Findings; re-run `/prp-plan-review` after.
-READY: `/prp-implement {plan path}`.}
+{REVISE: answer the Decisions Required items, then `/skill:prp-plan` revise-from-review with this report as input — paste this file's path and address the Blocking Findings; re-run `/skill:prp-plan-review` after (it will run as a re-review against the plan's dispositions).
+READY: `/skill:prp-implement {plan path}`.}

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Mid-prompt `/` autocomplete with per-source badges: the slash menu triggers and applies at the cursor for command runs at message start or after whitespace on any editor line, renders a `builtin`/`extension`/`command`/`prompt`/`skill` badge per candidate, and keeps control commands (both `builtin` and `extension`) and argument completion whole-message-initial. Suggestions carry a `kind` discriminant (`command`/`argument`/`file`/`symbol`, exported as `AutocompleteSuggestionKind`) so the editor submits on Enter only for a completed slash command and never for a `/`-prefixed file or argument completion.
+
 ### Changed
 
 - Reduced alternate-screen per-frame allocation churn roughly 9-18x by painting full-width layout rows as direct line references instead of recompositing every visible row through ANSI/grapheme segmentation on each frame.

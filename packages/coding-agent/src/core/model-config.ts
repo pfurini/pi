@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
+import { deepFreeze } from "../utils/deep-freeze.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 
@@ -225,12 +226,6 @@ function formatValidationPath(error: TLocalizedValidationError): string {
 	}
 	const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
 	return path || "root";
-}
-
-function deepFreeze<T>(value: T): T {
-	if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value;
-	for (const child of Object.values(value)) deepFreeze(child);
-	return Object.freeze(value);
 }
 
 /** One immutable load of models.json. */

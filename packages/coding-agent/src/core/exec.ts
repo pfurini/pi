@@ -121,22 +121,18 @@ export async function execCommand(
 		acceptingOutput = false;
 		terminate();
 	};
-	const onStdout = (data: Buffer): void => {
-		if (!acceptingOutput) return;
-		try {
-			stdoutCollector.append(data);
-		} catch (error) {
-			handleCollectorFailure(error);
-		}
-	};
-	const onStderr = (data: Buffer): void => {
-		if (!acceptingOutput) return;
-		try {
-			stderrCollector.append(data);
-		} catch (error) {
-			handleCollectorFailure(error);
-		}
-	};
+	const onData =
+		(collector: ExecOutputCollector) =>
+		(data: Buffer): void => {
+			if (!acceptingOutput) return;
+			try {
+				collector.append(data);
+			} catch (error) {
+				handleCollectorFailure(error);
+			}
+		};
+	const onStdout = onData(stdoutCollector);
+	const onStderr = onData(stderrCollector);
 
 	proc.stdout?.on("data", onStdout);
 	proc.stderr?.on("data", onStderr);

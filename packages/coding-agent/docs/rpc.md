@@ -66,7 +66,7 @@ If the agent is streaming and no `streamingBehavior` is specified, the command r
 
 **Extension commands**: If the message is an extension command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
 
-**Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
+**Input expansion**: Prompt-producing invocations — commands, prompt templates, and skills (`/name`, `/prompt:name`, `/skill:name`) — are expanded before sending/queueing, bare or mid-prompt.
 
 Response:
 ```json
@@ -79,7 +79,7 @@ The `images` field is optional. Each image uses `ImageContent` format: `{"type":
 
 #### steer
 
-Queue a steering message while the agent is running. It is delivered after the current assistant turn finishes executing its tool calls, before the next LLM call. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a steering message while the agent is running. It is delivered after the current assistant turn finishes executing its tool calls, before the next LLM call. Prompt-producing invocations (commands, prompt templates, skills) are expanded when the queued message is consumed, never at queue time. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
@@ -101,7 +101,7 @@ See [set_steering_mode](#set_steering_mode) for controlling how steering message
 
 #### follow_up
 
-Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. Prompt-producing invocations (commands, prompt templates, skills) are expanded when the queued message is consumed, never at queue time. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}
@@ -792,7 +792,7 @@ The current session name is available via `get_state` in the `sessionName` field
 
 #### get_commands
 
-Get available commands (extension commands, prompt templates, and skills). These can be invoked via the `prompt` command by prefixing with `/`.
+Get the unified command listing (built-ins, extension commands, commands, prompt templates, and skills). These can be invoked via the `prompt` command by prefixing with `/`.
 
 ```json
 {"type": "get_commands"}
@@ -815,19 +815,21 @@ Response:
 ```
 
 Each command has:
-- `name`: Command name (invoke with `/name`)
+- `name`: Command name (invoke with `/name`). When a bare name lost a collision, this is the qualified form (e.g. `skill:name`, `prompt:name`, `ext:name`)
 - `description`: Human-readable description (optional for extension commands)
 - `source`: What kind of command:
+  - `"builtin"`: Built-in slash command (included exactly once)
   - `"extension"`: Registered via `pi.registerCommand()` in an extension
+  - `"command"`: Loaded from a `commands/` `.md` file
   - `"prompt"`: Loaded from a prompt template `.md` file
-  - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
+  - `"skill"`: Loaded from a skill directory
 - `location`: Where it was loaded from (optional, not present for extensions):
   - `"user"`: User-level (`~/.pi/agent/`)
   - `"project"`: Project-level (`./.pi/agent/`)
   - `"path"`: Explicit path via CLI or settings
 - `path`: Absolute file path to the command source (optional)
 
-**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
+**Note**: Control commands (built-ins and extension commands) execute only at message start; mid-message they stay literal text.
 
 ## Events
 

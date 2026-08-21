@@ -4,10 +4,16 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import { createEventBus } from "../src/core/event-bus.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { DefaultResourceLoader, loadProjectContextFiles } from "../src/core/resource-loader.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import {
+	SKILLS_CHANGED_CHANNEL,
+	SKILLS_QUERY_CHANNEL,
+	skillsQueryReplyChannel,
+} from "../src/core/skills/skill-set-events.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 
@@ -471,6 +477,47 @@ Project skill content`,
 			await loader.reload();
 
 			expect(loader.getAppendSystemPrompt()).toContain("Additional instructions.");
+		});
+	});
+
+	describe("command trust boundary (A.7)", () => {
+		it("gates project commands on project trust; user commands and adapted prompts are always present", async () => {
+			const userCommandsDir = join(agentDir, "commands");
+			mkdirSync(userCommandsDir, { recursive: true });
+			writeFileSync(join(userCommandsDir, "user-cmd.md"), "User command body");
+
+			const projectCommandsDir = join(cwd, ".pi", "commands");
+			mkdirSync(projectCommandsDir, { recursive: true });
+			writeFileSync(join(projectCommandsDir, "proj-cmd.md"), "Project command body");
+
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(join(promptsDir, "test-prompt.md"), "Prompt body");
+
+			const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const names = () => loader.getCommands().commands.map((command) => command.name);
+
+			// Untrusted: the project commands dir is excluded.
+			expect(names()).toContain("user-cmd");
+			expect(names()).toContain("test-prompt");
+			expect(names()).not.toContain("proj-cmd");
+
+			// Trusted reload includes the project commands.
+			settingsManager.setProjectTrusted(true);
+			await loader.reload();
+			expect(names()).toContain("user-cmd");
+			expect(names()).toContain("proj-cmd");
+			expect(names()).toContain("test-prompt");
+
+			// Revoked trust removes them again.
+			settingsManager.setProjectTrusted(false);
+			await loader.reload();
+			expect(names()).toContain("user-cmd");
+			expect(names()).not.toContain("proj-cmd");
+			expect(names()).toContain("test-prompt");
 		});
 	});
 
@@ -1118,6 +1165,56 @@ export default function(pi: ExtensionAPI) {
 			const files = loadProjectContextFiles({ cwd: src, agentDir });
 
 			expect(files.map((f) => f.content)).toEqual(["repo instructions", "src instructions"]);
+		});
+	});
+
+	describe("skill-set event publication", () => {
+		function writeSkill(directory: string, frontmatter: string): void {
+			mkdirSync(directory, { recursive: true });
+			writeFileSync(join(directory, "SKILL.md"), `---\n${frontmatter}\n---\nSkill body`);
+		}
+
+		it("publishes the effective skill set on the event bus after reload and extendResources", async () => {
+			type Snapshot = { revision: number; skills: Array<{ name: string }>; removed: string[] };
+
+			writeSkill(join(cwd, "base-skill"), "name: base-skill\ndescription: Base skill");
+			writeSkill(join(cwd, "ext-skill"), "name: ext-skill\ndescription: Extension skill");
+
+			const eventBus = createEventBus();
+			const changedEvents: Snapshot[] = [];
+			eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as Snapshot));
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				eventBus,
+				noSkills: true,
+				additionalSkillPaths: ["base-skill"],
+			});
+
+			await loader.reload();
+			expect(changedEvents).toHaveLength(1);
+			expect(changedEvents[0].revision).toBe(1);
+			expect(changedEvents[0].skills.map((entry) => entry.name)).toEqual(["base-skill"]);
+			// Publication payload and getSkills() describe the same effective set.
+			expect(loader.getSkills().skills.map((skill) => skill.name)).toEqual(["base-skill"]);
+
+			loader.extendResources({
+				skillPaths: [
+					{
+						path: join(cwd, "ext-skill"),
+						metadata: { source: "test-extension", scope: "temporary", origin: "top-level" },
+					},
+				],
+			});
+			expect(changedEvents).toHaveLength(2);
+			expect(changedEvents[1].revision).toBe(2);
+			expect(changedEvents[1].skills.map((entry) => entry.name)).toEqual(["base-skill", "ext-skill"]);
+
+			// A query after publication replies with the latest snapshot.
+			const replies: unknown[] = [];
+			eventBus.on(skillsQueryReplyChannel("loader-query"), (data) => replies.push(data));
+			eventBus.emit(SKILLS_QUERY_CHANNEL, { requestId: "loader-query" });
+			expect(replies).toEqual([{ success: true, data: changedEvents[1] }]);
 		});
 	});
 });

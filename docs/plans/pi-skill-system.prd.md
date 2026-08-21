@@ -102,6 +102,26 @@ into consideration before Phase 1 of `prp-plan`; violations are plan defects.
   `packages/ai`; tokenizer/pipeline/lifecycle → coding-agent vitest under
   `packages/coding-agent/test/suite/`; TUI completion/editor behavior → `packages/tui`
   `node:test`; bridge path → pi-claude-bridge repo (out of scope here).
+  - **Approved exception (c4a, 2026-08-16):** a *pure unit test with no faux harness*
+    may live outside `test/suite/` beside its peers — specifically the byte-exact A.6
+    listing-budget oracle at `packages/coding-agent/test/skills-listing-budget.test.ts`,
+    mirroring `packages/coding-agent/test/skills-paths-boost.test.ts`. The `test/suite/`
+    mandate targets harness-driven lifecycle tests; c4a's lifecycle end-to-end coverage
+    (`test/suite/skills-listing-budget-session.test.ts`) stays under `test/suite/`.
+  - **Approved exception (c4b, 2026-08-16):** extends the c4a exception to c4b's two pure
+    modules, no faux harness — `packages/coding-agent/test/skills-dedup.test.ts` (A.6
+    identity + last-full-inline-delivery scan) and
+    `packages/coding-agent/test/skills-carry-forward.test.ts` (A.6 MRU-first carry-forward
+    derivation). c4b's lifecycle end-to-end coverage
+    (`test/suite/skills-dedup-carryforward-session.test.ts`,
+    `test/suite/skills-fork-count-symmetry.test.ts`) stays under `test/suite/`.
+  - **Approved exception (c4d, 2026-08-17):** extends the same shape to c4d's two pure
+    modules, no faux harness — `packages/coding-agent/test/resource-watch.test.ts`
+    (injected-watch-factory root diffing, debounce coalescing, error/retry, dispose
+    idempotency, `unref`) and `packages/coding-agent/test/skills-nested-discovery.test.ts`
+    (ancestor-walk bounds, trust gating, canonical-path dedupe, A.6 qualifier derivation).
+    c4d's lifecycle end-to-end coverage
+    (`test/suite/skills-watch-discovery-session.test.ts`) stays under `test/suite/`.
 
 ### D5 — Repo working rules
 
@@ -116,15 +136,15 @@ into consideration before Phase 1 of `prp-plan`; violations are plan defects.
 
 ## Implementation Phases
 
-<!-- STATUS: pending | in-progress | complete. prp-implement updates Status and PRP Plan. -->
+<!-- STATUS: pending | in-progress | complete. prp-prd-update owns Status and artifact links: planned = in-progress + Plan link; implemented = Report/PR delivery links, Status stays in-progress; merged = complete, gated on a merged PR or the READY TO MERGE review of the phase's final slice, per the row's completion conditions (D3). -->
 
-| #   | Phase                                   | Description                                                                    | Status  | Parallel | Depends | PRP Plan |
-| --- | --------------------------------------- | ------------------------------------------------------------------------------ | ------- | -------- | ------- | -------- |
-| 1   | C0 — contract surface                   | Full frontmatter contract, listing v2 + helper, skill-set event seam           | in-progress | -        | -       | `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c0-contract-surface.plan.md` |
-| 2   | C1 — render pipeline, skill tool, delivery | A.3 pipeline, interop subset, `skill` tool, A.4 transports, redirect map    | pending | -        | 1       | -        |
-| 3   | C2 — commands, tokenizer, namespace     | Commands system, A.7.1 includes, mid-prompt tokenizer, TUI autocomplete        | pending | with 4   | 2       | -        |
-| 4   | C3 — execution semantics                | Ephemeral model/effort overrides, `disallowed-tools`, fork via subagents RPC   | pending | with 3   | 2       | -        |
-| 5   | C4 — lifecycle & management             | Dedup, listing budget, carry-forward, `/skills` UI, watching + nested discovery | pending | -        | 3, 4    | -        |
+| #   | Phase                                   | Description                                                                    | Status  | Parallel | Depends | Plan | Report | PR |
+| --- | --------------------------------------- | ------------------------------------------------------------------------------ | ------- | -------- | ------- | -------- | ------ | -- |
+| 1   | C0 — contract surface                   | Full frontmatter contract, listing v2 + helper, skill-set event seam           | complete | -        | -       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0a-frontmatter-listing.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0b-events-visibility.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c0c-fixtures-docs.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c0-contract-surface.plan.md`) | — | — |
+| 2   | C1 — render pipeline, skill tool, delivery | A.3 pipeline, interop subset, `skill` tool, A.4 transports, redirect map    | complete | -        | 1       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1a-provider-replay.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1b-render-interop.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1c-tool-delivery.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c1d-redirects-closeout.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c1-render-delivery.plan.md`) | — | — |
+| 3   | C2 — commands, tokenizer, namespace     | Commands system, A.7.1 includes, mid-prompt tokenizer, TUI autocomplete        | complete | with 4   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2a-commands-namespace.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c2b-tui-autocomplete.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c2-commands-tokenizer.plan.md`) | — | — |
+| 4   | C3 — execution semantics                | Ephemeral model/effort overrides, `disallowed-tools`, fork via subagents RPC   | complete | with 3   | 2       | Split per D3, implemented in order: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3a-overrides-disallowed.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3b-fork.plan.md` → `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3c-paths-closeout.plan.md` (consolidated reference: `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c3-execution-semantics.plan.md`) | — | — |
+| 5   | C4 — lifecycle & management             | Dedup, listing budget, carry-forward, `/skills` UI, watching + nested discovery | complete | -        | 3, 4    | Split per D3 (5 slices): c4a `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c4a-listing-budget.plan.md` (invocation-count derivation + A.6 listing-budget engine + generalized model-switch/invocation-count rebuild triggers + `skillListingBudgetFraction`) → c4b `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c4b-dedup-carryforward.plan.md` (A.6 re-invocation dedup, 5k/25k MRU-first compaction carry-forward, user/model fork-count symmetry) → c4c `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c4c-skills-ui-visibility.plan.md` (per-skill A.6 visibility truth-table resolver + `skillVisibility` settings keyed by canonical ID + all four listing/invocation surfaces + `/skills` management UI with listing-cost visibility) → c4d `/Users/paolof/.prp/pi-b2ed50ef/plans/pi-skill-system-c4d-watch-discovery.plan.md` (live watching of scanned skill/command roots + nested/monorepo discovery per A.6 + harness listing budget: relocate the pure A.6 oracle into `packages/agent` and budget `formatSkillsForSystemPrompt` via `{ contextWindow, budgetFraction }` — the one first-party listing surface c4a leaves unbudgeted) → c4e `/Users/paolof/.prp/pi-b2ed50ef/plans/completed/pi-skill-system-c4e-dispatch-precedence.plan.md` (ADR-0005 dispatch-precedence carry-in: route control-command dispatch through `CommandRegistry.resolve()`; §3 C4 *Implementation carry-in*). Phase closes `complete` only when c4d and c4e land and the full §3 C4 acceptance (plus the dispatch-precedence carry-in and the harness listing budget) is green. | c4c: `/Users/paolof/.prp/pi-b2ed50ef/reports/pi-skill-system-c4c-skills-ui-visibility-report.md`; c4d: `/Users/paolof/.prp/pi-b2ed50ef/reports/pi-skill-system-c4d-watch-discovery-report.md`; c4e: `/Users/paolof/.prp/pi-b2ed50ef/reports/pi-skill-system-c4e-dispatch-precedence-report.md` | /Users/paolof/.prp/pi-b2ed50ef/reviews/c4e-review.md |
 
 Phases 3 and 4 both build only on C1 and touch disjoint areas (commands/tokenizer/TUI vs
 agent-loop overrides/subagents RPC); they can run in parallel in separate git worktrees.
@@ -243,14 +263,24 @@ the wording there is authoritative; on any doubt, read the plan section, not thi
   in the fork repo with its own PRP store. Needs the A.9 skill-set seam and ships the
   protocol v3 bump + `subagents:agent-ended` that Phase 4 (C3) consumes — coordinate: C3's
   stub-extension fixtures encode the A.9 contract WS2 must satisfy.
+  - **C3 fork integration decision (approved 2026-08-13):** the C3 **fork** loop (c3b) integrates against
+    pi-subagents **v0.15.1 as shipped** (`PROTOCOL_VERSION = 2`, consuming `subagents:completed`/`subagents:failed`),
+    deliberately NOT depending on the WS2 v3 bump / `subagents:agent-ended`, to avoid forking the extension only
+    to land C3. A later WS2 v3/`agent-ended` is absorbed at the single `normalizeSubagentCompletion()` seam in the
+    fork client — no routing change. This supersedes the "Phase 4 consumes v3" wording above for the fork wire
+    contract; the A.9 skill-set seam dependency is unchanged.
 - **Workstream 3 — claude-bridge companion** (plan §5): item-level milestones tied to C0
   (listing contract + peer-dep bump) and C1 (`rewriteReadTool` deletion, provider-path
   harness line); runs in the pi-claude-bridge repo with its own PRP store.
 
 ## Notes for the PRP tooling
 
-- `prp-plan` selects the first `pending` phase whose dependencies are `complete` and
-  marks it `in-progress` with a link in the PRP Plan column; `prp-implement` marks it
-  `complete`. Keep this file's table as the progress ledger.
+- `prp-prd-update` owns this table's Status and artifact links, in three stages:
+  `prp-plan` selects the first `pending` phase whose dependencies are `complete` and
+  records `planned` (`in-progress` + Plan link); `prp-implement` records `implemented`
+  (Report and PR links — Status stays `in-progress`); the review cycle records `merged`
+  (`complete`) when the phase's **final** slice converges at READY TO MERGE (or its PR
+  merges) and the row's stated completion conditions are green per D3. Keep this file's
+  table as the progress ledger.
 - Wire back/forward references between successive phase plans with
   `prp-plan update-references` as they are created.

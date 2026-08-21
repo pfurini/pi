@@ -4,10 +4,14 @@ export { Marked, type Token, type Tokens } from "marked";
 // Autocomplete support
 export {
 	type AutocompleteItem,
+	type AutocompleteItemSource,
 	type AutocompleteProvider,
+	type AutocompleteSuggestionKind,
 	type AutocompleteSuggestions,
 	CombinedAutocompleteProvider,
 	type SlashCommand,
+	type SlashRun,
+	slashRunAtCursor,
 } from "./autocomplete.ts";
 // Components
 export { Box } from "./components/box.ts";

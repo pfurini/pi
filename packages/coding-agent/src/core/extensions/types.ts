@@ -936,6 +936,13 @@ interface ToolResultEventBase {
 	isError: boolean;
 	/** Usage from the tool execution itself, if available. */
 	usage?: Usage;
+	/**
+	 * A.4: true only for a harness-fabricated skill tool-result delivered as
+	 * part of a synthetic assistant-tool-call/tool-result pair. Synthetic
+	 * results are notification-only (no matching tool_call event, nothing to
+	 * veto); handler returns are never applied to them.
+	 */
+	synthetic?: boolean;
 }
 
 export interface BashToolResultEvent extends ToolResultEventBase {

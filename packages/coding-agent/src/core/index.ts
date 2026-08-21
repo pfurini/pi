@@ -78,4 +78,13 @@ export {
 	type TurnStartEvent,
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
+// C3b skill fork execution (over the cross-extension subagents RPC)
+export {
+	type ForkOutcome,
+	type NormalizedCompletion,
+	normalizeSubagentCompletion,
+	SkillForkClient,
+	type SkillForkSpawnParams,
+} from "./skills/skill-fork.ts";
+export type { SkillToolForkResult } from "./skills/skill-tool.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";

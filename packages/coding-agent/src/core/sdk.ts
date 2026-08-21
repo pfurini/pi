@@ -189,6 +189,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
 
+	// c4d: a loader this function constructs is internally owned — it is disposed on a
+	// construction failure and when the returned session is disposed. A caller-injected
+	// options.resourceLoader stays caller-owned and is never disposed here.
+	const ownsResourceLoader = resourceLoader === undefined;
 	if (!resourceLoader) {
 		resourceLoader = new DefaultResourceLoader({
 			cwd,
@@ -456,7 +460,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			defaultStreamTarget,
 			releaseDefaultStreamRuntime,
 			sessionAbortController,
+			ownsResourceLoader,
 		});
+		// A.6 compaction carry-forward (c4b): the message restore above (`agent.state.messages =
+		// existingSession.messages`) runs before this session exists, so the reattach seam runs here
+		// instead — before `bindExtensions` binds a diagnostic listener; `_deliverSkillListingDiagnostics`
+		// buffers until then. Also covers `switchSession` (routes through `createRuntime` → this function).
+		if (hasExistingSession) {
+			session.reattachCarriedSkills();
+		}
 		const extensionsResult = resourceLoader.getExtensions();
 
 		return {
@@ -466,6 +478,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		};
 	} catch (error) {
 		releaseDefaultStreamRuntime();
+		if (ownsResourceLoader) {
+			resourceLoader.dispose?.();
+		}
 		throw error;
 	}
 }

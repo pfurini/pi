@@ -2,8 +2,32 @@ import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
-import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.ts";
+import type { SkillFrontmatter } from "../src/core/skills/frontmatter.ts";
+import { escapeXml as escapeXmlFromListing } from "../src/core/skills/listing.ts";
+import { escapeXml as escapeXmlFromListingBudget } from "../src/core/skills/listing-budget.ts";
+import type { ResolvedSkillVisibility } from "../src/core/skills/visibility.ts";
+import {
+	extractSkillListingBlock,
+	formatSkillsForPrompt,
+	loadSkills,
+	loadSkillsFromDir,
+	SKILL_LISTING_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER,
+	SKILL_LISTING_VERSION,
+	type Skill,
+} from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import {
+	SKILL_LISTING_END_DELIMITER as INDEX_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER as INDEX_START_DELIMITER,
+	SKILL_LISTING_VERSION as INDEX_VERSION,
+} from "../src/index.ts";
+import { canonicalizePath } from "../src/utils/paths.ts";
+
+/** A resolved-visibility entry for the listing tests; only `model` affects listing output. */
+function vis(model: "full" | "name" | "no"): ResolvedSkillVisibility {
+	return { model, user: model === "no" ? "no" : "yes", userInvokeError: false };
+}
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
@@ -14,6 +38,7 @@ function createTestSkill(options: {
 	filePath: string;
 	baseDir: string;
 	disableModelInvocation?: boolean;
+	frontmatter?: SkillFrontmatter;
 	source?: string;
 }): Skill {
 	return {
@@ -22,6 +47,7 @@ function createTestSkill(options: {
 		filePath: options.filePath,
 		baseDir: options.baseDir,
 		sourceInfo: createSyntheticSourceInfo(options.filePath, { source: options.source ?? "test" }),
+		...(options.frontmatter ? { frontmatter: options.frontmatter } : {}),
 		disableModelInvocation: options.disableModelInvocation ?? false,
 	};
 }
@@ -239,7 +265,7 @@ describe("skills", () => {
 
 			const result = formatSkillsForPrompt(skills);
 
-			expect(result).toContain("<available_skills>");
+			expect(result).toContain('<available_skills version="2">');
 			expect(result).toContain("</available_skills>");
 			expect(result).toContain("<skill>");
 			expect(result).toContain("<name>test-skill</name>");
@@ -258,7 +284,7 @@ describe("skills", () => {
 			];
 
 			const result = formatSkillsForPrompt(skills);
-			const xmlStart = result.indexOf("<available_skills>");
+			const xmlStart = result.indexOf('<available_skills version="2">');
 			const introText = result.substring(0, xmlStart);
 
 			expect(introText).toContain("The following skills provide specialized instructions");
@@ -305,6 +331,39 @@ describe("skills", () => {
 			expect((result.match(/<skill>/g) || []).length).toBe(2);
 		});
 
+		it("keeps a paths-matched description ahead of an unmatched skill under a tight budget", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "matched-skill",
+					description: "M".repeat(600),
+					filePath: "/repo/matched/SKILL.md",
+					baseDir: "/repo/matched",
+					frontmatter: { paths: ["src/api/**"] },
+				}),
+				createTestSkill({
+					name: "unmatched-skill",
+					description: "U".repeat(600),
+					filePath: "/repo/unmatched/SKILL.md",
+					baseDir: "/repo/unmatched",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(
+				skills,
+				"read",
+				{ touchedPaths: ["/repo/src/api/file.ts"], cwd: "/repo" },
+				{ budgetCodeUnits: 210, invocationCounts: new Map() },
+			);
+			const block = extractSkillListingBlock(result);
+			expect(block).toBeDefined();
+			const matchedStart = block!.indexOf("<name>matched-skill</name>");
+			const unmatchedStart = block!.indexOf("<name>unmatched-skill</name>");
+			const matchedEntry = block!.slice(matchedStart, block!.indexOf("</skill>", matchedStart));
+			const unmatchedEntry = block!.slice(unmatchedStart, block!.indexOf("</skill>", unmatchedStart));
+			expect(matchedEntry).toContain("<description>");
+			expect(unmatchedEntry).not.toContain("<description>");
+		});
+
 		it("should exclude skills with disableModelInvocation from prompt", () => {
 			const skills: Skill[] = [
 				createTestSkill({
@@ -342,6 +401,216 @@ describe("skills", () => {
 
 			const result = formatSkillsForPrompt(skills);
 			expect(result).toBe("");
+		});
+
+		it("produces byte-identical output with no budget (C4a rewire regression)", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "beta-skill",
+					description: "Beta desc with <special> & chars.",
+					filePath: "/path/beta/SKILL.md",
+					baseDir: "/path/beta",
+				}),
+				createTestSkill({
+					name: "alpha-skill",
+					description: "Alpha description.",
+					filePath: "/path/alpha/SKILL.md",
+					baseDir: "/path/alpha",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			const expected =
+				"\n\nThe following skills provide specialized instructions for specific tasks.\n" +
+				"Use the read tool to load a skill's file when the task matches its description.\n" +
+				"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n" +
+				"\n" +
+				'<available_skills version="2">\n' +
+				"  <skill>\n" +
+				"    <name>alpha-skill</name>\n" +
+				"    <description>Alpha description.</description>\n" +
+				"    <location>/path/alpha/SKILL.md</location>\n" +
+				"  </skill>\n" +
+				"  <skill>\n" +
+				"    <name>beta-skill</name>\n" +
+				"    <description>Beta desc with &lt;special&gt; &amp; chars.</description>\n" +
+				"    <location>/path/beta/SKILL.md</location>\n" +
+				"  </skill>\n" +
+				"</available_skills>";
+
+			expect(result).toBe(expected);
+			expect(extractSkillListingBlock(result)).toBe(
+				'<available_skills version="2">\n' +
+					"  <skill>\n" +
+					"    <name>alpha-skill</name>\n" +
+					"    <description>Alpha description.</description>\n" +
+					"    <location>/path/alpha/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"  <skill>\n" +
+					"    <name>beta-skill</name>\n" +
+					"    <description>Beta desc with &lt;special&gt; &amp; chars.</description>\n" +
+					"    <location>/path/beta/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"</available_skills>",
+			);
+		});
+
+		it("keeps an empty-description skill's <description></description> tag byte-identical with no budget", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "empty-desc-skill",
+					description: "",
+					filePath: "/path/empty/SKILL.md",
+					baseDir: "/path/empty",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			expect(result).toContain("<description></description>");
+			expect(extractSkillListingBlock(result)).toBe(
+				'<available_skills version="2">\n' +
+					"  <skill>\n" +
+					"    <name>empty-desc-skill</name>\n" +
+					"    <description></description>\n" +
+					"    <location>/path/empty/SKILL.md</location>\n" +
+					"  </skill>\n" +
+					"</available_skills>",
+			);
+		});
+
+		describe("A.6 visibility map (c4c)", () => {
+			const visibilitySkill = (name: string) =>
+				createTestSkill({
+					name,
+					description: `${name} description.`,
+					filePath: `/path/${name}/SKILL.md`,
+					baseDir: `/path/${name}`,
+				});
+
+			it("renders a name-only entry (name+location, no description) for a name-visibility skill", () => {
+				const skill = visibilitySkill("named");
+				const result = formatSkillsForPrompt(
+					[skill],
+					"tool",
+					undefined,
+					undefined,
+					new Map([[canonicalizePath(skill.filePath), vis("name")]]),
+				);
+				const block = extractSkillListingBlock(result)!;
+				expect(block).toBe(
+					'<available_skills version="2">\n' +
+						"  <skill>\n" +
+						"    <name>named</name>\n" +
+						"    <location>/path/named/SKILL.md</location>\n" +
+						"  </skill>\n" +
+						"</available_skills>",
+				);
+			});
+
+			it("omits a no-visibility skill entirely and falls back to frontmatter for unmapped skills", () => {
+				const hidden = visibilitySkill("hidden");
+				const visible = visibilitySkill("visible");
+				const result = formatSkillsForPrompt(
+					[hidden, visible],
+					"tool",
+					undefined,
+					undefined,
+					new Map([[canonicalizePath(hidden.filePath), vis("no")]]),
+				);
+				expect(result).not.toContain("<name>hidden</name>");
+				expect(result).toContain("<name>visible</name>");
+				expect(result).toContain("<description>visible description.</description>");
+			});
+
+			it("returns an empty block when every skill maps to no", () => {
+				const skill = visibilitySkill("solo");
+				const result = formatSkillsForPrompt(
+					[skill],
+					"tool",
+					undefined,
+					undefined,
+					new Map([[canonicalizePath(skill.filePath), vis("no")]]),
+				);
+				expect(result).toBe("");
+			});
+
+			it("reflects the model dimension identically in the read and tool variants (AC3)", () => {
+				const full = visibilitySkill("full-skill");
+				const named = visibilitySkill("named-skill");
+				const hidden = visibilitySkill("hidden-skill");
+				const visibility = new Map<string, ResolvedSkillVisibility>([
+					[canonicalizePath(named.filePath), vis("name")],
+					[canonicalizePath(hidden.filePath), vis("no")],
+				]);
+				const skills = [full, named, hidden];
+				const readBlock = extractSkillListingBlock(
+					formatSkillsForPrompt(skills, "read", undefined, undefined, visibility),
+				);
+				const toolBlock = extractSkillListingBlock(
+					formatSkillsForPrompt(skills, "tool", undefined, undefined, visibility),
+				);
+				expect(readBlock).toBeDefined();
+				expect(readBlock).toBe(toolBlock);
+				expect(readBlock).toContain("<name>named-skill</name>");
+				expect(readBlock).not.toContain("named-skill description.");
+				expect(readBlock).not.toContain("hidden-skill");
+			});
+
+			it("never re-expands a name-only entry's description under budget truncation", () => {
+				const named = visibilitySkill("named");
+				const other = createTestSkill({
+					name: "other",
+					description: "O".repeat(600),
+					filePath: "/path/other/SKILL.md",
+					baseDir: "/path/other",
+				});
+				const result = formatSkillsForPrompt(
+					[named, other],
+					"tool",
+					undefined,
+					{ budgetCodeUnits: 400, invocationCounts: new Map() },
+					new Map([[canonicalizePath(named.filePath), vis("name")]]),
+				);
+				const block = extractSkillListingBlock(result)!;
+				expect(block).toContain("<name>named</name>");
+				expect(block).not.toContain("named description.");
+			});
+
+			it("produces byte-identical output for an all-on visibility map and no map (AC6)", () => {
+				const one = visibilitySkill("one");
+				const two = createTestSkill({
+					name: "two",
+					description: "two description.",
+					filePath: "/path/two/SKILL.md",
+					baseDir: "/path/two",
+					disableModelInvocation: true,
+				});
+				const skills = [one, two];
+				const baseline = formatSkillsForPrompt(skills, "tool");
+				const withMap = formatSkillsForPrompt(
+					skills,
+					"tool",
+					undefined,
+					undefined,
+					new Map<string, ResolvedSkillVisibility>([
+						[canonicalizePath(one.filePath), vis("full")],
+						[canonicalizePath(two.filePath), vis("no")],
+					]),
+				);
+				expect(withMap).toBe(baseline);
+			});
+		});
+
+		it("resolves escapeXml and the SKILL_LISTING_* delimiters from every legacy import path", () => {
+			expect(typeof escapeXmlFromListing).toBe("function");
+			expect(escapeXmlFromListing).toBe(escapeXmlFromListingBudget);
+			expect(escapeXmlFromListing("<x>")).toBe("&lt;x&gt;");
+
+			expect(SKILL_LISTING_VERSION).toBe(INDEX_VERSION);
+			expect(SKILL_LISTING_START_DELIMITER).toBe(INDEX_START_DELIMITER);
+			expect(SKILL_LISTING_END_DELIMITER).toBe(INDEX_END_DELIMITER);
 		});
 	});
 

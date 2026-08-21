@@ -19,6 +19,7 @@ import type {
 	OpenAICompletionsCompat,
 	OpenAIResponsesCompat,
 } from "../src/types.ts";
+import { matchesSkillSyntheticReplayClass } from "../src/types.ts";
 import {
 	assertExactModelIds,
 	createModelDataManifest,
@@ -788,6 +789,14 @@ function applyOpenAIExplicitPromptCacheMetadata(model: Model<Api>): void {
 		...(model.compat as OpenAIResponsesCompat | undefined),
 		supportsExplicitPromptCacheMode: true,
 	};
+}
+
+// See SKILL_SYNTHETIC_REPLAY_CLASSES (packages/ai/src/types.ts) and
+// packages/ai/test/skill-synthetic-pair-replay.test.ts for the verified (api, provider) matrix.
+function applySkillSyntheticReplayMetadata(model: Model<Api>): void {
+	if (matchesSkillSyntheticReplayClass(model)) {
+		model.syntheticToolResultReplay = true;
+	}
 }
 
 function isGemini3ProModel(modelId: string): boolean {
@@ -2750,6 +2759,7 @@ async function generateModels() {
 		applyOpenAIGrammarToolCompatMetadata(model);
 		applyOpenAIToolSearchMetadata(model);
 		applyOpenAIExplicitPromptCacheMetadata(model);
+		applySkillSyntheticReplayMetadata(model);
 	}
 
 	// Group by provider and deduplicate by model ID

@@ -172,7 +172,7 @@ Standard editing keybindings for delete word, undo, etc. See [docs/keybindings.m
 
 ### Commands
 
-Type `/` in the editor to trigger commands. [Extensions](#extensions) can register custom commands, [skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`.
+Type `/` in the editor to trigger commands. Built-ins, extension commands, commands, prompt templates, and skills share one namespace: [extensions](#extensions) can register custom commands, commands and [prompt templates](#prompt-templates) expand via `/name` (bare or mid-prompt), and [skills](#skills) expand via `/name` or `/skill:name`. On a name collision the higher tier wins (built-ins > extension commands > commands/templates > skills) and the loser stays reachable via its qualifier (`/prompt:name`, `/skill:name`, `/ext:name`).
 
 | Command | Description |
 |---------|-------------|

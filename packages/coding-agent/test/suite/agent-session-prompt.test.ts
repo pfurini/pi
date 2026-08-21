@@ -186,9 +186,93 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("/skill:test explain this");
 
-		expect(expandedPrompt).toContain('<skill name="test" location="');
+		// A.4 message block: name/args attributes, base-dir preamble, rendered
+		// body with the raw args appended (A.3.2 rule 7).
+		expect(expandedPrompt).toContain('<skill name="test" args="explain this">');
 		expect(expandedPrompt).toContain("Use the skill body.");
-		expect(expandedPrompt).toContain("explain this");
+		expect(expandedPrompt).toContain("ARGUMENTS: explain this");
+	});
+
+	it("keeps hidden or command-ineligible skill commands literal while valid skills expand", async () => {
+		const tempDir = join(tmpdir(), `pi-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		tempDirs.push(tempDir);
+		const makeSkill = (name: string, frontmatter?: Record<string, unknown>) => {
+			// A distinct file per skill: skillId is the canonicalized filePath (A.9), so
+			// aliasing one file across differently-named fixtures would make them the same
+			// skill for A.6 dedup identity purposes.
+			const skillPath = join(tempDir, `${name.replace(/[^a-zA-Z0-9.-]/g, "_")}.md`);
+			writeFileSync(skillPath, "# Skill\n\nShared body.");
+			return {
+				name,
+				description: `${name} description`,
+				filePath: skillPath,
+				disableModelInvocation: false,
+				baseDir: tempDir,
+				sourceInfo: createSyntheticSourceInfo(skillPath, {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: tempDir,
+				}),
+				...(frontmatter && { frontmatter }),
+			};
+		};
+		const resourceLoader = {
+			...createTestResourceLoader(),
+			getSkills: () => ({
+				skills: [
+					makeSkill("visible-skill", { "argument-hint": "[path]" }),
+					makeSkill("hidden-skill", { "user-invocable": false }),
+					makeSkill("trailing."),
+					makeSkill("Upper.Name"),
+				],
+				diagnostics: [],
+			}),
+		};
+		const harness = await createHarness({ resourceLoader });
+		harnesses.push(harness);
+		const sentPrompts: string[] = [];
+		harness.setResponses([
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				sentPrompts.push(users.length > 0 ? getMessageText(users[users.length - 1]) : "");
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		// Hidden and command-ineligible names stay literal text (not errors).
+		await harness.session.prompt("/skill:hidden-skill do things");
+		expect(sentPrompts[sentPrompts.length - 1]).toBe("/skill:hidden-skill do things");
+		harness.appendResponses([
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				sentPrompts.push(users.length > 0 ? getMessageText(users[users.length - 1]) : "");
+				return fauxAssistantMessage("ok");
+			},
+		]);
+		await harness.session.prompt("/skill:trailing. do things");
+		expect(sentPrompts[sentPrompts.length - 1]).toBe("/skill:trailing. do things");
+
+		// A.1-valid names still expand, including Agent Skills-warning names like Upper.Name.
+		harness.appendResponses([
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				sentPrompts.push(users.length > 0 ? getMessageText(users[users.length - 1]) : "");
+				return fauxAssistantMessage("ok");
+			},
+		]);
+		await harness.session.prompt("/skill:visible-skill do things");
+		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="visible-skill" args="do things">');
+		harness.appendResponses([
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				sentPrompts.push(users.length > 0 ? getMessageText(users[users.length - 1]) : "");
+				return fauxAssistantMessage("ok");
+			},
+		]);
+		await harness.session.prompt("/skill:Upper.Name do things");
+		expect(sentPrompts[sentPrompts.length - 1]).toContain('<skill name="Upper.Name" args="do things">');
 	});
 
 	it("expands prompt templates before sending the prompt", async () => {

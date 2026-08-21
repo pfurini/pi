@@ -263,15 +263,103 @@ export {
 	type SettingsManagerCreateOptions,
 	type TuiMode,
 } from "./core/settings-manager.ts";
-// Skills
+// Skill render pipeline (C1b): renderer/runtime contract consumed by C1c delivery
 export {
+	parseDeclaredArgumentNames,
+	type SkillArgumentSubstitution,
+	type SkillArgumentsDeclaration,
+	substituteSkillArguments,
+	tokenizeSkillArgs,
+} from "./core/skills/arguments.ts";
+export { type FenceBlock, inlineCodeSpans, scanFenceBlocks } from "./core/skills/fences.ts";
+export {
+	buildCcToolNote,
+	buildSkillEnvironment,
+	buildSkillExecutionEnv,
+	buildSkillSubstitutionMap,
+	buildSkillVariableValues,
+	detectCcToolNames,
+	resolveEffectiveEffort,
+	resolveProjectRoot,
+	SKILL_VARIABLES,
+	type SkillInteropContext,
+	substituteSkillVariables,
+} from "./core/skills/interop.ts";
+export {
+	boostSkillsByPaths,
+	type SkillPathsBoostResult,
+	skillPathTouchFromToolCall,
+} from "./core/skills/paths-boost.ts";
+export {
+	absolutizeSkillPaths,
+	type RenderedSkillInvocation,
+	type RenderSkillContext,
+	renderSkillInvocation,
+	rewriteAgentNames,
+} from "./core/skills/render.ts";
+export {
+	SKILL_AGENTS_QUERY_CHANNEL,
+	SKILL_AGENTS_REWRITE_MAPS_CHANNEL,
+	type SkillAgentRewriteEntry,
+	type SkillAgentRewriteMap,
+	type SkillAgentRewriteMaps,
+	type SkillAgentRewriteMapsEvent,
+	type SkillInvocation,
+	type SkillInvocationMetadata,
+	SkillRuntime,
+	type SkillRuntimeContext,
+	skillAgentsQueryReplyChannel,
+	toInvocationMetadata,
+} from "./core/skills/runtime.ts";
+export {
+	commandTimedOutMarker,
+	DEFAULT_SKILL_SHELL_SETTINGS,
+	evaluateShellGate,
+	exitCodeMarker,
+	injectShellCommands,
+	MAX_SHELL_INJECTIONS_PER_RENDER,
+	normalizeDisallowedTools,
+	outputTruncatedMarker,
+	SHELL_MARKERS,
+	type ShellInjectionOptions,
+	type SkillShellSettings,
+	shellExecutionFailedMarker,
+	shellUnavailableMarker,
+	splitInjectionSegments,
+} from "./core/skills/shell-injection.ts";
+export {
+	canonicalSkillSetJson,
+	getSkillSetController,
+	type RpcReply,
+	SKILLS_CHANGED_CHANNEL,
+	SKILLS_QUERY_CHANNEL,
+	type SkillSetController,
+	type SkillSetJsonValue,
+	type SkillSetSnapshot,
+	type SkillSetSnapshotEntry,
+	type SkillSetSnapshotSource,
+	type SkillsChangedEvent,
+	type SkillsQueryRequest,
+	skillsQueryReplyChannel,
+} from "./core/skills/skill-set-events.ts";
+export { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS } from "./core/skills/tool-redirects.ts";
+
+// Skills
+
+export {
+	extractSkillListingBlock,
 	formatSkillsForPrompt,
+	type LoadedSkill,
 	type LoadSkillsFromDirOptions,
 	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
+	SKILL_LISTING_END_DELIMITER,
+	SKILL_LISTING_START_DELIMITER,
+	SKILL_LISTING_VERSION,
 	type Skill,
 	type SkillFrontmatter,
+	type SkillInput,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";

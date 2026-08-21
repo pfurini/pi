@@ -51,6 +51,8 @@ export interface CustomMessage<T = unknown> {
 	content: string | (TextContent | ImageContent)[];
 	display: boolean;
 	details?: T;
+	/** If true, this message is display-only and excluded from LLM context (e.g. C3b fork notices). */
+	excludeFromContext?: boolean;
 	timestamp: number;
 }
 
@@ -130,6 +132,7 @@ export function createCustomMessage(
 	display: boolean,
 	details: unknown | undefined,
 	timestamp: string,
+	excludeFromContext?: boolean,
 ): CustomMessage {
 	return {
 		role: "custom",
@@ -137,6 +140,7 @@ export function createCustomMessage(
 		content,
 		display,
 		details,
+		...(excludeFromContext && { excludeFromContext }),
 		timestamp: new Date(timestamp).getTime(),
 	};
 }
@@ -164,6 +168,10 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						timestamp: m.timestamp,
 					};
 				case "custom": {
+					// Display-only notices (C3b fork spawn/completion) never enter LLM context.
+					if (m.excludeFromContext) {
+						return undefined;
+					}
 					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 					return {
 						role: "user",

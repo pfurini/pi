@@ -4,9 +4,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { AgentSession } from "../src/core/agent-session.ts";
 import { RpcClient } from "../src/modes/rpc/rpc-client.ts";
+import { buildRpcSlashCommands } from "../src/modes/rpc/rpc-mode.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+describe("buildRpcSlashCommands", () => {
+	test("delegates to AgentSession.getCommands", () => {
+		const commands = [{ name: "skill:visible-skill", description: "Visible skill", source: "skill" }] as const;
+		const session = { getCommands: () => commands } as unknown as AgentSession;
+
+		expect(buildRpcSlashCommands(session)).toBe(commands);
+	});
+});
 
 /**
  * RPC mode tests.

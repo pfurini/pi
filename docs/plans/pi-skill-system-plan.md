@@ -149,6 +149,8 @@ editor trigger, and mid-line/second-line Enter behavior tested in `packages/tui`
 
 ### Phase C3 — execution semantics
 
+*Status (2026-08-13): C3a shipped* — items 1 (`model`/`effort` ephemeral override on all A.5 paths: initial, mid-turn `skill` tool call, queued steer/follow-up, in-turn retry, incl. continuation rebuilds) and 2 (`disallowed-tools` schema removal + pre-lookup `tool_call` block via the redirect-canonicalized union, same-batch siblings exempt), plus A.8 `PI_EFFORT`/`CLAUDE_EFFORT` model-clamping and the shared `InvocationCoordinator`. C3b remains: items 3 (`context: fork`/`agent`/`background` — fields parsed and preserved, execution not wired) and 4 (`paths` activation).
+
 1. Per-skill `effort` and `model` overrides via the **ephemeral request-override record** of
    Appendix A.5. Not `setModel`/`setThinkingLevel` (persistent), and not a plain chained
    `prepareNextTurn` either — `AgentSession`'s next-turn refresh overwrites chained snapshots
@@ -169,6 +171,8 @@ rows (foreground result delivery per status, background acknowledgment, repeat-w
 block, spawn-failure fallback, completion-event ordering/buffering race); fork fixture runs
 through a stub subagents extension in the test harness; override fixtures cover initial,
 mid-turn tool-call, queued, and retry paths.
+
+*Implementation carry-ins (from the C1c super-code-review, verified against `a1ba977e9`+`41ce2de50`):* before wiring the per-field behavior above, extract a session-owned skill-invocation/delivery coordinator — C1c left render + activate + diagnostics duplicated across the genuine `skill` tool path and the user/queue delivery path (`agent-session.ts` `_createSkillTool` vs `_buildSkillDelivery`), and C3 applies `model`/`effort`/`disallowed-tools`/fork to *both* paths, so unify them first into one `prepare(invocation) → {record, rendered, diagnostics, activation}` that each path adapts (delivery selects an A.4 transport; the tool returns an inline/fork result). When that seam is touched, also finalize the generic `transformInjectedMessages` agent hook — a mutable public `Agent` property absent from `AgentOptions` and unconditionally overwritten by `AgentSession`; add it to `AgentOptions` + the constructor, compose rather than clobber a prior transform, and document it in `packages/agent/README.md`. Tracking detail lives in the C1d plan's Amendments.
 
 ### Phase C4 — lifecycle & management
 
@@ -192,6 +196,8 @@ algorithm is the oracle); the A.6 visibility truth table verified row by row —
 frontmatter columns — across listing, model invocation, user invocation, and SDK/RPC listing;
 visibility survives a collision-winner deletion (ID-keyed, B.8); model-switch budget rebuild
 and watcher deletion covered.
+
+*Implementation carry-in (from the C2a super-code-review, verified against `1a2a5f031`+`2ff925a27`):* enforce the ADR-0005 namespace precedence at **dispatch** for control commands. C2a wired the `ext:` qualifier and built the unified registry, but built-in > extension bare-name precedence is not enforced at runtime — `_tryExecuteExtensionCommand` / `interactive-mode.isExtensionCommand` (pre-existing, #454/#475) reparse `/name` and match `invocationName` first, so an extension `/foo` still shadows a built-in `/foo` even though the registry and listing rank the built-in ahead (autocomplete already favors built-ins; only runtime dispatch order diverges). Route control-command dispatch (built-ins + extensions) through the C2a `CommandRegistry.resolve()` so runtime resolution matches the advertised precedence and qualified forms resolve uniformly. The other C2a review fixes (and the `ext:`-qualifier wiring this depends on) live in the C2a review-fixes plan (`pi-skill-system-c2a-review-fixes.plan.md`).
 
 ## 4. Workstream 2 — pi-subagents fork (parallel)
 
@@ -694,7 +700,11 @@ share the skill render pipeline with these differences:
   substituted values. Inlined content **is** scanned for further includes (recursion) but is
   never re-scanned by later pipeline stages beyond the normal single-pass flow.
 - **Resolution:** relative paths resolve against the including file's directory; absolute
-  paths allowed.
+  paths allowed. Absolute and parent-relative (`../`) targets are permitted **by design**:
+  command files run under the project-trust boundary, so trusting a project authorizes its
+  command files to read and inline any file the process can access (combined with `!` shell
+  injection this is exfiltration-capable). This is the intended trust model; there is no
+  path containment beyond the trust gate.
 - **Limits and errors** (each inlined as a bracketed marker in place of the reference, never
   aborting the render): recursion depth cap 10 — the root command file is depth 0, and an
   include that would sit at depth 11 is not inlined (`[include depth exceeded: <path>]`);
@@ -765,6 +775,19 @@ buildable).
   `skill-agents:query {requestId}` → current maps, so a late-subscribing core pulls instead of
   waiting for the next registry change. Core keeps the last-received map; absence = empty map
   (rewrite stage no-ops).
+- **C0-time clarification (2026-08-12, appended by the C0b implementation — not original
+  frozen-v6 text):** for the skill-set seam above, each entry's `source` is the complete
+  detached object `{path: string, source: string, scope: "user" | "project" | "temporary",
+  origin: "package" | "top-level", baseDir?: string}` — never the `SourceInfo.source`
+  string alone; `baseDir` is omitted (never `null`/`undefined`) when absent. The canonical
+  serialization used for all byte comparisons is defined by `canonicalSkillSetJson` in
+  `packages/coding-agent/src/core/skills/skill-set-events.ts`: object keys sorted
+  lexicographically (recursively), absent optional fields omitted, `JSON.stringify` with
+  2-space indentation, and a single trailing LF. The canonical serialized conformance
+  fixture is committed at
+  `packages/coding-agent/test/suite/fixtures/skills-contract/skill-set-snapshot.json`;
+  companion repositories copy the public wire types, the canonical-JSON rule, and that
+  fixture byte-for-byte.
 
 ## Appendix B — Pi code anchor map (verified 2026-08-11, branch `personal`)
 

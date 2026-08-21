@@ -122,6 +122,14 @@ export interface AfterToolCallContext {
 	context: AgentContext;
 }
 
+/** Context passed to `resolveToolRedirect` when a tool call names an unregistered tool. */
+export interface ResolveToolRedirectContext {
+	/** The tool name the model attempted to call. */
+	attemptedName: string;
+	/** Names of tools registered in the current context. */
+	registeredToolNames: string[];
+}
+
 /** Context passed to `shouldStopAfterTurn`. */
 export interface ShouldStopAfterTurnContext {
 	/** The assistant message that completed the turn. */
@@ -257,6 +265,16 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 
 	/**
+	 * Optional transform applied to application-supplied messages immediately
+	 * before they are emitted and appended to the transcript: the initial
+	 * prompt batch and each drained steering/follow-up batch. May rewrite,
+	 * expand, or split messages (one message may become several). Runs after
+	 * the queue has been drained, so a failure here cannot lose the message
+	 * silently — implementations should catch their own errors and return a
+	 * fallback form. Generic by design: it carries no domain semantics.
+	 */
+	transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently;
@@ -290,6 +308,56 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * The hook receives the agent abort signal and is responsible for honoring it.
 	 */
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+
+	/**
+	 * Called only when a tool call names a tool that is not registered in the current context.
+	 *
+	 * Return corrective text to replace the default `Tool <name> not found` error result,
+	 * or undefined to keep the default. The returned text is the entire error message —
+	 * the loop never executes another tool or invokes tool hooks for an unknown call.
+	 *
+	 * Contract: synchronous and advisory. A throw is swallowed and the default
+	 * not-found error is returned instead, so a faulty resolver can never
+	 * interrupt the low-level loop.
+	 */
+	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
+
+	/**
+	 * Called before a provider request whose triggering messages were just
+	 * injected/transformed: the first turn after the top-level
+	 * {@link transformInjectedMessages} and after every inner-loop injection,
+	 * but NOT on a retry/continuation (which rebuilds the loop config from
+	 * scratch). Applies `context.tools` (when present) plus `model`/`thinkingLevel`
+	 * from the returned {@link AgentLoopTurnUpdate}, or undefined to keep the
+	 * current values. Unlike {@link prepareNextTurn}, `context.systemPrompt` and
+	 * `context.messages` are NOT applied here: the transcript is already live at
+	 * the injection point, so replacing it would drop the just-injected messages.
+	 *
+	 * Exists so an override that only becomes active while injected messages are
+	 * being consumed (e.g. a queued skill invocation activated inside
+	 * `transformInjectedMessages`) can still govern the consuming request.
+	 *
+	 * Contract: must not throw or reject. Return undefined on failure.
+	 */
+	refreshTurnAfterInjection?: (
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+
+	/**
+	 * Called at the very top of tool-call preparation, before the registry
+	 * lookup and before {@link beforeToolCall}. Returns a block reason to reject
+	 * the call with an immediate error result, or undefined to allow it.
+	 *
+	 * Distinct from schema removal: a disallowed tool may already be absent from
+	 * `context.tools`, in which case the plain not-found path would hide the
+	 * policy. This seam guarantees a policy block that names the tool remains
+	 * reachable after the schema has been removed.
+	 *
+	 * Contract: synchronous and advisory. A throw fails closed — the call is
+	 * blocked with a generic policy error rather than allowed — but is never
+	 * rethrown, so a faulty policy can never interrupt the low-level loop.
+	 */
+	isToolCallDisallowed?: (name: string) => string | undefined;
 }
 
 /**

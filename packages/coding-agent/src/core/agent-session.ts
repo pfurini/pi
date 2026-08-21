@@ -13,11 +13,12 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
+	AgentLoopTurnUpdate,
 	AgentMessage,
 	AgentState,
 	AgentTool,
@@ -29,9 +30,11 @@ import type {
 	AssistantMessage,
 	AuthResult,
 	ImageContent,
+	Message,
 	Model,
 	ProviderHeaders,
 	TextContent,
+	ToolResultMessage,
 	Usage,
 } from "@earendil-works/pi-ai/compat";
 import {
@@ -46,12 +49,34 @@ import {
 	resetApiProviders,
 } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
-import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
+import {
+	InvocationCoordinator,
+	type PreparedSkillInvocation,
+	type QueuedInvocationSnapshot,
+} from "./commands/invocation-coordinator.ts";
+import { adaptPromptTemplates, type LoadedCommand } from "./commands/loader.ts";
+import {
+	buildCommandRegistry,
+	type CommandRegistry,
+	type ExtensionCommandInfo,
+	formatNestedVariantsNote,
+	type ResolvedBuiltinInvocation,
+	type ResolvedExtensionInvocation,
+} from "./commands/registry.ts";
+import { type RenderCommandContext, type RenderedCommand, renderCommand } from "./commands/render.ts";
+import { createSlashCommandToolDefinition, SLASH_COMMAND_TOOL_NAME } from "./commands/slash-command-tool.ts";
+import {
+	type InvocationSpan,
+	isSkillDisabledDiagnostic,
+	type MessageSpan,
+	type TokenizeResult,
+	tokenizeMessage,
+} from "./commands/tokenizer.ts";
 import {
 	type CompactionResult,
 	calculateContextTokens,
@@ -65,6 +90,7 @@ import {
 } from "./compaction/index.ts";
 import { type DefaultStreamTarget, isDefaultStreamFn, runWithDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -79,6 +105,7 @@ import {
 	type MessageStartEvent,
 	type MessageUpdateEvent,
 	type ReplacedSessionContext,
+	type ResolvedCommand,
 	type SessionBeforeCompactResult,
 	type SessionBeforeTreeResult,
 	type SessionShutdownEvent,
@@ -98,16 +125,65 @@ import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
-import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
-import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
-import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
+import type { PromptTemplate } from "./prompt-templates.ts";
+import type { ResourceExtensionPaths, ResourceLoader, ResourceLoaderChangeEvent } from "./resource-loader.ts";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	SessionEntry,
+	SessionManager,
+	SessionMessageMetadata,
+	SkillInvocationEntry,
+} from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type { SettingsManager } from "./settings-manager.ts";
-import type { SlashCommandInfo } from "./slash-commands.ts";
+import type { SettingsManager, SettingsScope } from "./settings-manager.ts";
+import { deriveCarriedSkills } from "./skills/carry-forward.ts";
+import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
+import {
+	buildAlreadyLoadedNote,
+	buildCarriedSkillBlock,
+	buildSkillDelivery,
+	SKILL_TOOL_NAME,
+	type SkillDelivery,
+	type SkillToolResultDetails,
+	type SyntheticToolResultNotification,
+	selectSkillTransport,
+} from "./skills/delivery.ts";
+import { type LoadedSkill, normalizeSkillInput } from "./skills/frontmatter.ts";
+import { getListingDescription } from "./skills/listing.ts";
+import {
+	computeSkillInvocationCounts,
+	estimateListingEntryCost,
+	type ListingBudgetEntry,
+	skillListingBudgetCodeUnits,
+} from "./skills/listing-budget.ts";
+import { skillPathTouchFromToolCall } from "./skills/paths-boost.ts";
+import { type RenderedSkillInvocation, type RenderSkillContext, renderSkillInvocation } from "./skills/render.ts";
+import { type SkillInvocation, SkillRuntime } from "./skills/runtime.ts";
+import {
+	type ForkOutcome,
+	type NormalizedCompletion,
+	SkillForkClient,
+	type SubagentSpawnOptions,
+} from "./skills/skill-fork.ts";
+import { computeDisallowedUnion, resolveActiveOverride, resolveModelOverride } from "./skills/skill-overrides.ts";
+import {
+	createSkillToolDefinition,
+	type SkillToolDedupNoteResult,
+	type SkillToolForkResult,
+} from "./skills/skill-tool.ts";
+import { canonicalizeToolName, DEFAULT_TOOL_REDIRECTS, resolveToolRedirect } from "./skills/tool-redirects.ts";
+import {
+	defaultSkillVisibility,
+	type ResolvedSkillVisibility,
+	resolveSkillVisibility,
+	type SkillVisibilityState,
+} from "./skills/visibility.ts";
+import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { applyToolOutputPolicy } from "./tool-output-policy.ts";
-import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
+import { type BashOperations, createLocalBashOperations, registerBashSpawnContextComposer } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { addUsageToTotals, createUsageTotals } from "./usage-totals.ts";
@@ -137,6 +213,20 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 		content: match[3],
 		userMessage: match[4]?.trim() || undefined,
 	};
+}
+
+/** A queued invocation-bearing message awaiting consumption by the agent loop (C1c). */
+interface QueuedInvocation extends QueuedInvocationSnapshot {
+	queue: "steer" | "followUp";
+}
+
+/** Entry metadata plus the pending synthetic tool_result notification payload. */
+type DeliveryMeta = SessionMessageMetadata & { syntheticNotification?: SyntheticToolResultNotification };
+
+/** A fork notice plus its optional B.12 counting metadata (c4b): only the spawn notice carries one `fork: true` invocation. */
+interface ForkNoticeEnvelope {
+	notice: CustomMessage;
+	invocations?: SkillInvocationEntry[];
 }
 
 /** Session-specific events that extend the core AgentEvent */
@@ -182,7 +272,9 @@ export type AgentSessionEvent =
 	  }
 	| { type: "summarization_retry_finished" }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-	| { type: "bash_execution_update"; id?: string; delta: string };
+	| { type: "bash_execution_update"; id?: string; delta: string }
+	/** c4d: a watcher- or nested-discovery-driven light refresh changed the effective skill/command set. */
+	| { type: "resources_changed" };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -250,6 +342,19 @@ export interface AgentSessionConfig {
 	 * this public interface are not forced to supply one.
 	 */
 	sessionAbortController?: AbortController;
+	/**
+	 * c4d: set only by a boundary that constructed the loader itself (sdk.ts
+	 * `createAgentSession` with no injected loader): dispose() then disposes the
+	 * loader (watchers, timers) with the session. Injected/shared loaders stay
+	 * caller-owned and are never disposed here.
+	 */
+	ownsResourceLoader?: boolean;
+	/**
+	 * C3b fork client timeout overrides (tests only): shorten the spawn-reply cap and
+	 * the foreground completion cap so timeout paths do not stall the suite. Production
+	 * omits it and uses the client defaults (10s spawn reply, 15min foreground).
+	 */
+	skillForkTimeouts?: { spawnReplyTimeoutMs?: number; foregroundCapMs?: number; pingTimeoutMs?: number };
 }
 
 export interface ExtensionBindings {
@@ -327,6 +432,28 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 // AgentSession Class
 // ============================================================================
 
+/** One `/skills` management row (c4c): a loaded skill with its effective A.6 visibility, persisted state + scope, and estimated listing cost. */
+export interface SkillManagementRow {
+	/** Canonical skill ID (B.8 persistence key). */
+	id: string;
+	name: string;
+	listingName: string;
+	/** SKILL.md path (the listing's `<location>`). */
+	location: string;
+	source: string;
+	disableModelInvocation: boolean;
+	userInvocable: boolean;
+	/** Effective persisted state (malformed values resolve to `"on"`). */
+	state: SkillVisibilityState;
+	/** Scope the effective persisted state comes from; undefined when nothing is persisted. */
+	stateScope: SettingsScope | undefined;
+	/** The persisted value at the originating scope was not a valid state. */
+	malformed: boolean;
+	/** A.6 truth-table resolution (frontmatter × state). */
+	effective: ResolvedSkillVisibility;
+	/** `est` of the skill's rendered listing entry (the budget engine's measure). */
+	estimatedCost: number;
+}
 export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
@@ -369,6 +496,8 @@ export class AgentSession {
 	private _turnIndex = 0;
 
 	private _resourceLoader: ResourceLoader;
+	/** c4d: whether dispose() also disposes the loader (only when a construction boundary created it). */
+	private readonly _ownsResourceLoader: boolean;
 	private _customTools: ToolDefinition[];
 	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
 	private _cwd: string;
@@ -406,6 +535,46 @@ export class AgentSession {
 	 *  teardown after an embedder shutdown, test afterEach) must be a no-op. */
 	private _disposed = false;
 
+	/** Session-owned skill invocation runtime (C1b): activation-on-consumption, turn-scoped A.8 env. */
+	private readonly _skillRuntime: SkillRuntime;
+	/** C3b fork spawn client (over the cross-extension event bus); absent bus === no subagents present. */
+	private readonly _skillForkClient: SkillForkClient;
+	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
+	private _pendingForkNotices: ForkNoticeEnvelope[] = [];
+	/**
+	 * Queued skill invocations (C1c): application-defined queue message → its
+	 * structured record. The message carries the literal `/skill:` text for the
+	 * queue UI; rendering and activation happen when the agent loop consumes it.
+	 */
+	private readonly _queuedSkillInvocations = new WeakMap<AgentMessage, QueuedInvocation>();
+	/** B.12/pairId entry metadata (+ synthetic event payload) per delivered message, by identity. */
+	private readonly _messageDeliveryMeta = new WeakMap<AgentMessage, DeliveryMeta>();
+	/** Tokenize → compose → render → activate → fallback coordinator (no session reference). */
+	private readonly _invocationCoordinator = new InvocationCoordinator({
+		createSkillInvocation: (skill, rawArgs) => this._skillRuntime.createInvocation(skill, rawArgs),
+		renderSkill: (skill, invocation, signal) => this._renderSkill(skill, invocation, signal),
+		renderCommand: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
+		activateSkill: (invocation) => {
+			this._markSkillListingBudgetDirty();
+			return this._skillRuntime.activate(invocation);
+		},
+		checkDedup: (rendered) => this._checkDedup(rendered),
+		emitDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		emitRenderError: (extensionPath, event, err) =>
+			this._extensionRunner.emitError({
+				extensionPath,
+				event,
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		literalMessage: (text, images) => this._literalUserMessage(text, images),
+		attachInvocations: (message, invocations) => this._messageDeliveryMeta.set(message, { invocations }),
+	});
+	/** Synthetic-pair messages: immutable against message_end replacement (A.4). */
+	private readonly _syntheticPairMessages = new WeakSet<AgentMessage>();
+	/** Deferred first half of a synthetic pair, persisted atomically with its toolResult. */
+	private _pendingSyntheticAssistant?: { message: Message; metadata: SessionMessageMetadata };
+	/** Unregister for the bash spawn-context composer that injects turn-scoped skill env. */
+	private readonly _unregisterSkillSpawnComposer: () => void;
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
@@ -416,6 +585,37 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	/** Bounded, chronological, no-dedup window of recently tool-touched paths for the A.6 `paths` listing boost. */
+	private readonly _skillPathsWindow: string[] = [];
+	/** Set whenever `_skillPathsWindow` changes; consumed by the `_promptInScope` rebuild boundary. */
+	private _skillPathsWindowDirty = false;
+	/** Set on any model-assignment path, `activateSkill`, a persisting fork delivery, or a branch-leaf change; consumed by the `_promptInScope` rebuild boundary. */
+	private _skillListingBudgetDirty = false;
+	/** Set by `applySkillVisibilityChange` (c4c) and the c4d watcher/nested refresh reaction: the listing content itself changed, so the next rebuild is not gated by `visibleCount > 0` (a change may hide the last visible skill). */
+	private _skillListingContentDirty = false;
+	/** c4d: unsubscribe for the loader change reaction registered at construction. */
+	private _unsubscribeResourceChanges?: () => void;
+	/** c4d: last-emitted aggregated collision diagnostic content; shared baseline for the deduped watcher path and the unconditional /reload re-emit. */
+	private _lastEmittedCollisionDiagnostic?: string;
+	/** Whether the most recently rebuilt listing hit the A.6 skeleton floor; used to deliver the overflow diagnostic once per continuous episode and re-arm on recovery. */
+	private _skillListingSkeletonOverflowing = false;
+	/** A.6 per-skill visibility (c4c): the shared, settings-derived resolved-visibility map, refreshed at every prompt rebuild; the model-facing gates (listing, `skill` tool), the user-facing registry, and the `/skills` view all consume this one map so they cannot drift. */
+	private _skillVisibility: ReadonlyMap<string, ResolvedSkillVisibility> = new Map();
+	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
+	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
+	/** A.6 compaction carry-forward (c4b): the currently re-attached skills' `{args, body}`, keyed by `skillId`. Ephemeral — recomputed on every rebuild, never persisted. Consulted by dedup to treat a carried-forward body as "still present". */
+	private _carriedForward: Map<string, { args: string; body: string }> = new Map();
+	/**
+	 * C3a per-request `disallowed-tools` union snapshot (redirect-canonicalized,
+	 * lowercased). Rebuilt where each request's tools are built so a skill
+	 * activated mid-batch only restricts the NEXT request; backs both schema
+	 * removal and the `isToolCallDisallowed` pre-lookup block. Reset at turn end.
+	 */
+	private _currentRequestDisallowedUnion: Set<string> = new Set();
+	/** Merged redirect map used to build the current union; reused by the per-tool-call block check so it is not rebuilt per call. */
+	private _currentRequestDisallowedRedirects: Record<string, string> = {};
+	/** Invocations whose model/effort/disallowed diagnostics were already surfaced this turn. */
+	private _overrideDiagnosedInvocations: Set<string> = new Set();
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -423,6 +623,7 @@ export class AgentSession {
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
+		this._ownsResourceLoader = config.ownsResourceLoader ?? false;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._agentDir = config.agentDir;
@@ -442,15 +643,133 @@ export class AgentSession {
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
-
+		// C1c consumption seam: queued application-defined messages carrying a
+		// skill invocation are converted to their A.4 delivery form (message
+		// block or synthetic pair) just before the loop emits and inserts them.
+		// Compose over any option/instance-provided transform instead of clobbering
+		// it: queued skill delivery runs first, then its output feeds the captured
+		// transform. The constructor assignment (Agent) runs before this, so
+		// composition must happen here, not in the Agent constructor.
+		const previousTransformInjectedMessages = this.agent.transformInjectedMessages;
+		this.agent.transformInjectedMessages = async (messages, signal) => {
+			const delivered = await this._deliverQueuedSkillMessages(messages, signal);
+			return previousTransformInjectedMessages
+				? await previousTransformInjectedMessages(delivered, signal)
+				: delivered;
+		};
+		// ADR-0006 unknown-tool redirect (C1d): corrective text only, never
+		// execution. The agent loop supplies the live active registry on every
+		// miss, so reload/tool deactivation is respected without caching here.
+		this.agent.resolveToolRedirect = ({ attemptedName, registeredToolNames }) =>
+			resolveToolRedirect({
+				attemptedName,
+				registeredToolNames,
+				redirects: this.settingsManager.getToolRedirects(),
+				disabled: this.settingsManager.getDisableToolRedirects(),
+			});
+		// C3a application point (b): a queued invocation activates inside the
+		// transform above, after the loop config was built, so re-resolve
+		// model/effort/tools for the consuming request.
+		this.agent.refreshTurnAfterInjection = () => this._resolveInjectedTurnOverride();
+		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call
+		// to a disallowed tool returns a policy block naming the tool.
+		this.agent.isToolCallDisallowed = (name) => this._resolveDisallowedToolBlock(name);
+		// Skill runtime (C1b): records activate on consumption and expire at the
+		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
+		// composer reaches EVERY active bash execution (built-in or extension/SDK
+		// replacement with its own spawnHook) because createBashToolDefinition
+		// applies registered composers before the tool's own hook. Scoped to this
+		// session by ExtensionContext identity; env is copied per execution and
+		// process.env / getShellEnv() are never mutated.
+		this._skillRuntime = new SkillRuntime({
+			cwd: this._cwd,
+			sessionId: this.sessionManager.getSessionId(),
+			getThinkingLevel: () => this.agent.state.thinkingLevel,
+			getSkillInterop: () => this.settingsManager.getSkillInterop(),
+			getModel: () => this.model,
+			getAvailableModels: () => this._modelRuntime.getAvailableSnapshot(),
+			eventBus: this._resourceLoader.getEventBus?.(),
+		});
+		// C3b fork client shares the same cross-extension bus the subagents RPC
+		// registers on (the rewrite-map seam above already relies on this identity);
+		// an absent bus makes detectPresence() false so fork routing degrades to inline.
+		this._skillForkClient = new SkillForkClient(this._resourceLoader.getEventBus?.(), {
+			...(config.skillForkTimeouts?.spawnReplyTimeoutMs !== undefined && {
+				spawnReplyTimeoutMs: config.skillForkTimeouts.spawnReplyTimeoutMs,
+			}),
+			...(config.skillForkTimeouts?.foregroundCapMs !== undefined && {
+				foregroundCapMs: config.skillForkTimeouts.foregroundCapMs,
+			}),
+			...(config.skillForkTimeouts?.pingTimeoutMs !== undefined && {
+				pingTimeoutMs: config.skillForkTimeouts.pingTimeoutMs,
+			}),
+		});
+		this._unregisterSkillSpawnComposer = registerBashSpawnContextComposer((context, ctx) => {
+			if (this.settingsManager.getDisableSkillEnvInjection()) return context;
+			if (!ctx || ctx.sessionManager !== this.sessionManager) return context;
+			const skillEnv = this._skillRuntime.getActiveExecutionEnv();
+			if (!skillEnv) return context;
+			return { ...context, env: { ...context.env, ...skillEnv } };
+		});
+		// c4c: the visibility snapshot must exist before the first tool
+		// registration so `_getModelVisibleSkills()` (and thus the `skill`
+		// tool's conditional registration) already respects persisted states.
+		this._refreshSkillVisibilitySnapshot();
+		// c4d: react to watcher/nested-driven resource changes (registration replays
+		// any degraded watcher-health synchronously). A direct callback, not a
+		// `skills:changed` bus subscription: the A.9 seam carries skills only, and
+		// loader-initiated publishes (initial load, /reload) must not echo here.
+		this._unsubscribeResourceChanges = this._resourceLoader.onResourceChange?.((event) =>
+			this._onLoaderResourceChange(event),
+		);
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
 		});
 	}
 
+	/**
+	 * c4d change reaction to the loader's light refresh (watcher / nested discovery):
+	 * the c4c coalescing transaction owns the listing rebuild, the `skill` tool
+	 * registration crosses zero here, and the aggregated collision diagnostic
+	 * re-emits only when its content changed (A.6's unconditional re-emit on this
+	 * path would spam identical warnings per save). Never throws into the loader's
+	 * fs/timer callback.
+	 */
+	private _onLoaderResourceChange(event: ResourceLoaderChangeEvent): void {
+		try {
+			if (event.kind === "watcher-health") {
+				if (event.health !== undefined) {
+					this._deliverSkillListingDiagnostics([event.health]);
+				}
+				return;
+			}
+			if (event.kind === "diagnostic") {
+				this._deliverSkillListingDiagnostics([event.diagnostic]);
+				return;
+			}
+			this._skillListingContentDirty = true;
+			this._refreshSkillToolRegistration();
+			const collision = this.getCommandCollisionDiagnostic();
+			if (collision?.message !== this._lastEmittedCollisionDiagnostic) {
+				this._lastEmittedCollisionDiagnostic = collision?.message;
+				if (collision) {
+					this._deliverSkillListingDiagnostics([collision]);
+				}
+			}
+			this._emit({ type: "resources_changed" });
+		} catch {
+			// The reaction must never throw into the loader's watcher callback.
+		}
+	}
+
 	get modelRuntime(): ModelRuntime {
 		return this._modelRuntime;
+	}
+
+	/** Session-owned skill invocation runtime: the C1b renderer/runtime contract C1c consumes. */
+	get skillRuntime(): SkillRuntime {
+		return this._skillRuntime;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -523,6 +842,100 @@ export class AgentSession {
 	 * registered tool execution to the extension context. Tool call and tool result interception now
 	 * happens here instead of in wrappers.
 	 */
+	/**
+	 * Record a successful file-touch tool call into the A.6 `paths` boost window. Total and
+	 * never throws: it runs inside `afterToolCall`, and an exception thrown from that hook is
+	 * converted by the agent loop into an `isError` result, which would report an
+	 * already-applied edit/write as failed and invite a duplicate retry.
+	 */
+	private _recordSkillPathTouches(args: unknown): void {
+		try {
+			const touchedPath = skillPathTouchFromToolCall(args, this._cwd);
+			if (touchedPath === undefined) {
+				return;
+			}
+			// Read the cap before mutating: getSkillPathsWindow() throws on an invalid
+			// setting, and a throw after push (but before trim) would leave the window
+			// growing unbounded across the session with the boost never re-firing.
+			const cap = this.settingsManager.getSkillPathsWindow();
+			this._skillPathsWindow.push(touchedPath);
+			while (this._skillPathsWindow.length > cap) {
+				this._skillPathsWindow.shift();
+			}
+			this._skillPathsWindowDirty = true;
+			// A.6 nested/monorepo discovery (c4d): a touched file under an unscanned
+			// nested .pi/skills or .agents/skills root registers it mid-session.
+			// Best-effort like the boost window: the loader stages and contains failures.
+			this._resourceLoader.discoverNestedSkillRoots?.(touchedPath);
+		} catch {
+			// Best-effort: a bad skillPathsWindow setting must not fail the tool call.
+		}
+	}
+
+	/**
+	 * Whether any model-visible skill declares a non-empty `paths` glob. Gates the A.6 boost
+	 * rebuild: with no such skill the listing reorder is a no-op, so the per-turn base-prompt
+	 * rebuild would be wasted work.
+	 */
+	private _anyVisibleSkillDeclaresPaths(): boolean {
+		return this._resourceLoader.getSkills().skills.some((input) => {
+			const skill = normalizeSkillInput(input).skill;
+			if (skill.disableModelInvocation) {
+				return false;
+			}
+			const { paths } = skill.frontmatter;
+			return typeof paths === "string" ? paths.length > 0 : Array.isArray(paths) && paths.length > 0;
+		});
+	}
+
+	/** Mark the C4a listing budget stale after an invocation, persisting fork delivery, or branch-leaf change. */
+	private _markSkillListingBudgetDirty(): void {
+		this._skillListingBudgetDirty = true;
+	}
+
+	/** Assign the active model and preserve the listing-budget invalidation invariant. */
+	private _assignModel(model: Model<any>): void {
+		this.agent.state.model = model;
+		this._markSkillListingBudgetDirty();
+	}
+
+	/**
+	 * Rebuild and clear any applicable skill-listing invalidation as ONE
+	 * coalescing transaction (c4c): a flag clears only after a successful
+	 * rebuild, so a failed rebuild leaves every dirty flag set and the next
+	 * request retries; a content change that hides the last visible skill still
+	 * rebuilds (not gated by `visibleCount > 0`).
+	 */
+	private _refreshSkillListingIfDirty(): void {
+		const needsRebuild =
+			(this._skillPathsWindowDirty && this._anyVisibleSkillDeclaresPaths()) ||
+			(this._skillListingBudgetDirty && this._getModelVisibleSkills().length > 0) ||
+			this._skillListingContentDirty;
+		if (!needsRebuild) {
+			// No rebuild owed: clear only flags whose precondition lapsed.
+			if (this._skillPathsWindowDirty && !this._anyVisibleSkillDeclaresPaths()) {
+				this._skillPathsWindowDirty = false;
+			}
+			if (
+				this._skillListingBudgetDirty &&
+				this._getModelVisibleSkills().length === 0 &&
+				!this._skillListingContentDirty
+			) {
+				this._skillListingBudgetDirty = false;
+			}
+			return;
+		}
+		const previousBasePrompt = this._baseSystemPrompt;
+		// Throws propagate with every dirty flag intact (retry on next request).
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		if (this._systemPromptOverride === previousBasePrompt) {
+			this._systemPromptOverride = this._baseSystemPrompt;
+		}
+		this._skillPathsWindowDirty = false;
+		this._skillListingBudgetDirty = false;
+		this._skillListingContentDirty = false;
+	}
+
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
 			const runner = this._extensionRunner;
@@ -547,6 +960,16 @@ export class AgentSession {
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
+			// A foreground fork error is reported without throwing (skill-tool.ts) so
+			// `details.fork` survives; `details.forkError` asks this hook to mark the
+			// finalized result erroneous instead (c4b, A.5/A.6 fork-count symmetry).
+			const forkError =
+				toolCall.name === SKILL_TOOL_NAME &&
+				(result.details as SkillToolResultDetails | undefined)?.forkError === true;
+			const effectiveIsError = isError || forkError;
+			if (!effectiveIsError) {
+				this._recordSkillPathTouches(args);
+			}
 
 			let hookResult: Awaited<ReturnType<typeof runner.emitToolResult>> | undefined;
 			if (runner.hasHandlers("tool_result")) {
@@ -557,7 +980,7 @@ export class AgentSession {
 					input: args as Record<string, unknown>,
 					content: result.content,
 					details: result.details,
-					isError,
+					isError: effectiveIsError,
 					usage: result.usage,
 				});
 			}
@@ -576,14 +999,14 @@ export class AgentSession {
 			// replacing per-tool marker phrasing.
 			const policy = applyToolOutputPolicy(normalizedContent);
 
-			if (!hookResult && normalizedContent === mergedContent && !policy.truncated) {
+			if (!hookResult && normalizedContent === mergedContent && !policy.truncated && effectiveIsError === isError) {
 				return undefined;
 			}
 
 			return {
 				content: policy.truncated ? policy.content : normalizedContent,
 				details: hookResult?.details,
-				isError: hookResult?.isError ?? isError,
+				isError: hookResult?.isError ?? effectiveIsError,
 				usage: hookResult?.usage,
 			};
 		};
@@ -599,15 +1022,22 @@ export class AgentSession {
 			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
 			const previousContext = previousSnapshot?.context ?? turn.context;
 
+			// C3a application point (c): compose the recomputed override AFTER this
+			// wrapper (which otherwise overwrites snapshots with persistent state,
+			// B.4). Tools already have the disallowed union removed; model/effort
+			// override the persistent state only while an invocation is active.
+			// _syncPendingTurnOverride also persists it so a fresh continuation
+			// (agent.continue) after a mid-turn activation keeps the override.
+			const { active, model, thinkingLevel, tools } = this._syncPendingTurnOverride();
 			return {
 				...previousSnapshot,
 				context: {
 					...previousContext,
 					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
-					tools: this.agent.state.tools.slice(),
+					tools,
 				},
-				model: this.agent.state.model,
-				thinkingLevel: this.agent.state.thinkingLevel,
+				model: active && model ? model : this.agent.state.model,
+				thinkingLevel: active && thinkingLevel ? thinkingLevel : this.agent.state.thinkingLevel,
 			};
 		};
 	}
@@ -703,6 +1133,7 @@ export class AgentSession {
 					event.message.content,
 					event.message.display,
 					event.message.details,
+					event.message.excludeFromContext,
 				);
 			} else if (
 				event.message.role === "user" ||
@@ -710,7 +1141,7 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.sessionManager.appendMessage(event.message);
+				await this._persistMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -737,6 +1168,83 @@ export class AgentSession {
 		}
 	};
 
+	/**
+	 * Persist one LLM message with its B.12/pairId entry metadata. The two
+	 * halves of a synthetic skill pair (A.4) persist as one batched unit: the
+	 * assistant half is deferred until its toolResult arrives, and the
+	 * notification-only synthetic `tool_result` extension event fires once the
+	 * pair is durable.
+	 */
+	private async _persistMessage(message: Message): Promise<void> {
+		if (this._pendingSyntheticAssistant && this._messageDeliveryMeta.get(message)?.pairId === undefined) {
+			// Defensive: the pair's toolResult should arrive immediately after its
+			// assistant half. If anything else persists first, flush the deferred
+			// half alone; load-time repair downgrades such a torn pair.
+			this.sessionManager.appendMessage(
+				this._pendingSyntheticAssistant.message,
+				this._pendingSyntheticAssistant.metadata,
+			);
+			this._pendingSyntheticAssistant = undefined;
+		}
+
+		const metadata = this._messageDeliveryMeta.get(message) ?? this._genuineSkillResultMeta(message);
+		if (metadata?.pairId && message.role === "assistant") {
+			this._pendingSyntheticAssistant = { message, metadata };
+			return;
+		}
+		if (metadata?.pairId && message.role === "toolResult" && this._pendingSyntheticAssistant) {
+			const pending = this._pendingSyntheticAssistant;
+			this._pendingSyntheticAssistant = undefined;
+			this.sessionManager.appendSkillMessagePair(pending.message, message, pending.metadata, metadata);
+		} else {
+			this.sessionManager.appendMessage(message, metadata);
+		}
+
+		if (metadata?.syntheticNotification && message.role === "toolResult") {
+			const notification = metadata.syntheticNotification;
+			await this._extensionRunner.emitToolResultNotification({
+				type: "tool_result",
+				toolName: SKILL_TOOL_NAME,
+				toolCallId: notification.toolCallId,
+				input: notification.input,
+				content: notification.content,
+				details: (message as ToolResultMessage<SkillToolResultDetails>).details,
+				isError: false,
+				synthetic: true,
+			});
+		}
+	}
+
+	/** B.12 metadata for a genuine `skill` tool result, recovered from its details. */
+	private _genuineSkillResultMeta(message: AgentMessage): DeliveryMeta | undefined {
+		if (message.role !== "toolResult" || message.toolName !== SKILL_TOOL_NAME) {
+			return undefined;
+		}
+		const details = (message as ToolResultMessage<SkillToolResultDetails>).details;
+		const invocation = details?.invocation;
+		if (!invocation) {
+			return undefined;
+		}
+		// `emptyBody` (a genuine inline dedup note) requests 0/0 offsets so the
+		// note counts (c4b A.6) but is never a dedup anchor or carried forward.
+		const blockEnd = details.emptyBody ? 0 : contentText(message.content, "").length;
+		return {
+			invocations: [
+				{
+					skillId: invocation.skillId,
+					name: invocation.name,
+					args: invocation.args,
+					blockStart: 0,
+					blockEnd,
+					...(details.fork && { fork: true as const }),
+				},
+			],
+		};
+	}
+	/** B.12 invocation metadata of a freshly delivered message (live TUI rendering path). */
+	getMessageSkillInvocations(message: AgentMessage): SkillInvocationEntry[] | undefined {
+		return this._messageDeliveryMeta.get(message)?.invocations;
+	}
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
 		const settings = this.settingsManager.getRetrySettings();
 		if (!settings.enabled || this._retryAttempt >= settings.maxRetries) {
@@ -823,17 +1331,27 @@ export class AgentSession {
 			};
 			const replacement = await this._extensionRunner.emitMessageEnd(extensionEvent);
 			if (replacement) {
-				// Untyped extension handlers can return messages with null/missing content;
-				// normalize so it never enters agent state or session history.
-				const normalized =
-					(replacement.role === "user" ||
-						replacement.role === "assistant" ||
-						replacement.role === "toolResult" ||
-						replacement.role === "custom") &&
-					replacement.content == null
-						? ({ ...replacement, content: [] } as AgentMessage)
-						: replacement;
-				this._replaceMessageInPlace(event.message, normalized);
+				if (this._syntheticPairMessages.has(event.message)) {
+					// A.4: synthetic skill pair messages are authoritative and immutable;
+					// a same-role message_end replacement must not alter them.
+					this._extensionRunner.emitError({
+						extensionPath: "<skills>",
+						event: "message_end",
+						error: "message_end replacement ignored: synthetic skill pair messages are immutable",
+					});
+				} else {
+					// Untyped extension handlers can return messages with null/missing content;
+					// normalize so it never enters agent state or session history.
+					const normalized =
+						(replacement.role === "user" ||
+							replacement.role === "assistant" ||
+							replacement.role === "toolResult" ||
+							replacement.role === "custom") &&
+						replacement.content == null
+							? ({ ...replacement, content: [] } as AgentMessage)
+							: replacement;
+					this._replaceMessageInPlace(event.message, normalized);
+				}
 			}
 		} else if (event.type === "tool_execution_start") {
 			const extensionEvent: ToolExecutionStartEvent = {
@@ -972,8 +1490,18 @@ export class AgentSession {
 			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
+		this._unregisterSkillSpawnComposer();
+		this._unsubscribeResourceChanges?.();
+		this._unsubscribeResourceChanges = undefined;
+		this._skillRuntime.dispose();
+		this._skillForkClient.dispose();
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
+		// c4d: only a loader this session's construction boundary created is disposed here;
+		// injected or runtime-shared loaders stay caller-owned.
+		if (this._ownsResourceLoader) {
+			this._resourceLoader.dispose?.();
+		}
 	}
 
 	// =========================================================================
@@ -1117,6 +1645,29 @@ export class AgentSession {
 		return this._resourceLoader.getPrompts().prompts;
 	}
 
+	/**
+	 * Complete A.1 command listing: built-ins (exactly once), extension commands,
+	 * commands/templates, and invocable skills, folded through the unified
+	 * namespace registry with winner bare names and qualified fallbacks. This is
+	 * the sole complete listing — downstream consumers must not prepend built-ins.
+	 */
+	getCommands(): SlashCommandInfo[] {
+		return this._buildCommandRegistry()
+			.getListing()
+			.map((entry) => ({
+				name: entry.name,
+				...(entry.description !== undefined && { description: entry.description }),
+				...(entry.argumentHint !== undefined && { argumentHint: entry.argumentHint }),
+				source: entry.source,
+				...(entry.sourceInfo !== undefined && { sourceInfo: entry.sourceInfo }),
+			}));
+	}
+
+	/** The unified namespace registry's aggregated one-line collision diagnostic, if any. */
+	getCommandCollisionDiagnostic(): ResourceDiagnostic | undefined {
+		return this._buildCommandRegistry().collisionDiagnostic;
+	}
+
 	private _normalizePromptSnippet(text: string | undefined): string | undefined {
 		if (!text) return undefined;
 		const oneLine = text
@@ -1164,6 +1715,27 @@ export class AgentSession {
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
+		// Best-effort: an invalid skillListingBudgetFraction setting must not fail
+		// session construction/reload (this runs on the synchronous construction
+		// path). Mirrors _recordSkillPathTouches's getSkillPathsWindow() wrap.
+		const listingDiagnostics: ResourceDiagnostic[] = [];
+		let listingBudgetFraction = 0.01;
+		try {
+			listingBudgetFraction = this.settingsManager.getSkillListingBudgetFraction();
+		} catch {
+			listingDiagnostics.push({
+				type: "warning",
+				message: "invalid skillListingBudgetFraction setting; falling back to the 0.01 default",
+			});
+		}
+
+		// c4c: refresh the shared visibility snapshot from settings so this
+		// rebuild's listing and the `skill` tool gate read the same states, and
+		// surface any malformed persisted values through the listing's
+		// diagnostic channel (deduplicated per key/scope by the manager).
+		this._refreshSkillVisibilitySnapshot();
+		listingDiagnostics.push(...this.settingsManager.drainSkillVisibilityDiagnostics());
+
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			skills: loadedSkills,
@@ -1173,8 +1745,28 @@ export class AgentSession {
 			selectedTools: validToolNames,
 			toolSnippets,
 			promptGuidelines,
+			skillPathsBoost: { touchedPaths: [...this._skillPathsWindow], cwd: this._cwd },
+			skillListingBudget: {
+				budgetCodeUnits: skillListingBudgetCodeUnits(this.model?.contextWindow ?? 0, listingBudgetFraction),
+				invocationCounts: computeSkillInvocationCounts(this.sessionManager.getBranch()),
+				diagnostics: listingDiagnostics,
+			},
+			skillVisibility: this._skillVisibility,
 		};
-		return buildSystemPrompt(this._baseSystemPromptOptions);
+		const preSkeletonCount = listingDiagnostics.length;
+		const prompt = buildSystemPrompt(this._baseSystemPromptOptions);
+		const skeletonOverflowed = listingDiagnostics.length > preSkeletonCount;
+
+		const toDeliver = listingDiagnostics.slice(0, preSkeletonCount);
+		if (skeletonOverflowed && !this._skillListingSkeletonOverflowing) {
+			// New overflow episode: deliver once. A continuing episode (already
+			// delivered) and a within-budget rebuild both suppress redelivery.
+			toDeliver.push(...listingDiagnostics.slice(preSkeletonCount));
+		}
+		this._skillListingSkeletonOverflowing = skeletonOverflowed;
+		this._deliverSkillListingDiagnostics(toDeliver);
+
+		return prompt;
 	}
 
 	// =========================================================================
@@ -1198,13 +1790,24 @@ export class AgentSession {
 		return this.runInDefaultStreamScope(async () => {
 			this._isAgentRunActive = true;
 			try {
+				// C3a application point (a): resolve the ephemeral override for the
+				// first request from the now-active invocation (direct/mid-prompt
+				// both activate before this). Persisted to pendingTurnOverride so
+				// retries/continuations rebuild config and read it too; it is cleared
+				// once in the finally below.
+				this._syncPendingTurnOverride();
 				await this.agent.prompt(messages);
 				while (await this._handlePostAgentRun()) {
 					await this.agent.continue();
 				}
 			} finally {
 				this._systemPromptOverride = undefined;
+				// Logical-turn boundary (agent_settled): turn-scoped skill env and
+				// overrides expire here, after the full retry+continuation loop,
+				// never on the per-run agent_end or the turn_end event.
+				this._expireTurnOverrideState();
 				this._flushPendingBashMessages();
+				this._flushPendingForkNotices();
 				await this._emitAgentSettled();
 			}
 		});
@@ -1261,10 +1864,22 @@ export class AgentSession {
 		let messages: AgentMessage[] | undefined;
 
 		try {
+			// The command registry is built at most once per prompt and shared by
+			// the extension-command check and A.1 tokenization (its inputs cannot
+			// change mid-prompt; cross-call caching is unsafe because extensions
+			// can register commands at any time without a notification seam).
+			let commandRegistry: CommandRegistry | undefined;
+			const getCommandRegistry = (): CommandRegistry => {
+				if (commandRegistry === undefined) {
+					commandRegistry = this._buildCommandRegistry();
+				}
+				return commandRegistry;
+			};
+
 			// Handle extension commands first (execute immediately, even during streaming)
 			// Extension commands manage their own LLM interaction via pi.sendMessage()
 			if (expandPromptTemplates && text.startsWith("/")) {
-				const handled = await this._tryExecuteExtensionCommand(text);
+				const handled = await this._tryExecuteExtensionCommand(text, getCommandRegistry);
 				if (handled) {
 					// Extension command executed, no prompt to send
 					preflightResult?.(true);
@@ -1298,31 +1913,46 @@ export class AgentSession {
 				}
 			}
 
-			// Expand skill commands (/skill:name args) and prompt templates (/template args)
-			let expandedText = currentText;
-			if (expandPromptTemplates) {
-				expandedText = this._expandSkillCommand(expandedText);
-				expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+			// A.1 tokenization: resolve prompt-producing invocations (skills + commands),
+			// bare / mid-prompt / stacked. Replay bypass (expandPromptTemplates:false) keeps
+			// the text literal; rendering happens only at send (direct) or consumption (queued).
+			const tokenized = expandPromptTemplates ? tokenizeMessage(currentText, getCommandRegistry()) : undefined;
+			if (tokenized && tokenized.diagnostics.length > 0) {
+				this._emitSkillDiagnostics(tokenized.diagnostics);
 			}
+			const invocationSpans = tokenized
+				? tokenized.spans.filter((span): span is InvocationSpan => span.kind === "invocation")
+				: [];
 
-			// If streaming, queue via steer() or followUp() based on option
+			// If streaming, queue via steer() or followUp(); rendering is deferred to consumption.
 			if (this.isStreaming) {
 				if (!options?.streamingBehavior) {
 					throw new Error(
 						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
 					);
 				}
-				if (options.streamingBehavior === "followUp") {
-					await this._queueFollowUp(expandedText, currentImages);
+				const queue = options.streamingBehavior === "followUp" ? "followUp" : "steer";
+				if (tokenized && invocationSpans.length > 0) {
+					await this._queueInvocation(queue, currentText, tokenized, currentImages);
 				} else {
-					await this._queueSteer(expandedText, currentImages);
+					const queuedText = tokenized ? this._spansPlainText(tokenized.spans) : currentText;
+					if (queue === "followUp") {
+						await this._queueFollowUp(queuedText, currentImages);
+					} else {
+						await this._queueSteer(queuedText, currentImages);
+					}
 				}
 				preflightResult?.(true);
 				return;
 			}
 
-			// Flush any pending bash messages before the new prompt
+			// Apply path, model, invocation-count, and branch-navigation invalidations
+			// before the next request observes the skill listing.
+			this._refreshSkillListingIfDirty();
+
+			// Flush any pending bash messages / fork notices before the new prompt
 			this._flushPendingBashMessages();
+			this._flushPendingForkNotices();
 
 			// Validate model
 			if (!this.model) {
@@ -1354,16 +1984,54 @@ export class AgentSession {
 			// Build messages array (custom message if any, then user message)
 			messages = [];
 
-			// Add user message
-			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-			if (currentImages) {
-				userContent.push(...currentImages);
-			}
-			messages.push({
-				role: "user",
-				content: userContent,
-				timestamp: Date.now(),
+			// Text form reported to before_agent_start; for skill deliveries this
+			// is always the A.4 message-block text, whichever transport delivered.
+			let promptText = currentText;
+
+			// A message-initial single skill keeps the C1 synthetic-pair / message-block
+			// delivery; everything else composes one user message (commands splice text,
+			// mid-prompt skills splice `<skill>` blocks with B.12 offsets).
+			const prepared = await this._invocationCoordinator.prepareDirect({
+				tokenized,
+				text: currentText,
+				images: currentImages,
+				signal: this._sessionAbortController?.signal,
 			});
+			if (prepared.kind === "sole-skill") {
+				const forkResult = await this._forkOrBuildSoleSkillDelivery(
+					prepared.skill,
+					prepared.rawArgs,
+					currentImages,
+					this._sessionAbortController?.signal,
+				);
+				if (forkResult.forked) {
+					// A sole `context: fork` skill spawned a subagent (A.5): the body
+					// went only to the subagent, so no parent turn runs over it. The
+					// spawn/completion notices were already recorded in the transcript.
+					preflightResult?.(true);
+					return;
+				}
+				if (forkResult.delivery) {
+					messages.push(...forkResult.delivery.messages);
+					promptText = forkResult.delivery.textForm;
+					if (prepared.nestedVariants !== undefined && prepared.nestedVariants.length > 0) {
+						// A.1 (c4d): the bare name collided with a nested root; append the variant note.
+						const note = formatNestedVariantsNote(prepared.skill.name, prepared.nestedVariants);
+						messages.push(this._literalUserMessage(note));
+						promptText = `${promptText}\n\n${note}`;
+					}
+				} else {
+					// Render failed (diagnostic already emitted): send the literal text.
+					messages.push(this._literalUserMessage(currentText, currentImages));
+					promptText = currentText;
+				}
+			} else {
+				// A non-sole mid-prompt fork is not one of the two A.5 invocation paths:
+				// it renders inline (composed), but warn so its fork intent is not silently lost.
+				this._warnMidPromptForks(tokenized?.spans);
+				messages.push(prepared.message);
+				promptText = prepared.textForm;
+			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
@@ -1373,7 +2041,7 @@ export class AgentSession {
 
 			// Emit before_agent_start extension event
 			const result = await this._extensionRunner.emitBeforeAgentStart(
-				expandedText,
+				promptText,
 				currentImages,
 				this._baseSystemPrompt,
 				this._baseSystemPromptOptions,
@@ -1403,6 +2071,11 @@ export class AgentSession {
 			}
 		} catch (error) {
 			preflightResult?.(false);
+			// Pre-run rollback (fork #5): a throw after a skill activated (e.g. in
+			// before_agent_start) must not leak the active invocation or its
+			// override/restriction into the next prompt, since _runAgentPrompt's
+			// finally never ran.
+			this._expireTurnOverrideState();
 			throw error;
 		}
 
@@ -1417,13 +2090,13 @@ export class AgentSession {
 	/**
 	 * Try to execute an extension command. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+	private async _tryExecuteExtensionCommand(text: string, getRegistry?: () => CommandRegistry): Promise<boolean> {
 		// Parse command name and args
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
 
-		const command = this._extensionRunner.getCommand(commandName);
+		const command = this._resolveExtensionCommand(commandName, getRegistry);
 		if (!command) return false;
 
 		// Get command context from extension runner (includes session control methods)
@@ -1444,34 +2117,1119 @@ export class AgentSession {
 	}
 
 	/**
-	 * Expand skill commands (/skill:name args) to their full content.
-	 * Returns the expanded text, or the original text if not a skill command or skill not found.
-	 * Emits errors via extension runner if file read fails.
+	 * Resolve an extension command by bare invocation name or `ext:`-qualified name,
+	 * routed through the A.1 registry so namespace precedence holds: a bare name an
+	 * extension shares with a higher-tier built-in resolves to the built-in, and the
+	 * extension stays reachable via its `ext:` qualifier. Callers handling a whole
+	 * message pass their per-operation registry so it is built at most once per message.
 	 */
-	private _expandSkillCommand(text: string): string {
-		if (!text.startsWith("/skill:")) return text;
+	private _resolveExtensionCommand(
+		commandName: string,
+		getRegistry?: () => CommandRegistry,
+	): ResolvedCommand | undefined {
+		const invocation = (getRegistry?.() ?? this._buildCommandRegistry()).resolve(commandName, {
+			messageInitial: true,
+		});
+		if (invocation?.source !== "extension") {
+			return undefined;
+		}
+		// Extension entries carry `name: invocationName`, which is what the
+		// runner's getCommand matches.
+		return this._extensionRunner.getCommand(invocation.name);
+	}
 
-		const spaceIndex = text.indexOf(" ");
-		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+	/** Resolve an extension command for UI gating (bare or `ext:`-qualified). */
+	resolveExtensionCommand(commandName: string): ResolvedCommand | undefined {
+		return this._resolveExtensionCommand(commandName);
+	}
 
-		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
-		if (!skill) return text; // Unknown skill, pass through
+	/**
+	 * Resolve a control invocation (built-in or extension) by bare or qualified name,
+	 * routed through the A.1 registry with the same precedence autocomplete and listing
+	 * use: built-ins outrank extensions, a bare-name loser stays reachable via its
+	 * `ext:` qualifier. Returns undefined for prompt-producing entries (skills,
+	 * commands, templates), unregistered names, and any non-control resolution.
+	 */
+	resolveControlCommand(name: string): ResolvedBuiltinInvocation | ResolvedExtensionInvocation | undefined {
+		const invocation = this._buildCommandRegistry().resolve(name, { messageInitial: true });
+		if (invocation?.source !== "builtin" && invocation?.source !== "extension") {
+			return undefined;
+		}
+		return invocation;
+	}
 
+	/** Render one invocation through the C1b pipeline with the session's live context. */
+	private async _renderSkill(
+		skill: LoadedSkill,
+		invocation: SkillInvocation,
+		signal?: AbortSignal,
+	): Promise<RenderedSkillInvocation> {
+		const context: RenderSkillContext = {
+			...this._skillRuntime.interopContext(invocation),
+			activeToolNames: this.getActiveToolNames(),
+			shellSettings: {
+				disabled: this.settingsManager.getDisableSkillShellExecution(),
+				timeoutMs: this.settingsManager.getSkillShellTimeoutMs(),
+				outputLimitBytes: this.settingsManager.getSkillShellOutputLimitBytes(),
+			},
+			shellPath: this.settingsManager.getShellPath(),
+			signal,
+			rewriteMap: this._skillRuntime.getRewriteMap(skill.id),
+		};
+		return renderSkillInvocation(skill, invocation, context);
+	}
+
+	/** Loaded commands (native + adapted templates); falls back to adapting prompts for lightweight loaders. */
+	private _getLoadedCommands(): readonly LoadedCommand[] {
+		const loader = this._resourceLoader;
+		if (loader.getCommands) {
+			return loader.getCommands().commands;
+		}
+		return adaptPromptTemplates([...this.promptTemplates]).commands;
+	}
+
+	/** Commands visible to the model (A.7: `disable-model-invocation` excludes). */
+	private _getModelVisibleCommands(): LoadedCommand[] {
+		return this._getLoadedCommands().filter((command) => !command.disableModelInvocation);
+	}
+
+	/** Build the A.1 namespace registry from the current resource, extension, and built-in sources. */
+	private _buildCommandRegistry(): CommandRegistry {
+		// c4c: refresh the shared snapshot so the user gate and the `off`
+		// tombstones read the same states the model-facing gates use, even when
+		// no prompt rebuild has run since the last settings change.
+		this._refreshSkillVisibilitySnapshot();
+		const skills = this._resourceLoader.getSkills().skills.map((skill) => normalizeSkillInput(skill).skill);
+		const extensionCommands: ExtensionCommandInfo[] = this._extensionRunner
+			.getRegisteredCommands()
+			.map((command) => ({
+				name: command.name,
+				invocationName: command.invocationName,
+				...(command.description !== undefined && { description: command.description }),
+				sourceInfo: command.sourceInfo,
+			}));
+		return buildCommandRegistry({
+			builtins: BUILTIN_SLASH_COMMANDS,
+			extensionCommands,
+			commands: this._getLoadedCommands(),
+			skills,
+			enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+			skillVisibility: this._skillVisibility,
+		});
+	}
+
+	/** Render one command invocation through the A.7 pipeline with the session's live context. */
+	private async _renderCommand(
+		command: LoadedCommand,
+		rawArgs: string,
+		signal?: AbortSignal,
+	): Promise<RenderedCommand> {
+		const context: RenderCommandContext = {
+			...this._skillRuntime.interopContext(),
+			activeToolNames: this.getActiveToolNames(),
+			shellSettings: {
+				disabled: this.settingsManager.getDisableSkillShellExecution(),
+				timeoutMs: this.settingsManager.getSkillShellTimeoutMs(),
+				outputLimitBytes: this.settingsManager.getSkillShellOutputLimitBytes(),
+			},
+			shellPath: this.settingsManager.getShellPath(),
+			signal,
+		};
+		return renderCommand(command, rawArgs, context);
+	}
+
+	/** The canonical `slash_command` tool backed by this session (A.7). */
+	private _createSlashCommandTool(): ToolDefinition {
+		return createSlashCommandToolDefinition({
+			getCommands: () => this._getLoadedCommands(),
+			render: (command, rawArgs, signal) => this._renderCommand(command, rawArgs, signal),
+			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		}) as ToolDefinition;
+	}
+
+	/** Concatenate the plain-text form of tokenized spans (no invocations expanded). */
+	private _spansPlainText(spans: MessageSpan[]): string {
+		return this._invocationCoordinator.plainText(spans);
+	}
+
+	/** Build a plain literal user message (whole-message fallback). */
+	private _literalUserMessage(text: string, images?: ImageContent[]): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		return { role: "user", content, timestamp: Date.now() };
+	}
+
+	/**
+	 * Refresh the shared A.6 visibility snapshot (c4c) from settings: one
+	 * `skillId → state` map plus its model-facing projection. Both model-facing
+	 * gates (listing, `skill` tool) and the user-facing registry consume these
+	 * maps so the surfaces cannot drift. Malformed persisted values resolve to
+	 * `on` inside the settings manager, which records one deduplicated
+	 * diagnostic per key/scope (drained at the next prompt rebuild).
+	 */
+	private _refreshSkillVisibilitySnapshot(): void {
+		const resolved = new Map<string, ResolvedSkillVisibility>();
+		for (const input of this._resourceLoader.getSkills().skills) {
+			const skill = normalizeSkillInput(input).skill;
+			const state = this.settingsManager.getSkillVisibilityState(skill.id);
+			resolved.set(
+				skill.id,
+				resolveSkillVisibility(
+					{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+					state,
+				),
+			);
+		}
+		this._skillVisibility = resolved;
+	}
+
+	/** Loaded skills visible to the model (A.1/A.6: `model === "no"` excludes — frontmatter `disable-model-invocation` or a visibility state). */
+	private _getModelVisibleSkills(): LoadedSkill[] {
+		return this.resourceLoader
+			.getSkills()
+			.skills.map((s) => normalizeSkillInput(s).skill)
+			.filter(
+				(s) =>
+					(
+						this._skillVisibility.get(s.id) ??
+						defaultSkillVisibility({
+							disableModelInvocation: s.disableModelInvocation,
+							userInvocable: s.userInvocable,
+						})
+					).model !== "no",
+			);
+	}
+
+	/**
+	 * c4c: keep the `skill` tool's base registration in sync with effective
+	 * model visibility. `_buildRuntime` registers `SKILL_TOOL_NAME` only when
+	 * `_getModelVisibleSkills().length > 0`; a visibility change that crosses
+	 * zero must refresh the base definitions and re-project the active tools,
+	 * not only rebuild the prompt.
+	 */
+	private _refreshSkillToolRegistration(): void {
+		const registered = this._baseToolDefinitions.has(SKILL_TOOL_NAME);
+		const shouldRegister = this._getModelVisibleSkills().length > 0;
+		if (registered === shouldRegister) {
+			return;
+		}
+		if (shouldRegister) {
+			this._baseToolDefinitions.set(SKILL_TOOL_NAME, this._createSkillTool());
+		} else {
+			this._baseToolDefinitions.delete(SKILL_TOOL_NAME);
+		}
+		const activeToolNames = this.getActiveToolNames();
+		this._refreshToolRegistry({
+			activeToolNames:
+				shouldRegister && !activeToolNames.includes(SKILL_TOOL_NAME)
+					? [...activeToolNames, SKILL_TOOL_NAME]
+					: activeToolNames,
+		});
+	}
+
+	/** The `/skills` management rows (c4c): every loaded skill with effective visibility, persisted state + scope, malformed flag, and estimated listing cost. */
+	getSkillsManagementView(): SkillManagementRow[] {
+		const rows = this._resourceLoader.getSkills().skills.map((input) => {
+			const skill = normalizeSkillInput(input).skill;
+			const info = this.settingsManager.getSkillVisibilityInfo(skill.id);
+			const effective = resolveSkillVisibility(
+				{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+				info.state,
+			);
+			const entry: ListingBudgetEntry = {
+				listingName: skill.listingName,
+				description: getListingDescription(skill),
+				location: skill.filePath,
+				isExempt: false,
+				invocationCount: 0,
+				forceNameOnly: effective.model === "name",
+			};
+			return {
+				id: skill.id,
+				name: skill.name,
+				listingName: skill.listingName,
+				location: skill.filePath,
+				source: skill.sourceInfo.source,
+				disableModelInvocation: skill.disableModelInvocation,
+				userInvocable: skill.userInvocable,
+				state: info.state,
+				stateScope: info.scope,
+				malformed: info.malformed,
+				effective,
+				estimatedCost: estimateListingEntryCost(entry),
+			};
+		});
+		return rows.sort((a, b) => a.listingName.localeCompare(b.listingName));
+	}
+
+	/**
+	 * Persist one skill's visibility state (c4c) and apply it to the next
+	 * request's surfaces without a `/reload`: flush the settings write (a
+	 * failed write is detected via `drainErrors()` and reported, not claimed),
+	 * refresh the shared snapshot and the `skill` tool registration on a
+	 * zero-crossing, and run the coalescing listing rebuild. On any failure the
+	 * dirty flags survive so the next request retries.
+	 */
+	async applySkillVisibilityChange(
+		id: string,
+		state: SkillVisibilityState,
+		scope: SettingsScope,
+	): Promise<{ ok: true } | { ok: false; error: string }> {
+		this.settingsManager.drainErrors();
+		this.settingsManager.setSkillVisibilityState(id, state, scope);
+		await this.settingsManager.flush();
+		const writeErrors = this.settingsManager.drainErrors();
+		if (writeErrors.length > 0) {
+			return { ok: false, error: writeErrors.map((entry) => entry.error.message).join("; ") };
+		}
 		try {
-			const content = readFileSync(skill.filePath, "utf-8");
-			const body = stripFrontmatter(content).trim();
-			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			return args ? `${skillBlock}\n\n${args}` : skillBlock;
+			// Mark dirty FIRST so a failure below leaves every flag set and the
+			// next request retries the whole rebuild.
+			this._skillListingContentDirty = true;
+			this._refreshSkillVisibilitySnapshot();
+			this._refreshSkillToolRegistration();
+			this._refreshSkillListingIfDirty();
+			// Push the rebuilt prompt to the agent so the very next request uses
+			// it (same sync point as `setActiveToolsByName`).
+			this.agent.state.systemPrompt = this._systemPromptOverride ?? this._baseSystemPrompt;
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
+		return { ok: true };
+	}
+
+	/**
+	 * The A.1 `skill` tool backed by this session: renders through the C1b
+	 * pipeline and activates the record for the rest of the logical turn (A.5:
+	 * a genuine tool call's invocation governs the continuation requests after
+	 * its tool result, expiring at turn end).
+	 */
+	private _createSkillTool(): ToolDefinition {
+		return createSkillToolDefinition({
+			getSkills: () => this._getModelVisibleSkills(),
+			render: (skill, rawArgs, signal) => this._renderSkillToolInvocation(skill, rawArgs, signal),
+			onDiagnostics: (diagnostics) => this._emitSkillDiagnostics(diagnostics),
+		}) as ToolDefinition;
+	}
+
+	/**
+	 * The `skill` tool render binding (C3b fork-aware). An inline record renders,
+	 * activates, and returns its body (c3a behavior). A `context: fork` record does
+	 * NOT activate in the parent runtime (A.5: its content never enters the parent
+	 * context / never governs the parent turn's override union); it spawns a subagent
+	 * and returns the fork tool result, or degrades to inline delivery + one diagnostic.
+	 */
+	private async _renderSkillToolInvocation(
+		skill: LoadedSkill,
+		rawArgs: string,
+		signal?: AbortSignal,
+	): Promise<RenderedSkillInvocation | SkillToolForkResult | SkillToolDedupNoteResult> {
+		const { record, rendered } = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
+		if (record.context !== "fork") {
+			this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
+			const dedup = this._checkDedup(rendered);
+			if (dedup) {
+				return {
+					dedupNote: true,
+					content: [{ type: "text", text: dedup.note }],
+					details: { invocation: rendered.invocation, emptyBody: true },
+				};
+			}
+			return rendered;
+		}
+		// Fork render diagnostics are surfaced here (execute returns the fork branch
+		// and never sees them).
+		this._emitSkillDiagnostics(rendered.diagnostics);
+		const degradeReason = await this._shouldDegradeFork();
+		if (degradeReason) {
+			return this._degradeForkToInline(skill, record, rendered, degradeReason);
+		}
+		const outcome = await this._skillForkClient.spawn(this._buildForkSpawnParams(record, rendered, signal));
+		switch (outcome.kind) {
+			case "repeat-blocked":
+				return this._forkToolResult(
+					rendered,
+					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
+					{ isError: true },
+				);
+			case "spawn-failed":
+				return this._degradeForkToInline(skill, record, rendered, `fork spawn failed: ${outcome.error}`);
+			case "spawned-background":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" is running in a background subagent (agent ${outcome.agentId}). ` +
+						`Its result is reported when it completes.\n{"agentId":"${outcome.agentId}","background":true}`,
+				);
+			case "completed":
+				return this._forkToolResult(rendered, this._forkCompletionText(skill, outcome), {
+					isError: !outcome.ok,
+				});
+			case "foreground-timeout":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
+					{ isError: true },
+				);
+			case "aborted":
+				return this._forkToolResult(
+					rendered,
+					`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`,
+					{ isError: true },
+				);
+			default:
+				return this._unreachableForkOutcome(outcome);
+		}
+	}
+
+	/** Build the fork tool result carrying the invocation metadata (persistence/UI read it). */
+	private _forkToolResult(
+		rendered: RenderedSkillInvocation,
+		text: string,
+		options: { isError?: boolean } = {},
+	): SkillToolForkResult {
+		this._markSkillListingBudgetDirty();
+		return {
+			fork: true,
+			content: [{ type: "text", text }],
+			details: { invocation: rendered.invocation, fork: true },
+			...(options.isError !== undefined && { isError: options.isError }),
+		};
+	}
+
+	/**
+	 * Degrade a fork to inline delivery (no subagents / spawn failure / headless): the
+	 * record activates and its body is returned as a normal inline result, plus ONE
+	 * diagnostic. This is the c3a inline path; the fork governs the parent turn only here.
+	 */
+	private _degradeForkToInline(
+		skill: LoadedSkill,
+		record: SkillInvocation,
+		rendered: RenderedSkillInvocation,
+		reason: string,
+	): RenderedSkillInvocation {
+		this._emitForkDegradeDiagnostic(skill, reason);
+		this._emitSkillDiagnostics(this._invocationCoordinator.activate(record));
+		return rendered;
+	}
+
+	/** The degrade reason when a fork must run inline (headless mode or no subagents extension), else undefined. */
+	private async _shouldDegradeFork(): Promise<string | undefined> {
+		if (this._extensionMode === "print" || this._extensionMode === "json") {
+			return "headless mode does not support forking";
+		}
+		if (!(await this._skillForkClient.detectPresence())) {
+			return "no subagents extension available";
+		}
+		return undefined;
+	}
+
+	/** Compile-time exhaustiveness guard for `ForkOutcome` routing: a new variant fails to compile here. */
+	private _unreachableForkOutcome(outcome: never): never {
+		throw new Error(`unhandled fork outcome: ${JSON.stringify(outcome)}`);
+	}
+
+	/**
+	 * Resolve the fork spawn parameters: the `agent` type and the spawn `options`
+	 * carrying only the resolved `model` (string form) — NO env (A.8 values are
+	 * already rendered into the prompt in the parent). `isBackground` is added by
+	 * the client. Background defaults to true for fork (A.2).
+	 */
+	private _buildForkSpawnParams(
+		record: SkillInvocation,
+		rendered: RenderedSkillInvocation,
+		signal?: AbortSignal,
+	): Parameters<SkillForkClient["spawn"]>[0] {
+		const options: SubagentSpawnOptions = {};
+		const currentModel = this.model;
+		if (record.model !== undefined && currentModel) {
+			const resolved = resolveModelOverride(record.model, {
+				available: this._modelRuntime.getAvailableSnapshot(),
+				current: currentModel,
+			});
+			this._emitSkillDiagnostics(resolved.diagnostics);
+			if (resolved.model) {
+				options.model = `${resolved.model.provider}/${resolved.model.id}`;
+			}
+		}
+		const background = record.background ?? true;
+		return {
+			skillId: record.skillId,
+			agentType: record.agent,
+			prompt: rendered.body,
+			options,
+			background,
+			signal: signal ?? this._sessionAbortController?.signal,
+			onBackgroundComplete: (completion) => this._recordForkCompletionNotice(record, completion),
+		};
+	}
+
+	/** One-line text describing a terminal fork completion (result on success, error/status otherwise). */
+	private _forkCompletionText(skill: LoadedSkill, completion: ForkOutcome & { kind: "completed" }): string {
+		if (completion.ok) {
+			return completion.result ?? `Forked skill "${skill.name}" (agent ${completion.agentId}) completed.`;
+		}
+		const detail = completion.error ?? completion.status ?? "unknown error";
+		return `Forked skill "${skill.name}" (agent ${completion.agentId}) failed (${completion.status ?? "error"}): ${detail}`;
+	}
+
+	/** Surface render/activation diagnostics through the extension error channel (never swallowed). */
+	private _emitSkillDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void {
+		for (const diagnostic of diagnostics) {
+			this._extensionRunner.emitError({
+				extensionPath: diagnostic.path ?? "<skills>",
+				event: "skill_render",
+				error: diagnostic.message,
+			});
+		}
+	}
+
+	/**
+	 * Deliver C4a listing-budget diagnostics (skeleton overflow / invalid fraction),
+	 * isolated from the caller's control flow: a throwing extension `onError`
+	 * listener must not abort `_rebuildSystemPrompt`'s caller (would fail the
+	 * whole prompt) or leave the dirty flag set (would deadlock the next one).
+	 * Buffered until a real listener is bound (construction runs before
+	 * `bindExtensions`), flushed from there.
+	 */
+	private _deliverSkillListingDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void {
+		if (diagnostics.length === 0) {
+			return;
+		}
+		if (this._extensionErrorListener === undefined) {
+			this._pendingSkillListingDiagnostics.push(...diagnostics);
+			return;
+		}
+		try {
+			this._emitSkillDiagnostics(diagnostics);
+		} catch {
+			// A throwing onError listener degrades to "diagnostic lost for this
+			// episode", never a prompt abort/deadlock.
+		}
+	}
+
+	/** Flush skill-listing diagnostics buffered before an extension error listener was bound. */
+	private _flushPendingSkillListingDiagnostics(): void {
+		if (this._pendingSkillListingDiagnostics.length === 0 || this._extensionErrorListener === undefined) {
+			return;
+		}
+		const pending = this._pendingSkillListingDiagnostics;
+		this._pendingSkillListingDiagnostics = [];
+		this._deliverSkillListingDiagnostics(pending);
+	}
+
+	/**
+	 * A.6 compaction carry-forward (c4b): recompute `deriveCarriedSkills` from
+	 * the persisted branch and inject the re-wrapped, most-recent inline body
+	 * of each carried skill into `agent.state.messages`, MRU-first, right after
+	 * the compaction summary message (`buildContextEntries` always puts the
+	 * compaction entry first, so `messages[0]` is that summary whenever there
+	 * is anything to carry). Ephemeral: never persisted, so `prepareCompaction`
+	 * (which reads the persisted branch) never re-compacts or double-carries
+	 * them; `_carriedForward` is reset (including to empty on a no-boundary
+	 * rebuild, clearing stale keys after a compacted→non-compacted switch).
+	 * Called after every `agent.state.messages` rebuild from the branch:
+	 * `compact()`, `_runAutoCompaction`, `navigateTree`, and the public
+	 * `reattachCarriedSkills()` resume/switchSession seam (`sdk.ts`).
+	 */
+	private _reattachCarriedSkills(): void {
+		const branch = this.sessionManager.getBranch();
+		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
+		const { entries, diagnostics } = deriveCarriedSkills(branch, boundary);
+		this._carriedForward = new Map(entries.map((entry) => [entry.skillId, { args: entry.args, body: entry.body }]));
+		this._deliverSkillListingDiagnostics(diagnostics);
+		if (entries.length === 0) {
+			return;
+		}
+		const skillNames = new Map(
+			this.resourceLoader.getSkills().skills.map((skill) => {
+				const normalized = normalizeSkillInput(skill).skill;
+				return [normalized.id, normalized.name] as const;
+			}),
+		);
+		const carriedMessages: AgentMessage[] = entries.map((entry) => {
+			const name = skillNames.get(entry.skillId) ?? entry.skillId;
+			const block = buildCarriedSkillBlock(name, entry.args, entry.body);
+			return { role: "user", content: [{ type: "text", text: block.text }], timestamp: Date.now() };
+		});
+		const messages = this.agent.state.messages;
+		this.agent.state.messages = [messages[0]!, ...carriedMessages, ...messages.slice(1)];
+	}
+
+	/**
+	 * Public resume/switchSession reattach seam (c4b): `sdk.ts`'s
+	 * `createAgentSession` restores `agent.state.messages` from the persisted
+	 * branch before this session exists, so it calls this once construction
+	 * completes. Also covers `switchSession` (routes through
+	 * `createRuntime` → `createAgentSession`). Runs before `bindExtensions`
+	 * binds a real diagnostic listener, so any diagnostic is buffered by
+	 * `_deliverSkillListingDiagnostics` and flushed once a listener binds (a
+	 * throwing listener may still drop it, by design).
+	 */
+	reattachCarriedSkills(): void {
+		this._reattachCarriedSkills();
+	}
+
+	/**
+	 * A.6 re-invocation dedup (c4b): resolve the anchor from the discriminated
+	 * scan result — `found` -> that delivery; `absent` with a carried entry ->
+	 * the carried `{args, body}` (compaction dropped the last full delivery,
+	 * but carry-forward restored it in full, so the skill is still "present");
+	 * `absent` with no carried entry, or `malformed`, -> no anchor (miss, full
+	 * re-delivery). A `malformed` most-recent candidate never falls back to a
+	 * carried body — a torn newer delivery must never produce a false note.
+	 * Fork paths never call this (A.5 exemption).
+	 */
+	private _checkDedup(rendered: RenderedSkillInvocation): { note: string } | undefined {
+		const branch = this.sessionManager.getBranch();
+		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
+		const skillId = rendered.invocation.skillId;
+		const result = findLastFullInlineDelivery(branch, boundary, skillId, (diagnostic) =>
+			this._deliverSkillListingDiagnostics([diagnostic]),
+		);
+		const anchor =
+			result.kind === "found" ? result : result.kind === "absent" ? this._carriedForward.get(skillId) : undefined;
+		if (!anchor || anchor.args !== rendered.invocation.args || !isDedupHit(rendered.body, anchor.body)) {
+			return undefined;
+		}
+		return { note: buildAlreadyLoadedNote(rendered.invocation).text };
+	}
+
+	/** Merged redirect map (ADR-0006): user settings over the built-in defaults. */
+	private _mergedToolRedirects(): Record<string, string> {
+		return { ...DEFAULT_TOOL_REDIRECTS, ...this.settingsManager.getToolRedirects() };
+	}
+
+	/**
+	 * Recompute the per-request override for the currently-active invocations:
+	 * the newest invocation's model/effort (A.5) plus the stacked disallowed-tools
+	 * union. Refreshes the per-request union snapshot, returns the tool set with
+	 * the union removed, and surfaces each newly-active invocation's resolution
+	 * diagnostics exactly once.
+	 */
+	private _computeTurnRequestOverride(): {
+		model?: AgentState["model"];
+		thinkingLevel?: ThinkingLevel;
+		tools: AgentState["tools"];
+	} {
+		this._emitPendingOverrideDiagnostics();
+		const redirects = this._mergedToolRedirects();
+		const { union } = computeDisallowedUnion(this._skillRuntime.getActiveInvocations(), redirects);
+		this._currentRequestDisallowedUnion = union;
+		this._currentRequestDisallowedRedirects = redirects;
+		const baseTools = this.agent.state.tools.slice();
+		const tools =
+			union.size > 0
+				? baseTools.filter((tool) => !union.has(canonicalizeToolName(tool.name, redirects).toLowerCase()))
+				: baseTools;
+		const active = this._skillRuntime.getActiveInvocation();
+		const currentModel = this.model;
+		if (!active || !currentModel) {
+			return { tools };
+		}
+		const resolved = resolveActiveOverride(active, {
+			available: this._modelRuntime.getAvailableSnapshot(),
+			current: currentModel,
+		});
+		return {
+			...(resolved.model ? { model: resolved.model } : {}),
+			...(resolved.thinkingLevel ? { thinkingLevel: resolved.thinkingLevel } : {}),
+			tools,
+		};
+	}
+
+	/** Emit each newly-active invocation's override/disallowed resolution diagnostics once per turn. */
+	private _emitPendingOverrideDiagnostics(): void {
+		const currentModel = this.model;
+		const redirects = this._mergedToolRedirects();
+		for (const record of this._skillRuntime.getActiveInvocations()) {
+			if (this._overrideDiagnosedInvocations.has(record.invocationId)) {
+				continue;
+			}
+			this._overrideDiagnosedInvocations.add(record.invocationId);
+			const diagnostics: ResourceDiagnostic[] = [];
+			if (currentModel) {
+				diagnostics.push(
+					...resolveActiveOverride(record, {
+						available: this._modelRuntime.getAvailableSnapshot(),
+						current: currentModel,
+					}).diagnostics,
+				);
+			}
+			diagnostics.push(...computeDisallowedUnion([record], redirects).diagnostics);
+			if (diagnostics.length > 0) {
+				this._emitSkillDiagnostics(diagnostics);
+			}
+		}
+	}
+
+	/**
+	 * Expire the turn-scoped skill runtime and clear the C3a ephemeral override
+	 * state (pending model/effort override, disallowed-tools union, and the
+	 * once-per-turn diagnostic dedup set). Shared by the normal turn-end finally
+	 * and the pre-run rollback (fork #5) where that finally never runs.
+	 */
+	private _expireTurnOverrideState(): void {
+		this._skillRuntime.expireTurn();
+		this.agent.pendingTurnOverride = undefined;
+		this._currentRequestDisallowedUnion = new Set();
+		this._overrideDiagnosedInvocations = new Set();
+	}
+
+	/**
+	 * Compute the per-turn override once and persist it to `agent.pendingTurnOverride`
+	 * so every request that rebuilds the loop config/context from scratch
+	 * (`createLoopConfig`/`createContextSnapshot` on the initial prompt, each
+	 * `agent.continue()` continuation, and every retry) reads the same values.
+	 * Shared by all three C3a application points (a/b/c). Left undefined when no
+	 * invocation is active or it declares nothing, so the session defaults apply.
+	 * Also refreshes the disallowed-union snapshot (via `_computeTurnRequestOverride`)
+	 * that backs the pre-lookup block.
+	 */
+	private _syncPendingTurnOverride(): {
+		active: SkillInvocation | undefined;
+		model?: AgentState["model"];
+		thinkingLevel?: ThinkingLevel;
+		tools: AgentState["tools"];
+	} {
+		const active = this._skillRuntime.getActiveInvocation();
+		const { model, thinkingLevel, tools } = this._computeTurnRequestOverride();
+		this.agent.pendingTurnOverride =
+			active && (model || thinkingLevel || this._currentRequestDisallowedUnion.size > 0)
+				? {
+						...(model ? { model } : {}),
+						...(thinkingLevel ? { thinkingLevel } : {}),
+						tools,
+					}
+				: undefined;
+		return { active, model, thinkingLevel, tools };
+	}
+
+	/**
+	 * C3a application point (b): re-resolve runtime state for a request whose
+	 * triggering messages were just injected (a queued invocation activates only
+	 * then). Persists the override and refreshes any listing invalidation before
+	 * returning the turn update consumed by the agent loop.
+	 */
+	private _resolveInjectedTurnOverride(): AgentLoopTurnUpdate | undefined {
+		const { active, model, thinkingLevel, tools } = this._syncPendingTurnOverride();
+		if (!active) {
+			return undefined;
+		}
+		this._refreshSkillListingIfDirty();
+		return {
+			...(model ? { model } : {}),
+			...(thinkingLevel ? { thinkingLevel } : {}),
+			// The loop applies the refreshed prompt and tools while retaining its live
+			// transcript, so alias messages rather than copying them.
+			context: {
+				systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
+				messages: this.agent.state.messages,
+				tools,
+			},
+		};
+	}
+
+	/** C3a A.2 pre-lookup block: the reason a tool call is blocked by the active disallowed union, else undefined. */
+	private _resolveDisallowedToolBlock(name: string): string | undefined {
+		if (this._currentRequestDisallowedUnion.size === 0) {
+			return undefined;
+		}
+		const canonical = canonicalizeToolName(name, this._currentRequestDisallowedRedirects).toLowerCase();
+		if (!this._currentRequestDisallowedUnion.has(canonical)) {
+			return undefined;
+		}
+		return `Tool "${name}" is blocked by an active skill's disallowed-tools policy and cannot be called during this turn.`;
+	}
+
+	/** A.6 dedup-hit delivery (c4b): a single plain message carrying the "already loaded" note, with a counting-only (0/0) invocation entry so it counts but is never a dedup anchor or carried forward. */
+	private _buildDedupNoteDelivery(
+		metadata: RenderedSkillInvocation["invocation"],
+		note: string,
+		images: ImageContent[] | undefined,
+	): SkillDelivery {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text: note }];
+		if (images) {
+			content.push(...images);
+		}
+		const userMessage: AgentMessage = { role: "user", content, timestamp: Date.now() };
+		const invocation: SkillInvocationEntry = {
+			skillId: metadata.skillId,
+			name: metadata.name,
+			args: metadata.args,
+			blockStart: 0,
+			blockEnd: 0,
+		};
+		return {
+			transport: "message-block",
+			messages: [userMessage],
+			textForm: note,
+			metadata: new Map([[userMessage, { invocations: [invocation] }]]),
+		};
+	}
+
+	/** Build the A.4 delivery for an already-prepared invocation, then activate it. */
+	private _finishSkillDelivery(prepared: PreparedSkillInvocation, images: ImageContent[] | undefined): SkillDelivery {
+		const dedup = this._checkDedup(prepared.rendered);
+		const delivery = dedup
+			? this._buildDedupNoteDelivery(prepared.rendered.invocation, dedup.note, images)
+			: buildSkillDelivery(
+					prepared.rendered,
+					selectSkillTransport(this.model, {
+						forceMessageBlock: this.settingsManager.getForceSkillMessageBlock(),
+					}),
+					{ model: this.model, images },
+				);
+		// Activate only after delivery is fully constructed. Render (not active
+		// state) drives the pipeline, so deferring activation to the last
+		// fallible step means a delivery-construction failure leaves no stale
+		// active invocation behind (A.5 activation-on-consumption).
+		this._emitSkillDiagnostics(this._invocationCoordinator.activate(prepared.record));
+		for (const [message, metadata] of delivery.metadata) {
+			this._messageDeliveryMeta.set(message, metadata);
+		}
+		if (delivery.syntheticResult) {
+			for (const message of delivery.messages) {
+				if (message.role !== "user") {
+					this._syntheticPairMessages.add(message);
+				}
+			}
+			const toolResult = delivery.messages[delivery.messages.length - 1];
+			const metadata = this._messageDeliveryMeta.get(toolResult);
+			if (metadata) {
+				this._messageDeliveryMeta.set(toolResult, {
+					...metadata,
+					syntheticNotification: delivery.syntheticResult,
+				});
+			}
+		}
+		return delivery;
+	}
+
+	/**
+	 * User/synthetic sole-skill routing (C3b, A.5). An inline record builds its
+	 * A.4 delivery. A `context: fork` record spawns a subagent and reports via
+	 * transcript notices WITHOUT delivering the body to the parent turn (`forked:
+	 * true`); it degrades to inline delivery + one diagnostic when no subagents
+	 * extension is present, on spawn failure, or in headless-print mode. Renders
+	 * exactly once (shell injection must not run twice).
+	 */
+	private async _forkOrBuildSoleSkillDelivery(
+		skill: LoadedSkill,
+		rawArgs: string,
+		images: ImageContent[] | undefined,
+		signal?: AbortSignal,
+	): Promise<{ forked: true } | { forked: false; delivery: SkillDelivery | undefined }> {
+		let prepared: PreparedSkillInvocation;
+		try {
+			prepared = await this._invocationCoordinator.prepare(skill, rawArgs, signal);
+			this._emitSkillDiagnostics(prepared.rendered.diagnostics);
 		} catch (err) {
-			// Emit error like extension commands do
 			this._extensionRunner.emitError({
 				extensionPath: skill.filePath,
 				event: "skill_expansion",
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return text; // Return original on error
+			return { forked: false, delivery: undefined };
 		}
+		if (prepared.record.context !== "fork") {
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		const degradeReason = await this._shouldDegradeFork();
+		if (degradeReason) {
+			this._emitForkDegradeDiagnostic(skill, degradeReason);
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		const outcome = await this._skillForkClient.spawn(
+			this._buildForkSpawnParams(prepared.record, prepared.rendered, signal),
+		);
+		if (outcome.kind === "spawn-failed") {
+			this._emitForkDegradeDiagnostic(skill, `fork spawn failed: ${outcome.error}`);
+			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
+		}
+		if (outcome.kind === "repeat-blocked") {
+			this._recordForkNotice({
+				notice: this._forkNoticeMessage(
+					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
+				),
+			});
+			return { forked: true };
+		}
+		// A subagent was spawned: the spawn notice enters the transcript; the body
+		// went only to the subagent (never to the parent turn).
+		const background = prepared.record.background ?? true;
+		this._recordForkNotice({
+			notice: this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background),
+			invocations: [this._forkSpawnInvocationEntry(prepared.record, skill.name)],
+		});
+		switch (outcome.kind) {
+			case "spawned-background":
+				break;
+			case "completed":
+				this._recordForkNotice({ notice: this._forkCompletionNoticeMessage(skill.name, outcome) });
+				break;
+			case "foreground-timeout":
+				this._recordForkNotice({
+					notice: this._forkNoticeMessage(
+						`Forked skill "${skill.name}" (agent ${outcome.agentId}) is still running after the foreground wait cap; it continues in the background.`,
+					),
+				});
+				break;
+			case "aborted":
+				this._recordForkNotice({
+					notice: this._forkNoticeMessage(`Forked skill "${skill.name}" (agent ${outcome.agentId}) was aborted.`),
+				});
+				break;
+			default:
+				return this._unreachableForkOutcome(outcome);
+		}
+		return { forked: true };
+	}
+
+	/** Emit the single degrade diagnostic (no subagents / spawn failure / headless). */
+	private _emitForkDegradeDiagnostic(skill: LoadedSkill, reason: string): void {
+		this._emitSkillDiagnostics([
+			{
+				type: "warning",
+				message: `skill "${skill.name}": ${reason}; running inline instead of forking`,
+				path: skill.filePath,
+			},
+		]);
+	}
+
+	/** Background fork completion (async): record a display-only follow-up notice. */
+	private _recordForkCompletionNotice(record: SkillInvocation, completion: NormalizedCompletion): void {
+		this._recordForkNotice({ notice: this._forkCompletionNoticeMessage(record.name, completion) });
+	}
+
+	/** Build a fork spawn notice (display-only; never enters LLM context). */
+	private _forkSpawnNoticeMessage(name: string, agentId: string, background: boolean): CustomMessage {
+		return this._forkNoticeMessage(
+			`Skill "${name}" is running in a ${background ? "background" : "foreground"} subagent (agent ${agentId}).`,
+		);
+	}
+
+	/**
+	 * B.12 counting metadata for a user `/name context: fork` spawn (B.12/c4b). It
+	 * counts once like a model fork's toolResult entry (both `fork: true`, both
+	 * excluded from A.6 dedup/carry-forward). This user notice uses `0/0` offsets
+	 * since the spawn body never enters the parent context; a model fork's entry
+	 * instead spans its result content — the offsets differ, the count does not.
+	 * Only the spawn notice carries this;
+	 * completion / repeat-blocked / timeout / aborted notices carry none.
+	 */
+	private _forkSpawnInvocationEntry(record: SkillInvocation, name: string): SkillInvocationEntry {
+		return { skillId: record.skillId, name, args: record.rawArgs, blockStart: 0, blockEnd: 0, fork: true };
+	}
+
+	/** Build a fork completion follow-up notice (display-only). */
+	private _forkCompletionNoticeMessage(name: string, completion: NormalizedCompletion): CustomMessage {
+		const text = completion.ok
+			? `Skill "${name}" (agent ${completion.agentId}) completed: ${completion.result ?? "(no result)"}`
+			: `Skill "${name}" (agent ${completion.agentId}) failed (${completion.status ?? "error"}): ${completion.error ?? completion.status ?? "unknown error"}`;
+		return this._forkNoticeMessage(text);
+	}
+
+	/** Build a display-only fork notice message (excluded from LLM context; surfaced in the transcript). */
+	private _forkNoticeMessage(text: string): CustomMessage {
+		return {
+			role: "custom",
+			customType: "skill_fork",
+			content: text,
+			display: true,
+			excludeFromContext: true,
+			timestamp: Date.now(),
+		};
+	}
+
+	/**
+	 * Record a fork notice: append immediately (with message events) when idle, or
+	 * defer to the next turn boundary when streaming (mirrors the pending-bash
+	 * injection precedent so a completion that lands mid-turn is not lost).
+	 */
+	private _recordForkNotice(envelope: ForkNoticeEnvelope): void {
+		if (this.isStreaming) {
+			this._pendingForkNotices.push(envelope);
+			return;
+		}
+		this._appendForkNotice(envelope);
+	}
+
+	private _appendForkNotice(envelope: ForkNoticeEnvelope): void {
+		const { notice, invocations } = envelope;
+		this.agent.state.messages.push(notice);
+		this.sessionManager.appendCustomMessageEntry(
+			notice.customType,
+			notice.content,
+			notice.display,
+			notice.details,
+			notice.excludeFromContext,
+			invocations,
+		);
+		if (invocations) {
+			this._markSkillListingBudgetDirty();
+		}
+		this._emit({ type: "message_start", message: notice });
+		this._emit({ type: "message_end", message: notice });
+	}
+
+	/** Flush deferred fork notices to state + session at a turn boundary (mirrors pending bash flush). */
+	private _flushPendingForkNotices(): void {
+		if (this._pendingForkNotices.length === 0) {
+			return;
+		}
+		const notices = this._pendingForkNotices;
+		this._pendingForkNotices = [];
+		for (const envelope of notices) {
+			this._appendForkNotice(envelope);
+		}
+	}
+
+	/**
+	 * Warn once per mid-prompt (non-sole) `context: fork` skill: it is not one of the
+	 * two A.5 invocation paths, so it renders inline. The diagnostic keeps that from
+	 * being a silent leak of fork-only content into the parent (Problem Statement).
+	 */
+	private _warnMidPromptForks(spans: MessageSpan[] | undefined): void {
+		if (!spans) {
+			return;
+		}
+		for (const span of spans) {
+			if (span.kind !== "invocation" || span.invocation.source !== "skill") {
+				continue;
+			}
+			const skill = span.invocation.skill;
+			if (skill.frontmatter?.context === "fork") {
+				this._emitSkillDiagnostics([
+					{
+						type: "warning",
+						message: `skill "${skill.name}": context: fork is honored only for a sole message-initial skill; running it inline here.`,
+						path: skill.filePath,
+					},
+				]);
+			}
+		}
+	}
+
+	/**
+	 * Enqueue a structured skill invocation (A.5): the queue message carries the
+	 * literal `/skill:` text for the queue UI; the record renders and activates
+	 * only when the agent loop consumes it, never at queue time.
+	 */
+	private _buildQueueMessage(text: string, images?: ImageContent[]): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		return { role: "user", content, timestamp: Date.now() };
+	}
+
+	private _dispatchQueue(queue: "steer" | "followUp", displayText: string, message: AgentMessage): void {
+		if (queue === "steer") {
+			this._steeringMessages.push(displayText);
+			this._emitQueueUpdate();
+			this.agent.steer(message);
+		} else {
+			this._followUpMessages.push(displayText);
+			this._emitQueueUpdate();
+			this.agent.followUp(message);
+		}
+	}
+
+	/**
+	 * Enqueue a tokenized message (A.5): the queue message carries the original
+	 * literal text for the queue UI; the immutable resolved span snapshot renders
+	 * and activates only when the agent loop consumes it, never at queue time.
+	 */
+	private async _queueInvocation(
+		queue: "steer" | "followUp",
+		originalText: string,
+		tokenized: TokenizeResult,
+		images?: ImageContent[],
+	): Promise<void> {
+		const message = this._buildQueueMessage(originalText, images);
+		this._queuedSkillInvocations.set(message, {
+			snapshot: tokenized,
+			originalText,
+			queue,
+			...(images && { images }),
+		});
+		this._dispatchQueue(queue, originalText, message);
+	}
+
+	/** Remove a consumed queued invocation's display text from the queue UI. */
+	private _removeQueuedDisplayText(queued: QueuedInvocation): void {
+		const list = queued.queue === "steer" ? this._steeringMessages : this._followUpMessages;
+		const index = list.indexOf(queued.originalText);
+		if (index !== -1) {
+			list.splice(index, 1);
+			this._emitQueueUpdate();
+		}
+	}
+
+	/**
+	 * Agent `transformInjectedMessages` hook (C1c consumption seam): convert
+	 * queued application-defined skill messages to their A.4 delivery form just
+	 * before the loop emits them and inserts them into context. Rendering,
+	 * runtime activation, queue-UI removal, and delivery-metadata attachment all
+	 * happen here — at consumption time, never at queue time. A render/abort
+	 * failure after the queue drained falls back to the original literal
+	 * `/skill:` message so the text is never silently dropped.
+	 */
+	private async _deliverQueuedSkillMessages(messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> {
+		const delivered: AgentMessage[] = [];
+		for (const message of messages) {
+			const queued = this._queuedSkillInvocations.get(message);
+			if (!queued) {
+				delivered.push(message);
+				continue;
+			}
+			this._queuedSkillInvocations.delete(message);
+			try {
+				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
+				if (prepared.kind === "sole-skill") {
+					// Message-initial single skill: fork spawns a subagent (the body is
+					// not delivered to the parent), otherwise preserve C1 delivery.
+					const forkResult = await this._forkOrBuildSoleSkillDelivery(
+						prepared.skill,
+						prepared.rawArgs,
+						queued.images,
+						signal,
+					);
+					if (!forkResult.forked) {
+						delivered.push(
+							...(forkResult.delivery?.messages ?? [
+								this._literalUserMessage(queued.originalText, queued.images),
+							]),
+						);
+						if (prepared.nestedVariants !== undefined && prepared.nestedVariants.length > 0) {
+							// A.1 (c4d): the bare name collided with a nested root; append the variant note.
+							delivered.push(
+								this._literalUserMessage(
+									formatNestedVariantsNote(prepared.skill.name, prepared.nestedVariants),
+								),
+							);
+						}
+					}
+				} else {
+					// Mid-prompt / mixed / command: composed at consumption time.
+					this._warnMidPromptForks(queued.snapshot.spans);
+					delivered.push(prepared.message);
+				}
+			} catch (err) {
+				// Defensive: render helpers already report and fall back; never lose the message.
+				this._extensionRunner.emitError({
+					extensionPath: "<command>",
+					event: "command_expansion",
+					error: err instanceof Error ? err.message : String(err),
+				});
+				delivered.push(this._literalUserMessage(queued.originalText, queued.images));
+			} finally {
+				this._removeQueuedDisplayText(queued);
+			}
+		}
+		return delivered;
 	}
 
 	/**
@@ -1483,16 +3241,7 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
-		}
-
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-
-		await this._queueSteer(expandedText, images);
+		await this._queueTokenized("steer", text, images);
 	}
 
 	/**
@@ -1503,59 +3252,68 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string, images?: ImageContent[]): Promise<void> {
+		await this._queueTokenized("followUp", text, images);
+	}
+
+	/**
+	 * Shared steer/follow-up queue path: reject extension commands, tokenize once
+	 * (invocation-bearing messages queue as immutable resolved snapshots rendered
+	 * on consumption; plain text queues directly), then dispatch to the given queue.
+	 */
+	private async _queueTokenized(queue: "steer" | "followUp", text: string, images?: ImageContent[]): Promise<void> {
+		// One lazily-built registry shared by the extension-command check and tokenization.
+		let commandRegistry: CommandRegistry | undefined;
+		const getCommandRegistry = (): CommandRegistry => {
+			if (commandRegistry === undefined) {
+				commandRegistry = this._buildCommandRegistry();
+			}
+			return commandRegistry;
+		};
 		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
+			this._throwIfExtensionCommand(text, getCommandRegistry);
 		}
-
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-
-		await this._queueFollowUp(expandedText, images);
+		const tokenized = tokenizeMessage(text, getCommandRegistry());
+		// c4c: steer/follow-up emit the `off` disabled diagnostic and drop the
+		// token, matching the direct path exactly once per invocation. Other
+		// tokenizer diagnostics keep their existing (non-queued) behavior.
+		const disabledDiagnostics = tokenized.diagnostics.filter(isSkillDisabledDiagnostic);
+		if (disabledDiagnostics.length > 0) {
+			this._emitSkillDiagnostics(disabledDiagnostics);
+		}
+		if (tokenized.spans.some((span) => span.kind === "invocation")) {
+			await this._queueInvocation(queue, text, tokenized, images);
+			return;
+		}
+		const plainText = this._spansPlainText(tokenized.spans);
+		if (queue === "steer") {
+			await this._queueSteer(plainText, images);
+		} else {
+			await this._queueFollowUp(plainText, images);
+		}
 	}
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this._dispatchQueue("steer", text, this._buildQueueMessage(text, images));
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.followUp({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this._dispatchQueue("followUp", text, this._buildQueueMessage(text, images));
 	}
 
 	/**
 	 * Throw an error if the text is an extension command.
 	 */
-	private _throwIfExtensionCommand(text: string): void {
+	private _throwIfExtensionCommand(text: string, getRegistry?: () => CommandRegistry): void {
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const command = this._extensionRunner.getCommand(commandName);
+		const command = this._resolveExtensionCommand(commandName, getRegistry);
 
 		if (command) {
 			throw new Error(
@@ -1691,6 +3449,9 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		// Settle any in-flight foreground fork wait promptly (it is not tied to the
+		// agent run's abort signal on the direct sole-skill path).
+		this._skillForkClient.cancelForegroundWaits();
 		this.agent.abort();
 		await this.waitForIdle();
 	}
@@ -1732,7 +3493,7 @@ export class AgentSession {
 
 		const previousModel = this.model;
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
-		this.agent.state.model = model;
+		this._assignModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
@@ -1774,7 +3535,7 @@ export class AgentSession {
 		const thinkingLevel = this._getThinkingLevelForModelSwitch(next.thinkingLevel);
 
 		// Apply model
-		this.agent.state.model = next.model;
+		this._assignModel(next.model);
 		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
@@ -1802,7 +3563,7 @@ export class AgentSession {
 		const nextModel = availableModels[nextIndex];
 
 		const thinkingLevel = this._getThinkingLevelForModelSwitch();
-		this.agent.state.model = nextModel;
+		this._assignModel(nextModel);
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
@@ -2021,6 +3782,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 			const estimatedTokensAfter = estimateMessagesTokens(sessionContext.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -2300,6 +4062,7 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 			const estimatedTokensAfter = estimateMessagesTokens(sessionContext.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -2397,6 +4160,7 @@ export class AgentSession {
 		}
 
 		this._applyExtensionBindings(this._extensionRunner);
+		this._flushPendingSkillListingDiagnostics();
 		await this._extensionRunner.emit(this._sessionStartEvent);
 		await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
 	}
@@ -2475,35 +4239,10 @@ export class AgentSession {
 			return;
 		}
 
-		this.agent.state.model = refreshedModel;
+		this._assignModel(refreshedModel);
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
-		const getCommands = (): SlashCommandInfo[] => {
-			const extensionCommands: SlashCommandInfo[] = runner.getRegisteredCommands().map((command) => ({
-				name: command.invocationName,
-				description: command.description,
-				source: "extension",
-				sourceInfo: command.sourceInfo,
-			}));
-
-			const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
-				name: template.name,
-				description: template.description,
-				source: "prompt",
-				sourceInfo: template.sourceInfo,
-			}));
-
-			const skills: SlashCommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
-				name: `skill:${skill.name}`,
-				description: skill.description,
-				source: "skill",
-				sourceInfo: skill.sourceInfo,
-			}));
-
-			return [...extensionCommands, ...templates, ...skills];
-		};
-
 		runner.bindCore(
 			{
 				sendMessage: (message, options) => {
@@ -2544,7 +4283,7 @@ export class AgentSession {
 				getAllTools: () => this.getAllTools(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
-				getCommands,
+				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
 					if (!this._modelRuntime.hasConfiguredAuth(model.provider)) return false;
 					await this.setModel(model);
@@ -2719,6 +4458,19 @@ export class AgentSession {
 			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
 		);
 
+		// A.1 skill tool (C1c): a base tool so allowed/excluded/active rules apply
+		// like built-ins. Registered only when model-visible skills exist; a reload
+		// rebuilds the registry when the skill set changes.
+		if (this._getModelVisibleSkills().length > 0) {
+			this._baseToolDefinitions.set(SKILL_TOOL_NAME, this._createSkillTool());
+		}
+
+		// A.7 slash_command tool: a base tool registered only when a model-visible
+		// command exists. CC's `SlashCommand` reaches it through the redirect map.
+		if (this._getModelVisibleCommands().length > 0) {
+			this._baseToolDefinitions.set(SLASH_COMMAND_TOOL_NAME, this._createSlashCommandTool());
+		}
+
 		const extensionsResult = this._resourceLoader.getExtensions();
 		if (options.flagValues) {
 			for (const [name, value] of options.flagValues) {
@@ -2745,7 +4497,14 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					...(this._baseToolDefinitions.has(SKILL_TOOL_NAME) ? [SKILL_TOOL_NAME] : []),
+					...(this._baseToolDefinitions.has(SLASH_COMMAND_TOOL_NAME) ? [SLASH_COMMAND_TOOL_NAME] : []),
+				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -2777,6 +4536,15 @@ export class AgentSession {
 			await options?.beforeSessionStart?.();
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
+		}
+
+		// A.6 "both re-emit": /reload re-emits the aggregated collision diagnostic
+		// unconditionally; the watcher/nested path dedups against this shared baseline,
+		// so a /reload immediately followed by a no-op watcher refresh never double-emits.
+		const collisionDiagnostic = this.getCommandCollisionDiagnostic();
+		this._lastEmittedCollisionDiagnostic = collisionDiagnostic?.message;
+		if (collisionDiagnostic) {
+			this._deliverSkillListingDiagnostics([collisionDiagnostic]);
 		}
 	}
 
@@ -3215,6 +4983,10 @@ export class AgentSession {
 				this.sessionManager.branch(newLeafId);
 			}
 
+			if (this.sessionManager.getLeafId() !== oldLeafId) {
+				this._markSkillListingBudgetDirty();
+			}
+
 			// Attach label to target entry when not summarizing (no summary entry to label)
 			if (label && !summaryText) {
 				this.sessionManager.appendLabelChange(targetId, label);
@@ -3223,6 +4995,7 @@ export class AgentSession {
 			// Update agent state
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			this._reattachCarriedSkills();
 
 			// Emit session_tree event
 			await this._extensionRunner.emit({

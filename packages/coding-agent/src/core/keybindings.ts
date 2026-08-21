@@ -46,6 +46,9 @@ export interface AppKeybindings {
 	"app.models.toggleProvider": true;
 	"app.models.reorderUp": true;
 	"app.models.reorderDown": true;
+	"app.skills.cycle": true;
+	"app.skills.sort": true;
+	"app.skills.scope": true;
 	"app.tree.filter.default": true;
 	"app.tree.filter.noTools": true;
 	"app.tree.filter.userOnly": true;
@@ -175,6 +178,20 @@ export const KEYBINDINGS = {
 	"app.models.reorderDown": {
 		defaultKeys: "alt+down",
 		description: "Move model down in order",
+	},
+	"app.skills.cycle": {
+		// Modified keys (not bare space/letters) so the overlay's text filter
+		// can receive every character; matched before delegating to the input.
+		defaultKeys: "ctrl+s",
+		description: "Cycle skill visibility state",
+	},
+	"app.skills.sort": {
+		defaultKeys: "ctrl+t",
+		description: "Sort skills by listing cost",
+	},
+	"app.skills.scope": {
+		defaultKeys: "ctrl+g",
+		description: "Toggle skill visibility scope (global/project)",
 	},
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",

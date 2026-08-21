@@ -71,6 +71,33 @@ function isTokenStart(text: string, index: number): boolean {
 	return index === 0 || PATH_DELIMITERS.has(text[index - 1] ?? "");
 }
 
+const SLASH_RUN_CHAR_PATTERN = /[A-Za-z0-9._:/-]/;
+const WHITESPACE_PATTERN = /\s/;
+
+export interface SlashRun {
+	/** Index of the leading "/" within the searched text. */
+	start: number;
+	/** Full run text, including the leading "/". */
+	text: string;
+}
+
+/**
+ * A.1 candidate-start rule, mirroring the coding-agent tokenizer. Returns the "/" command
+ * run ending exactly at the cursor when the "/" sits at the start of the text (message
+ * start on line 0, line start otherwise) or immediately after whitespace. Run characters
+ * are the union of the bare and qualified name grammars. Kept aligned with the tokenizer
+ * by behavior fixtures, not by import: TUI must not depend on coding-agent.
+ */
+export function slashRunAtCursor(textBeforeCursor: string): SlashRun | null {
+	let start = textBeforeCursor.length;
+	while (start > 0 && SLASH_RUN_CHAR_PATTERN.test(textBeforeCursor.charAt(start - 1))) {
+		start -= 1;
+	}
+	if (textBeforeCursor.charAt(start) !== "/") return null;
+	if (start > 0 && !WHITESPACE_PATTERN.test(textBeforeCursor.charAt(start - 1))) return null;
+	return { start, text: textBeforeCursor.slice(start) };
+}
+
 function extractQuotedPrefix(text: string): string | null {
 	const quoteStart = findUnclosedQuoteStart(text);
 	if (quoteStart === null) {
@@ -216,10 +243,19 @@ async function walkDirectoryWithFd(
 	});
 }
 
+/** Where a slash-command candidate comes from; absent for file/symbol completions. */
+export type AutocompleteItemSource = "builtin" | "extension" | "command" | "prompt" | "skill";
+
+/** Mid-prompt completion offers only prompt-producing sources; builtin/extension are controls. */
+function isPromptProducingSource(source: AutocompleteItemSource | undefined): boolean {
+	return source === "command" || source === "prompt" || source === "skill";
+}
+
 export interface AutocompleteItem {
 	value: string;
 	label: string;
 	description?: string;
+	source?: AutocompleteItemSource;
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -228,14 +264,24 @@ export interface SlashCommand {
 	name: string;
 	description?: string;
 	argumentHint?: string;
+	source?: AutocompleteItemSource;
 	// Function to get argument completions for this command
 	// Returns null if no argument completion is available
 	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
 }
 
+/**
+ * Semantic class of a suggestion set. Lets the editor decide submit-on-Enter and
+ * slash-menu layout from the provider's intent rather than from the prefix spelling
+ * (a file/argument completion can legitimately carry a "/"-prefixed token).
+ */
+export type AutocompleteSuggestionKind = "command" | "argument" | "file" | "symbol";
+
 export interface AutocompleteSuggestions {
 	items: AutocompleteItem[];
 	prefix: string; // What we're matching against (e.g., "/" or "src/")
+	/** Absent for third-party providers that predate the discriminant. */
+	kind?: AutocompleteSuggestionKind;
 }
 
 export interface AutocompleteProvider {
@@ -248,9 +294,8 @@ export interface AutocompleteProvider {
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
-		options: { signal: AbortSignal; force?: boolean },
+		options: { signal: AbortSignal; force?: boolean; explicitTab?: boolean },
 	): Promise<AutocompleteSuggestions | null>;
-
 	// Apply the selected item
 	// Returns the new text and cursor position
 	applyCompletion(
@@ -285,7 +330,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
-		options: { signal: AbortSignal; force?: boolean },
+		options: { signal: AbortSignal; force?: boolean; explicitTab?: boolean },
 	): Promise<AutocompleteSuggestions | null> {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
@@ -302,60 +347,71 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			return {
 				items: suggestions,
 				prefix: atPrefix,
+				kind: "file",
 			};
 		}
 
-		if (!options.force && textBeforeCursor.startsWith("/")) {
-			const spaceIndex = textBeforeCursor.indexOf(" ");
+		if (!options.force) {
+			// Whole-message-initial slash context (A.1 rule 4): command-name completion offers
+			// all commands including controls, and argument completion is available only here.
+			if (cursorLine === 0 && textBeforeCursor.startsWith("/")) {
+				const spaceIndex = textBeforeCursor.indexOf(" ");
 
-			if (spaceIndex === -1) {
-				const prefix = textBeforeCursor.slice(1);
-				const commandItems = this.commands.map((cmd) => {
-					const name = "name" in cmd ? cmd.name : cmd.value;
-					const hint = "argumentHint" in cmd && cmd.argumentHint ? cmd.argumentHint : undefined;
-					const desc = cmd.description ?? "";
-					const fullDesc = hint ? (desc ? `${hint} — ${desc}` : hint) : desc;
+				if (spaceIndex === -1) {
+					const filtered = this.getSlashCommandItems(textBeforeCursor.slice(1), { includeControls: true });
+
+					if (filtered.length === 0) return null;
+
 					return {
-						name,
-						label: name,
-						description: fullDesc || undefined,
+						items: filtered,
+						prefix: textBeforeCursor,
+						kind: "command",
 					};
+				}
+
+				const commandName = textBeforeCursor.slice(1, spaceIndex);
+				const argumentText = textBeforeCursor.slice(spaceIndex + 1);
+
+				const command = this.commands.find((cmd) => {
+					const name = "name" in cmd ? cmd.name : cmd.value;
+					return name === commandName;
 				});
+				if (!command || !("getArgumentCompletions" in command) || !command.getArgumentCompletions) {
+					return null;
+				}
 
-				const filtered = fuzzyFilter(commandItems, prefix, (item) => item.name).map((item) => ({
-					value: item.name,
-					label: item.label,
-					...(item.description && { description: item.description }),
-				}));
-
-				if (filtered.length === 0) return null;
+				const argumentSuggestions = await command.getArgumentCompletions(argumentText);
+				if (!Array.isArray(argumentSuggestions) || argumentSuggestions.length === 0) {
+					return null;
+				}
 
 				return {
-					items: filtered,
-					prefix: textBeforeCursor,
+					items: argumentSuggestions,
+					prefix: argumentText,
+					kind: "argument",
 				};
 			}
 
-			const commandName = textBeforeCursor.slice(1, spaceIndex);
-			const argumentText = textBeforeCursor.slice(spaceIndex + 1);
-
-			const command = this.commands.find((cmd) => {
-				const name = "name" in cmd ? cmd.name : cmd.value;
-				return name === commandName;
-			});
-			if (!command || !("getArgumentCompletions" in command) || !command.getArgumentCompletions) {
+			// Mid-prompt slash run (A.1): a "/" run at message start or immediately after
+			// whitespace, on every line. Mid-prompt invocations take no arguments (rule 4) and
+			// never offer control commands (rule 7).
+			const slashRun = slashRunAtCursor(textBeforeCursor);
+			if (slashRun) {
+				const filtered = this.getSlashCommandItems(slashRun.text.slice(1), { includeControls: false });
+				if (filtered.length > 0) {
+					return {
+						items: filtered,
+						prefix: slashRun.text,
+						kind: "command",
+					};
+				}
+				if (!options.explicitTab) return null;
+				// Explicit Tab with no command match: fall through to path completion so forced
+				// file completion on "/"-prefixed tokens keeps working mid-line.
+			} else if (slashRunAtCursor(textBeforeCursor.trimEnd()) !== null) {
+				// Cursor sits past a completed mid-prompt run: nothing to complete (rule 4).
 				return null;
 			}
-
-			const argumentSuggestions = await command.getArgumentCompletions(argumentText);
-			if (!Array.isArray(argumentSuggestions) || argumentSuggestions.length === 0) {
-				return null;
-			}
-
-			return {
-				items: argumentSuggestions,
-				prefix: argumentText,
-			};
 		}
 
 		const pathMatch = this.extractPathPrefix(textBeforeCursor, options.force ?? false);
@@ -369,7 +425,36 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		return {
 			items: suggestions,
 			prefix: pathMatch,
+			kind: "file",
 		};
+	}
+
+	// Build command-name completion items matching the given name fragment. Mid-prompt only
+	// prompt-producing sources are offered; control commands (builtin + extension, per the
+	// coding-agent registry) are recognized message-initial only (A.1 rule 7). The allowlist
+	// is fail-closed: an item with an absent or unknown source is excluded mid-prompt.
+	private getSlashCommandItems(namePrefix: string, options: { includeControls: boolean }): AutocompleteItem[] {
+		const commandItems = this.commands
+			.filter((cmd) => options.includeControls || isPromptProducingSource(cmd.source))
+			.map((cmd) => {
+				const name = "name" in cmd ? cmd.name : cmd.value;
+				const hint = "argumentHint" in cmd && cmd.argumentHint ? cmd.argumentHint : undefined;
+				const desc = cmd.description ?? "";
+				const fullDesc = hint ? (desc ? `${hint} — ${desc}` : hint) : desc;
+				return {
+					name,
+					label: name,
+					description: fullDesc || undefined,
+					source: cmd.source,
+				};
+			});
+
+		return fuzzyFilter(commandItems, namePrefix, (item) => item.name).map((item) => ({
+			value: item.name,
+			label: item.label,
+			...(item.description && { description: item.description }),
+			...(item.source && { source: item.source }),
+		}));
 	}
 
 	applyCompletion(
@@ -388,9 +473,15 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const adjustedAfterCursor =
 			isQuotedPrefix && hasTrailingQuoteInItem && hasLeadingQuoteAfterCursor ? afterCursor.slice(1) : afterCursor;
 
-		// Check if we're completing a slash command (prefix starts with "/" but NOT a file path)
-		// Slash commands are at the start of the line and don't contain path separators after the first /
-		const isSlashCommand = prefix.startsWith("/") && beforePrefix.trim() === "" && !prefix.slice(1).includes("/");
+		// Check if we're completing a slash command: the prefix is a "/" run at a candidate
+		// start (message start or after whitespace, on every line) and the item is a known
+		// command name. The known-name check keeps forced file completion on "/"-prefixed
+		// paths (e.g. "/usr/b") on the file path below.
+		const slashRun = prefix.startsWith("/") ? slashRunAtCursor(currentLine.slice(0, cursorCol)) : null;
+		const isSlashCommand =
+			slashRun !== null &&
+			slashRun.text === prefix &&
+			this.commands.some((cmd) => ("name" in cmd ? cmd.name : cmd.value) === item.value);
 		if (isSlashCommand) {
 			// This is a command name completion
 			const newLine = `${beforePrefix}/${item.value} ${adjustedAfterCursor}`;

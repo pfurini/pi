@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { adaptPromptTemplates, type LoadedCommand, loadCommandsFromDir } from "./commands/loader.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -17,11 +18,25 @@ import {
 } from "./extensions/loader.ts";
 import type { Extension, ExtensionRuntime, InlineExtension, LoadExtensionsResult } from "./extensions/types.ts";
 import { findGitPaths } from "./footer-data-provider.ts";
-import { DefaultPackageManager, type PathMetadata, type ResolvedResource } from "./package-manager.ts";
+import {
+	DefaultPackageManager,
+	isEnabledByOverrides,
+	type PathMetadata,
+	type ResolvedResource,
+	resourcePrecedenceRank,
+} from "./package-manager.ts";
 import type { PromptTemplate } from "./prompt-templates.ts";
 import { loadPromptTemplates } from "./prompt-templates.ts";
 import { SettingsManager } from "./settings-manager.ts";
-import type { Skill } from "./skills.ts";
+import { type LoadedSkill, normalizeSkillInput, type SkillInput } from "./skills/frontmatter.ts";
+import { findNestedSkillRootCandidates, scanNestedSkillRoot } from "./skills/nested-discovery.ts";
+import {
+	ResourceWatcher,
+	type ResourceWatchFactory,
+	type WatchedResourceRoot,
+	type WatchTimers,
+} from "./skills/resource-watch.ts";
+import { getSkillSetController, type SkillSetController } from "./skills/skill-set-events.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
@@ -36,10 +51,37 @@ export interface ResourceLoaderReloadOptions {
 	resolveProjectTrust?: (input: { extensionsResult: LoadExtensionsResult }) => Promise<boolean>;
 }
 
+/** A retained skill-discovery root (c4d): the scan input plus the directory the watcher covers. */
+export interface ScannedSkillRoot {
+	/** Scan input for loadSkills: the root directory or a direct skill file. */
+	scanPath: string;
+	/** Directory the watcher covers (the root itself, or a direct skill file's parent). */
+	dir: string;
+	/** Set when the configured entry is a direct skill file: watch events filter to it. */
+	file?: string;
+	/** Trust/source metadata from the package manager (or the loader's CLI/nested defaults). */
+	metadata?: PathMetadata;
+	/**
+	 * Settings override patterns that governed this root's leaves at resolve time.
+	 * A root re-scan re-evaluates them so a leaf created mid-session is filtered the
+	 * same way `/reload` would filter it (the disabled-leaf snapshot only knows leaves
+	 * that already existed).
+	 */
+	overrides?: { patterns: string[]; baseDir: string };
+}
+
+/** Session-facing notification emitted by the loader's watch/discovery machinery (c4d). */
+export type ResourceLoaderChangeEvent =
+	| { kind: "refresh" }
+	| { kind: "watcher-health"; health: ResourceDiagnostic | undefined }
+	| { kind: "diagnostic"; diagnostic: ResourceDiagnostic };
+
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
-	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	getSkills(): { skills: SkillInput[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
+	/** A.7 command snapshot (native commands + adapted templates). Optional so lightweight test doubles can omit it. The snapshot is immutable: consumers must not mutate the returned array. */
+	getCommands?(): { commands: readonly LoadedCommand[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
@@ -47,7 +89,90 @@ export interface ResourceLoader {
 	getAppendSystemPrompt(): string[];
 	getAppendSystemPromptSources(): Array<{ path: string }>;
 	extendResources(paths: ResourceExtensionPaths): void;
+	/** Shared event bus backing the A.9 extension seams (skill-set, rewrite maps). Optional so lightweight test doubles can omit it. */
+	getEventBus?(): EventBus;
 	reload(options?: ResourceLoaderReloadOptions): Promise<void>;
+	/** The authoritative scanned skill-root set (c4d): what the watcher watches and nested discovery checks against. */
+	getScannedSkillRoots?(): readonly ScannedSkillRoot[];
+	/**
+	 * Register a per-session change reaction (c4d). Returns an unsubscribe. Registration
+	 * synchronously replays the current watcher-health when degraded (late-subscriber safe).
+	 */
+	onResourceChange?(listener: (event: ResourceLoaderChangeEvent) => void): () => void;
+	/** Light skills+commands refresh (c4d): re-scan and publish, no extension/settings reload. */
+	refreshSkillsAndCommands?(): void;
+	/** A.6 nested/monorepo discovery (c4d): register unscanned skill roots above a tool-touched file. */
+	discoverNestedSkillRoots?(touchedFile: string): void;
+	/** Release watchers and pending timers (c4d). Idempotent; caller-owned loaders are never disposed by sessions. */
+	dispose?(): void;
+}
+
+/** Precedence rank of a scanned root, matching the resolved-leaf order (temporary/CLI first). */
+function skillRootPrecedenceRank(root: ScannedSkillRoot): number {
+	if (root.metadata === undefined) return 0;
+	if (root.metadata.scope === "temporary") return -1;
+	return resourcePrecedenceRank(root.metadata);
+}
+
+/**
+ * Coalescing compares the whole published state, not just the resource array: a
+ * refresh can leave the winner set byte-identical while producing a new diagnostic
+ * (a newly added skill that *loses* a name collision is the motivating case), and
+ * that diagnostic is the only signal the user gets.
+ */
+function diagnosticsSignature(diagnostics: readonly ResourceDiagnostic[]): string {
+	return diagnostics.map((d) => `${d.type}|${d.path ?? ""}|${d.message}`).join("\n");
+}
+
+/** Semantic equality for the c4d coalescing refresh: duplicate states assign but never publish/notify. */
+function skillsSemanticallyEqual(a: readonly LoadedSkill[], b: readonly LoadedSkill[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		const x = a[i]!;
+		const y = b[i]!;
+		if (
+			x.id !== y.id ||
+			x.name !== y.name ||
+			x.listingName !== y.listingName ||
+			x.description !== y.description ||
+			x.filePath !== y.filePath ||
+			x.disableModelInvocation !== y.disableModelInvocation ||
+			x.userInvocable !== y.userInvocable ||
+			x.sourceInfo.source !== y.sourceInfo.source ||
+			x.sourceInfo.scope !== y.sourceInfo.scope ||
+			x.sourceInfo.baseDir !== y.sourceInfo.baseDir ||
+			JSON.stringify(x.frontmatter) !== JSON.stringify(y.frontmatter)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** Semantic equality for the c4d coalescing refresh's command snapshot. */
+function commandsSemanticallyEqual(a: readonly LoadedCommand[], b: readonly LoadedCommand[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		const x = a[i]!;
+		const y = b[i]!;
+		if (
+			x.kind !== y.kind ||
+			x.name !== y.name ||
+			x.description !== y.description ||
+			x.body !== y.body ||
+			x.filePath !== y.filePath ||
+			x.disableModelInvocation !== y.disableModelInvocation ||
+			x.userInvocable !== y.userInvocable ||
+			// Mirror skillsSemanticallyEqual: a command's `argument-hint` (carried
+			// outside `frontmatter` for adapted templates) and any other frontmatter
+			// edit must not be coalesced away, or a live edit never reaches the listing.
+			x.argumentHint !== y.argumentHint ||
+			JSON.stringify(x.frontmatter) !== JSON.stringify(y.frontmatter)
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function resolvePromptInput(input: string | undefined, description: string): string | undefined {
@@ -173,8 +298,8 @@ export interface DefaultResourceLoaderOptions {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
-	skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
-		skills: Skill[];
+	skillsOverride?: (base: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] }) => {
+		skills: SkillInput[];
 		diagnostics: ResourceDiagnostic[];
 	};
 	promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
@@ -190,6 +315,13 @@ export interface DefaultResourceLoaderOptions {
 	};
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
 	appendSystemPromptOverride?: (base: string[]) => string[];
+	/** c4d watcher test seams: injected watch factory/timers/intervals drive fs events deterministically. */
+	watchOptions?: {
+		watch?: ResourceWatchFactory;
+		timers?: WatchTimers;
+		debounceMs?: number;
+		retryDelayMs?: number;
+	};
 }
 
 export class DefaultResourceLoader implements ResourceLoader {
@@ -197,6 +329,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private agentDir: string;
 	private settingsManager: SettingsManager;
 	private eventBus: EventBus;
+	private skillSetController: SkillSetController;
 	private packageManager: DefaultPackageManager;
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
@@ -211,8 +344,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string[];
 	private extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
-	private skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
-		skills: Skill[];
+	private skillsOverride?: (base: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] }) => {
+		skills: SkillInput[];
 		diagnostics: ResourceDiagnostic[];
 	};
 	private promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
@@ -230,10 +363,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private appendSystemPromptOverride?: (base: string[]) => string[];
 
 	private extensionsResult: LoadExtensionsResult;
-	private skills: Skill[];
+	private skills: LoadedSkill[];
 	private skillDiagnostics: ResourceDiagnostic[];
 	private prompts: PromptTemplate[];
 	private promptDiagnostics: ResourceDiagnostic[];
+	private commands: LoadedCommand[];
+	private commandDiagnostics: ResourceDiagnostic[];
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
 	private agentsFiles: Array<{ path: string; content: string }>;
@@ -249,12 +384,26 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private lastPromptPaths: string[];
 	private lastThemePaths: string[];
 	private loaded: boolean;
-
+	/** c4d: retained scanned skill roots from the last reload (package-manager accessor + additionalSkillPaths). */
+	private skillDiscoveryRootEntries: ScannedSkillRoot[];
+	/** c4d: nested roots registered by tool-touch discovery, keyed by canonical root; persist across reload until trust is revoked. */
+	private nestedSkillRoots: Map<string, { root: string; qualifier: string }>;
+	/** c4d: last emitted scan-error per unregistered nested root, so per-tool-call retries do not re-warn identically. */
+	private failedNestedScanErrors = new Map<string, string>();
+	/** c4d: canonical leaf paths the last resolve() resolved as disabled; root re-scans must not resurrect them. */
+	private disabledSkillLeafPaths: Set<string>;
+	/** c4d: the loader-owned watcher; created lazily at the end of the first reload. */
+	private resourceWatcher: ResourceWatcher | undefined;
+	private watcherHealth: ResourceDiagnostic | undefined;
+	private readonly resourceChangeListeners: Set<(event: ResourceLoaderChangeEvent) => void>;
+	private disposed: boolean;
+	private readonly watchOptions: DefaultResourceLoaderOptions["watchOptions"];
 	constructor(options: DefaultResourceLoaderOptions) {
 		this.cwd = resolvePath(options.cwd);
 		this.agentDir = resolvePath(options.agentDir);
 		this.settingsManager = options.settingsManager ?? SettingsManager.create(this.cwd, this.agentDir);
 		this.eventBus = options.eventBus ?? createEventBus();
+		this.skillSetController = getSkillSetController(this.eventBus);
 		this.packageManager = new DefaultPackageManager({
 			cwd: this.cwd,
 			agentDir: this.agentDir,
@@ -285,6 +434,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillDiagnostics = [];
 		this.prompts = [];
 		this.promptDiagnostics = [];
+		this.commands = [];
+		this.commandDiagnostics = [];
 		this.themes = [];
 		this.themeDiagnostics = [];
 		this.agentsFiles = [];
@@ -298,18 +449,140 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.lastPromptPaths = [];
 		this.lastThemePaths = [];
 		this.loaded = false;
+		this.skillDiscoveryRootEntries = [];
+		this.nestedSkillRoots = new Map();
+		this.disabledSkillLeafPaths = new Set();
+		this.resourceWatcher = undefined;
+		this.watcherHealth = undefined;
+		this.resourceChangeListeners = new Set();
+		this.disposed = false;
+		this.watchOptions = options.watchOptions;
 	}
 
 	getExtensions(): LoadExtensionsResult {
 		return this.extensionsResult;
 	}
 
-	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
+	getSkills(): { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
+	}
+
+	getEventBus(): EventBus {
+		return this.eventBus;
+	}
+
+	/** The authoritative scanned skill-root set (c4d): retained roots, extension-registered paths, nested roots. */
+	getScannedSkillRoots(): readonly ScannedSkillRoot[] {
+		const roots: ScannedSkillRoot[] = [...this.skillDiscoveryRootEntries];
+		for (const path of this.extensionSkillSourceInfos.keys()) {
+			roots.push(this.toScannedSkillRoot(path));
+		}
+		for (const nested of this.nestedSkillRoots.values()) {
+			roots.push({ scanPath: nested.root, dir: nested.root });
+		}
+		return roots;
+	}
+
+	/**
+	 * Register a per-session change reaction (c4d). Registration synchronously replays
+	 * the current degraded watcher-health so a failure raised before any listener bound
+	 * is not lost; every callback runs under per-subscriber exception isolation.
+	 */
+	onResourceChange(listener: (event: ResourceLoaderChangeEvent) => void): () => void {
+		this.resourceChangeListeners.add(listener);
+		if (this.watcherHealth !== undefined) {
+			try {
+				listener({ kind: "watcher-health", health: this.watcherHealth });
+			} catch {
+				// Per-subscriber isolation: a throwing listener never blocks registration.
+			}
+		}
+		return () => {
+			this.resourceChangeListeners.delete(listener);
+		};
+	}
+
+	/**
+	 * Light skills+commands refresh (c4d): re-scan the retained roots plus the last
+	 * resolved leaf set and rebuild the trust-gated command snapshot — no extension
+	 * reload, no settings reload, no session lifecycle events. No-op semantic states
+	 * are coalesced (state is assigned but nothing publishes or notifies).
+	 */
+	refreshSkillsAndCommands(): void {
+		if (this.disposed || !this.loaded) return;
+		const skillsCommitted = this.updateSkillsFromPaths(this.computeSkillScanInputs(), this.resourceMetadataByPath, {
+			coalesce: true,
+		});
+		const commandsCommitted = this.updateCommands(this.resourceMetadataByPath, { coalesce: true });
+		if (skillsCommitted || commandsCommitted) {
+			this.notifyResourceChange({ kind: "refresh" });
+		}
+	}
+
+	/**
+	 * A.6 nested/monorepo discovery (c4d), trust-gated exactly like cwd's own project
+	 * roots. Registration is a staged transaction: the root is probed and scanned off
+	 * to the side, and any scan failure emits one diagnostic with zero A.9/resource
+	 * publications and without marking the root scanned (a later touch retries).
+	 */
+	discoverNestedSkillRoots(touchedFile: string): void {
+		if (this.disposed || !this.loaded) return;
+		if (this.noSkills) return;
+		if (!this.settingsManager.isProjectTrusted()) return;
+		const scanned = new Set(this.getScannedSkillRoots().map((root) => canonicalizePath(root.dir)));
+		const candidates = findNestedSkillRootCandidates({
+			touchedFile,
+			cwd: this.cwd,
+			isAlreadyScanned: (canonicalRoot) => scanned.has(canonicalRoot),
+		});
+		for (const candidate of candidates) {
+			const canonical = canonicalizePath(candidate.root);
+			if (this.nestedSkillRoots.has(canonical)) continue;
+			const scan = scanNestedSkillRoot(candidate.root);
+			if (scan.error !== undefined) {
+				// A failed root stays unregistered so a later touch retries, and touches fire
+				// after every single-file tool call — so emit only when the failure is new or
+				// its message changed, matching the watcher's one-per-episode dedup.
+				if (this.failedNestedScanErrors.get(canonical) !== scan.error) {
+					this.failedNestedScanErrors.set(canonical, scan.error);
+					this.notifyResourceChange({
+						kind: "diagnostic",
+						diagnostic: {
+							type: "warning",
+							message: `nested skill root could not be scanned: ${scan.error}`,
+							path: candidate.root,
+						},
+					});
+				}
+				continue;
+			}
+			this.failedNestedScanErrors.delete(canonical);
+			this.nestedSkillRoots.set(canonical, candidate);
+			try {
+				this.refreshSkillsAndCommands();
+			} catch {
+				// Contained: the root is registered and watched, so the next watcher
+				// cycle re-attempts the publish (converges without a tool touch).
+			}
+			this.syncWatcher();
+		}
+	}
+
+	/** c4d: dispose the watcher and listeners. Idempotent. */
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.resourceWatcher?.dispose();
+		this.resourceWatcher = undefined;
+		this.resourceChangeListeners.clear();
 	}
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
 		return { prompts: this.prompts, diagnostics: this.promptDiagnostics };
+	}
+
+	getCommands(): { commands: readonly LoadedCommand[]; diagnostics: ResourceDiagnostic[] } {
+		return { commands: this.commands, diagnostics: this.commandDiagnostics };
 	}
 
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
@@ -337,6 +610,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	extendResources(paths: ResourceExtensionPaths): void {
+		if (this.disposed) return;
 		const skillPaths = this.normalizeExtensionPaths(paths.skillPaths ?? []);
 		const promptPaths = this.normalizeExtensionPaths(paths.promptPaths ?? []);
 		const themePaths = this.normalizeExtensionPaths(paths.themePaths ?? []);
@@ -356,7 +630,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.lastSkillPaths,
 				skillPaths.map((entry) => entry.path),
 			);
-			this.updateSkillsFromPaths(this.lastSkillPaths, this.resourceMetadataByPath);
+			this.updateSkillsFromPaths(this.computeSkillScanInputs(), this.resourceMetadataByPath);
+			// New extension-registered roots join the watched set.
+			this.syncWatcher();
 		}
 
 		if (promptPaths.length > 0) {
@@ -365,6 +641,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 				promptPaths.map((entry) => entry.path),
 			);
 			this.updatePromptsFromPaths(this.lastPromptPaths, this.resourceMetadataByPath);
+			// Keep the grandfathered-command snapshot in sync with extension-added prompts.
+			this.updateCommands(this.resourceMetadataByPath);
 		}
 
 		if (themePaths.length > 0) {
@@ -400,7 +678,34 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		// reload() preserves SettingsManager.projectTrusted and reloads settings for that trust state.
 		await this.settingsManager.reload();
+		// Nested roots are trust-gated exactly like cwd's own project roots (A.6): a trust
+		// revocation drops them; rediscovery requires trust and a fresh tool touch.
+		if (!this.settingsManager.isProjectTrusted()) {
+			this.nestedSkillRoots.clear();
+		}
 		const resolvedPaths = await this.packageManager.resolve();
+		// Retain the scanned skill roots independently of the resolved leaves (c4d): an
+		// empty or not-yet-existing root stays watchable, and a root re-scan discovers
+		// siblings created after startup. Disabled leaves are remembered so a root
+		// re-scan does not resurrect what a settings pattern disabled.
+		this.skillDiscoveryRootEntries = this.packageManager
+			.getSkillDiscoveryRoots()
+			.map(({ root, metadata, overrides }) => this.toScannedSkillRoot(root, metadata, overrides))
+			// Roots scan in the same precedence order the resolved leaves scan in, so a
+			// root re-scan cannot change collision winners: temporary (CLI) sources first,
+			// then project-local, project-auto, user-local, user-auto, package.
+			.sort((a, b) => skillRootPrecedenceRank(a) - skillRootPrecedenceRank(b));
+		for (const p of this.additionalSkillPaths) {
+			// CLI `--skill` paths scan last, exactly as mergePaths appends them today. They
+			// carry NO metadata: prefix-labeling their leaves would shadow the loaded
+			// skill's own sourceInfo (and any skillsOverride-provided one).
+			this.skillDiscoveryRootEntries.push(this.toScannedSkillRoot(this.resolveResourcePath(p)));
+		}
+		this.disabledSkillLeafPaths = new Set(
+			resolvedPaths.skills
+				.filter((resource) => !resource.enabled)
+				.map((resource) => canonicalizePath(resource.path)),
+		);
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});
@@ -469,7 +774,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 			: this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
 
 		this.lastSkillPaths = skillPaths;
-		this.updateSkillsFromPaths(skillPaths, metadataByPath);
+		// Scan from the retained roots plus the resolved leaves (and any nested roots
+		// registered during this reload's awaits) so a watcher refresh and a full reload
+		// compute the same snapshot and converge after a race.
+		this.updateSkillsFromPaths(this.computeSkillScanInputs(), metadataByPath);
 		for (const p of this.additionalSkillPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -497,6 +805,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 				}
 			}
 		}
+
+		// Commands depend on the resolved prompt set and project trust, both settled above.
+		this.updateCommands(metadataByPath);
 
 		const themePaths = this.noThemes
 			? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
@@ -543,8 +854,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			.filter((source) => existsSync(source))
 			.map((source) => resolvePath(source));
 		this.loaded = true;
+		// Start (or re-sync) live watching only after the initial load completes.
+		this.syncWatcher();
 	}
-
 	private async loadCurrentExtensionSet(options: { includeInlineFactories: boolean }): Promise<LoadExtensionsResult> {
 		const resolvedPaths = await this.packageManager.resolve();
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
@@ -669,8 +981,19 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 	}
 
-	private updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
-		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	/**
+	 * Rebuild the skills snapshot from scan inputs. Computes the candidate fully before
+	 * assigning and publishes synchronously after assignment, so a `skills:changed`
+	 * subscriber always reads a complete loader state (no torn read). With `coalesce`
+	 * (the watcher/nested light refresh) a duplicate semantic state is assigned without
+	 * publishing or notifying. Returns whether a publish happened.
+	 */
+	private updateSkillsFromPaths(
+		skillPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+		options?: { coalesce?: boolean },
+	): boolean {
+		let skillsResult: { skills: LoadedSkill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
 		} else {
@@ -679,17 +1002,56 @@ export class DefaultResourceLoader implements ResourceLoader {
 				agentDir: this.agentDir,
 				skillPaths,
 				includeDefaults: false,
+				qualifiedRoots: [...this.nestedSkillRoots.values()],
 			});
 		}
+		// Root re-scans rediscover leaves a settings pattern disabled at resolve time; drop them
+		// again. The path snapshot only covers leaves that existed at resolve time, so a leaf
+		// created mid-session is re-evaluated against its root's retained override patterns —
+		// otherwise the light refresh would publish what `/reload` filters out.
+		if (this.disabledSkillLeafPaths.size > 0 || this.skillDiscoveryRootEntries.some((root) => root.overrides)) {
+			skillsResult = {
+				skills: skillsResult.skills.filter((skill) => {
+					const canonical = canonicalizePath(skill.filePath);
+					if (this.disabledSkillLeafPaths.has(canonical)) return false;
+					const governing = this.governingSkillRoot(canonical);
+					if (!governing?.overrides) return true;
+					return isEnabledByOverrides(skill.filePath, governing.overrides.patterns, governing.overrides.baseDir);
+				}),
+				diagnostics: skillsResult.diagnostics,
+			};
+		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
-		this.skills = resolvedSkills.skills.map((skill) => ({
-			...skill,
-			sourceInfo:
-				this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, metadataByPath) ??
-				skill.sourceInfo ??
-				this.getDefaultSourceInfoForPath(skill.filePath),
-		}));
-		this.skillDiagnostics = resolvedSkills.diagnostics;
+		const normalizationDiagnostics: ResourceDiagnostic[] = [];
+		const augmentedMetadata = this.augmentMetadataWithRoots(metadataByPath);
+		const nextSkills = resolvedSkills.skills.map((skill) => {
+			const withSourceInfo: SkillInput = {
+				...skill,
+				sourceInfo:
+					this.findSourceInfoForPath(skill.filePath, this.extensionSkillSourceInfos, augmentedMetadata) ??
+					skill.sourceInfo ??
+					this.getDefaultSourceInfoForPath(skill.filePath),
+			};
+			const normalized = normalizeSkillInput(withSourceInfo);
+			normalizationDiagnostics.push(...normalized.diagnostics);
+			return normalized.skill;
+		});
+		const nextDiagnostics = [...resolvedSkills.diagnostics, ...normalizationDiagnostics];
+		if (
+			options?.coalesce &&
+			skillsSemanticallyEqual(nextSkills, this.skills) &&
+			diagnosticsSignature(nextDiagnostics) === diagnosticsSignature(this.skillDiagnostics)
+		) {
+			this.skills = nextSkills;
+			this.skillDiagnostics = nextDiagnostics;
+			return false;
+		}
+		this.skills = nextSkills;
+		this.skillDiagnostics = nextDiagnostics;
+		// Publish the effective set (post-override, post-source-info, post-normalization) so
+		// `getSkills()` and A.9 extension payloads describe the same skills.
+		this.skillSetController.publish(this.skills);
+		return true;
 	}
 
 	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
@@ -714,6 +1076,49 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.getDefaultSourceInfoForPath(prompt.filePath),
 		}));
 		this.promptDiagnostics = resolvedPrompts.diagnostics;
+	}
+
+	/**
+	 * Rebuild the atomic command snapshot (A.7): user commands (always),
+	 * project commands (only while the project is trusted), and the final
+	 * resolved prompt templates adapted as grandfathered command sources. Called
+	 * after prompts are resolved so a trust change or `/reload` refreshes the
+	 * whole set at once; project commands disappear when trust is revoked.
+	 */
+	private updateCommands(metadataByPath?: Map<string, PathMetadata>, options?: { coalesce?: boolean }): boolean {
+		const commands: LoadedCommand[] = [];
+		const diagnostics: ResourceDiagnostic[] = [];
+		const sourceFor = (filePath: string): SourceInfo =>
+			this.findSourceInfoForPath(filePath, undefined, metadataByPath) ?? this.getDefaultSourceInfoForPath(filePath);
+
+		const userResult = loadCommandsFromDir(join(this.agentDir, "commands"), sourceFor);
+		commands.push(...userResult.commands);
+		diagnostics.push(...userResult.diagnostics);
+
+		if (this.settingsManager.isProjectTrusted()) {
+			const projectResult = loadCommandsFromDir(join(this.cwd, CONFIG_DIR_NAME, "commands"), sourceFor);
+			commands.push(...projectResult.commands);
+			diagnostics.push(...projectResult.diagnostics);
+		}
+
+		const adapted = adaptPromptTemplates(this.prompts);
+		commands.push(...adapted.commands);
+		diagnostics.push(...adapted.diagnostics);
+
+		if (
+			options?.coalesce &&
+			commandsSemanticallyEqual(commands, this.commands) &&
+			diagnosticsSignature(diagnostics) === diagnosticsSignature(this.commandDiagnostics)
+		) {
+			// Semantically identical: keep the fresh objects (matching the skills
+			// branch's `this.skills = nextSkills`) but publish/notify nothing.
+			this.commands = commands;
+			this.commandDiagnostics = diagnostics;
+			return false;
+		}
+		this.commands = commands;
+		this.commandDiagnostics = diagnostics;
+		return true;
 	}
 
 	private updateThemesFromPaths(themePaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
@@ -812,12 +1217,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const agentRoots = [
 			join(this.agentDir, "skills"),
 			join(this.agentDir, "prompts"),
+			join(this.agentDir, "commands"),
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
 		];
 		const projectRoots = [
 			join(this.cwd, CONFIG_DIR_NAME, "skills"),
 			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
+			join(this.cwd, CONFIG_DIR_NAME, "commands"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
 		];
@@ -860,6 +1267,146 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private resolveResourcePath(p: string): string {
 		return resolvePath(p, this.cwd, { trim: true });
+	}
+
+	/**
+	 * The retained root that governs a leaf: the longest matching root directory, so a
+	 * nested root's own patterns win over an ancestor's.
+	 */
+	private governingSkillRoot(canonicalLeafPath: string): ScannedSkillRoot | undefined {
+		let best: ScannedSkillRoot | undefined;
+		let bestLength = -1;
+		for (const root of this.skillDiscoveryRootEntries) {
+			const dir = canonicalizePath(root.dir);
+			if (canonicalLeafPath !== dir && !canonicalLeafPath.startsWith(`${dir}/`)) continue;
+			if (dir.length > bestLength) {
+				best = root;
+				bestLength = dir.length;
+			}
+		}
+		return best;
+	}
+
+	/** Normalize a configured skill path (dir or direct file) into a scanned-root entry (c4d). */
+	private toScannedSkillRoot(
+		path: string,
+		metadata?: PathMetadata,
+		overrides?: ScannedSkillRoot["overrides"],
+	): ScannedSkillRoot {
+		let isFile = false;
+		try {
+			isFile = statSync(path).isFile();
+		} catch {
+			// A not-yet-existing `.md` path is a direct skill file watched via its parent.
+			isFile = path.endsWith(".md");
+		}
+		const extra = { ...(metadata && { metadata }), ...(overrides && { overrides }) };
+		if (isFile) {
+			return { scanPath: path, dir: dirname(path), file: path, ...extra };
+		}
+		return { scanPath: path, dir: path, ...extra };
+	}
+
+	/**
+	 * The scan inputs every skills build shares (reload and light refresh alike, so a
+	 * reload/refresh race converges): retained roots that exist, the last resolved leaf
+	 * set (enable-filtered at resolve time, incl. CLI and extension paths), and the
+	 * registered nested roots. Reading the nested set at call time is what lets a full
+	 * reload() pick up a root registered during its awaits.
+	 */
+	private computeSkillScanInputs(): string[] {
+		const inputs: string[] = [];
+		const seen = new Set<string>();
+		const add = (path: string) => {
+			const canonical = canonicalizePath(path);
+			if (seen.has(canonical)) return;
+			seen.add(canonical);
+			inputs.push(path);
+		};
+		if (!this.noSkills) {
+			for (const entry of this.skillDiscoveryRootEntries) {
+				if (existsSync(entry.scanPath)) add(entry.scanPath);
+			}
+		}
+		for (const path of this.lastSkillPaths) {
+			add(path);
+		}
+		for (const nested of this.nestedSkillRoots.values()) {
+			if (existsSync(nested.root)) add(nested.root);
+		}
+		return inputs;
+	}
+
+	/** Root metadata joins the leaf map so a not-yet-resolved sibling under a known root keeps the root's trust/source labeling. */
+	private augmentMetadataWithRoots(metadataByPath?: Map<string, PathMetadata>): Map<string, PathMetadata> | undefined {
+		if (
+			metadataByPath === undefined &&
+			this.skillDiscoveryRootEntries.length === 0 &&
+			this.nestedSkillRoots.size === 0
+		) {
+			return undefined;
+		}
+		const augmented = new Map(metadataByPath ?? []);
+		for (const entry of this.skillDiscoveryRootEntries) {
+			if (entry.metadata && !augmented.has(entry.scanPath)) {
+				augmented.set(entry.scanPath, entry.metadata);
+			}
+		}
+		for (const nested of this.nestedSkillRoots.values()) {
+			if (!augmented.has(nested.root)) {
+				augmented.set(nested.root, {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: dirname(dirname(nested.root)),
+				});
+			}
+		}
+		return augmented;
+	}
+
+	/** Watcher root set (c4d): every scanned skill root plus both command roots. */
+	private computeWatchRoots(): WatchedResourceRoot[] {
+		const roots: WatchedResourceRoot[] = [];
+		for (const root of this.getScannedSkillRoots()) {
+			roots.push({ dir: root.dir, ...(root.file && { file: root.file }) });
+		}
+		roots.push({ dir: join(this.agentDir, "commands") });
+		if (this.settingsManager.isProjectTrusted()) {
+			roots.push({ dir: join(this.cwd, CONFIG_DIR_NAME, "commands") });
+		}
+		return roots;
+	}
+
+	/** Create the watcher lazily and re-sync its root set (initial load, reload, nested registration). */
+	private syncWatcher(): void {
+		if (this.disposed) return;
+		if (!this.resourceWatcher) {
+			this.resourceWatcher = new ResourceWatcher({
+				onRefreshNeeded: () => this.refreshSkillsAndCommands(),
+				onHealthChange: (health) => this.setWatcherHealth(health),
+				...(this.watchOptions?.watch && { watch: this.watchOptions.watch }),
+				...(this.watchOptions?.timers && { timers: this.watchOptions.timers }),
+				...(this.watchOptions?.debounceMs !== undefined && { debounceMs: this.watchOptions.debounceMs }),
+				...(this.watchOptions?.retryDelayMs !== undefined && { retryDelayMs: this.watchOptions.retryDelayMs }),
+			});
+		}
+		this.resourceWatcher.setRoots(this.computeWatchRoots());
+	}
+
+	private setWatcherHealth(health: ResourceDiagnostic | undefined): void {
+		this.watcherHealth = health;
+		this.notifyResourceChange({ kind: "watcher-health", health });
+	}
+
+	private notifyResourceChange(event: ResourceLoaderChangeEvent): void {
+		for (const listener of this.resourceChangeListeners) {
+			try {
+				listener(event);
+			} catch {
+				// Per-subscriber isolation: one throwing session listener never blocks the rest.
+			}
+		}
 	}
 
 	private loadThemes(

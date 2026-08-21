@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the optional `transformInjectedMessages` hook (`Agent` property, `AgentOptions` option, and `AgentLoopConfig` callback): application-supplied messages — the initial prompt batch and each drained steering/follow-up batch — may be rewritten, expanded, or split immediately before they are emitted and appended to the transcript. It is now settable through `AgentOptions` (mirroring `resolveToolRedirect`); because it is a plain field, an assigner that also needs it (e.g. an external post-construction assignment) must capture and chain the previous transform.
+- Added the ephemeral `Agent.pendingTurnOverride` (`{ model?, thinkingLevel?, tools? }`): a non-persistent per-run override read by the loop-config builder (model/reasoning) and the context snapshot (tools). It is never written into `state`, so the owner sets it before a run and clears it at the turn boundary, leaving the session defaults untouched.
+- Added the optional `refreshTurnAfterInjection` seam (`Agent` property, `AgentOptions` option, and `AgentLoopConfig` callback): called before a provider request whose triggering messages were just injected/transformed (the first turn after the top-level transform and every inner-loop injection, but not a retry/continuation), it returns an `AgentLoopTurnUpdate` merged like `prepareNextTurn` so an override that only activates during injection can still govern the consuming request.
+- Added the optional `isToolCallDisallowed` seam (`Agent` property, `AgentOptions` option, and `AgentLoopConfig` callback): a synchronous, advisory policy checked at the top of tool-call preparation — before the registry lookup and `beforeToolCall` — that returns a block reason to reject the call with an immediate error result, so a policy block naming the tool stays reachable even after the tool's schema has been removed from the context.
+- Added the optional `resolveToolRedirect` callback (`Agent` option/property and `AgentLoopConfig` field): when a tool call names an unregistered tool, the synchronous resolver receives the attempted name and the currently registered tool names and may return corrective text for the immediate error result. Returning `undefined` — or throwing — keeps the default `Tool <name> not found` error; the loop never executes another tool or invokes tool hooks for an unknown call.
+- Added `CustomMessage.excludeFromContext` (`harness/messages.ts` twin included): a persisted custom message flagged this way is display-only and excluded from the messages sent to the provider on reload/reconstruction.
+- Added `harness/listing-budget.ts`, the new home of the A.6 skill listing-budget oracle (`buildBudgetedListingBlock`, `estimateListingEntryCost`, `skillListingBudgetCodeUnits`, `est`, `escapeXml`, the v2 delimiters, and the entry/diagnostic types) relocated from pi-coding-agent so the harness can apply the byte-identical algorithm; pi-coding-agent re-exports it unchanged.
+- Added the optional `{ contextWindow, budgetFraction }` second parameter to `formatSkillsForSystemPrompt()`: with a positive context window the listing block is the byte-exact A.6 budgeted v2 oracle (name-sorted emission, 1,536-code-unit description cap, skeleton floor), while omitted/non-positive windows keep the previous unbudgeted v1 output byte-for-byte.
+
 ### Fixed
 
 - Fixed `streamProxy()` dropping finalized tool-call metadata such as OpenAI Responses namespaces ([#7709](https://github.com/earendil-works/pi/issues/7709)).

@@ -799,6 +799,15 @@ export interface Model<TApi extends Api> {
 	baseUrl: string;
 	reasoning: boolean;
 	/**
+	 * Present (always `true`) only when this model's concrete `(api, provider)` converter path has been verified
+	 * (`packages/ai/test/skill-synthetic-pair-replay.test.ts`) to replay a synthetic
+	 * assistant-tool-call/tool-result pair without corrupting order, name, arguments, result
+	 * text, or correlation ID. Absent means the caller must fall back to message-block
+	 * delivery. Never set by hand: generated only from {@link SKILL_SYNTHETIC_REPLAY_CLASSES} in
+	 * `scripts/generate-models.ts`. Custom/unknown models are never flagged.
+	 */
+	syntheticToolResultReplay?: true;
+	/**
 	 * Maps pi thinking levels to provider/model-specific values.
 	 * Missing keys use provider defaults. null marks a level as unsupported.
 	 */
@@ -820,6 +829,40 @@ export interface Model<TApi extends Api> {
 				: TApi extends "bedrock-converse-stream"
 					? BedrockCompat
 					: never;
+}
+
+/**
+ * One converter equivalence class verified to replay the exact A.4 synthetic skill
+ * tool-call/result pair (see `packages/ai/test/skill-synthetic-pair-replay.test.ts`).
+ * Granularity is `(api, provider)`: within a class, every model-id branch the converter takes
+ * (e.g. Google's ID-required vs name/order correlation) was exercised and passed, so no
+ * built-in model in the class needs excluding.
+ */
+export interface SkillSyntheticReplayClass {
+	readonly api: KnownApi;
+	readonly provider: KnownProvider;
+}
+
+/**
+ * Canonical matrix shared by the replay test (source of truth) and
+ * `scripts/generate-models.ts` (flag emission for built-in models). Update only after adding a
+ * passing fixture row to the replay test for the new `(api, provider)` pair.
+ */
+export const SKILL_SYNTHETIC_REPLAY_CLASSES: readonly SkillSyntheticReplayClass[] = [
+	{ api: "openai-completions", provider: "groq" },
+	{ api: "openai-responses", provider: "openai" },
+	{ api: "azure-openai-responses", provider: "azure-openai-responses" },
+	{ api: "openai-codex-responses", provider: "openai-codex" },
+	{ api: "anthropic-messages", provider: "anthropic" },
+	{ api: "bedrock-converse-stream", provider: "amazon-bedrock" },
+	{ api: "google-generative-ai", provider: "google" },
+	{ api: "google-vertex", provider: "google-vertex" },
+	{ api: "mistral-conversations", provider: "mistral" },
+	{ api: "pi-messages", provider: "radius" },
+];
+
+export function matchesSkillSyntheticReplayClass(model: { api: string; provider: string }): boolean {
+	return SKILL_SYNTHETIC_REPLAY_CLASSES.some((cls) => cls.api === model.api && cls.provider === model.provider);
 }
 
 export interface ImagesModel<TApi extends ImagesApi>

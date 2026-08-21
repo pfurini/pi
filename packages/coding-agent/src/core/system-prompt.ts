@@ -3,6 +3,8 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import type { ResourceDiagnostic } from "./diagnostics.ts";
+import type { ResolvedSkillVisibility } from "./skills/visibility.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -22,6 +24,16 @@ export interface BuildSystemPromptOptions {
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
+	/** Recently tool-touched paths for the A.6 `paths` listing boost. */
+	skillPathsBoost?: { touchedPaths: readonly string[]; cwd: string };
+	/** A.6 listing-budget input: `B` (code units) and per-skill logical invocation counts. */
+	skillListingBudget?: {
+		budgetCodeUnits: number | undefined;
+		invocationCounts: ReadonlyMap<string, number>;
+		diagnostics?: ResourceDiagnostic[];
+	};
+	/** A.6 per-skill effective visibility (c4c), keyed by canonical skill ID; absent entries fall back to frontmatter. */
+	skillVisibility?: ReadonlyMap<string, ResolvedSkillVisibility>;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -35,6 +47,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		cwd,
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
+		skillPathsBoost,
+		skillListingBudget,
+		skillVisibility,
 	} = options;
 	const promptCwd = cwd.replace(/\\/g, "/");
 
@@ -60,12 +75,19 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += "</project_context>\n";
 		}
 
-		// Append skills section (only if read tool is available)
+		// Append skills section (available when the model can invoke skills: the
+		// read tool, or the A.1 skill tool when it is active)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills);
+		const customPromptHasSkillTool = selectedTools?.includes("skill") ?? false;
+		if ((customPromptHasRead || customPromptHasSkillTool) && skills.length > 0) {
+			prompt += formatSkillsForPrompt(
+				skills,
+				customPromptHasSkillTool ? "tool" : "read",
+				skillPathsBoost,
+				skillListingBudget,
+				skillVisibility,
+			);
 		}
-
 		prompt += `\nCurrent working directory: ${promptCwd}`;
 
 		return prompt;
@@ -151,11 +173,18 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 		prompt += "</project_context>\n";
 	}
 
-	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills);
+	// Append skills section (available when the model can invoke skills: the
+	// read tool, or the A.1 skill tool when it is active)
+	const hasSkillTool = tools.includes("skill");
+	if ((hasRead || hasSkillTool) && skills.length > 0) {
+		prompt += formatSkillsForPrompt(
+			skills,
+			hasSkillTool ? "tool" : "read",
+			skillPathsBoost,
+			skillListingBudget,
+			skillVisibility,
+		);
 	}
-
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;

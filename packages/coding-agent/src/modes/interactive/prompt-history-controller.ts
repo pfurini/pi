@@ -145,7 +145,7 @@ export class PromptHistoryController {
 	}
 
 	/** Record a live submission: update the cache and the active editor's native history immediately. */
-	record(text: string, editor: EditorComponent): void {
+	record(text: string): void {
 		const trimmed = text.trim();
 		if (!trimmed) return;
 
@@ -161,7 +161,7 @@ export class PromptHistoryController {
 			}
 		}
 
-		editor.addToHistory?.(text);
+		this.activeEditor?.addToHistory?.(text);
 	}
 
 	/**

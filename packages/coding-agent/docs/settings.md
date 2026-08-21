@@ -271,6 +271,27 @@ Paths in `~/.pi/agent/settings.json` resolve relative to `~/.pi/agent`. Paths in
 | `prompts` | string[] | `[]` | Local prompt template paths or directories |
 | `themes` | string[] | `[]` | Local theme file paths or directories |
 | `enableSkillCommands` | boolean | `true` | Register skills as `/skill:name` commands |
+| `skillInterop` | boolean | `true` | Accept `CLAUDE_*` aliases alongside the `PI_*` skill variables (see [skills.md](skills.md#skill-variables)) |
+| `disableSkillShellExecution` | boolean | `false` | Kill switch for skill `` !` `` shell injection |
+| `skillShellTimeoutMs` | number | `30000` | Per-command skill shell injection timeout in milliseconds |
+| `skillShellOutputLimitBytes` | number | `16384` | Per-command skill shell injection output cap in bytes |
+| `forceSkillMessageBlock` | boolean | `false` | Force the message-block transport for new skill invocations even on synthetic-pair-capable models (forward-only; does not rewrite pairs already persisted) |
+| `disableSkillEnvInjection` | boolean | `false` | Bypass the turn-scoped skill `PI_*`/`CLAUDE_*` environment overlay in `bash` executions (skill shell injection is unaffected) |
+| `toolRedirects` | object | `{}` | Unknown-tool redirect overrides, merged per-key over the defaults (see [skills.md](skills.md#tool-name-redirects)) |
+| `disableToolRedirects` | boolean | `false` | Unknown tools get the plain not-found error (no mapped target, no nearest-name suggestion) |
+
+`disableToolRedirects`, `forceSkillMessageBlock`, and `disableSkillEnvInjection` are rollback switches: they exist so a behavior introduced by the skill system can be turned off without uninstalling anything.
+
+A `toolRedirects` example: replace one default target and add a new entry (a target is suggested only while it is registered and active):
+
+```json
+{
+  "toolRedirects": {
+    "Task": "Agent",
+    "WebSearch": "grep"
+  }
+}
+```
 
 Arrays support glob patterns and exclusions. Use `!pattern` to exclude. Use `+path` to force-include an exact path and `-path` to force-exclude an exact path.
 

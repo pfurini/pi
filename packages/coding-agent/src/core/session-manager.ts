@@ -26,6 +26,7 @@ import {
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "./messages.ts";
+import { escapeXml } from "./skills/listing.ts";
 
 export const CURRENT_SESSION_VERSION = 3;
 
@@ -50,11 +51,35 @@ export interface SessionEntryBase {
 	timestamp: string;
 }
 
+/**
+ * B.12 invocation metadata: one element per skill invocation block carried by
+ * the entry's message, in document order. Offsets are UTF-16 code unit offsets
+ * into the message's text content. An absent `invocations` field marks a
+ * legacy message (regex fallback path); a present field is authoritative.
+ */
+export interface SkillInvocationEntry {
+	skillId: string;
+	name: string;
+	args: string;
+	blockStart: number;
+	blockEnd: number;
+	/** True for a genuine model or user `context: fork` spawn (A.5): excluded from A.6 dedup anchoring and carry-forward. */
+	fork?: true;
+}
+
+/** Optional metadata accepted by appendMessage/appendSkillMessagePair. */
+export interface SessionMessageMetadata {
+	invocations?: SkillInvocationEntry[];
+	/** Correlates the two entries of a synthetic skill pair (A.4). */
+	pairId?: string;
+}
+
 export interface SessionMessageEntry extends SessionEntryBase {
 	type: "message";
 	message: AgentMessage;
+	invocations?: SkillInvocationEntry[];
+	pairId?: string;
 }
-
 export interface ThinkingLevelChangeEntry extends SessionEntryBase {
 	type: "thinking_level_change";
 	thinkingLevel: string;
@@ -138,6 +163,10 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	content: string | (TextContent | ImageContent)[];
 	details?: T;
 	display: boolean;
+	/** If true, this message is display-only and excluded from LLM context (e.g. C3b fork notices). */
+	excludeFromContext?: boolean;
+	/** B.12 invocation metadata (c4b): a user `/name context: fork` spawn notice counts once, symmetric with a model fork's toolResult entry. */
+	invocations?: SkillInvocationEntry[];
 }
 
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
@@ -395,7 +424,14 @@ export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage
 	}
 	if (entry.type === "custom_message") {
 		return [
-			createCustomMessage(entry.customType, entry.content ?? [], entry.display, entry.details, entry.timestamp),
+			createCustomMessage(
+				entry.customType,
+				entry.content ?? [],
+				entry.display,
+				entry.details,
+				entry.timestamp,
+				entry.excludeFromContext,
+			),
 		];
 	}
 	if (entry.type === "branch_summary" && entry.summary) {
@@ -511,6 +547,85 @@ export function parseSessionEntryLine(line: string): FileEntry | null {
 	}
 }
 
+/**
+ * Persistence-integrity repair (A.4): a synthetic skill pair is written as one
+ * batched unit, but a crash or a hand-edited file can still leave one half
+ * behind. A torn pair must never replay (an assistant skill tool_call without
+ * its result is rejected by providers), so the lone half is downgraded to the
+ * message-block form at load:
+ * - a lone toolResult becomes a user message with the block around its text;
+ * - a lone assistant entry becomes a user message whose block carries a loss
+ *   notice (the rendered body lived in the missing half and is unrecoverable;
+ *   re-rendering at load would re-run shell injection, so it is never done).
+ * Identity (skillId/name/args) comes from the entry's B.12 metadata, falling
+ * back to the tool call arguments. Repair is in-memory; the file is append-only.
+ */
+export function repairTornSkillPairs(entries: FileEntry[]): { entries: FileEntry[]; repaired: number } {
+	const pairsById = new Map<string, { assistant?: SessionMessageEntry; toolResult?: SessionMessageEntry }>();
+	for (const entry of entries) {
+		if (entry.type !== "message" || typeof entry.pairId !== "string") continue;
+		// Session files are parsed without validation; a hand-edited or corrupt
+		// entry can carry a pairId on a null/malformed message, so guard the
+		// role access before grouping (a missing message never forms a pair).
+		const message = (entry as SessionMessageEntry).message as Message | null | undefined;
+		if (message == null || typeof message.role !== "string") continue;
+		const group = pairsById.get(entry.pairId) ?? {};
+		if (message.role === "assistant") {
+			group.assistant = entry;
+		} else if (entry.message.role === "toolResult") {
+			group.toolResult = entry;
+		}
+		pairsById.set(entry.pairId, group);
+	}
+
+	let repaired = 0;
+	for (const group of pairsById.values()) {
+		const { assistant, toolResult } = group;
+		if ((assistant === undefined) === (toolResult === undefined)) continue;
+		repaired++;
+		const torn = (assistant ?? toolResult) as SessionMessageEntry;
+		const identity = torn.invocations?.[0];
+		let name = identity?.name ?? "unknown";
+		let args = identity?.args ?? "";
+		let body: string;
+		if (toolResult) {
+			const content = toolResult.message.role === "toolResult" ? toolResult.message.content : [];
+			body = content
+				.filter((part): part is TextContent => part.type === "text")
+				.map((part) => part.text)
+				.join("\n");
+		} else {
+			const call =
+				torn.message.role === "assistant"
+					? torn.message.content.find((part) => part.type === "toolCall")
+					: undefined;
+			if (call?.type === "toolCall") {
+				if (typeof call.arguments?.name === "string" && !identity) name = call.arguments.name;
+				if (typeof call.arguments?.args === "string" && !identity) args = call.arguments.args;
+			}
+			body =
+				"[skill invocation content unavailable: the session write was interrupted before the result was stored]";
+		}
+		const text = `<skill name="${escapeXml(name)}" args="${escapeXml(args)}">\n${body}\n</skill>`;
+		torn.message = {
+			role: "user",
+			content: [{ type: "text", text }],
+			timestamp: torn.message.timestamp,
+		};
+		torn.invocations = [
+			{
+				skillId: identity?.skillId ?? "",
+				name,
+				args,
+				blockStart: 0,
+				blockEnd: text.length,
+			},
+		];
+		delete torn.pairId;
+	}
+	return { entries, repaired };
+}
+
 /** Exported for testing */
 export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	const resolvedFilePath = normalizePath(filePath);
@@ -553,9 +668,8 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 		return [];
 	}
 
-	return entries;
+	return repairTornSkillPairs(entries).entries;
 }
-
 /**
  * Inspect a physical line while searching for the first parsed session entry.
  * Blank and malformed lines are skipped to match loadEntriesFromFile().
@@ -1014,14 +1128,38 @@ export class SessionManager {
 	}
 
 	_persist(entry: SessionEntry): void {
+		this._persistBatched([entry]);
+	}
+
+	private _appendEntry(entry: SessionEntry): void {
+		this.fileEntries.push(entry);
+		this.byId.set(entry.id, entry);
+		this.leafId = entry.id;
+		this._persist(entry);
+	}
+
+	/**
+	 * Append a group of entries as one batched file write (single appended
+	 * chunk when already flushed), used for the A.4 synthetic skill pair so a
+	 * crash mid-write cannot leave one half through this path.
+	 */
+	private _appendEntriesBatched(entries: SessionEntry[]): void {
+		for (const entry of entries) {
+			this.fileEntries.push(entry);
+			this.byId.set(entry.id, entry);
+		}
+		this.leafId = entries[entries.length - 1].id;
+		this._persistBatched(entries);
+	}
+
+	private _persistBatched(entries: SessionEntry[]): void {
 		if (!this.persist || !this.sessionFile) return;
 
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
 		if (!hasAssistant) {
 			if (this.flushed) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+				appendFileSync(this.sessionFile, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
 			} else {
-				// Mark as not flushed so when assistant arrives, all entries get written
 				this.flushed = false;
 			}
 			return;
@@ -1038,24 +1176,16 @@ export class SessionManager {
 			}
 			this.flushed = true;
 		} else {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+			appendFileSync(this.sessionFile, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
 		}
 	}
-
-	private _appendEntry(entry: SessionEntry): void {
-		this.fileEntries.push(entry);
-		this.byId.set(entry.id, entry);
-		this.leafId = entry.id;
-		this._persist(entry);
-	}
-
 	/** Append a message as child of current leaf, then advance leaf. Returns entry id.
 	 * Does not allow writing CompactionSummaryMessage and BranchSummaryMessage directly.
 	 * Reason: we want these to be top-level entries in the session, not message session entries,
 	 * so it is easier to find them.
 	 * These need to be appended via appendCompaction() and appendBranchSummary() methods.
 	 */
-	appendMessage(message: Message | CustomMessage | BashExecutionMessage): string {
+	appendMessage(message: Message | CustomMessage | BashExecutionMessage, metadata?: SessionMessageMetadata): string {
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),
@@ -1063,10 +1193,62 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			message,
 		};
+		if (metadata?.invocations) {
+			entry.invocations = metadata.invocations;
+		}
+		if (metadata?.pairId) {
+			entry.pairId = metadata.pairId;
+		}
 		this._appendEntry(entry);
 		return entry.id;
 	}
 
+	/**
+	 * Append a synthetic skill pair (A.4) as one batched unit. The method owns
+	 * one shared pair identity and serializes both entries in a single file write,
+	 * so callers cannot persist mismatched or crash-torn halves through this path.
+	 * A pair torn by other means is detected and downgraded at load (see
+	 * repairTornSkillPairs).
+	 */
+	appendSkillMessagePair(
+		assistant: Message,
+		toolResult: Message,
+		assistantMetadata?: SessionMessageMetadata,
+		toolResultMetadata?: SessionMessageMetadata,
+	): string {
+		if (
+			assistantMetadata?.pairId !== undefined &&
+			toolResultMetadata?.pairId !== undefined &&
+			assistantMetadata.pairId !== toolResultMetadata.pairId
+		) {
+			throw new Error("Synthetic skill pair metadata must use one shared pairId");
+		}
+		const pairId = assistantMetadata?.pairId ?? toolResultMetadata?.pairId ?? randomUUID();
+		const assistantEntry: SessionMessageEntry = {
+			type: "message",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			message: assistant,
+		};
+		if (assistantMetadata?.invocations) {
+			assistantEntry.invocations = assistantMetadata.invocations;
+		}
+		assistantEntry.pairId = pairId;
+		const toolResultEntry: SessionMessageEntry = {
+			type: "message",
+			id: generateId({ has: (id) => id === assistantEntry.id || this.byId.has(id) }),
+			parentId: assistantEntry.id,
+			timestamp: new Date().toISOString(),
+			message: toolResult,
+		};
+		if (toolResultMetadata?.invocations) {
+			toolResultEntry.invocations = toolResultMetadata.invocations;
+		}
+		toolResultEntry.pairId = pairId;
+		this._appendEntriesBatched([assistantEntry, toolResultEntry]);
+		return toolResultEntry.id;
+	}
 	/** Append a thinking level change as child of current leaf, then advance leaf. Returns entry id. */
 	appendThinkingLevelChange(thinkingLevel: string): string {
 		const entry: ThinkingLevelChangeEntry = {
@@ -1167,6 +1349,8 @@ export class SessionManager {
 	 * @param content Message content (string or TextContent/ImageContent array)
 	 * @param display Whether to show in TUI (true = styled display, false = hidden)
 	 * @param details Optional extension-specific metadata (not sent to LLM)
+	 * @param excludeFromContext When true, the entry is display-only and excluded from LLM context on reload
+	 * @param invocations B.12 invocation metadata (c4b): counted by `computeSkillInvocationCounts` like any other entry
 	 * @returns Entry id
 	 */
 	appendCustomMessageEntry<T = unknown>(
@@ -1174,6 +1358,8 @@ export class SessionManager {
 		content: string | (TextContent | ImageContent)[],
 		display: boolean,
 		details?: T,
+		excludeFromContext?: boolean,
+		invocations?: SkillInvocationEntry[],
 	): string {
 		const entry: CustomMessageEntry<T> = {
 			type: "custom_message",
@@ -1181,6 +1367,8 @@ export class SessionManager {
 			content,
 			display,
 			details,
+			...(excludeFromContext && { excludeFromContext }),
+			...(invocations && { invocations }),
 			id: generateId(this.byId),
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
@@ -1188,7 +1376,6 @@ export class SessionManager {
 		this._appendEntry(entry);
 		return entry.id;
 	}
-
 	// =========================================================================
 	// Tree Traversal
 	// =========================================================================

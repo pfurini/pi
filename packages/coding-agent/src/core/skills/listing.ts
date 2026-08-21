@@ -81,15 +81,32 @@ export function formatSkillsForPrompt(
 	return [...lines, block].join("\n");
 }
 
-/** Return the first complete v2 listing block, including its delimiters. */
+/**
+ * Return the last complete v2 listing block, including its delimiters.
+ *
+ * Last, not first: `buildSystemPrompt` appends the listing after every project
+ * context file, and it embeds those files verbatim. An `AGENTS.md` that merely
+ * documents the skill system — a prose mention of the opener, or a copied
+ * example block — therefore plants a delimiter ahead of the real listing.
+ * Scanning from the front returned either that copied example or, for an
+ * unterminated opener, a span running from the stray opener through the real
+ * listing's terminator, swallowing the context files in between.
+ *
+ * Only the trailing position is trusted, not the block's contents: a genuine
+ * listing and a copied one are byte-indistinguishable, so a prompt carrying no
+ * real listing at all still yields a copied one.
+ */
 export function extractSkillListingBlock(systemPrompt: string): string | undefined {
-	const start = systemPrompt.indexOf(SKILL_LISTING_START_DELIMITER);
-	if (start === -1) {
-		return undefined;
+	let start = systemPrompt.lastIndexOf(SKILL_LISTING_START_DELIMITER);
+	while (start !== -1) {
+		const end = systemPrompt.indexOf(SKILL_LISTING_END_DELIMITER, start + SKILL_LISTING_START_DELIMITER.length);
+		if (end !== -1) {
+			return systemPrompt.slice(start, end + SKILL_LISTING_END_DELIMITER.length);
+		}
+		// An unterminated opener is not a block, so keep walking back for one that
+		// is. `lastIndexOf(x, -1)` searches index 0 rather than giving up, so stop
+		// explicitly at 0 instead of looping on it forever.
+		start = start === 0 ? -1 : systemPrompt.lastIndexOf(SKILL_LISTING_START_DELIMITER, start - 1);
 	}
-	const end = systemPrompt.indexOf(SKILL_LISTING_END_DELIMITER, start + SKILL_LISTING_START_DELIMITER.length);
-	if (end === -1) {
-		return undefined;
-	}
-	return systemPrompt.slice(start, end + SKILL_LISTING_END_DELIMITER.length);
+	return undefined;
 }

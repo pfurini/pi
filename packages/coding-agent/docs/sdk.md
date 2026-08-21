@@ -698,7 +698,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 > See [examples/sdk/04-skills.ts](../examples/sdk/04-skills.ts)
 
-**Listing helper:** `extractSkillListingBlock(systemPrompt)` returns the first complete `<available_skills version="2">…</available_skills>` block from a system prompt string, byte-exact.
+**Listing helper:** `extractSkillListingBlock(systemPrompt)` returns the **last** complete `<available_skills version="2">…</available_skills>` block from a system prompt string, byte-exact. Last, not first: the listing is appended after every project context file and those files are embedded verbatim, so a project `AGENTS.md` that documents the skill system would otherwise be returned in its place (see [docs/skills.md](skills.md#listing-and-visibility)).
 
 ```typescript
 import { extractSkillListingBlock } from "@earendil-works/pi-coding-agent";

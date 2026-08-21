@@ -345,7 +345,7 @@ already-delivered content or dedup/carry-forward records).
 
 Each skill has a canonical ID: the symlink-resolved absolute path of its `SKILL.md`. This is the discovery dedupe key and the key used by the extension skill-set seam below.
 
-`extractSkillListingBlock(systemPrompt)` (exported from the SDK) returns the first complete `<available_skills version="2">…</available_skills>` block from a system prompt string, byte-exact, for consumers that need to parse the listing back out.
+`extractSkillListingBlock(systemPrompt)` (exported from the SDK) returns the **last** complete `<available_skills version="2">…</available_skills>` block from a system prompt string, byte-exact, for consumers that need to parse the listing back out. Last, not first, because the listing is appended after every project context file and those files are embedded verbatim: an `AGENTS.md` that documents the skill system (a prose mention of the opener, or a copy of the example block above) would otherwise be returned in the real listing's place. Position is the only signal — a copied block is byte-identical to a real one — so a prompt that contains no real listing still yields a copied one.
 
 ## Extension Access to the Skill Set
 

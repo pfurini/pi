@@ -11,6 +11,7 @@ import { createExtensionRuntime } from "../../src/core/extensions/loader.ts";
 import { parseDeclaredArgumentNames, substituteSkillArguments } from "../../src/core/skills/arguments.ts";
 import { normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { buildSystemPrompt } from "../../src/core/system-prompt.ts";
 import {
 	canonicalSkillSetJson,
 	createEventBus,
@@ -399,14 +400,46 @@ describe("listing v2", () => {
 		expect(listing).not.toContain("<name>hidden</name>");
 	});
 
-	it("extracts the first complete v2 block and rejects incomplete or unsupported blocks", () => {
+	it("extracts the last complete v2 block and rejects incomplete or unsupported blocks", () => {
 		const first = `${SKILL_LISTING_START_DELIMITER}\nfirst\n${SKILL_LISTING_END_DELIMITER}`;
 		const second = `${SKILL_LISTING_START_DELIMITER}\nsecond\n${SKILL_LISTING_END_DELIMITER}`;
-		expect(extractSkillListingBlock(`prefix${first}middle${second}suffix`)).toBe(first);
+		expect(extractSkillListingBlock(`prefix${first}middle${second}suffix`)).toBe(second);
+		// A trailing unterminated opener is not a block; the walk falls back to the
+		// last one that is, rather than giving up at the final delimiter.
+		expect(extractSkillListingBlock(`${first}tail${SKILL_LISTING_START_DELIMITER}`)).toBe(first);
 		expect(extractSkillListingBlock("no listing")).toBeUndefined();
 		expect(extractSkillListingBlock(SKILL_LISTING_START_DELIMITER)).toBeUndefined();
 		expect(extractSkillListingBlock(SKILL_LISTING_END_DELIMITER)).toBeUndefined();
+		expect(
+			extractSkillListingBlock(`${SKILL_LISTING_START_DELIMITER}${SKILL_LISTING_START_DELIMITER}`),
+		).toBeUndefined();
 		expect(extractSkillListingBlock('<available_skills version="3">\nwrong\n</available_skills>')).toBeUndefined();
+	});
+
+	it("returns the real listing when a context file plants a delimiter ahead of it", () => {
+		const skills = [createSkillInput({ name: "probe", description: "A probe skill." })];
+		const real = extractSkillListingBlock(formatSkillsForPrompt(skills, "read"))!;
+		const build = (context: string) =>
+			buildSystemPrompt({
+				cwd: "/repo",
+				selectedTools: ["read"],
+				skills,
+				contextFiles: [{ path: "/repo/AGENTS.md", content: context }],
+			});
+
+		// An unterminated opener in prose: the front-scanning version returned a
+		// span from this opener through the real listing's terminator, swallowing
+		// the intervening project context and the skills preamble.
+		const prose = build(`Docs: a listing opens with ${SKILL_LISTING_START_DELIMITER} and closes later.`);
+		expect(extractSkillListingBlock(prose)).toBe(real);
+
+		// A byte-faithful copy of the emitted format, as `docs/skills.md` carries:
+		// structurally valid, so only its position distinguishes it from the real one.
+		const copied = build(
+			`How pi lists skills:\n\n${SKILL_LISTING_START_DELIMITER}\n  <skill>\n    <name>pdf-tools</name>\n    <description>Extracts text from PDF files.</description>\n    <location>/home/user/.pi/agent/skills/pdf-tools/SKILL.md</location>\n  </skill>\n${SKILL_LISTING_END_DELIMITER}\n`,
+		);
+		expect(extractSkillListingBlock(copied)).toBe(real);
+		expect(extractSkillListingBlock(copied)).not.toContain("pdf-tools");
 	});
 });
 

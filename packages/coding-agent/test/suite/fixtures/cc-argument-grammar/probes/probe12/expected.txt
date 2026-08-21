@@ -1,0 +1,10 @@
+BEGIN
+raw=[b]
+idx0=[a]
+idx1=[b]
+one=[b]
+issue=[a]
+branch=[c]
+END
+
+Reply with exactly: done

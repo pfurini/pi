@@ -460,10 +460,10 @@ superseded grammar; the PRD's Phase 2 rewrites it against this section and remov
 status line. Until then this section deliberately leads the code.
 
 **Provenance.** This section derives from the committed conformance corpus at
-`packages/coding-agent/test/suite/fixtures/cc-argument-grammar/` (eleven probe skills
+`packages/coding-agent/test/suite/fixtures/cc-argument-grammar/` (twelve probe skills
 with byte-exact captured output, a `manifest.json` of invocation args, and a README
 recording the capture method and re-capture procedure), captured 2026-08-21 against
-Claude Code 2.1.237. Probes 1-10 establish the grammar below; probe 11 pins the
+Claude Code 2.1.237. Probes 1-10 and 12 establish the grammar below; probe 11 pins the
 neighbouring `@path` absolutization stage. For this section only, the corpus supersedes
 the appendix-wide CC 2.1.220 anchor in the Appendix A preamble; the binary-extracted
 reference behind that anchor never recorded the index base, which is what admitted the
@@ -497,11 +497,9 @@ Input: one raw string `R` (everything after the command name for user invocation
    not `R`. A digit-like declared name is **dropped from the mapping entirely**,
    shifting every later name down one slot (`arguments: [one, "2", three]` with args
    `x y z` gives `$one` = `x`, `$three` = `y`); `$1` keeps its positional meaning
-   throughout (probes 4, 8). Whether a declared `ARGUMENTS` also shadows the indexed
-   form `$ARGUMENTS[N]` (rendering `b[0]`) or leaves it as positional access (rendering
-   `a`) is not observed *(derived, unprobed)*: no probe combines a declared `ARGUMENTS`
-   with `$ARGUMENTS[N]`. Phase 2 must capture such a probe before implementing, and
-   until then treats indexed access as unaffected by shadowing (the `a` reading).
+   throughout (probes 4, 8). The shadowing is of the bare built-in only: the indexed
+   form `$ARGUMENTS[N]` stays positional — `$ARGUMENTS[0]` renders `a` and
+   `$ARGUMENTS[01]` renders `b` under the same declaration (probe 12).
 7. Escaping. `\$` before a digit, `ARGUMENTS`, or a declared name renders the
    placeholder literally with the backslash removed (`\$1` → `$1`, `\$100.00` →
    `$100.00`). Before anything else the backslash is retained (`\$nope` → `\$nope`).
@@ -565,6 +563,12 @@ Pi deviations (deliberate):
 - **Digit-name load diagnostic.** Rule 6's drop-and-shift rendering is byte-identical
   to CC's; Pi additionally emits a load diagnostic naming the dropped digit-like
   declared name so the author is not left debugging a silently skipped slot.
+- **Stage-1 skill-body trim.** Pi trims the skill body before substitution
+  (`core/skills/render.ts:77`); CC appends the rule-8 fallback to the untrimmed body
+  (visible in `probe2/expected.txt`'s `done\n\n\nARGUMENTS:` ending). Whitespace
+  only — it never changes what the prompt says. The conformance corpus therefore
+  asserts byte equality at the argument-substitution seam, not on the whole rendered
+  prompt.
 
 Worked examples (reproduced verbatim from the corpus; Phase 2 asserts against these
 fixtures byte-for-byte):

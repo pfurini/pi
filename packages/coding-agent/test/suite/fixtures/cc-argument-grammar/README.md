@@ -21,6 +21,12 @@ would otherwise be lost, not because it constrains the argument grammar.
 (`Base directory for this skill: <abs path>`) is stripped, because it carries a
 machine-local absolute path and belongs to a different render stage.
 
+Body normalization a conformance test must apply before comparing against
+`expected.txt`: remove the frontmatter and its trailing `---` separator, remove the blank
+line between the separator and the body, and retain the body's trailing newline. This is
+the raw transcript body minus frontmatter; `probe2/expected.txt`'s `done\n\n\nARGUMENTS:`
+ending is only reproducible under this normalization (the Pi render pipeline trims the
+skill body, which the corpus deliberately does not).
 ## Provenance
 
 Captured 2026-08-21 against **Claude Code 2.1.237** on darwin. Method:
@@ -65,3 +71,8 @@ The docs are also silent on: non-numeric bracket contents, the difference betwee
 out-of-range index and a malformed one, `arguments:` name collisions with `ARGUMENTS` or
 with digits, whether `$@` is recognized (it is not), whether any braced form is recognized
 (none is), and whether substitution reaches into fenced code blocks (it does).
+
+`probe12` settles the one collision question probes 4 and 8 left open: a declared
+`ARGUMENTS` shadows the bare built-in but does **not** shadow the indexed form — with
+`arguments: [issue, ARGUMENTS, branch]` and args `a b c d`, `$ARGUMENTS` renders `b`
+while `$ARGUMENTS[0]` still renders positional token `a` (and `$ARGUMENTS[01]` renders `b`).

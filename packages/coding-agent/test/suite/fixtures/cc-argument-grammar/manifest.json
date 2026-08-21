@@ -53,5 +53,10 @@
     "skill": "probe11",
     "args": "@docs/handoff.md",
     "covers": "CC performs no @path absolutization, authored or argument-derived. Pins the stage-4 deviation behind issue #6; not an argument-grammar rule."
+  },
+  {
+    "skill": "probe12",
+    "args": "a b c d",
+    "covers": "A declared ARGUMENTS does not shadow the indexed form: $ARGUMENTS[N] stays positional"
   }
 ]

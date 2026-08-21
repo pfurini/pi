@@ -64,14 +64,14 @@ Type `/` followed by the template name in the editor. Autocomplete shows availab
 
 ## Arguments
 
-Templates support positional arguments, defaults, and simple slicing:
+Everything after `/name` is the raw argument string `R`, substituted into the body in a single pass with the Claude Code grammar (identical to skills):
 
-- `$1`, `$2`, ... positional args
-- `$@` or `$ARGUMENTS` for all args joined
-- `${1:-default}` uses arg 1 when present/non-empty, otherwise `default`
-- `${@:-default}` or `${ARGUMENTS:-default}` uses all arguments when present/non-empty, otherwise `default`
-- `${@:N}` for args from the Nth position (1-indexed)
-- `${@:N:L}` for `L` args starting at N
+- `$ARGUMENTS` — `R` verbatim (quotes and spacing preserved)
+- `$ARGUMENTS[N]`, `$N` — positional token N, **0-based** (`$0` is the first); out of range leaves the whole placeholder literal
+- `$name` — the positional token aliased by a declared `arguments` name, in declaration order; declared but unmatched renders empty, undeclared stays literal
+- `\$...` — a literal `$...` when the backslash precedes a digit, `ARGUMENTS`, or a declared name (backslash removed)
+
+`$@` and every braced form (`${@:N}`, `${@:N:L}`, `${N:-default}`, `${name:-default}`) are **not** placeholders and render literally, so shell snippets in a template survive untouched. If `R` is non-empty and no placeholder was substituted, `\n\nARGUMENTS: R` is appended so the input is never silently dropped.
 
 Example:
 
@@ -79,13 +79,7 @@ Example:
 ---
 description: Create a component
 ---
-Create a React component named $1 with features: $@
-```
-
-Default values are useful for optional arguments:
-
-```markdown
-Summarize the current state in ${1:-7} bullet points.
+Create a React component named $0 with features: $ARGUMENTS
 ```
 
 Usage: `/component Button "onClick handler" "disabled support"`
@@ -116,12 +110,13 @@ Commands, templates, skills, built-ins, and extension commands share one namespa
 
 ### Rendering now uses the A.3.2 argument engine
 
-Template arguments previously ran through a legacy substitution. They now render through the shared **A.3.2** engine (the same one skills use). The grammar is a superset of the old one, so `$1`, `$@`/`$ARGUMENTS`, `${@:N}`/`${@:N:L}` slicing, and `${…:-default}` behave as documented above. The differences to be aware of:
+Template arguments previously ran through a legacy 1-based substitution (`$1`, `$@`, `${@:N}` slicing, `${…:-default}` defaults, and `name=value` binding). They now render through the shared **A.3.2** engine — the Claude Code grammar, the same one skills use (see [Arguments](#arguments)). This is a **breaking change**, not a superset:
 
-- **Backslash escaping is now honored.** In the raw argument string, `\` escapes the next character during tokenization (so `\"` is a literal quote inside a token, and an unterminated quote runs to end of input). On the template side, `\$1`, `\$@`, `\$ARGUMENTS`, and `\$name` render literally with the backslash removed. Templates that previously relied on a literal backslash immediately before a `$`-placeholder will now see it consumed.
-- **`$ARGUMENTS`/`$@` substitute the raw string verbatim** (quotes and spacing preserved), matching the prior behavior.
-- **No-placeholder append.** If arguments are supplied but the template contains no placeholder that consumes them, the raw argument string is appended as `\n\nARGUMENTS: <raw>` (skill parity). A template with no placeholders that was previously invoked with trailing text now gains this appended line.
-- **Named arguments** (`arguments:` frontmatter) bind `name=value` tokens and remove them from the positional sequence.
+- **0-based indices.** `$0` is the first argument, `$1` the second, and `$ARGUMENTS[N]` is now a real placeholder. A template using 1-based `$1`, `$2`, … shifts by one position.
+- **Removed forms render literally.** `$@`, `${@:N}`, `${@:N:L}`, `${N:-default}`, and `${name:-default}` are no longer placeholders — they pass through verbatim, so shell snippets survive. A template relying on them stops expanding.
+- **Named arguments are positional aliases.** A declared `arguments:` name maps to a positional slot in declaration order; the old `name=value` token binding is gone.
+- **Backslash escaping is honored.** `\$0`, `\$ARGUMENTS`, and `\$name` render literally with the backslash removed. A template relying on a literal backslash immediately before a `$`-placeholder will now see it consumed.
+- **No-placeholder append.** If arguments are supplied but no placeholder was substituted, the raw string is appended as `\n\nARGUMENTS: <raw>` (skill parity).
 
 ### Compatibility and rollback
 

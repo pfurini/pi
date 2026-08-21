@@ -4,7 +4,18 @@
 
 ### Breaking Changes
 
-- Skill, `commands/`, and grandfathered prompt-template argument substitution is now Claude Code-exact and **0-based**: `$0` / `$ARGUMENTS[0]` is the first argument (previously 1-based). `$ARGUMENTS[N]` is now a supported placeholder, and declared `arguments:` names are positional aliases in declaration order (a digit-like declared name is dropped from the mapping, shifting later names down one slot, now with a load warning). Removed — these forms render literally now: `$@`, the braced slice/default forms (`${@:N}`, `${@:N:L}`, `${N:-default}`, `${@:-default}`), and `name=value` binding with positional compaction. Existing user templates and commands using `$1`, `${1:-default}`, or `${@:N}` shift by one position or stop expanding, silently and with no runtime warning; migrate `$N` references to 0-based and replace the removed braced/`$@` forms. Shell snippets in bodies are now safe (`$@` and every `${...}` render verbatim). `substituteSkillArguments` returns a plain `string` and the `SkillArgumentSubstitution` type is removed from the package exports.
+- Skill, `commands/`, and grandfathered prompt-template argument substitution is now Claude Code-exact and **0-based**. `$0` / `$ARGUMENTS[0]` is the first argument (previously 1-based); `$ARGUMENTS[N]` is now a supported placeholder; declared `arguments:` names are positional aliases in declaration order (a digit-like declared name is dropped from the mapping, shifting later names down one slot, now with a load warning). `$@`, the braced slice/default forms, and `name=value` binding with positional compaction are no longer placeholders and render literally, so shell snippets in bodies are now safe. Existing user templates and commands shift by one position or stop expanding **silently, with no runtime warning** — old and new readings are both valid, so the break cannot be detected at render time. `substituteSkillArguments` returns a plain `string` (the `SkillArgumentSubstitution` type is removed from the package exports). Migration, before → after:
+
+  | Before | Renders now | Migrate to |
+  |---|---|---|
+  | `$1` (first arg) | the *second* arg | `$0` |
+  | `$2`, `$3`, … | each shifted down one | `$1`, `$2`, … |
+  | `$ARGUMENTS[0]` (was literal `foo bar[0]`) | the first arg | no change — it works now |
+  | `$@` | literal `$@` | `$ARGUMENTS` |
+  | `${@:N}`, `${@:N:L}` (slices) | literal | rebuild from `$0`, `$1`, … or `$ARGUMENTS` |
+  | `${N:-default}`, `${@:-default}`, `${name:-default}` (defaults) | literal | inline the default in the body; there is no engine default |
+  | `arguments: [a, b]` + `a=x b=y` tokens (`name=value` binding) | tokens stay positional | pass values positionally; `$a` / `$b` alias slots 0 / 1 in declaration order |
+  | `substituteSkillArguments(...) → { text, consumedInput }` | returns `string` | use the returned string directly; the `SkillArgumentSubstitution` export is gone |
 
 ### Added
 

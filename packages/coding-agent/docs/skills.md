@@ -108,14 +108,14 @@ The raw argument string `R` substitutes into the body in a single pass:
 
 | Placeholder | Substitutes |
 | ----------- | ----------- |
-| `$ARGUMENTS`, `$@` | `R` verbatim (quotes, spacing, everything) |
-| `$1`, `$2`, ... | Positional token N (1-based); out of range renders empty |
-| `$name` | A bound declared value (see `arguments` frontmatter); undeclared names stay literal |
-| `${@:N}`, `${@:N:L}` | Slice of the post-binding positional sequence, space-joined; N is 1-based and 0 means 1 |
-| `${X:-default}` | The default when the value (`ARGUMENTS`, `@`, N, or name) is empty/absent |
-| `\$...` | A literal `$...` (backslash removed) |
+| `$ARGUMENTS` | `R` verbatim (quotes, spacing, everything) |
+| `$ARGUMENTS[N]`, `$N` | Positional token N, **0-based** (`$0` is the first). Out of range leaves the whole placeholder literal (`$ARGUMENTS[99]` stays `$ARGUMENTS[99]`). A non-numeric bracket is not a placeholder: `$ARGUMENTS[x]` expands the bare `$ARGUMENTS` and leaves `[x]` behind |
+| `$name` | The positional token aliased by a declared `arguments` name, in declaration order; declared but unmatched renders empty; undeclared stays literal |
+| `\$...` | A literal `$...` when the backslash precedes a digit, `ARGUMENTS`, or a declared name (backslash removed); before anything else the backslash is kept |
 
-Tokenization splits on whitespace; double or single quotes group a token (quotes stripped); a backslash escapes the next character. Declared `name=value` tokens bind to `arguments` frontmatter names and are removed from the positional sequence (the rest compact); undeclared `x=y` tokens stay positional. If `R` is non-empty and no placeholder consumed it, `\n\nARGUMENTS: R` is appended so the input is never silently dropped.
+This is the Claude Code grammar exactly. `$@` and every braced form (`${@:N}`, `${@:N:L}`, `${N:-default}`, `${name:-default}`) are **not** placeholders — they render literally, so shell snippets in a body survive untouched.
+
+Tokenization splits on whitespace; double or single quotes group a token (quotes stripped); a backslash escapes the next character. Declared `arguments` names are positional aliases in declaration order — there is no `name=value` binding. A digit-like declared name is dropped from the mapping (shifting later names down one slot), and a declared `ARGUMENTS` shadows the built-in. If `R` is non-empty and no placeholder was substituted, `\n\nARGUMENTS: R` is appended so the input is never silently dropped; a placeholder that substitutes to empty still counts as substituted, but an out-of-range indexed placeholder left literal does not.
 
 ## Skill Variables
 

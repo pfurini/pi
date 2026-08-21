@@ -59,9 +59,10 @@ Both are preserved rather than stripped so a ported skill round-trips unchanged.
 Everything after `/name` is the raw argument string `R`, substituted into the
 body before delivery:
 
-- `$ARGUMENTS` and `$@` substitute `R` verbatim.
-- Positional and named placeholders substitute from `R` according to the names
-  declared in `arguments`.
+- `$ARGUMENTS` substitutes `R` verbatim.
+- `$ARGUMENTS[N]` and `$N` substitute positional token N, **0-based** (`$0` is
+  the first); `$name` substitutes a declared `arguments` alias. `$@` and every
+  braced form render literally — they are not placeholders.
 - `\$` renders a placeholder literally.
 - If `R` is non-empty and no placeholder consumed it, `R` is appended to the
   body, so a skill that declares nothing still receives its arguments.

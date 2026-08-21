@@ -33,7 +33,7 @@ render-pipeline ordering, hook wire formats — see
 | Command name source | Directory name; frontmatter `name` is display-only | Frontmatter `name`, falling back to the directory | `core/skills/frontmatter.ts` |
 | Stacking per message | Up to 6 | Up to 6; extras stay literal and emit a diagnostic | `core/commands/tokenizer.ts:30` |
 | Render pipeline | 7 ordered stages, single pass | 7 ordered stages, single pass | `core/skills/render.ts:1-16` |
-| Argument substitution | `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, `$name`, escaping, append fallback | `$ARGUMENTS`, `$@`, `$N` (1-based), `${@:N[:L]}` slices, `${X:-default}` defaults, declared names from `arguments`, `\$` escape, append fallback. **No `$ARGUMENTS[N]`** — see Degrades | `core/skills/arguments.ts:133-150` |
+| Argument substitution | `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, `$name`, escaping, append fallback | Identical: `$ARGUMENTS`, 0-based `$ARGUMENTS[N]` / `$N`, declared `arguments` names as positional aliases, `\$` escaping, append fallback. `$@` and every braced form (`${@:N}`, `${X:-default}`) render literally — not placeholders | `core/skills/arguments.ts` |
 | Variable substitution | `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_SESSION_ID}`, `${CLAUDE_EFFORT}`, plus plugin vars | Same four under `PI_*`, with `CLAUDE_*` accepted as aliases. **No plugin vars** (`${CLAUDE_PLUGIN_ROOT}`, `${user_config.KEY}`) | `core/skills/interop.ts:21-26` |
 | `@path` references | Not inlined; `${CLAUDE_SKILL_DIR}` makes them absolute and the model reads them | Not inlined; made absolute against the skill's `baseDir` and the model reads them | `core/skills/render.ts:92` |
 | Shell injection | `` !`cmd` `` and fenced `` ```! ``, permission-gated, `disableSkillShellExecution` policy, `shell` field | `` !`cmd` `` and fenced `` ```! ``, tool-policy gated, `disableSkillShellExecution` kill switch, `shell` field | `core/skills/shell-injection.ts:104` |
@@ -98,8 +98,9 @@ render-pipeline ordering, hook wire formats — see
 
 What transfers untouched, what degrades, and what breaks.
 
-**Works as-is.** The SKILL.md format, `$ARGUMENTS` and positional/named
-arguments, `${CLAUDE_SKILL_DIR}` and the other three interop variables (accepted
+**Works as-is.** The SKILL.md format, the full 0-based argument grammar
+(`$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, declared names, `\$` escaping, append
+fallback), `${CLAUDE_SKILL_DIR}` and the other three interop variables (accepted
 as aliases), `@path` includes, `` !`cmd` `` shell injection, `when_to_use`,
 `argument-hint`, `user-invocable`, `disable-model-invocation`,
 `disallowed-tools`, `model`, `effort`, `context: fork` with `agent` and
@@ -107,10 +108,11 @@ as aliases), `@path` includes, `` !`cmd` `` shell injection, `when_to_use`,
 
 **Degrades quietly — check these.**
 
-- `$ARGUMENTS[N]` is not parsed as an index. The scanner matches the `$ARGUMENTS`
-  prefix and substitutes the full raw input, leaving the bracket suffix literal, so
-  `$ARGUMENTS[0]` invoked with `foo bar` renders as `foo bar[0]`. Rewrite to the
-  1-based positional form (`$1`, `$2`, `${@:2}`) when porting.
+- Argument substitution is now byte-exact CC parity (0-based, `$ARGUMENTS[N]`
+  supported), so no argument placeholder degrades on a CC→Pi port. A Pi-only
+  skill authored against the *old* Pi grammar (1-based `$N`, `$@`, `${@:N}`
+  slices, `${X:-default}` defaults, `name=value` binding) is the reverse case
+  and breaks — see the CHANGELOG breaking-changes migration.
 - `allowed-tools` is inert. A skill relying on it for pre-approval simply has no
   restriction applied; use `disallowed-tools` to restrict instead.
 - `hooks` is inert. A skill whose behavior depends on its lifecycle hooks will
@@ -143,3 +145,24 @@ Not parity items — capabilities with no CC counterpart:
 - `disallowed-tools` unioned across stacked skills rather than last-wins
 - Reserved qualifiers on every namespace tier, so a shadowed entry always stays
   reachable rather than being unreachable
+
+---
+
+## 5. Fork-dead upstream symbols
+
+The CC-exact argument engine (`substituteSkillArguments` in
+`core/skills/arguments.ts`) is the only argument-substitution engine on Pi's live
+path. The inherited legacy engine — `substituteArgs` and `expandPromptTemplate`
+in `packages/coding-agent/src/core/prompt-templates.ts`, and `substituteArgs` /
+`formatPromptTemplateInvocation` in `packages/agent/src/harness/prompt-templates.ts`
+— is **fork-dead**: no module under any package's `src/` calls it. It is kept, not
+deleted, because the engine functions are unmodified from `upstream/main` (the
+harness copy is byte-identical; the coding-agent copy differs only in the live
+`loadTemplateFromFile` / `PromptTemplate` loader that shares the file), upstream
+still calls `expandPromptTemplate` live, and `@pi/agent` re-exports the harness
+module wholesale. Deleting would convert clean merges into recurring
+`deleted by us / modified by them` conflicts and break the public re-export.
+A guard test
+(`packages/coding-agent/test/fork-dead-engine.test.ts`) fails if any `src/` call
+site is reintroduced, so a legacy 1-based grammar can never go live beside the
+0-based one.

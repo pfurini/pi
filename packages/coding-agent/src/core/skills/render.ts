@@ -80,11 +80,7 @@ export async function renderSkillInvocation(
 	let body = `Base directory for this skill: ${skill.baseDir}\n\n${rawBody}`;
 
 	// Stage 2: argument substitution (A.3.2).
-	body = substituteSkillArguments(
-		body,
-		invocation.rawArgs,
-		parseDeclaredArgumentNames(skill.frontmatter.arguments),
-	).text;
+	body = substituteSkillArguments(body, invocation.rawArgs, parseDeclaredArgumentNames(skill.frontmatter.arguments));
 
 	// Stage 3: PI_* / CLAUDE_* variable substitution (A.8).
 	body = substituteSkillVariables(body, buildSkillSubstitutionMap(invocation, { ...context, diagnostics }));

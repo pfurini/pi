@@ -55,6 +55,7 @@ type LoadedResourcesContext = {
 	session: {
 		promptTemplates: [];
 		getCommandCollisionDiagnostic: () => undefined;
+		getCommandLoadDiagnostics: () => [];
 		resourceLoader: {
 			getAgentsFiles: () => LoadedResourcesResult<{ agentsFiles: Array<{ path: string }> }>;
 			getSystemPromptSource: () => { path: string } | undefined;
@@ -235,6 +236,7 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		session: {
 			promptTemplates: [],
 			getCommandCollisionDiagnostic: () => undefined,
+			getCommandLoadDiagnostics: () => [],
 			resourceLoader: {
 				getAgentsFiles: () => ({ agentsFiles: [{ path: "/repo/AGENTS.md" }], diagnostics: [] }),
 				getSystemPromptSource: () => undefined,

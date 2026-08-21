@@ -8,6 +8,7 @@ import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import * as mockedFs from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExtensionRuntime } from "../../src/core/extensions/loader.ts";
+import { parseDeclaredArgumentNames, substituteSkillArguments } from "../../src/core/skills/arguments.ts";
 import { normalizeSkillInput } from "../../src/core/skills/frontmatter.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import {
@@ -154,6 +155,31 @@ describe("frontmatter contract", () => {
 		expect(fallback.diagnostics.some((item) => item.message.includes("invalid characters"))).toBe(true);
 	});
 
+	it("warns once when a declared argument name is digit-like; rendering still matches CC", () => {
+		const skillDir = join(tempDir, "digit-args");
+		writeSkill(skillDir, 'name: digit-args\ndescription: Digit args\narguments: [one, "2", three]');
+
+		const result = loadSkillsFromDir({ dir: skillDir, source: "test" });
+		expect(result.skills).toHaveLength(1);
+		const warnings = result.diagnostics.filter((item) => item.message.includes('"2"'));
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].type).toBe("warning");
+		expect(warnings[0].path).toBe(join(skillDir, "SKILL.md"));
+		expect(warnings[0].message).toContain("shifting later declared names down one slot");
+
+		// Rendering matches CC (A.3.2 rule 6): "2" is dropped from the mapping,
+		// so $one reads slot 0 and $three reads slot 1.
+		const declaredNames = parseDeclaredArgumentNames(result.skills[0].frontmatter.arguments);
+		expect(declaredNames).toEqual(["one", "three"]);
+		expect(substituteSkillArguments("one=[$one] three=[$three]", "x y z", declaredNames)).toBe("one=[x] three=[y]");
+	});
+
+	it("reports no digit-name warning for ordinary declared names", () => {
+		const skillDir = join(tempDir, "plain-args");
+		writeSkill(skillDir, "name: plain-args\ndescription: Plain args\narguments: [one, two]");
+		const result = loadSkillsFromDir({ dir: skillDir, source: "test" });
+		expect(result.diagnostics).toEqual([]);
+	});
 	it("preserves all known and unknown metadata through DefaultResourceLoader.getSkills", async () => {
 		const skillDir = join(tempDir, "full-contract");
 		writeSkill(

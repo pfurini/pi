@@ -20,9 +20,9 @@ import { basename, dirname, join } from "node:path";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { PromptTemplate } from "../prompt-templates.ts";
-import { isBareSkillCommandName, normalizeBoolean } from "../skills/frontmatter.ts";
+import { digitArgumentNameDiagnostic, digitLikeDeclaredArgumentNames } from "../skills/arguments.ts";
+import { isBareSkillCommandName, normalizeBoolean, type SkillArguments } from "../skills/frontmatter.ts";
 import type { SourceInfo } from "../source-info.ts";
-
 export type CommandKind = "command" | "prompt";
 
 export interface LoadedCommand {
@@ -101,6 +101,9 @@ export function parseCommandFile(
 	if (!commandNameValid) {
 		diagnostics.push(invalidNameDiagnostic(name, filePath));
 	}
+	for (const digitName of digitLikeDeclaredArgumentNames(frontmatter.arguments as SkillArguments | undefined)) {
+		diagnostics.push(digitArgumentNameDiagnostic(digitName, filePath));
+	}
 
 	const command: LoadedCommand = {
 		kind: "command",
@@ -165,18 +168,51 @@ export function loadCommandsFromDir(dir: string, getSourceInfo: (filePath: strin
 }
 
 /**
- * Adapt one already-resolved prompt template into a `LoadedCommand`. Templates
- * carry no A.7 frontmatter beyond description/argument-hint, so the remaining
- * A.7 fields default (user-invocable true, model-invocable, no shell override).
+ * Read the `arguments:` declaration from a prompt template's own file. The
+ * result is cached on the template snapshot (keyed by object identity): the
+ * resource loader rebuilds its prompt list on every `/reload`, so a replaced
+ * snapshot invalidates by construction, while repeated adaptation of an
+ * unchanged snapshot — the `_getLoadedCommands` fallback re-adapts on every
+ * command-registry build — performs zero additional reads.
+ *
+ * Failure contract (mirrors `loadTemplateFromFile`): a missing file, an
+ * unreadable file, or malformed frontmatter YAML all mean "no declaration" —
+ * no throw, no diagnostic, no behavior change beyond the absent declaration.
+ */
+const templateArgumentsCache = new WeakMap<PromptTemplate, SkillArguments | undefined>();
+
+function readTemplateArguments(template: PromptTemplate): SkillArguments | undefined {
+	const cached = templateArgumentsCache.get(template);
+	if (cached !== undefined || templateArgumentsCache.has(template)) {
+		return cached;
+	}
+	let declaration: SkillArguments | undefined;
+	try {
+		const rawContent = readFileSync(template.filePath, "utf-8");
+		const { frontmatter } = parseFrontmatter<Record<string, unknown>>(rawContent);
+		declaration = frontmatter.arguments as SkillArguments | undefined;
+	} catch {
+		declaration = undefined;
+	}
+	templateArgumentsCache.set(template, declaration);
+	return declaration;
+}
+
+/**
+ * Adapt one already-resolved prompt template into a `LoadedCommand`. Only the
+ * `arguments:` declaration is carried into the A.7 frontmatter (read from the
+ * template's own file, cached per snapshot); the remaining A.7 fields default
+ * (user-invocable true, model-invocable, no shell override).
  */
 export function adaptPromptTemplate(template: PromptTemplate): LoadedCommand {
 	const commandNameValid = isBareSkillCommandName(template.name);
+	const declaredArguments = readTemplateArguments(template);
 	return {
 		kind: "prompt",
 		name: template.name,
 		...(template.description !== undefined && template.description !== "" && { description: template.description }),
 		...(template.argumentHint !== undefined && { argumentHint: template.argumentHint }),
-		frontmatter: {},
+		frontmatter: declaredArguments !== undefined ? { arguments: declaredArguments } : {},
 		body: template.content,
 		filePath: template.filePath,
 		baseDir: dirname(template.filePath),
@@ -187,7 +223,7 @@ export function adaptPromptTemplate(template: PromptTemplate): LoadedCommand {
 	};
 }
 
-/** Adapt the resolved prompt template list, emitting one invalid-name diagnostic each. */
+/** Adapt the resolved prompt template list, emitting one invalid-name and per-digit-name diagnostic each. */
 export function adaptPromptTemplates(templates: readonly PromptTemplate[]): LoadCommandsResult {
 	const commands: LoadedCommand[] = [];
 	const diagnostics: ResourceDiagnostic[] = [];
@@ -195,6 +231,9 @@ export function adaptPromptTemplates(templates: readonly PromptTemplate[]): Load
 		const command = adaptPromptTemplate(template);
 		if (!command.commandNameValid) {
 			diagnostics.push(invalidNameDiagnostic(command.name, command.filePath));
+		}
+		for (const digitName of digitLikeDeclaredArgumentNames(readTemplateArguments(template))) {
+			diagnostics.push(digitArgumentNameDiagnostic(digitName, template.filePath));
 		}
 		commands.push(command);
 	}

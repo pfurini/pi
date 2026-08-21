@@ -265,8 +265,8 @@ export {
 } from "./core/settings-manager.ts";
 // Skill render pipeline (C1b): renderer/runtime contract consumed by C1c delivery
 export {
+	digitLikeDeclaredArgumentNames,
 	parseDeclaredArgumentNames,
-	type SkillArgumentSubstitution,
 	type SkillArgumentsDeclaration,
 	substituteSkillArguments,
 	tokenizeSkillArgs,

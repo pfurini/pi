@@ -455,9 +455,6 @@ amendment — not original frozen-v6 text):** the previous text of this section 
 grammar Claude Code does not implement (a 1-based index base, `$@`, braced slice and
 default forms, `name=value` binding with positional compaction, and an append-fallback
 trigger the corpus falsifies) and is replaced in full by the CC-exact grammar below.
-Implementation status: the engine (`core/skills/arguments.ts`) still implements the
-superseded grammar; the PRD's Phase 2 rewrites it against this section and removes this
-status line. Until then this section deliberately leads the code.
 
 **Provenance.** This section derives from the committed conformance corpus at
 `packages/coding-agent/test/suite/fixtures/cc-argument-grammar/` (twelve probe skills

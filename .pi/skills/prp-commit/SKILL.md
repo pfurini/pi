@@ -3,7 +3,7 @@ name: prp-commit
 description: Creates Git commits for completed work. Always use when committing changes, when the user explicitly asks to commit the work, when another PRP workflow reaches its commit step, or when the user invokes /skill:prp-commit.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Commit Intended Work
 

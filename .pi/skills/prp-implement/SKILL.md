@@ -3,7 +3,7 @@ name: prp-implement
 description: Implements and validates existing PRP plans and corrects reviewed or failing-CI pull requests. Always use when executing an implementation plan, implementing an issue that already has a local or published plan, correcting a PR from a PRP review report or CI failure, when another PRP workflow reaches its implementation or correction step, or when the user invokes /skill:prp-implement.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Implement Plan
 

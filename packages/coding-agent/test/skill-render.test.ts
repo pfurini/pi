@@ -104,7 +104,7 @@ describe("renderSkillInvocation — stage 1 preamble", () => {
 describe("renderSkillInvocation — stage order and single pass", () => {
 	it("substitutes arguments before shell injection: args inside !` are part of the command", async () => {
 		const { operations, commands } = fakeOperations([{ output: "hi" }]);
-		const { skill } = writeSkill("run !`echo $1` now");
+		const { skill } = writeSkill("run !`echo $0` now");
 		const result = await renderSkillInvocation(
 			skill,
 			invocationFor(skill, "hi"),
@@ -126,7 +126,7 @@ describe("renderSkillInvocation — stage order and single pass", () => {
 	});
 
 	it("runs variable substitution after argument substitution", async () => {
-		const { skill, dir } = writeSkill("arg=$1 dir=${PI_SKILL_DIR}");
+		const { skill, dir } = writeSkill("arg=$0 dir=${PI_SKILL_DIR}");
 		const result = await renderSkillInvocation(skill, invocationFor(skill, "v"), renderContext());
 		expect(result.body).toContain(`arg=v dir=${dir}`);
 	});

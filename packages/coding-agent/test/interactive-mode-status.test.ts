@@ -581,6 +581,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 			session: {
 				promptTemplates: [],
 				getCommandCollisionDiagnostic: () => undefined,
+				getCommandLoadDiagnostics: () => [],
 				extensionRunner: {
 					getCommandDiagnostics: () => [],
 					getShortcutDiagnostics: () => [],

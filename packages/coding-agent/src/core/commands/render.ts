@@ -76,7 +76,7 @@ export async function renderCommand(
 		body,
 		rawArgs,
 		parseDeclaredArgumentNames(command.frontmatter.arguments as SkillArgumentsDeclaration | undefined),
-	).text;
+	);
 
 	// Stage 3: PI_* / CLAUDE_* variable substitution (A.8).
 	const effortField = command.frontmatter.effort;

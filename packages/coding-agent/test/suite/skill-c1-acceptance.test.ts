@@ -234,8 +234,10 @@ describe("C1 acceptance: A.3.2 argument grammar through AgentSession", () => {
 		const delivered = findDeliveredText(harness, "grammar");
 		// Rule 1: $ARGUMENTS substitutes R verbatim.
 		expect(delivered).toContain(`got: ${RAW_ARGS}`);
-		// Rules 2+3: `name=x` binds (declared) and is removed; `\$lit` tokenizes to `$lit`.
-		expect(delivered).toContain("pos: alpha|b c|$lit|");
+		// Rules 2+3: `$N` is 0-based; there is no `name=x` binding, so `name=x` is an
+		// ordinary positional token, `\$lit` tokenizes to `$lit`, and out-of-range `$4`
+		// stays literal.
+		expect(delivered).toContain("pos: b c|name=x|$lit|$4");
 	});
 });
 

@@ -3,7 +3,7 @@ name: prp-plan
 description: Creates an implementation-ready plan for a feature, bug fix, refactor, or chore from a PRD, issue, document, or description, grounded in codebase evidence. Publishes issue-derived plans back to their source issue. Use when the user asks to "plan this feature", "plan this bug fix", "plan issue X", "create an implementation plan", "turn this PRD into a plan", investigate how a change should be built, revise a plan from a plan-review report, link related plans, or invokes /skill:prp-plan.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # PRP Plan
 

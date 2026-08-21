@@ -2,7 +2,7 @@
 description: Review PRs from URLs with structured issue and code analysis
 argument-hint: "<PR-URL>"
 ---
-You are given one or more GitHub PR URLs: $@
+You are given one or more GitHub PR URLs: $ARGUMENTS
 
 For each PR URL, do the following in order:
 1. Add the `inprogress` label to the PR via GitHub CLI before analysis starts. If adding the label fails, report that explicitly and continue.

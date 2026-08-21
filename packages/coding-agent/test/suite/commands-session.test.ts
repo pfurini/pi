@@ -202,7 +202,7 @@ describe("argument ownership and command rendering", () => {
 	});
 
 	it("a message-initial command renders its body with substituted args", async () => {
-		const harness = await createSession({ commands: [command("deploy", "Deploy to $1 now")] });
+		const harness = await createSession({ commands: [command("deploy", "Deploy to $0 now")] });
 		harness.setResponses([fauxAssistantMessage("ok")]);
 
 		await harness.session.prompt("/deploy prod");

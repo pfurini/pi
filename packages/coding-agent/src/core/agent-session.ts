@@ -603,6 +603,8 @@ export class AgentSession {
 	private _skillVisibility: ReadonlyMap<string, ResolvedSkillVisibility> = new Map();
 	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
+	/** Lightweight-loader fallback: diagnostics from the latest prompt-template adaptation (replaced, never appended). */
+	private _fallbackCommandDiagnostics: ResourceDiagnostic[] = [];
 	/** A.6 compaction carry-forward (c4b): the currently re-attached skills' `{args, body}`, keyed by `skillId`. Ephemeral — recomputed on every rebuild, never persisted. Consulted by dedup to treat a carried-forward body as "still present". */
 	private _carriedForward: Map<string, { args: string; body: string }> = new Map();
 	/**
@@ -2185,7 +2187,22 @@ export class AgentSession {
 		if (loader.getCommands) {
 			return loader.getCommands().commands;
 		}
-		return adaptPromptTemplates([...this.promptTemplates]).commands;
+		// The retained snapshot replaces rather than appends, so repeated
+		// registry builds never accumulate diagnostics. Declaration reads are
+		// cached on the template objects (loader.ts), so re-adapting an
+		// unchanged prompt snapshot performs no additional file I/O.
+		const adapted = adaptPromptTemplates([...this.promptTemplates]);
+		this._fallbackCommandDiagnostics = adapted.diagnostics;
+		return adapted.commands;
+	}
+
+	/** Command-tier load diagnostics on either loader path (empty before the first fallback registry build). */
+	getCommandLoadDiagnostics(): ResourceDiagnostic[] {
+		const loader = this._resourceLoader;
+		if (loader.getCommands) {
+			return loader.getCommands().diagnostics;
+		}
+		return this._fallbackCommandDiagnostics;
 	}
 
 	/** Commands visible to the model (A.7: `disable-model-invocation` excludes). */

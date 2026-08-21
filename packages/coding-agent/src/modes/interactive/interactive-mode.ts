@@ -1781,6 +1781,17 @@ export class InteractiveMode {
 				this.loadedResourcesContainer.addChild(new Spacer(1));
 			}
 
+			// Command tier: native-command and adapted-template load diagnostics
+			// (digit-like declared argument names, invalid names), on both the
+			// default ResourceLoader path and the lightweight-loader fallback.
+			const commandLoadDiagnostics = this.session.getCommandLoadDiagnostics();
+			if (commandLoadDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(commandLoadDiagnostics, sourceInfos);
+				this.loadedResourcesContainer.addChild(
+					new Text(`${theme.fg("warning", "[Command issues]")}\n${warningLines}`, 0, 0),
+				);
+				this.loadedResourcesContainer.addChild(new Spacer(1));
+			}
 			const extensionDiagnostics: ResourceDiagnostic[] = [];
 			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
 			if (extensionErrors.length > 0) {

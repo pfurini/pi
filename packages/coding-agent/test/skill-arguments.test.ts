@@ -1,17 +1,25 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: normative A.3.2 placeholder fixtures */
 /**
- * A.3.2 argument grammar conformance. Every normative example from the
- * frozen spec is copied verbatim into a fixture below.
+ * A.3.2 argument grammar conformance: one focused case per rule, plus the
+ * byte-exact Claude Code corpus in test/suite/fixtures/cc-argument-grammar/
+ * (probes 1-10 and 12; probe 11 pins the stage-4 `@path` absolutization
+ * deviation and is not an argument-grammar assertion).
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+	digitLikeDeclaredArgumentNames,
 	parseDeclaredArgumentNames,
+	type SkillArgumentsDeclaration,
 	substituteSkillArguments,
 	tokenizeSkillArgs,
 } from "../src/core/skills/arguments.ts";
+import { parseFrontmatter } from "../src/utils/frontmatter.ts";
 
-describe("tokenizeSkillArgs (A.3.2 rule 2)", () => {
+describe("tokenizeSkillArgs (A.3.2 tokenizer deviation)", () => {
 	it("splits on whitespace", () => {
 		expect(tokenizeSkillArgs("a b  c")).toEqual(["a", "b", "c"]);
 	});
@@ -48,190 +56,246 @@ describe("tokenizeSkillArgs (A.3.2 rule 2)", () => {
 	});
 });
 
-describe("substituteSkillArguments — verbatim A.3.2 examples", () => {
-	// Spec fixture: declared `arguments: [name]`, R = alpha "b c" name=x \$lit
-	const R = 'alpha "b c" name=x \\$lit';
-	const declared = ["name"];
-
-	it("rule 1: $ARGUMENTS substitutes R verbatim (quotes, spacing, everything)", () => {
-		expect(substituteSkillArguments("got: $ARGUMENTS", R, declared).text).toBe('got: alpha "b c" name=x \\$lit');
-	});
-
-	it("rule 1: $@ is an alias of $ARGUMENTS", () => {
-		expect(substituteSkillArguments("got: $@", R, declared).text).toBe('got: alpha "b c" name=x \\$lit');
-	});
-
-	it("rules 2+3: positionals after named binding and compaction", () => {
-		// `name=x` binds (declared) and is removed; `\$lit` tokenizes to `$lit`.
-		expect(substituteSkillArguments("$1|$2|$3|$4", R, declared).text).toBe("alpha|b c|$lit|");
-	});
-
-	it("rule 3: $name substitutes the bound value", () => {
-		expect(substituteSkillArguments("name=$name", R, declared).text).toBe("name=x");
-	});
-
-	it("rule 4: ${@:2} slices the post-binding positional sequence", () => {
-		expect(substituteSkillArguments("rest: ${@:2}", R, declared).text).toBe("rest: b c $lit");
-	});
-
-	it("rule 6: a literal \\$1 in the body renders $1", () => {
-		// No real placeholder consumed input, so the rule-7 append fallback also fires.
-		expect(substituteSkillArguments("literal \\$1 here", R, declared).text).toBe(
-			'literal $1 here\n\nARGUMENTS: alpha "b c" name=x \\$lit',
-		);
-	});
-});
-
-describe("substituteSkillArguments — named arguments (rule 3)", () => {
-	it("binds declared names and removes them from positionals", () => {
-		const result = substituteSkillArguments("$1 $2 [$name]", "one name=x two", ["name"]);
-		expect(result.text).toBe("one two [x]");
-	});
-
-	it("matches longest-name-first ($outdir before $out)", () => {
-		const result = substituteSkillArguments("$outdir/$out", "outdir=a out=b", ["out", "outdir"]);
-		expect(result.text).toBe("a/b");
-	});
-
-	it("never partially matches a declared name inside a longer identifier", () => {
-		// Only `out` declared: `$outdir` is not `$out` + `dir`. Undeclared →
-		// literal, and nothing consumed → append fallback fires.
-		const result = substituteSkillArguments("$outdir", "out=b", ["out"]);
-		expect(result.text).toBe("$outdir\n\nARGUMENTS: out=b");
-	});
-
-	it("keeps undeclared x=y tokens positional", () => {
-		const result = substituteSkillArguments("$1|$2", "a x=y", ["name"]);
-		expect(result.text).toBe("a|x=y");
-	});
-
-	it("binds quoted values", () => {
-		const result = substituteSkillArguments("[$name]", 'name="x y"', ["name"]);
-		expect(result.text).toBe("[x y]");
-	});
-
-	it("declared-but-unbound names render empty (and consume nothing → append fallback)", () => {
-		expect(substituteSkillArguments("[$name]", "a", ["name"]).text).toBe("[]\n\nARGUMENTS: a");
-	});
-
-	it("accepts a map declaration (name → description)", () => {
-		expect(parseDeclaredArgumentNames({ name: "the name", out: "output" })).toEqual(["name", "out"]);
-		expect(substituteSkillArguments("$name", "name=z", parseDeclaredArgumentNames({ name: "the name" })).text).toBe(
-			"z",
-		);
-	});
-
-	it("accepts list and single-string declarations", () => {
+describe("parseDeclaredArgumentNames (A.3.2 rules 5-6)", () => {
+	it("accepts list and map declarations in declaration order", () => {
 		expect(parseDeclaredArgumentNames(["a", "b"])).toEqual(["a", "b"]);
-		expect(parseDeclaredArgumentNames("solo")).toEqual(["solo"]);
+		expect(parseDeclaredArgumentNames({ name: "the name", out: "output" })).toEqual(["name", "out"]);
 		expect(parseDeclaredArgumentNames(undefined)).toEqual([]);
 	});
-});
 
-describe("substituteSkillArguments — slices (rule 4)", () => {
-	const declared: string[] = [];
-
-	it("${@:N} substitutes tokens N onward, space-joined", () => {
-		expect(substituteSkillArguments("${@:2}", "a b c d", declared).text).toBe("b c d");
+	it("splits a string declaration on whitespace", () => {
+		expect(parseDeclaredArgumentNames("alpha beta gamma")).toEqual(["alpha", "beta", "gamma"]);
+		expect(parseDeclaredArgumentNames("solo")).toEqual(["solo"]);
+		expect(parseDeclaredArgumentNames("   ")).toEqual([]);
 	});
 
-	it("${@:N:L} substitutes L tokens starting at N", () => {
-		expect(substituteSkillArguments("${@:2:2}", "a b c d", declared).text).toBe("b c");
+	it("drops digit-like names, shifting later names down one slot", () => {
+		expect(parseDeclaredArgumentNames(["one", "2", "three"])).toEqual(["one", "three"]);
+		expect(parseDeclaredArgumentNames("one 2 three")).toEqual(["one", "three"]);
 	});
 
-	it("treats 0 as 1 (bash convention)", () => {
-		expect(substituteSkillArguments("${@:0}", "a b", declared).text).toBe("a b");
-	});
-
-	it("out-of-range slices render empty (and consume nothing → append fallback)", () => {
-		expect(substituteSkillArguments("[${@:5}]", "a b", declared).text).toBe("[]\n\nARGUMENTS: a b");
+	it("reports the dropped digit-like names for load diagnostics", () => {
+		expect(digitLikeDeclaredArgumentNames(["one", "2", "three"])).toEqual(["2"]);
+		expect(digitLikeDeclaredArgumentNames("one 2 three")).toEqual(["2"]);
+		expect(digitLikeDeclaredArgumentNames({ 1: "doc", ok: "doc" })).toEqual(["1"]);
+		expect(digitLikeDeclaredArgumentNames(["one", "two"])).toEqual([]);
 	});
 });
 
-describe("substituteSkillArguments — defaults (rule 5)", () => {
-	it("${ARGUMENTS:-default} substitutes R verbatim when non-empty", () => {
-		expect(substituteSkillArguments("${ARGUMENTS:-d}", 'a "b c"', []).text).toBe('a "b c"');
+describe("substituteSkillArguments — rules 1-5", () => {
+	it("rule 1: $ARGUMENTS substitutes R verbatim (quotes, spacing, everything)", () => {
+		expect(substituteSkillArguments("got: $ARGUMENTS", 'alpha "b c" name=x \\$lit')).toBe(
+			'got: alpha "b c" name=x \\$lit',
+		);
 	});
 
-	it("${ARGUMENTS:-default} substitutes the default when R is empty", () => {
-		expect(substituteSkillArguments("${ARGUMENTS:-d}", "", []).text).toBe("d");
+	it("rule 2: $ARGUMENTS[N] is 0-based and accepts leading zeros", () => {
+		expect(substituteSkillArguments("$ARGUMENTS[0]|$ARGUMENTS[1]|$ARGUMENTS[01]", "a b", [])).toBe("a|b|b");
 	});
 
-	it("${@:-default} looks at the post-binding positional sequence", () => {
-		// R is non-empty but every token bound → positional sequence empty; the
-		// default is not input, so the append fallback fires.
-		expect(substituteSkillArguments("${@:-d}", "name=x", ["name"]).text).toBe("d\n\nARGUMENTS: name=x");
-		expect(substituteSkillArguments("${@:-d}", "a name=x", ["name"]).text).toBe("a");
+	it("rule 2: an out-of-range index leaves the entire match literal (and the append fallback fires)", () => {
+		expect(substituteSkillArguments("v=$ARGUMENTS[99]", "a b", [])).toBe("v=$ARGUMENTS[99]\n\nARGUMENTS: a b");
 	});
 
-	it("${N:-default} substitutes the default when the positional is empty/absent", () => {
-		expect(substituteSkillArguments("${2:-d}", "a", []).text).toBe("d\n\nARGUMENTS: a");
-		expect(substituteSkillArguments("${1:-d}", "a", []).text).toBe("a");
+	it("rule 2: a non-numeric bracket is not part of the placeholder", () => {
+		expect(substituteSkillArguments("$ARGUMENTS[x]", "alpha beta", [])).toBe("alpha beta[x]");
+		expect(substituteSkillArguments("$ARGUMENTS[-1]", "alpha beta", [])).toBe("alpha beta[-1]");
+		expect(substituteSkillArguments("$ARGUMENTS[ 0 ]", "alpha beta", [])).toBe("alpha beta[ 0 ]");
+		expect(substituteSkillArguments("$ARGUMENTS[]", "alpha beta", [])).toBe("alpha beta[]");
 	});
 
-	it("${name:-default} substitutes the default when the name is unbound or undeclared", () => {
-		expect(substituteSkillArguments("${name:-d}", "", ["name"]).text).toBe("d");
-		expect(substituteSkillArguments("${other:-d}", "", []).text).toBe("d");
+	it("rule 3: $N is 0-based shorthand; out of range stays literal", () => {
+		expect(substituteSkillArguments("$0/$1", "a b", [])).toBe("a/b");
+		// Both the literal $5 and the appended block (probe 2 shape).
+		expect(substituteSkillArguments("only=[$5]", "alpha beta", [])).toBe("only=[$5]\n\nARGUMENTS: alpha beta");
 	});
 
-	it("defaults containing placeholder syntax stay literal", () => {
-		expect(substituteSkillArguments("${2:-$1}", "a", []).text).toBe("$1\n\nARGUMENTS: a");
+	it("rule 4: declared names are positional aliases in declaration order", () => {
+		expect(substituteSkillArguments("[$alpha][$beta][$gamma]", "one two", ["alpha", "beta", "gamma"])).toBe(
+			"[one][two][]",
+		);
+	});
+
+	it("rule 4: an undeclared name stays literal", () => {
+		expect(substituteSkillArguments("nope=[$nope]", "a b c d", ["issue"])).toBe("nope=[$nope]\n\nARGUMENTS: a b c d");
+	});
+
+	it("rule 4: there is no name=value binding and no positional compaction", () => {
+		// `name=x` is an ordinary positional token, not a binding; the declared
+		// name aliases its slot (declaration order), not the `x` value.
+		expect(substituteSkillArguments("$0|$1|$2", "one name=x two", ["name"])).toBe("one|name=x|two");
+		expect(substituteSkillArguments("[$name]", "one name=x two", ["name"])).toBe("[one]");
+	});
+
+	it("rule 5: a whitespace-separated string declaration maps names to slots in order", () => {
+		const declared = parseDeclaredArgumentNames("alpha beta gamma");
+		expect(substituteSkillArguments("[$alpha][$beta][$gamma]", "one two", declared)).toBe("[one][two][]");
 	});
 });
 
-describe("substituteSkillArguments — escaping (rule 6)", () => {
-	it("escaped placeholders render literally, backslash removed", () => {
-		// Empty R keeps the rule-7 append fallback out of these rule-6 cases.
-		expect(substituteSkillArguments("\\$ARGUMENTS", "", []).text).toBe("$ARGUMENTS");
-		expect(substituteSkillArguments("\\$@", "", []).text).toBe("$@");
-		expect(substituteSkillArguments("\\$1", "", []).text).toBe("$1");
-		expect(substituteSkillArguments("\\$name", "", ["name"]).text).toBe("$name");
+describe("substituteSkillArguments — rule 6 collisions", () => {
+	it("a declared ARGUMENTS shadows the built-in", () => {
+		expect(substituteSkillArguments("raw=[$ARGUMENTS]", "a b c d", ["issue", "ARGUMENTS", "branch"])).toBe("raw=[b]");
+	});
+
+	it("a declared ARGUMENTS does not shadow the indexed form (probe 12)", () => {
+		expect(substituteSkillArguments("idx=[$ARGUMENTS[0]]", "a b c d", ["issue", "ARGUMENTS", "branch"])).toBe(
+			"idx=[a]",
+		);
+	});
+
+	it("a digit-like declared name is dropped and later names shift down one slot", () => {
+		const declared = parseDeclaredArgumentNames(["one", "2", "three"]);
+		expect(substituteSkillArguments("$one/$three", "x y z", declared)).toBe("x/y");
+		// $1 keeps its positional meaning throughout.
+		expect(substituteSkillArguments("$1", "x y z", declared)).toBe("y");
 	});
 });
 
-describe("substituteSkillArguments — append fallback (rule 7)", () => {
-	it("appends ARGUMENTS when R is non-empty and no placeholder consumed anything", () => {
-		const result = substituteSkillArguments("body text", "a b", []);
-		expect(result.text).toBe("body text\n\nARGUMENTS: a b");
-		expect(result.consumedInput).toBe(false);
+describe("substituteSkillArguments — rule 7 escaping", () => {
+	it("\\$ before a digit, ARGUMENTS, or a declared name renders literally, backslash removed", () => {
+		expect(substituteSkillArguments("\\$1", "", [])).toBe("$1");
+		expect(substituteSkillArguments("\\$ARGUMENTS", "", [])).toBe("$ARGUMENTS");
+		expect(substituteSkillArguments("\\$100.00", "", [])).toBe("$100.00");
+		expect(substituteSkillArguments("\\$issue", "", ["issue"])).toBe("$issue");
 	});
 
-	it("does not append when a placeholder consumed input", () => {
-		const result = substituteSkillArguments("body $1", "a b", []);
-		expect(result.text).toBe("body a");
-		expect(result.consumedInput).toBe(true);
+	it("\\$ before anything else retains the backslash", () => {
+		expect(substituteSkillArguments("\\$nope", "", ["issue"])).toBe("\\$nope");
 	});
 
-	it("appends when a placeholder was present but consumed nothing", () => {
-		const result = substituteSkillArguments("body [$4]", "a b", []);
-		expect(result.text).toBe("body []\n\nARGUMENTS: a b");
-		expect(result.consumedInput).toBe(false);
+	it("a doubled backslash retains both and the placeholder still expands", () => {
+		expect(substituteSkillArguments("\\\\$1", "a b", [])).toBe("\\\\b");
 	});
 
-	it("still appends when only a default fired (defaults are not input)", () => {
-		const result = substituteSkillArguments("body ${2:-d}", "a", []);
-		expect(result.text).toBe("body d\n\nARGUMENTS: a");
-		expect(result.consumedInput).toBe(false);
+	it("an escaped placeholder does not count as substituted (append fallback still fires)", () => {
+		expect(substituteSkillArguments("literal \\$1 here", "a b", [])).toBe("literal $1 here\n\nARGUMENTS: a b");
+	});
+});
+
+describe("substituteSkillArguments — rule 8 append fallback", () => {
+	it("appends when R is non-empty and no placeholder was substituted", () => {
+		expect(substituteSkillArguments("body text", "a b", [])).toBe("body text\n\nARGUMENTS: a b");
+	});
+
+	it("a substitution producing an empty string still counts as substituted", () => {
+		expect(substituteSkillArguments("[$gamma]", "one two", ["alpha", "beta", "gamma"])).toBe("[]");
+	});
+
+	it("an unmatched indexed placeholder left literal does not count", () => {
+		expect(substituteSkillArguments("body [$4]", "a b", [])).toBe("body [$4]\n\nARGUMENTS: a b");
 	});
 
 	it("appends nothing when R is empty or whitespace-only", () => {
-		expect(substituteSkillArguments("body", "", []).text).toBe("body");
-		expect(substituteSkillArguments("body $1", "", []).text).toBe("body ");
-		expect(substituteSkillArguments("body", "   ", []).text).toBe("body");
+		expect(substituteSkillArguments("body", "", [])).toBe("body");
+		expect(substituteSkillArguments("body $1", "", [])).toBe("body $1");
+		expect(substituteSkillArguments("body", "   ", [])).toBe("body");
 	});
 });
 
-describe("substituteSkillArguments — single pass (rule 8)", () => {
-	it("substituted values are never re-scanned for placeholders", () => {
-		// R is literal `$1`; substituting $ARGUMENTS must not then expand the $1.
-		expect(substituteSkillArguments("$ARGUMENTS", "$1", []).text).toBe("$1");
-	});
+describe("substituteSkillArguments — rule 10: nothing outside the grammar is touched", () => {
+	const raw = "a b";
+	it.each(["$@", "${@:1}", "${@:1:2}", "${@:-d}", "${ARGUMENTS:1}", "${ARGUMENTS:-d}", "${1:-d}", "${name:-d}"])(
+		"%s renders verbatim, inline and inside fenced code blocks",
+		(snippet) => {
+			const body = `inline ${snippet} here\n\`\`\`bash\nf ${snippet}\n\`\`\``;
+			// No placeholder substituted, so the append fallback fires; the snippets
+			// themselves must be byte-for-byte unchanged.
+			expect(substituteSkillArguments(body, raw, ["name"])).toBe(`${body}\n\nARGUMENTS: ${raw}`);
+		},
+	);
+});
 
-	it("values injected through named bindings are not re-scanned", () => {
-		expect(substituteSkillArguments("$name", "name=$ARGUMENTS", ["name"]).text).toBe("$ARGUMENTS");
+describe("substituteSkillArguments — single pass", () => {
+	it("substituted values are never re-scanned for placeholders", () => {
+		expect(substituteSkillArguments("$ARGUMENTS", "$1", [])).toBe("$1");
 	});
 
 	it("repeated placeholders substitute repeatedly", () => {
-		expect(substituteSkillArguments("$1 and $1", "x", []).text).toBe("x and x");
+		expect(substituteSkillArguments("$0 and $0", "x", [])).toBe("x and x");
+	});
+});
+
+describe("substituteSkillArguments — no-substitution shell fixtures", () => {
+	// Real repository migration fixture: the PRP store resolver line carried by
+	// .pi/skills/prp-*/SKILL.md. Over-substitution of its `${...:-...}` forms is
+	// the defect this grammar removes.
+	const PRP_RESOLVER_LINE =
+		'PRP_DIR="${PRP_HOME:-$HOME/.prp}/${_name:-project}-$(printf %s "$_root" | git hash-object --stdin | cut -c1-8)"';
+	// Constructed grammar case (does not occur verbatim under .pi/): bare $@.
+	const FOR_LOOP = 'for f in "$@"; do echo "$f"; done';
+
+	it.each([
+		["PRP store resolver", PRP_RESOLVER_LINE],
+		["for over $@", FOR_LOOP],
+	])("%s renders byte-for-byte unchanged, then the append fallback fires", (_label, snippet) => {
+		const args = "plan some args";
+		const body = `Header\n\n\`\`\`bash\n${snippet}\n\`\`\`\n\nFooter`;
+		const rendered = substituteSkillArguments(body, args, []);
+		// (a) The protected snippet region is unchanged.
+		expect(rendered).toContain(snippet);
+		// (b) The output is exactly the body plus the appended block.
+		expect(rendered).toBe(`${body}\n\nARGUMENTS: ${args}`);
+	});
+});
+
+// ============================================================================
+// CC conformance corpus (test/suite/fixtures/cc-argument-grammar/)
+// ============================================================================
+
+const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "suite", "fixtures", "cc-argument-grammar");
+// Probe 11 pins the stage-4 `@path` absolutization deviation (issue #6), not
+// the argument grammar, so it is excluded from the byte-equality loop.
+const CORPUS_EXCLUDED_PROBES = new Set(["probe11"]);
+
+interface ManifestEntry {
+	skill: string;
+	args: string;
+	covers: string;
+}
+
+/** README normalization: frontmatter + separator removed, the blank line before the body removed, trailing newline retained. */
+function extractProbeBody(content: string): string {
+	const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const match = normalized.match(/^---\n[\s\S]*?\n---\n/);
+	const withoutFrontmatter = match ? normalized.slice(match[0].length) : normalized;
+	return withoutFrontmatter.startsWith("\n") ? withoutFrontmatter.slice(1) : withoutFrontmatter;
+}
+
+describe("cc-argument-grammar corpus", () => {
+	const manifest: ManifestEntry[] = JSON.parse(readFileSync(join(CORPUS_DIR, "manifest.json"), "utf-8"));
+	const probeDirs = readdirSync(join(CORPUS_DIR, "probes"), { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.sort();
+
+	it("fixture integrity: manifest and directory listing agree; every probe has SKILL.md and expected.txt", () => {
+		expect(probeDirs).toEqual(manifest.map((entry) => entry.skill).sort());
+		for (const dir of probeDirs) {
+			expect(readFileSync(join(CORPUS_DIR, "probes", dir, "SKILL.md"), "utf-8")).toContain("---");
+			expect(readFileSync(join(CORPUS_DIR, "probes", dir, "expected.txt"), "utf-8").length).toBeGreaterThan(0);
+		}
+	});
+
+	for (const entry of manifest) {
+		if (CORPUS_EXCLUDED_PROBES.has(entry.skill)) {
+			continue;
+		}
+		it(`${entry.skill} reproduces CC byte-for-byte (${entry.covers})`, () => {
+			const probeDir = join(CORPUS_DIR, "probes", entry.skill);
+			const skillContent = readFileSync(join(probeDir, "SKILL.md"), "utf-8");
+			const expected = readFileSync(join(probeDir, "expected.txt"), "utf-8");
+			const { frontmatter } = parseFrontmatter<Record<string, unknown>>(skillContent);
+			const declaredNames = parseDeclaredArgumentNames(frontmatter.arguments as SkillArgumentsDeclaration);
+			const rendered = substituteSkillArguments(extractProbeBody(skillContent), entry.args, declaredNames);
+			expect(rendered).toBe(expected);
+		});
+	}
+});
+
+describe("public surface (AC8)", () => {
+	it("SkillArgumentSubstitution is no longer exported from the package", () => {
+		const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.ts"), "utf-8");
+		expect(indexSource).not.toContain("SkillArgumentSubstitution");
 	});
 });

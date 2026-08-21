@@ -3,7 +3,7 @@ name: prp-review
 description: Reviews a pull request, branch, commit range, or working tree through specialist review agents and repository validation, converging to a merge-ready verdict across re-review passes; local (non-PR) targets also get behavior-preserving cleanup and human-approved finding application. Use when the user asks to review a PR, review a branch or the current changes, close or review a plan step, check whether a change is ready to merge, run review agents, or invokes /skill:prp-review.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Review a Change
 

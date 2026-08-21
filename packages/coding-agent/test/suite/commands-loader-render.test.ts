@@ -7,12 +7,13 @@
 
 import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { inlineCommandIncludes } from "../../src/core/commands/include.ts";
 import type { LoadedCommand } from "../../src/core/commands/loader.ts";
-import { adaptPromptTemplate, loadCommandsFromDir } from "../../src/core/commands/loader.ts";
+import { adaptPromptTemplate, adaptPromptTemplates, loadCommandsFromDir } from "../../src/core/commands/loader.ts";
 import { type RenderCommandContext, renderCommand } from "../../src/core/commands/render.ts";
+import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import type { SourceInfo } from "../../src/core/source-info.ts";
 import type { BashOperations } from "../../src/core/tools/bash.ts";
 
@@ -251,12 +252,12 @@ describe("A.7 render pipeline", () => {
 		const dir = makeTempDir();
 		writeFileSync(join(dir, "inc.md"), "INCLUDED");
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: ${PI_SESSION_ID} is an A.8 render placeholder, not a JS template
-		const command = commandFrom(dir, "c", {}, "@inc.md then $1 in ${PI_SESSION_ID}");
+		const command = commandFrom(dir, "c", {}, "@inc.md then $0 in ${PI_SESSION_ID}");
 		const rendered = await renderCommand(command, "alpha", renderContext());
 		expect(rendered.text).toBe("INCLUDED then alpha in sess-1");
 	});
 
-	it("appends raw ARGUMENTS when no placeholder consumed input (A.3.2 rule 7)", async () => {
+	it("appends raw ARGUMENTS when no placeholder was substituted (A.3.2 rule 8)", async () => {
 		const dir = makeTempDir();
 		const command = commandFrom(dir, "c", {}, "no placeholders here");
 		const rendered = await renderCommand(command, "extra args", renderContext());
@@ -293,5 +294,111 @@ describe("A.7 render pipeline", () => {
 			renderContext({ activeToolNames: [], bashOperations: operations }),
 		);
 		expect(rendered.text).toContain("[shell command execution disabled by tool policy]");
+	});
+});
+
+describe("digit-like declared argument names (A.3.2 rule 6 load diagnostic)", () => {
+	it("command tier: loads, renders CC-exactly, and warns once naming the dropped name", async () => {
+		const dir = makeTempDir();
+		writeFileSync(
+			join(dir, "digits.md"),
+			'---\nname: digits\ndescription: Digit names\narguments: [one, "2", three]\n---\none=[$one] three=[$three]\n',
+		);
+		const result = loadCommandsFromDir(dir, sourceInfo);
+		expect(result.commands).toHaveLength(1);
+		const warnings = result.diagnostics.filter((d) => d.message.includes('"2"'));
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].type).toBe("warning");
+		expect(warnings[0].path).toBe(join(dir, "digits.md"));
+		expect(warnings[0].message).toContain("shifting later declared names down one slot");
+
+		// Rendering matches CC: "2" is dropped, so $three reads slot 1.
+		const rendered = await renderCommand(result.commands[0], "x y z", renderContext());
+		expect(rendered.text).toBe("one=[x] three=[y]");
+	});
+
+	it("command tier: no digit-like name, no such warning", () => {
+		const dir = makeTempDir();
+		writeFileSync(join(dir, "ok.md"), "---\nname: ok\ndescription: Ok\narguments: [one, two]\n---\nbody\n");
+		const result = loadCommandsFromDir(dir, sourceInfo);
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("template tier: adapts the declaration, warns once, and renders CC-exactly", async () => {
+		const dir = makeTempDir();
+		const filePath = join(dir, "t.md");
+		writeFileSync(filePath, '---\narguments: [one, "2", three]\n---\none=[$one] three=[$three]\n');
+		const result = adaptPromptTemplates([
+			{
+				name: "t",
+				description: "Template",
+				content: "one=[$one] three=[$three]",
+				filePath,
+				sourceInfo: sourceInfo(filePath),
+			},
+		]);
+		const warnings = result.diagnostics.filter((d) => d.message.includes('"2"'));
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].path).toBe(filePath);
+
+		const rendered = await renderCommand(result.commands[0], "x y z", renderContext());
+		expect(rendered.text).toBe("one=[x] three=[y]");
+	});
+});
+
+describe("prompt-template arguments: declaration (A.3.2 tier parity)", () => {
+	const templateAt = (filePath: string): PromptTemplate => ({
+		name: basename(filePath).replace(/\.md$/, ""),
+		description: "Template",
+		// The adapted body is the template's parsed content; these fixtures keep
+		// content identical to the file body for readability.
+		content: "[$alpha][$beta][$gamma]",
+		filePath,
+		sourceInfo: sourceInfo(filePath),
+	});
+
+	it("a template declaring arguments: gets the declared-name mapping (probe 5 shape)", async () => {
+		const dir = makeTempDir();
+		const filePath = join(dir, "named.md");
+		writeFileSync(filePath, "---\narguments: alpha beta gamma\n---\n[$alpha][$beta][$gamma]\n");
+		const result = adaptPromptTemplates([templateAt(filePath)]);
+		expect(result.diagnostics).toEqual([]);
+		const rendered = await renderCommand(result.commands[0], "one two", renderContext());
+		expect(rendered.text).toBe("[one][two][]");
+	});
+
+	it("a template whose file is missing adapts with no declared names", () => {
+		const result = adaptPromptTemplates([templateAt(join(makeTempDir(), "missing.md"))]);
+		expect(result.commands[0].frontmatter).toEqual({});
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("a template with malformed frontmatter adapts with no declared names and does not throw", () => {
+		const dir = makeTempDir();
+		const filePath = join(dir, "broken.md");
+		writeFileSync(filePath, "---\narguments: [unterminated\n---\n[$alpha]\n");
+		const result = adaptPromptTemplates([templateAt(filePath)]);
+		expect(result.commands[0].frontmatter).toEqual({});
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("a non-ENOENT read failure is tolerated the same way", () => {
+		// EISDIR: a directory passed as the template file path.
+		const result = adaptPromptTemplates([templateAt(makeTempDir())]);
+		expect(result.commands[0].frontmatter).toEqual({});
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("caches the declaration on the template snapshot: edits without a new snapshot are not re-read", () => {
+		const dir = makeTempDir();
+		const filePath = join(dir, "cached.md");
+		writeFileSync(filePath, "---\narguments: alpha\n---\nbody\n");
+		const template = templateAt(filePath);
+		expect(adaptPromptTemplates([template]).commands[0].frontmatter).toEqual({ arguments: "alpha" });
+		// Same snapshot object: no second read, so an on-disk edit is invisible.
+		writeFileSync(filePath, "---\narguments: beta\n---\nbody\n");
+		expect(adaptPromptTemplates([template]).commands[0].frontmatter).toEqual({ arguments: "alpha" });
+		// A replaced snapshot invalidates the cache by construction.
+		expect(adaptPromptTemplates([templateAt(filePath)]).commands[0].frontmatter).toEqual({ arguments: "beta" });
 	});
 });

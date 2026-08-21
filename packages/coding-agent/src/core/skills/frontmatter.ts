@@ -1,6 +1,7 @@
 import { canonicalizePath } from "../../utils/paths.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { SourceInfo } from "../source-info.ts";
+import { digitArgumentNameDiagnostic, digitLikeDeclaredArgumentNames } from "./arguments.ts";
 
 const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 1024;
@@ -343,6 +344,9 @@ export function normalizeSkillInput(input: SkillInput): {
 		diagnostics.push(
 			diagnostic(`name "${input.name}" is not eligible for the bare skill command namespace`, input.filePath),
 		);
+	}
+	for (const digitName of digitLikeDeclaredArgumentNames(frontmatter.arguments)) {
+		diagnostics.push(digitArgumentNameDiagnostic(digitName, input.filePath));
 	}
 
 	return {

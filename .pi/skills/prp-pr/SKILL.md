@@ -3,7 +3,7 @@ name: prp-pr
 description: Creates and opens GitHub pull requests. Always use when creating a PR on GitHub, when the user explicitly asks to create or open a PR, when another PRP workflow reaches its PR-creation step, or when the user invokes /skill:prp-pr.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Create Pull Request
 

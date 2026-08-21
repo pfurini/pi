@@ -3,7 +3,7 @@ name: prp-plan-review
 description: Adversarial review of an implementation plan by parallel attack agents - grades the plan against its source PRD (coverage, provenance, fidelity of acceptance criteria and user stories) and attacks its assumptions, completeness, feasibility of cited patterns, and validation coverage. Use when the user wants to "review this plan", "grade the plan against the PRD", "adversarially review the plan", "attack this plan before implementing", "check the plan satisfies the acceptance criteria", "does the plan cover the PRD", or invokes /skill:prp-plan-review.
 ---
 
-> **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
+> **Arguments:** `\$ARGUMENTS` (and `\$1`, `\$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # Plan Review — Adversarial Fan-out
 

@@ -33,7 +33,7 @@ render-pipeline ordering, hook wire formats — see
 | Command name source | Directory name; frontmatter `name` is display-only | Frontmatter `name`, falling back to the directory | `core/skills/frontmatter.ts` |
 | Stacking per message | Up to 6 | Up to 6; extras stay literal and emit a diagnostic | `core/commands/tokenizer.ts:30` |
 | Render pipeline | 7 ordered stages, single pass | 7 ordered stages, single pass | `core/skills/render.ts:1-16` |
-| Argument substitution | `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, `$name`, escaping, append fallback | `$ARGUMENTS`, `$@`, declared names from `arguments`, `\$` escape, append fallback | `core/skills/arguments.ts:133-150` |
+| Argument substitution | `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, `$name`, escaping, append fallback | `$ARGUMENTS`, `$@`, `$N` (1-based), `${@:N[:L]}` slices, `${X:-default}` defaults, declared names from `arguments`, `\$` escape, append fallback. **No `$ARGUMENTS[N]`** — see Degrades | `core/skills/arguments.ts:133-150` |
 | Variable substitution | `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_SESSION_ID}`, `${CLAUDE_EFFORT}`, plus plugin vars | Same four under `PI_*`, with `CLAUDE_*` accepted as aliases. **No plugin vars** (`${CLAUDE_PLUGIN_ROOT}`, `${user_config.KEY}`) | `core/skills/interop.ts:21-26` |
 | `@path` references | Not inlined; `${CLAUDE_SKILL_DIR}` makes them absolute and the model reads them | Not inlined; made absolute against the skill's `baseDir` and the model reads them | `core/skills/render.ts:92` |
 | Shell injection | `` !`cmd` `` and fenced `` ```! ``, permission-gated, `disableSkillShellExecution` policy, `shell` field | `` !`cmd` `` and fenced `` ```! ``, tool-policy gated, `disableSkillShellExecution` kill switch, `shell` field | `core/skills/shell-injection.ts:104` |
@@ -41,10 +41,10 @@ render-pipeline ordering, hook wire formats — see
 | `disallowed-tools` | Turn-scoped removal from the tool pool | Enforced. Redirect-canonicalized, and **unioned** across stacked skills so restrictions accumulate | `core/skills/skill-overrides.ts:150` |
 | `Skill(name)` permission rules | Yes, integrated with allow/ask/deny | **None** — no permission layer exists | — |
 | Per-skill `model` / `effort` | Turn-scoped, then revert | Turn-scoped and ephemeral; last invocation wins when stacked | `core/skills/runtime.ts:170-171` |
-| `context: fork` / `agent` / `background` | Yes; forks into a named agent type | Yes, over the pi-subagents RPC | `core/agent-session.ts:3103` |
-| Skill-bundled agent definitions | Yes, via skills-dir plugins (`<skill>/agents/`) | **No** | — |
+| `context: fork` / `agent` / `background` | Yes; forks into a named agent type | Yes, over the pi-subagents RPC | `core/skills/skill-fork.ts` |
+| Skill-bundled agent definitions | Yes, via skills-dir plugins (`<skill>/agents/`) | Yes, via pi-subagents (ADR-0008): registered qualified-always (`skill:agent`), bare only when globally free; the render pipeline rewrites the skill's own agent names to the qualified form; hidden from global listings, spawnable by qualified name | `core/skills/runtime.ts:27`, `core/skills/render.ts` stage 5 |
 | `paths` | Glob-gated **auto-activation** | Glob-gated **listing boost** — matching skills sort first and truncate last. Not auto-activation | `core/skills/paths-boost.ts` |
-| Listing budget | ~1% of context window; per-skill 1,536 cap; least-invoked truncated first | Same shape: `skillListingBudgetFraction` (default 0.01), `MAX_LISTING_DESCRIPTION_LENGTH` 1,536 | `harness/listing-budget.ts` |
+| Listing budget | ~1% of context window; per-skill 1,536 cap; least-invoked truncated first | Same shape: `skillListingBudgetFraction` (default 0.01), `MAX_LISTING_DESCRIPTION_LENGTH` 1,536 | `packages/agent/src/harness/listing-budget.ts` (re-exported at `core/skills/listing-budget.ts`) |
 | Re-invocation dedup | Short "already loaded" note | Deduped on `(skillId, raw args, byte-identical body)` against the last inline delivery still in context | `core/skills/dedup.ts:1-7` |
 | Compaction carry-forward | Re-attach MRU invocation per skill; 5k each, 25k combined | Same: MRU-first, 5,000 per skill, 25,000 combined; recomputed per rebuild, never persisted | `core/skills/carry-forward.ts:19` |
 | Live reload | File watchers + `/reload-skills` | Debounced per-directory watchers over every scanned skill and command root; `/reload` remains the fallback | `core/skills/resource-watch.ts` |
@@ -107,19 +107,27 @@ as aliases), `@path` includes, `` !`cmd` `` shell injection, `when_to_use`,
 
 **Degrades quietly — check these.**
 
+- `$ARGUMENTS[N]` is not parsed as an index. The scanner matches the `$ARGUMENTS`
+  prefix and substitutes the full raw input, leaving the bracket suffix literal, so
+  `$ARGUMENTS[0]` invoked with `foo bar` renders as `foo bar[0]`. Rewrite to the
+  1-based positional form (`$1`, `$2`, `${@:2}`) when porting.
 - `allowed-tools` is inert. A skill relying on it for pre-approval simply has no
   restriction applied; use `disallowed-tools` to restrict instead.
 - `hooks` is inert. A skill whose behavior depends on its lifecycle hooks will
   load and run without them.
 - `paths` boosts listing order rather than auto-activating, so a skill expecting
   activation-on-file-touch must be invoked.
+- Skill-bundled agents (`<skill>/agents/`) register with different naming than CC
+  plugins: always qualified (`skill:agent`), bare only when the name is globally
+  free, hidden from global agent listings. Skills referencing their own agents by
+  bare name still resolve (render-time rewrite), but cross-skill references need
+  the qualified form.
 
 **Breaks — needs rework.**
 
 - Plugin-scoped tokens (`${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`,
   `${user_config.KEY}`) have no Pi equivalent and are not substituted.
 - `plugin:skill` / `plugin:agent` qualified names do not resolve.
-- Skill-bundled agent definitions (`<skill>/agents/`) are not discovered.
 
 ---
 

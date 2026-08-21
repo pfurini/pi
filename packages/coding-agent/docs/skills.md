@@ -184,7 +184,6 @@ Pi supports a deliberate subset of Claude Code skill semantics (ADR-0007). The b
 - Hook execution (`hooks` frontmatter is parsed and preserved, never executed)
 - `allowed-tools` enforcement (parsed and preserved, advisory only)
 - `Skill(name)` permission rules
-- Per-invocation `paths` listing-boost activation (parsed and preserved; not yet implemented)
 
 ## Skill Structure
 
@@ -254,7 +253,7 @@ Booleans accept `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` (case-insens
 | `context` | No | `inline` (default) or `fork`. `fork` runs a sole message-initial skill (user-invoked or via the model `skill` tool) in a pi-subagents subagent instead of inline; its body never enters the parent context. Falls back to inline delivery (with a diagnostic) when no subagents extension is present, on spawn failure, or in headless mode. |
 | `agent` | No | Subagent type name for `context: fork` (an unknown type still spawns, defaulting to `general-purpose` on the wire). Ignored for `inline`. |
 | `background` | No | Fork-only; default `true`. `true` returns an acknowledgment and reports completion as a post-turn notice; `false` awaits the subagent under a 15-minute foreground cap. |
-| `paths` | No | Glob list. Parsed and preserved; listing-boost activation is not yet implemented. |
+| `paths` | No | Glob list. Listing boost: a skill whose globs match a recently tool-touched file sorts first in the model-facing listing (and is trimmed last by the listing budget). The touch window is a bounded sliding window over successful single-file tool touches (setting `skillPathsWindow`, default 50). No auto-invocation — the boost only reorders the listing. |
 | `shell` | No | `bash` (default) or `powershell`. Selects the interpreter for [shell command injection](#shell-command-injection). |
 | `hooks` | No | Arbitrary nested hook configuration. **Parsed and preserved, never executed.** |
 

@@ -961,7 +961,7 @@ buildable).
 - **Subagents RPC (existing / fork):** `subagents:rpc:spawn {requestId, type, prompt,
   options}` → `{id}`; `subagents:rpc:stop`; `subagents:rpc:ping` → currently `{version: 2}`,
   fork bumps to `{version: 3, capabilities: {skillAgents: true}}`. Fork adds the completion
-  event `subagents:agent-ended {agentId, status: "completed"|"error"|"aborted"|"stopped",
+  event `subagents:agent-ended {agentId, status: "completed"|"steered"|"error"|"aborted"|"stopped",
   result?, error?}` — the fork's native status set (Appendix B.5). **Ordering rules:** the
   bus is synchronous and unbuffered, and the spawn reply is emitted only after the spawn
   handler returns — so (a) the fork must emit `agent-ended` for an agent only after that
@@ -1016,9 +1016,11 @@ buildable).
     presence and must be enforced.
   - `agent-ended` success is derived as `!(status ∈ {error, stopped, aborted})`,
     so `steered` (a fork-native success emitted on the completed channel in the v2
-    broadcast) is treated as success whether or not the fork carries `steered` in
-    `agent-ended`. WS2 must decide whether the fork includes `steered` in
-    `agent-ended` or normalizes it to `completed`; core is robust to either.
+    broadcast) is treated as success. The status list above now includes
+    `steered` (previously omitted): the fork emits its native status set in
+    `agent-ended` verbatim and does NOT normalize `steered` to `completed`, so the
+    parent transcript keeps the "wrapped up at turn limit" distinction. Core is
+    robust regardless.
 
 ## Appendix B — Pi code anchor map (verified 2026-08-11, branch `personal`)
 

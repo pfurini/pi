@@ -23,8 +23,13 @@ import { createEventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionAPI } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { sessionEntryToContextMessages } from "../../src/core/session-manager.ts";
-import { SKILL_AGENTS_REWRITE_MAPS_CHANNEL, type SkillAgentRewriteMaps } from "../../src/core/skills/runtime.ts";
-import { normalizeSubagentCompletion, SkillForkClient } from "../../src/core/skills/skill-fork.ts";
+import {
+	SKILL_AGENTS_QUERY_CHANNEL,
+	SKILL_AGENTS_REWRITE_MAPS_CHANNEL,
+	type SkillAgentRewriteMaps,
+	skillAgentsQueryReplyChannel,
+} from "../../src/core/skills/runtime.ts";
+import { normalizeAgentEnded, normalizeSubagentCompletion, SkillForkClient } from "../../src/core/skills/skill-fork.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
 import { canonicalizePath } from "../../src/utils/paths.ts";
@@ -33,6 +38,7 @@ import { createHarness, getMessageText, type Harness } from "./harness.ts";
 import {
 	createStubSubagentsExtension,
 	STUB_PROTOCOL_VERSION,
+	STUB_PROTOCOL_VERSION_V3,
 	type StubSubagentsController,
 	type StubSubagentsOptions,
 	stubReplyChannel,
@@ -386,6 +392,164 @@ describe("normalizeSubagentCompletion", () => {
 			error: "boom",
 			status: "error",
 		});
+	});
+});
+
+describe("normalizeAgentEnded (WI-3)", () => {
+	it("correlates by agentId and treats non-hard-failure statuses as ok", () => {
+		expect(normalizeAgentEnded({ agentId: "a", status: "completed", result: "r" })).toEqual({
+			agentId: "a",
+			ok: true,
+			result: "r",
+			status: "completed",
+		});
+		// steered is a fork-native success emitted on the completed channel.
+		expect(normalizeAgentEnded({ agentId: "b", status: "steered", result: "wrapped" })).toEqual({
+			agentId: "b",
+			ok: true,
+			result: "wrapped",
+			status: "steered",
+		});
+		for (const status of ["error", "aborted", "stopped"] as const) {
+			expect(normalizeAgentEnded({ agentId: "c", status, error: "boom" })).toEqual({
+				agentId: "c",
+				ok: false,
+				error: "boom",
+				status,
+			});
+		}
+		// Missing/garbage payloads degrade to a non-error, empty-id completion.
+		expect(normalizeAgentEnded(null)).toEqual({ agentId: "", ok: true });
+	});
+});
+
+describe("SkillForkClient: v3 negotiation and agent-ended (WI-3)", () => {
+	it("captures version and skillAgents capability from a v3 ping", async () => {
+		const v3 = boundStub({ protocolVersion: 3, skillAgents: true });
+		const v3Client = new SkillForkClient(v3.bus, CLIENT_OPTIONS);
+		expect(await v3Client.detectPresence()).toBe(true);
+		expect(v3Client.getDetectedVersion()).toBe(STUB_PROTOCOL_VERSION_V3);
+		expect(v3Client.isSkillAgentsCapable()).toBe(true);
+
+		const v2 = boundStub();
+		const v2Client = new SkillForkClient(v2.bus, CLIENT_OPTIONS);
+		expect(await v2Client.detectPresence()).toBe(true);
+		expect(v2Client.getDetectedVersion()).toBe(STUB_PROTOCOL_VERSION);
+		expect(v2Client.isSkillAgentsCapable()).toBe(false);
+	});
+
+	it("settles a foreground fork from agent-ended alone, deriving ok from status", async () => {
+		for (const [status, expectedOk] of [
+			["completed", true],
+			["steered", true],
+			["error", false],
+			["aborted", false],
+		] as const) {
+			const { bus } = boundStub({
+				protocolVersion: 3,
+				skillAgents: true,
+				autoComplete: { when: "after-reply", status, result: "r", error: "e" },
+			});
+			const client = new SkillForkClient(bus, CLIENT_OPTIONS);
+			const outcome = await client.spawn({
+				skillId: `s-${status}`,
+				agentType: undefined,
+				prompt: "p",
+				options: {},
+				background: false,
+			});
+			expect(outcome).toMatchObject({ kind: "completed", ok: expectedOk, status });
+		}
+	});
+
+	it("buffers an agent-ended emitted BEFORE the spawn reply (ordering race)", async () => {
+		const { bus } = boundStub({
+			protocolVersion: 3,
+			skillAgents: true,
+			autoComplete: { when: "before-reply", status: "completed", result: "raced-v3" },
+		});
+		const client = new SkillForkClient(bus, CLIENT_OPTIONS);
+		const outcome = await client.spawn({
+			skillId: "s",
+			agentType: undefined,
+			prompt: "p",
+			options: {},
+			background: false,
+		});
+		expect(outcome).toMatchObject({ kind: "completed", ok: true, result: "raced-v3" });
+	});
+
+	it("keeps the first buffered completion when two channels race before the reply", async () => {
+		// A v3 fork that also emits the v2 broadcast: before the reply the client
+		// buffers, and the first event must win (not be overwritten by the second).
+		const bus = createEventBus();
+		let spawnRequestId: string | undefined;
+		bus.on("subagents:rpc:ping", (raw) => {
+			const { requestId } = raw as { requestId: string };
+			bus.emit(stubReplyChannel("subagents:rpc:ping", requestId), {
+				success: true,
+				data: { version: STUB_PROTOCOL_VERSION_V3, capabilities: { skillAgents: true } },
+			});
+		});
+		bus.on("subagents:rpc:spawn", (raw) => {
+			const { requestId } = raw as { requestId: string };
+			spawnRequestId = requestId;
+			// Two channels for the same agent, BEFORE the spawn reply. First wins.
+			bus.emit("subagents:completed", { id: "race-agent", status: "completed", result: "first" });
+			bus.emit("subagents:agent-ended", { agentId: "race-agent", status: "completed", result: "second" });
+			bus.emit(stubReplyChannel("subagents:rpc:spawn", requestId), { success: true, data: { id: "race-agent" } });
+		});
+		const client = new SkillForkClient(bus, CLIENT_OPTIONS);
+		const outcome = await client.spawn({
+			skillId: "s",
+			agentType: undefined,
+			prompt: "p",
+			options: {},
+			background: false,
+		});
+		expect(spawnRequestId).toBeDefined();
+		expect(outcome).toMatchObject({ kind: "completed", ok: true, result: "first" });
+	});
+});
+
+describe("stub v3 mode (WI-4)", () => {
+	it("advertises v3 with capabilities and answers the rewrite-map query", async () => {
+		const bus = createEventBus();
+		const stub = createStubSubagentsExtension({ protocolVersion: 3, skillAgents: true });
+		stub.factory({ events: bus } as unknown as ExtensionAPI);
+
+		let ping: unknown;
+		bus.on(stubReplyChannel("subagents:rpc:ping", "p1"), (data) => {
+			ping = data;
+		});
+		bus.emit("subagents:rpc:ping", { requestId: "p1" });
+		expect(ping).toEqual({
+			success: true,
+			data: { version: STUB_PROTOCOL_VERSION_V3, capabilities: { skillAgents: true } },
+		});
+
+		const maps: SkillAgentRewriteMaps = { "/id/a": { reviewer: { qualified: "a:reviewer", collided: true } } };
+		const rewriteEvents: unknown[] = [];
+		bus.on(SKILL_AGENTS_REWRITE_MAPS_CHANNEL, (data) => rewriteEvents.push(data));
+		stub.publishRewriteMaps(maps, 5);
+		expect(rewriteEvents).toEqual([{ revision: 5, maps }]);
+
+		let queryReply: unknown;
+		bus.on(skillAgentsQueryReplyChannel("q1"), (data) => {
+			queryReply = data;
+		});
+		bus.emit(SKILL_AGENTS_QUERY_CHANNEL, { requestId: "q1" });
+		expect(queryReply).toEqual({ success: true, data: { revision: 5, maps } });
+	});
+
+	it("emits agent-ended with the requested status via endAgent", () => {
+		const bus = createEventBus();
+		const stub = createStubSubagentsExtension({ protocolVersion: 3, skillAgents: true });
+		stub.factory({ events: bus } as unknown as ExtensionAPI);
+		const ended: unknown[] = [];
+		bus.on("subagents:agent-ended", (data) => ended.push(data));
+		stub.endAgent("agent-1", { status: "steered", result: "wrapped" });
+		expect(ended).toEqual([{ agentId: "agent-1", status: "steered", result: "wrapped" }]);
 	});
 });
 
@@ -768,8 +932,11 @@ describe("C3b fork: stub contract pin", () => {
 	});
 
 	it("matches the real pi-subagents cross-extension-rpc.ts when the checkout is present", () => {
-		const realPath = join(homedir(), "Developer/ai/pi-subagents-tintin/src/cross-extension-rpc.ts");
+		const realPath = join(homedir(), "Developer/ai/pi-subagents/src/cross-extension-rpc.ts");
 		if (!existsSync(realPath)) {
+			// Developer-local checkout, absent in CI: skip visibly rather than silently
+			// asserting nothing (the previous pin pointed at a checkout that no longer exists).
+			console.warn(`[skills-fork contract pin] skipped: ${realPath} not present`);
 			return;
 		}
 		const source = readFileSync(realPath, "utf-8");
@@ -810,7 +977,7 @@ function forkAgentFixture(name: string, agent: string): SkillFixture {
 
 describe("C3b fork routing: frontmatter agent resolution (A.3.4 applied to `agent:`)", () => {
 	it("rewrites a collided bare name to its qualified form on the wire", async () => {
-		const stub = createStubSubagentsExtension();
+		const stub = createStubSubagentsExtension({ protocolVersion: 3, skillAgents: true });
 		const harness = await createForkHarness([forkAgentFixture("skillone", "reviewer")], { stub });
 		harness.setResponses([]);
 		publishRewriteMaps(harness, {
@@ -836,7 +1003,7 @@ describe("C3b fork routing: frontmatter agent resolution (A.3.4 applied to `agen
 	});
 
 	it("leaves an already-qualified value untouched (never double-qualifies)", async () => {
-		const stub = createStubSubagentsExtension();
+		const stub = createStubSubagentsExtension({ protocolVersion: 3, skillAgents: true });
 		const harness = await createForkHarness([forkAgentFixture("skillthree", "someskill:someagent")], { stub });
 		harness.setResponses([]);
 		publishRewriteMaps(harness, {
@@ -850,8 +1017,22 @@ describe("C3b fork routing: frontmatter agent resolution (A.3.4 applied to `agen
 		expect(stub.spawns[0].type).toBe("someskill:someagent");
 	});
 
-	it("matches the map key case-insensitively (ADR-0008 reference case)", async () => {
+	it("gates a qualified value to general-purpose on a peer without skillAgents (WI-3)", async () => {
+		// v2 stub: no skill-agent capability. An authored qualified `agent:` must NOT
+		// reach the wire (A.9); core degrades it to general-purpose with a diagnostic.
 		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkAgentFixture("skillgate", "someskill:someagent")], { stub });
+		const errors = collectErrors(harness);
+		harness.setResponses([]);
+
+		await harness.session.prompt("/skill:skillgate");
+
+		expect(stub.spawns[0].type).toBe("general-purpose");
+		expect(errors.some((message) => message.includes("does not support skill-scoped agents"))).toBe(true);
+	});
+
+	it("matches the map key case-insensitively (ADR-0008 reference case)", async () => {
+		const stub = createStubSubagentsExtension({ protocolVersion: 3, skillAgents: true });
 		const harness = await createForkHarness([forkAgentFixture("skillfour", "Reviewer")], { stub });
 		harness.setResponses([]);
 		publishRewriteMaps(harness, {

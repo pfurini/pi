@@ -26,6 +26,7 @@ import {
 	loadSkillsFromDir,
 	type ResourceLoader,
 	type RpcReply,
+	SettingsManager,
 	SKILL_LISTING_END_DELIMITER,
 	SKILL_LISTING_START_DELIMITER,
 	SKILL_LISTING_VERSION,
@@ -654,6 +655,9 @@ unknown-map:
 			expect(entry.baseDir).toBe(skill?.baseDir);
 			expect(entry.frontmatter).toEqual(skill?.frontmatter);
 			expect(entry.source).toEqual({ ...skill?.sourceInfo });
+			// WI-1: both fixture skills have no persisted override and no restricting
+			// frontmatter, so each resolves to the `on` row.
+			expect(entry.visibility).toEqual({ model: "full", user: "yes", userInvokeError: false });
 		}
 
 		// Deep- and byte-compare against the canonical fixture after the documented substitution.
@@ -667,6 +671,35 @@ unknown-map:
 			tempDir,
 		);
 		expect(querySubstituted).toBe(fixtureBytes);
+	});
+
+	it("carries resolved visibility on the wire and marks an off skill (WI-1)", async () => {
+		writeSkill(join(tempDir, "off-skill"), "name: off-skill\ndescription: Off skill");
+		writeSkill(join(tempDir, "on-skill"), "name: on-skill\ndescription: On skill");
+		const offId = nodeFs.realpathSync(join(tempDir, "off-skill", "SKILL.md"));
+
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		settingsManager.setSkillVisibilityState(offId, "off", "global");
+		await settingsManager.flush();
+
+		const eventBus = createEventBus();
+		const changedEvents: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changedEvents.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			settingsManager,
+			noSkills: true,
+			additionalSkillPaths: ["off-skill", "on-skill"],
+		});
+		await loader.reload();
+
+		const snapshot = changedEvents.at(-1) as SkillSetSnapshot;
+		const off = snapshot.skills.find((entry) => entry.name === "off-skill");
+		const on = snapshot.skills.find((entry) => entry.name === "on-skill");
+		expect(off?.visibility).toEqual({ model: "no", user: "no", userInvokeError: true });
+		expect(on?.visibility).toEqual({ model: "full", user: "yes", userInvokeError: false });
 	});
 
 	it("increments bus-scoped revisions across empty load, unchanged reload, deletion, and extension resources", async () => {
@@ -824,6 +857,11 @@ unknown-map:
 		expect(() => {
 			(payload.skills[0].frontmatter.metadata as Record<string, unknown>).owner = "hacked";
 		}).toThrow(TypeError);
+		// WI-1: the published visibility object is detached and frozen too.
+		expect(Object.isFrozen(payload.skills[0].visibility)).toBe(true);
+		expect(() => {
+			(payload.skills[0].visibility as { model: string }).model = "no";
+		}).toThrow(TypeError);
 
 		const replies = querySkillSet(eventBus, "mutation-query");
 		expect(replies).toEqual([{ success: true, data: payload }]);
@@ -954,6 +992,64 @@ binary: !!binary SGVsbG8=`,
 		expect(planText).toContain("sorted lexicographically");
 		expect(planText).toContain("2-space indentation");
 		expect(planText).toContain("trailing LF");
+	});
+});
+
+describe("skill-set republish on visibility change (WI-2)", () => {
+	async function loadWithSharedBus(skillDir: string): Promise<{
+		skillId: string;
+		changed: SkillSetSnapshot[];
+		harness: Awaited<ReturnType<typeof createHarness>>;
+	}> {
+		writeSkill(join(tempDir, skillDir), `name: ${skillDir}\ndescription: ${skillDir}`);
+		const skillId = nodeFs.realpathSync(join(tempDir, skillDir, "SKILL.md"));
+		const eventBus = createEventBus();
+		const changed: SkillSetSnapshot[] = [];
+		eventBus.on(SKILLS_CHANGED_CHANNEL, (data) => changed.push(data as SkillSetSnapshot));
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir: tempDir,
+			eventBus,
+			noSkills: true,
+			additionalSkillPaths: [skillDir],
+		});
+		await loader.reload();
+		const harness = await createHarness({ resourceLoader: loader });
+		return { skillId, changed, harness };
+	}
+
+	it("re-publishes skills:changed with updated visibility and a higher revision", async () => {
+		const { skillId, changed, harness } = await loadWithSharedBus("vis-skill");
+		try {
+			const before = changed.length;
+			const beforeRevision = changed.at(-1)?.revision ?? 0;
+			const result = await harness.session.applySkillVisibilityChange(skillId, "off", "global");
+			expect(result.ok).toBe(true);
+			expect(changed.length).toBe(before + 1);
+			const latest = changed.at(-1) as SkillSetSnapshot;
+			expect(latest.revision).toBeGreaterThan(beforeRevision);
+			const entry = latest.skills.find((e) => e.id === skillId);
+			expect(entry?.visibility).toEqual({ model: "no", user: "no", userInvokeError: true });
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("does not re-publish when the settings write fails", async () => {
+		const { skillId, changed, harness } = await loadWithSharedBus("vis-skill2");
+		try {
+			const before = changed.length;
+			const drainSpy = vi.spyOn(harness.settingsManager, "drainErrors");
+			drainSpy
+				.mockImplementationOnce(() => [])
+				.mockImplementationOnce(() => [{ scope: "global", error: new Error("disk full") }]);
+			const result = await harness.session.applySkillVisibilityChange(skillId, "off", "global");
+			expect(result.ok).toBe(false);
+			drainSpy.mockRestore();
+			expect(changed.length).toBe(before);
+		} finally {
+			harness.cleanup();
+		}
 	});
 });
 

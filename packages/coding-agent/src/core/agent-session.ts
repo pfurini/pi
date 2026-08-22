@@ -2422,6 +2422,10 @@ export class AgentSession {
 			// Push the rebuilt prompt to the agent so the very next request uses
 			// it (same sync point as `setActiveToolsByName`).
 			this.agent.state.systemPrompt = this._systemPromptOverride ?? this._baseSystemPrompt;
+			// WI-2: re-publish the A.9 snapshot so a subagents fork sees the new
+			// visibility immediately (not only at the next reload). Pass the session's
+			// just-refreshed resolution so the wire matches the local surfaces above.
+			this._resourceLoader.republishSkillSet?.(this._skillVisibility);
 		} catch (error) {
 			return { ok: false, error: error instanceof Error ? error.message : String(error) };
 		}
@@ -2584,13 +2588,42 @@ export class AgentSession {
 		const background = record.background ?? true;
 		return {
 			skillId: record.skillId,
-			agentType: this._skillRuntime.resolveForkAgentType(record.skillId, record.agent),
+			agentType: this._gateForkAgentType(
+				this._skillRuntime.resolveForkAgentType(record.skillId, record.agent),
+				record,
+			),
 			prompt: rendered.body,
 			options,
 			background,
 			signal: signal ?? this._sessionAbortController?.signal,
 			onBackgroundComplete: (completion) => this._recordForkCompletionNotice(record, completion),
 		};
+	}
+
+	/**
+	 * A.9 capability gate: a qualified `skill:agent` type may be forwarded only to a
+	 * peer that advertised version >= 3 and `capabilities.skillAgents`. Otherwise
+	 * (including before negotiation — fail closed) degrade to `general-purpose` and
+	 * emit one diagnostic, so an incapable peer never receives a skill-scoped type.
+	 * Bare names and `undefined` pass through unchanged.
+	 */
+	private _gateForkAgentType(agentType: string | undefined, record: SkillInvocation): string | undefined {
+		if (agentType === undefined || !agentType.includes(":")) {
+			return agentType;
+		}
+		const capable =
+			(this._skillForkClient.getDetectedVersion() ?? 0) >= 3 && this._skillForkClient.isSkillAgentsCapable();
+		if (capable) {
+			return agentType;
+		}
+		this._emitSkillDiagnostics([
+			{
+				type: "warning",
+				message: `Skill "${record.name}" requests fork agent "${agentType}", but the subagents extension does not support skill-scoped agents (needs protocol v3 with skillAgents); spawning general-purpose instead.`,
+				path: record.filePath,
+			},
+		]);
+		return "general-purpose";
 	}
 
 	/** One-line text describing a terminal fork completion (result on success, error/status otherwise). */

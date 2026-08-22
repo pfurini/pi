@@ -993,6 +993,32 @@ buildable).
   `packages/coding-agent/test/suite/fixtures/skills-contract/skill-set-snapshot.json`;
   companion repositories copy the public wire types, the canonical-JSON rule, and that
   fixture byte-for-byte.
+- **Core-prep clarification (2026-08-22, appended by the skill-agents core-prep
+  implementation — not original frozen-v6 text):**
+  - Each skill-set entry additionally carries `visibility: {model: "full" | "name"
+    | "no", user: "yes" | "no", userInvokeError: boolean}` — the resolved A.6
+    visibility (the truth-table result, not the raw persisted state). Decision 6:
+    the fork suppresses a skill's bundled agents exactly when
+    `visibility.userInvokeError` is `true` (effective state `off`); every other
+    state, including an author-set `disable-model-invocation` + `user-invocable:
+    false` "container" skill, leaves the bundled agents addressable. Core
+    re-publishes `skills:changed` (with an incremented `revision`) on a visibility
+    change, not only on load/reload/watch. The new `visibility` field is part of
+    the copied entry: companion repositories copy the wire types (including
+    `SkillSetVisibility`), `canonicalSkillSetJson`, the rewrite-map types, and the
+    fixture byte-for-byte, and never import them (the published upstream package
+    does not ship these modules).
+  - The capability gate is implemented core-side: a qualified `skill:agent` type
+    is forwarded only to a peer that advertised version ≥ 3 and
+    `capabilities.skillAgents`; otherwise core degrades it to `general-purpose`
+    with a diagnostic (fail closed before negotiation). Because an author may
+    hand-write a qualified `agent:` value, this gate is not implied by rewrite-map
+    presence and must be enforced.
+  - `agent-ended` success is derived as `!(status ∈ {error, stopped, aborted})`,
+    so `steered` (a fork-native success emitted on the completed channel in the v2
+    broadcast) is treated as success whether or not the fork carries `steered` in
+    `agent-ended`. WS2 must decide whether the fork includes `steered` in
+    `agent-ended` or normalizes it to `completed`; core is robust to either.
 
 ## Appendix B — Pi code anchor map (verified 2026-08-11, branch `personal`)
 

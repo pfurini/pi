@@ -25,6 +25,8 @@ const SUBAGENTS_SPAWN = "subagents:rpc:spawn";
 const SUBAGENTS_STOP = "subagents:rpc:stop";
 const SUBAGENTS_COMPLETED = "subagents:completed";
 const SUBAGENTS_FAILED = "subagents:failed";
+/** WS2 v3 completion event (native status set incl. `steered`), correlated by `agentId`. */
+const SUBAGENTS_AGENT_ENDED = "subagents:agent-ended";
 const SUBAGENTS_READY = "subagents:ready";
 
 /** Per-request scoped reply channel (matches pi-subagents `cross-extension-rpc.ts`). */
@@ -103,6 +105,31 @@ export function normalizeSubagentCompletion(channel: string, payload: unknown): 
 	};
 }
 
+/**
+ * Map a `subagents:agent-ended` event (WS2 v3) to the routing shape. Correlated
+ * by `agentId` (not `id`), and `ok` is derived from the native status: success is
+ * everything that is not a hard failure, mirroring the fork's own `isError` split
+ * (`error | stopped | aborted`). So `completed` AND `steered` are successes,
+ * whether or not the fork carries `steered` in this event.
+ */
+export function normalizeAgentEnded(payload: unknown): NormalizedCompletion {
+	const p = (typeof payload === "object" && payload !== null ? payload : {}) as {
+		agentId?: unknown;
+		result?: unknown;
+		error?: unknown;
+		status?: unknown;
+	};
+	const status = typeof p.status === "string" ? p.status : undefined;
+	const isError = status === "error" || status === "stopped" || status === "aborted";
+	return {
+		agentId: typeof p.agentId === "string" ? p.agentId : "",
+		ok: !isError,
+		...(typeof p.result === "string" && { result: p.result }),
+		...(typeof p.error === "string" && { error: p.error }),
+		...(status !== undefined && { status }),
+	};
+}
+
 /** Reply envelope `{success:true, data?} | {success:false, error}` (pi-mono RpcResponse). */
 function readReplyId(data: unknown): { ok: true; id: string } | { ok: false; error: string } {
 	const env = data as { success?: unknown; data?: { id?: unknown }; error?: unknown } | null;
@@ -132,6 +159,10 @@ export class SkillForkClient {
 	private readonly unsubscribers: Array<() => void> = [];
 	private presencePromise: Promise<boolean> | undefined;
 	private presenceResolved: boolean | undefined;
+	/** Negotiated protocol version from the ping reply (WS2); undefined until detection runs. */
+	private detectedVersion: number | undefined;
+	/** Advertised `capabilities.skillAgents` from the ping reply; undefined until detection runs. */
+	private skillAgentsCapable: boolean | undefined;
 	/** Placeholder value marking a synchronous reservation before the agent id is known. */
 	private static readonly RESERVED = "\u0000reserved";
 
@@ -151,6 +182,7 @@ export class SkillForkClient {
 				eventBus.on(SUBAGENTS_FAILED, (data) =>
 					this.deliverCompletion(normalizeSubagentCompletion(SUBAGENTS_FAILED, data)),
 				),
+				eventBus.on(SUBAGENTS_AGENT_ENDED, (data) => this.deliverCompletion(normalizeAgentEnded(data))),
 				eventBus.on(SUBAGENTS_READY, () => this.onReady()),
 			);
 		}
@@ -193,7 +225,12 @@ export class SkillForkClient {
 				resolve(present);
 			};
 			const unsubscribe = bus.on(replyChannel, (data) => {
-				settle((data as { success?: unknown } | null)?.success === true);
+				const reply = data as { success?: unknown; data?: unknown } | null;
+				const present = reply?.success === true;
+				if (present) {
+					this.captureNegotiation(reply?.data);
+				}
+				settle(present);
 			});
 			timer = setTimeout(() => settle(false), this.pingTimeoutMs);
 			if (timer.unref) {
@@ -210,6 +247,26 @@ export class SkillForkClient {
 			this.presencePromise = undefined;
 			this.presenceResolved = undefined;
 		}
+	}
+
+	/** Record the negotiated protocol version and capabilities from a successful ping reply (WS2). */
+	private captureNegotiation(data: unknown): void {
+		if (typeof data !== "object" || data === null) {
+			return;
+		}
+		const envelope = data as { version?: unknown; capabilities?: { skillAgents?: unknown } };
+		this.detectedVersion = typeof envelope.version === "number" ? envelope.version : undefined;
+		this.skillAgentsCapable = envelope.capabilities?.skillAgents === true;
+	}
+
+	/** Negotiated protocol version, or undefined before detection has run. */
+	getDetectedVersion(): number | undefined {
+		return this.detectedVersion;
+	}
+
+	/** Whether the peer advertised `capabilities.skillAgents` (WS2 v3). False until proven true. */
+	isSkillAgentsCapable(): boolean {
+		return this.skillAgentsCapable === true;
 	}
 
 	/**
@@ -391,8 +448,14 @@ export class SkillForkClient {
 			return;
 		}
 		// No waiter yet: buffer only while a spawn is still awaiting its reply (the
-		// correlation window); otherwise it is an unrelated top-level subagent.
-		if (this.awaitingSpawnReply > 0 && this.completionBuffer.size < COMPLETION_BUFFER_MAX) {
+		// correlation window); otherwise it is an unrelated top-level subagent. First
+		// completion per agent wins: a dual-emit (v2 broadcast + v3 agent-ended) before
+		// the reply must not let the later event overwrite the earlier buffered one.
+		if (
+			this.awaitingSpawnReply > 0 &&
+			!this.completionBuffer.has(agentId) &&
+			this.completionBuffer.size < COMPLETION_BUFFER_MAX
+		) {
 			this.completionBuffer.set(agentId, completion);
 		}
 	}

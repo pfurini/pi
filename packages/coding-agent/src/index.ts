@@ -337,6 +337,7 @@ export {
 	type SkillSetSnapshot,
 	type SkillSetSnapshotEntry,
 	type SkillSetSnapshotSource,
+	type SkillSetVisibility,
 	type SkillsChangedEvent,
 	type SkillsQueryRequest,
 	skillsQueryReplyChannel,

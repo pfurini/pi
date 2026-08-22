@@ -37,7 +37,8 @@ import {
 	type WatchedResourceRoot,
 	type WatchTimers,
 } from "./skills/resource-watch.ts";
-import { getSkillSetController, type SkillSetController } from "./skills/skill-set-events.ts";
+import { getSkillSetController, type SkillSetController, type SkillSetVisibility } from "./skills/skill-set-events.ts";
+import { resolveSkillVisibility } from "./skills/visibility.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
@@ -102,6 +103,12 @@ export interface ResourceLoader {
 	onResourceChange?(listener: (event: ResourceLoaderChangeEvent) => void): () => void;
 	/** Light skills+commands refresh (c4d): re-scan and publish, no extension/settings reload. */
 	refreshSkillsAndCommands?(): void;
+	/**
+	 * Re-publish the current skill set with caller-supplied resolved visibility
+	 * (WI-2), no re-scan. Optional so lightweight test doubles that do not back the
+	 * A.9 publication seam can omit it; a visibility change is then a no-op for them.
+	 */
+	republishSkillSet?(visibilityById: ReadonlyMap<string, SkillSetVisibility>): void;
 	/** A.6 nested/monorepo discovery (c4d): register unscanned skill roots above a tool-touched file. */
 	discoverNestedSkillRoots?(touchedFile: string): void;
 	/** Release watchers and pending timers (c4d). Idempotent; caller-owned loaders are never disposed by sessions. */
@@ -1051,8 +1058,42 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillDiagnostics = nextDiagnostics;
 		// Publish the effective set (post-override, post-source-info, post-normalization) so
 		// `getSkills()` and A.9 extension payloads describe the same skills.
-		this.skillSetController.publish(this.skills);
+		this.skillSetController.publish(this.skills, this.resolveSkillVisibilityById());
 		return true;
+	}
+
+	/**
+	 * Resolve each loaded skill's effective A.6 visibility to the wire shape,
+	 * keyed by canonical skill id. The single resolution the reload-time publish
+	 * uses; `resolveSkillVisibility` is the pure A.6 truth table so the wire can
+	 * never drift from the listing/tool gates.
+	 */
+	private resolveSkillVisibilityById(): Map<string, SkillSetVisibility> {
+		const byId = new Map<string, SkillSetVisibility>();
+		for (const skill of this.skills) {
+			const resolved = resolveSkillVisibility(
+				{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
+				this.settingsManager.getSkillVisibilityState(skill.id),
+			);
+			// Projection guard: ResolvedSkillVisibility must remain assignable to the
+			// wire SkillSetVisibility (both structural; kept separate for copyability).
+			const wire: SkillSetVisibility = resolved;
+			byId.set(skill.id, wire);
+		}
+		return byId;
+	}
+
+	/**
+	 * Re-publish the current skill set with caller-supplied resolved visibility,
+	 * without re-scanning (WI-2). A visibility-only change does not alter
+	 * `this.skills`, so the `updateSkillsFromPaths` coalescing guard would suppress
+	 * it; this path bypasses that guard. `publish` always increments the revision,
+	 * so consumers see a fresh snapshot. The caller (AgentSession) passes its own
+	 * refreshed visibility so the wire matches the session's local surfaces even if
+	 * the loader was constructed with a different settings manager.
+	 */
+	republishSkillSet(visibilityById: ReadonlyMap<string, SkillSetVisibility>): void {
+		this.skillSetController.publish(this.skills, visibilityById);
 	}
 
 	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {

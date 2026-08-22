@@ -23,7 +23,16 @@ import type { LoadedSkill, SkillToolList } from "./frontmatter.ts";
 import { buildSkillEnvironment, type SkillInteropContext } from "./interop.ts";
 import { resolveModelOverride } from "./skill-overrides.ts";
 
-/** A.9 rewrite-map seam (Workstream 2 fork emits; core keeps the last received). */
+/**
+ * A.9 rewrite-map seam (Workstream 2 fork emits; core keeps the last received).
+ *
+ * CROSS-REPO CONTRACT (copy set). The rewrite-map channels and types below
+ * (`SKILL_AGENTS_REWRITE_MAPS_CHANNEL`, `SKILL_AGENTS_QUERY_CHANNEL`,
+ * `skillAgentsQueryReplyChannel`, `SkillAgentRewriteEntry`, `SkillAgentRewriteMap`,
+ * `SkillAgentRewriteMaps`, `SkillAgentRewriteMapsEvent`) are copied byte-for-byte
+ * into companion repos, never imported. This is the fork-emits half of the
+ * contract whose core-emits half (the skill-set seam) lives in `skill-set-events.ts`.
+ */
 export const SKILL_AGENTS_REWRITE_MAPS_CHANNEL = "skill-agents:rewrite-maps";
 export const SKILL_AGENTS_QUERY_CHANNEL = "skill-agents:query";
 

@@ -6,9 +6,20 @@ import type { LoadedSkill } from "./frontmatter.ts";
 /**
  * A.9 skill-set seam: one revisioned SkillSetController per EventBus exposes the
  * effective skill set to extensions via `skills:changed` events and a
- * `skills:query`/`skills:query:reply:<requestId>` request/reply pair. These wire
- * types are the canonical cross-repository contract; companion repositories copy
- * them (and the canonical fixture) byte-for-byte rather than redefining them.
+ * `skills:query`/`skills:query:reply:<requestId>` request/reply pair.
+ *
+ * CROSS-REPO CONTRACT (copy set). These wire types are the canonical
+ * cross-repository contract. Companion repositories (the pi-subagents fork, the
+ * claude-bridge companion) COPY the following byte-for-byte and never `import`
+ * them (the published upstream package does not ship this module, so an import
+ * would break their independent buildability):
+ *   - the wire types below (`SkillSetVisibility`, `SkillSetSnapshotSource`,
+ *     `SkillSetSnapshotEntry`, `SkillSetSnapshot`, `SkillsChangedEvent`,
+ *     `SkillsQueryRequest`, `RpcReply`);
+ *   - the `canonicalSkillSetJson` canonical-JSON rule;
+ *   - the committed fixture
+ *     `test/suite/fixtures/skills-contract/skill-set-snapshot.json`.
+ * The rewrite-map half of the contract lives in `runtime.ts` (also copied).
  */
 
 export const SKILLS_CHANGED_CHANNEL = "skills:changed";
@@ -39,6 +50,19 @@ export interface SkillSetSnapshotSource {
 	readonly baseDir?: string;
 }
 
+/**
+ * Resolved A.6 visibility carried on the wire (decision 6): a JSON-safe
+ * structural copy of `ResolvedSkillVisibility` from `./visibility.ts`. Duplicated
+ * (not imported) so this module stays self-contained for byte-for-byte copying
+ * into companion repos. `userInvokeError` is `true` iff the effective state is
+ * `off`; the fork suppresses a skill's bundled agents exactly when it is `true`.
+ */
+export interface SkillSetVisibility {
+	readonly model: "full" | "name" | "no";
+	readonly user: "yes" | "no";
+	readonly userInvokeError: boolean;
+}
+
 export interface SkillSetSnapshotEntry {
 	readonly id: string;
 	readonly name: string;
@@ -46,6 +70,7 @@ export interface SkillSetSnapshotEntry {
 	readonly baseDir: string;
 	readonly source: SkillSetSnapshotSource;
 	readonly frontmatter: { readonly [key: string]: SkillSetJsonValue };
+	readonly visibility: SkillSetVisibility;
 }
 
 export interface SkillSetSnapshot {
@@ -72,7 +97,7 @@ export interface SkillSetController {
 	 * increments; a construction failure keeps the previous snapshot and revision
 	 * and the error surfaces to the caller.
 	 */
-	publish(skills: readonly LoadedSkill[]): SkillSetSnapshot;
+	publish(skills: readonly LoadedSkill[], visibilityById?: ReadonlyMap<string, SkillSetVisibility>): SkillSetSnapshot;
 	/** The current authoritative snapshot (detached and deep-frozen). */
 	getSnapshot(): SkillSetSnapshot;
 }
@@ -113,6 +138,29 @@ function cloneJsonValue(
 	} finally {
 		activeObjects.delete(value);
 	}
+}
+
+/**
+ * Build the wire visibility for one entry as a FRESH detached object (never the
+ * caller-owned map value), so `deepFreeze(snapshot)` cannot freeze loader-owned
+ * state. Falls back to the frontmatter-only `on` row when the map has no entry;
+ * this mirrors the `on` row of `resolveSkillVisibility` (`./visibility.ts`) and
+ * is only reached by non-loader callers — the production loader always passes a
+ * complete map.
+ */
+function entryVisibility(
+	skill: LoadedSkill,
+	visibilityById: ReadonlyMap<string, SkillSetVisibility> | undefined,
+): SkillSetVisibility {
+	const resolved = visibilityById?.get(skill.id);
+	if (resolved) {
+		return { model: resolved.model, user: resolved.user, userInvokeError: resolved.userInvokeError };
+	}
+	return {
+		model: skill.disableModelInvocation ? "no" : "full",
+		user: skill.userInvocable ? "yes" : "no",
+		userInvokeError: false,
+	};
 }
 
 function cloneSourceInfo(sourceInfo: SourceInfo): SkillSetSnapshotSource {
@@ -168,7 +216,7 @@ class SkillSetControllerImpl implements SkillSetController {
 		return this.current;
 	}
 
-	publish(skills: readonly LoadedSkill[]): SkillSetSnapshot {
+	publish(skills: readonly LoadedSkill[], visibilityById?: ReadonlyMap<string, SkillSetVisibility>): SkillSetSnapshot {
 		// Build the full snapshot before touching controller state so a throwing
 		// clone leaves the previous authoritative snapshot and revision intact.
 		// Everything is cloned first: loader-owned skills are never frozen or mutated.
@@ -179,6 +227,7 @@ class SkillSetControllerImpl implements SkillSetController {
 			baseDir: skill.baseDir,
 			source: cloneSourceInfo(skill.sourceInfo),
 			frontmatter: cloneJsonValue(skill.frontmatter) as { readonly [key: string]: SkillSetJsonValue },
+			visibility: entryVisibility(skill, visibilityById),
 		}));
 		const publishedIds = new Set(entries.map((entry) => entry.id));
 		const removed = this.current.skills.map((entry) => entry.id).filter((id) => !publishedIds.has(id));

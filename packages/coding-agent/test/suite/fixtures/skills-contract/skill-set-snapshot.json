@@ -57,6 +57,11 @@
         "path": "__SKILL_SET_FIXTURE_ROOT__/full-contract/SKILL.md",
         "scope": "temporary",
         "source": "local"
+      },
+      "visibility": {
+        "model": "full",
+        "user": "yes",
+        "userInvokeError": false
       }
     },
     {
@@ -74,6 +79,11 @@
         "path": "__SKILL_SET_FIXTURE_ROOT__/minimal-skill/SKILL.md",
         "scope": "user",
         "source": "fixture-package"
+      },
+      "visibility": {
+        "model": "full",
+        "user": "yes",
+        "userInvokeError": false
       }
     }
   ]

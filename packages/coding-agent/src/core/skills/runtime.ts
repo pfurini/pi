@@ -239,6 +239,33 @@ export class SkillRuntime {
 	}
 
 	/**
+	 * A.3.4 applied to the frontmatter `agent:` field, which the body rewrite in
+	 * `rewriteAgentNames` (render.ts) deliberately never touches. Resolves the
+	 * fork `agent:` value through the invoking skill's own rewrite map, mirroring
+	 * the body rule exactly: case-insensitive (the pi-subagents registry folds
+	 * case) and rewriting only entries with `collided: true`. A value already
+	 * containing `:` is a qualified `skill:agent` form — `:` is A.1's reserved
+	 * qualifier separator and pi-subagents refuses to load an agent whose declared
+	 * `name:` contains one, so a qualified value is unforgeable and left unchanged.
+	 */
+	resolveForkAgentType(skillId: string, agent: string | undefined): string | undefined {
+		if (agent === undefined || agent.includes(":")) {
+			return agent;
+		}
+		const map = this.rewriteMaps[skillId];
+		if (!map) {
+			return agent;
+		}
+		const lower = agent.toLowerCase();
+		for (const [bareName, entry] of Object.entries(map)) {
+			if (bareName.toLowerCase() === lower) {
+				return entry.collided ? entry.qualified : agent;
+			}
+		}
+		return agent;
+	}
+
+	/**
 	 * A.8 env for the bash spawn seam: the values of the turn's most recent
 	 * invocation, or undefined when no invocation is active (no skill env is
 	 * composed). Returns a fresh object per call.

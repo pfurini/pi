@@ -683,6 +683,22 @@ would stop them from expanding (a collided agent named `arguments` would otherwi
 built-in placeholder, since matching is case-insensitive). Consequence: an authored `$name` is
 never treated as an agent mention, even when `name` is collided and undeclared.
 
+**Amended 2026-08-22 (WS1 frontmatter `agent:` clarification — spec amendment — not original
+frozen-v6 text):** the rule above governs the SKILL.md **body**; the frontmatter `agent:` field
+(a `context: fork` skill's spawn target, A.5) is a separate consumer and this rewrite stage
+never touches it. The fork spawn resolves it by **mirroring this rule exactly** on the same
+rewrite map: match the value case-insensitively against the invoking skill's own map keys and
+rewrite **only** entries with `collided: true`; otherwise forward the value unchanged. A value
+already containing `:` is a qualified `skill:agent` form — `:` is A.1's reserved qualifier
+separator and pi-subagents refuses to load an agent whose declared `name:` contains one, so a
+qualified value is unforgeable and always already correct — and is left untouched (never
+double-qualified). Implemented as `SkillRuntime.resolveForkAgentType`, consulted at the single
+`_buildForkSpawnParams` choke point that puts `agentType` on the wire. Rejected alternative:
+resolving whenever the map has a matching entry, collided or not. Qualified names are always
+registered, so it is also correct, but it diverges from the documented `collided: true` rule and
+would change the wire value for non-colliding skills; the mirror is preferred for exactly that
+fidelity.
+
 #### A.3.5 Shell injection executor
 
 Syntax: `` !`cmd` `` inline spans and fenced blocks whose info string is `!`. Execution:

@@ -2573,7 +2573,7 @@ export class AgentSession {
 		const background = record.background ?? true;
 		return {
 			skillId: record.skillId,
-			agentType: record.agent,
+			agentType: this._skillRuntime.resolveForkAgentType(record.skillId, record.agent),
 			prompt: rendered.body,
 			options,
 			background,

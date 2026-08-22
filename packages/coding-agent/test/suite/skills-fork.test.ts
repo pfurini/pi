@@ -23,9 +23,11 @@ import { createEventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionAPI } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { sessionEntryToContextMessages } from "../../src/core/session-manager.ts";
+import { SKILL_AGENTS_REWRITE_MAPS_CHANNEL, type SkillAgentRewriteMaps } from "../../src/core/skills/runtime.ts";
 import { normalizeSubagentCompletion, SkillForkClient } from "../../src/core/skills/skill-fork.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
+import { canonicalizePath } from "../../src/utils/paths.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 import {
@@ -777,5 +779,104 @@ describe("C3b fork: stub contract pin", () => {
 		expect(source).toContain("subagents:rpc:ping");
 		expect(source).toContain("subagents:rpc:spawn");
 		expect(source).toContain("subagents:rpc:stop");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Frontmatter `agent:` resolution through the skill's own rewrite map (WS1)
+// ---------------------------------------------------------------------------
+
+/** Canonical skill ID (A.9 key) for a loaded fixture — what createInvocation stamps as skillId. */
+function skillIdFor(harness: Harness, name: string): string {
+	const skill = harness.session.resourceLoader.getSkills().skills.find((s) => s.name === name);
+	if (!skill) {
+		throw new Error(`skill "${name}" not loaded`);
+	}
+	return canonicalizePath(skill.filePath);
+}
+
+/** Publish an A.9 rewrite-maps event on the harness's shared bus (what Workstream 2 will emit). */
+function publishRewriteMaps(harness: Harness, maps: SkillAgentRewriteMaps, revision = 1): void {
+	const bus = harness.session.resourceLoader.getEventBus?.();
+	if (!bus) {
+		throw new Error("harness has no event bus");
+	}
+	bus.emit(SKILL_AGENTS_REWRITE_MAPS_CHANNEL, { revision, maps });
+}
+
+function forkAgentFixture(name: string, agent: string): SkillFixture {
+	return { name, body: `${SENTINEL} ${name} body`, frontmatter: { context: "fork", background: true, agent } };
+}
+
+describe("C3b fork routing: frontmatter agent resolution (A.3.4 applied to `agent:`)", () => {
+	it("rewrites a collided bare name to its qualified form on the wire", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkAgentFixture("skillone", "reviewer")], { stub });
+		harness.setResponses([]);
+		publishRewriteMaps(harness, {
+			[skillIdFor(harness, "skillone")]: { reviewer: { qualified: "skillone:reviewer", collided: true } },
+		});
+
+		await harness.session.prompt("/skill:skillone");
+
+		expect(stub.spawns[0].type).toBe("skillone:reviewer");
+	});
+
+	it("forwards a non-collided bare name unchanged", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkAgentFixture("skilltwo", "reviewer")], { stub });
+		harness.setResponses([]);
+		publishRewriteMaps(harness, {
+			[skillIdFor(harness, "skilltwo")]: { reviewer: { qualified: "skilltwo:reviewer", collided: false } },
+		});
+
+		await harness.session.prompt("/skill:skilltwo");
+
+		expect(stub.spawns[0].type).toBe("reviewer");
+	});
+
+	it("leaves an already-qualified value untouched (never double-qualifies)", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkAgentFixture("skillthree", "someskill:someagent")], { stub });
+		harness.setResponses([]);
+		publishRewriteMaps(harness, {
+			[skillIdFor(harness, "skillthree")]: {
+				"someskill:someagent": { qualified: "skillthree:someskill:someagent", collided: true },
+			},
+		});
+
+		await harness.session.prompt("/skill:skillthree");
+
+		expect(stub.spawns[0].type).toBe("someskill:someagent");
+	});
+
+	it("matches the map key case-insensitively (ADR-0008 reference case)", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkAgentFixture("skillfour", "Reviewer")], { stub });
+		harness.setResponses([]);
+		publishRewriteMaps(harness, {
+			[skillIdFor(harness, "skillfour")]: { reviewer: { qualified: "skillfour:reviewer", collided: true } },
+		});
+
+		await harness.session.prompt("/skill:skillfour");
+
+		expect(stub.spawns[0].type).toBe("skillfour:reviewer");
+	});
+
+	it("forwards unchanged when no map exists or the map is keyed by a different skill id", async () => {
+		const noMapStub = createStubSubagentsExtension();
+		const noMap = await createForkHarness([forkAgentFixture("skillfive", "reviewer")], { stub: noMapStub });
+		noMap.setResponses([]);
+		await noMap.session.prompt("/skill:skillfive");
+		expect(noMapStub.spawns[0].type).toBe("reviewer");
+
+		const wrongKeyStub = createStubSubagentsExtension();
+		const wrongKey = await createForkHarness([forkAgentFixture("skillsix", "reviewer")], { stub: wrongKeyStub });
+		wrongKey.setResponses([]);
+		publishRewriteMaps(wrongKey, {
+			"/some/other/skill/id": { reviewer: { qualified: "other:reviewer", collided: true } },
+		});
+		await wrongKey.session.prompt("/skill:skillsix");
+		expect(wrongKeyStub.spawns[0].type).toBe("reviewer");
 	});
 });

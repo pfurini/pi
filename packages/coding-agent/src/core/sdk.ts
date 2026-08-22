@@ -72,10 +72,12 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi enables the default built-in tools (read, bash, edit, write) — plus
-	 * the `skill` / `slash_command` tools when a model-visible skill or command exists — and
-	 * leaves extension/custom tools enabled unless `noTools` changes that default.
-	 * When provided, only the listed tool names are enabled.
+	 * When omitted, pi uses the `defaultTools` setting for the initial built-in
+	 * selection when configured. Otherwise it enables the default built-in tools
+	 * (read, bash, edit, write) — plus the `skill` / `slash_command` tools when a
+	 * model-visible skill or command exists. Extension/custom tools remain enabled
+	 * unless `noTools` changes that default. When provided, only the listed tool
+	 * names are enabled.
 	 */
 	tools?: string[];
 	/** Optional denylist of tool names to disable. Applies after `tools` when both are provided. */
@@ -230,6 +232,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			defaultProvider: settingsManager.getDefaultProvider(),
 			defaultModelId: settingsManager.getDefaultModel(),
 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
+			modelThinkingLevels: settingsManager.getAllModelThinkingLevels(),
 			modelRuntime,
 		});
 		model = result.model;
@@ -249,7 +252,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			: (settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL);
 	}
 
-	// Fall back to settings default
+	// Fall back to per-model override, then global default
+	if (thinkingLevel === undefined && model) {
+		const perModel = settingsManager.getModelThinkingLevel(model.provider, model.id);
+		if (perModel) {
+			thinkingLevel = perModel;
+		}
+	}
 	if (thinkingLevel === undefined) {
 		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 	}
@@ -264,16 +273,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
-	// Default launch (no --tools / --no-tools / --no-builtin-tools) passes `undefined` so
-	// AgentSession._buildRuntime uses its own default active set, which appends the `skill` /
-	// `slash_command` tools when a model-visible skill or command exists. A hardcoded
-	// ["read","bash","edit","write"] here shadowed that branch, so those two tools were never
-	// active on a real launch (only in harnesses that set baseToolsOverride).
+	const configuredDefaultToolNames = settingsManager.getDefaultTools();
+	// Default launch (no --tools / --no-tools / --no-builtin-tools and no `defaultTools`
+	// setting) passes `undefined` so AgentSession._buildRuntime uses its own default active
+	// set, which appends the `skill` / `slash_command` tools when a model-visible skill or
+	// command exists. A hardcoded ["read","bash","edit","write"] here shadowed that branch, so
+	// those two tools were never active on a real launch (only in harnesses that set
+	// baseToolsOverride).
 	const initialActiveToolNames: string[] | undefined = options.tools
 		? [...options.tools].filter((name) => !excludedToolNameSet?.has(name))
 		: options.noTools
 			? []
-			: undefined;
+			: configuredDefaultToolNames
+				? configuredDefaultToolNames.filter((name) => !excludedToolNameSet?.has(name))
+				: undefined;
 
 	let agent: Agent;
 

@@ -5,10 +5,11 @@
  * substitution (A.3.2) so arguments can never introduce include directives and
  * includes can never be built from substituted values.
  *
- * Recognition mirrors `skills/render.ts:absolutizeSkillPathsInLine`: `@` plus a
- * run of non-whitespace characters, preceded by start-of-line or whitespace,
- * outside code fences (shared scanner, `skills/fences.ts`) and inline code
- * spans; `\@path` escapes to a literal `@path` (backslash removed).
+ * Recognition: `@` plus a run of non-whitespace characters, preceded by
+ * start-of-line or whitespace, outside code fences (shared scanner,
+ * `skills/fences.ts`) and inline code spans; `\@path` escapes to a literal
+ * `@path` (backslash removed). This grammar is command-only — skill bodies
+ * never rewrite `@path` tokens (issue #6).
  *
  * Every failure inlines a bracketed marker in place of the reference and never
  * aborts the render: recursion depth cap 10 (root body is depth 0), canonical

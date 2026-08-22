@@ -92,15 +92,18 @@ Pi registers a dedicated `skill` tool whenever at least one model-visible skill 
 
 ## Rendering Pipeline
 
-Every invocation path (direct prompt, queued steer/follow-up, genuine `skill` tool call) renders through one pipeline with a deterministic, single-pass stage order (later stages never re-scan text produced by earlier stages for earlier-stage syntax):
+Every invocation path (direct prompt, queued steer/follow-up, genuine `skill` tool call) renders through one pipeline with a deterministic stage order:
 
-1. **Base-dir preamble** — `Base directory for this skill: <dir>` is prepended.
-2. **Argument substitution** — the [Argument Grammar](#argument-grammar) over `R`.
-3. **Variable substitution** — `${PI_*}` plus `${CLAUDE_*}` aliases when interop is enabled; see [Skill Variables](#skill-variables).
-4. **`@path` absolutization** — skill-relative `@path` references become absolute against the skill baseDir. Skills never inline file contents: the model reads referenced files itself.
-5. **Agent-name rewrite** — reserved for harness-qualified agent names; a no-op in this repository.
-6. **Shell injection** — `` !`command` `` blocks execute per [Shell Command Injection](#shell-command-injection).
-7. **Tool-name steering note** — when the rendered body references Claude Code tool names, a note mapping them to the Pi equivalents is appended.
+1. **Agent-name rewrite** — reserved for harness-qualified agent names; a no-op in this repository. Runs first, so it sees only the body the author wrote.
+2. **Base-dir preamble** — `Base directory for this skill: <dir>` is prepended.
+3. **Argument substitution** — the [Argument Grammar](#argument-grammar) over `R`.
+4. **Variable substitution** — `${PI_*}` plus `${CLAUDE_*}` aliases when interop is enabled; see [Skill Variables](#skill-variables).
+5. **Shell injection** — `` !`command` `` blocks execute per [Shell Command Injection](#shell-command-injection).
+6. **Tool-name steering note** — when the rendered body references Claude Code tool names, a note mapping them to the Pi equivalents is appended.
+
+No stage reinterprets introduced text as a skill-authored reference. The agent-name rewrite runs before anything else is spliced in, and there is no `@path` stage at all, so a user argument that happens to look like a path is never resolved against the skill's directory. Two stages do read substituted argument text, deliberately: shell injection (Claude Code parity — see the security note under [Shell Command Injection](#shell-command-injection)) and variable substitution.
+
+**Referencing files from a skill.** Skills never inline file contents; the model reads referenced files itself. Write a skill-local reference as `@${PI_SKILL_DIR}/references/x.md` — variable substitution makes it absolute, so only what you marked is rewritten. A bare `@references/x.md` is left exactly as written.
 
 ## Argument Grammar
 

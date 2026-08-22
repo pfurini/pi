@@ -1,27 +1,30 @@
 /**
  * A.3 render pipeline orchestration (ADR-0004): one async renderer with
  * deterministic stage ordering, consumed by every invocation path. Stage
- * order (A.3.1, single pass: later stages never re-scan text produced by
- * earlier stages for earlier-stage syntax):
+ * order (A.3.1):
  *
- * 1. Base-dir preamble (`Base directory for this skill: <dir>`).
- * 2. Argument substitution (A.3.2, arguments.ts).
- * 3. Variable substitution: `${PI_*}` plus `${CLAUDE_*}` aliases when enabled
+ * 1. Agent-name rewrite (A.3.4; no-op without a Workstream 2 rewrite map).
+ * 2. Base-dir preamble (`Base directory for this skill: <dir>`).
+ * 3. Argument substitution (A.3.2, arguments.ts).
+ * 4. Variable substitution: `${PI_*}` plus `${CLAUDE_*}` aliases when enabled
  *    (A.8, interop.ts).
- * 4. `@path` references made absolute against the skill baseDir (no inlining
- *    for skills; the model reads them).
- * 5. Agent-name rewrite (A.3.4; no-op without a Workstream 2 rewrite map).
- * 6. Shell injection (A.3.5, shell-injection.ts).
- * 7. Conditional CC tool-name steering note (ADR-0006 layer 3).
+ * 5. Shell injection (A.3.5, shell-injection.ts).
+ * 6. Conditional CC tool-name steering note (ADR-0006 layer 3).
+ *
+ * No stage reinterprets introduced text as a skill-authored *reference*: the
+ * agent-name rewrite sees only what the author wrote, and there is no `@path`
+ * stage at all (a skill-local reference is written `@${PI_SKILL_DIR}/x.md`, so
+ * ordinary variable substitution makes exactly what the author marked
+ * absolute). Two stages do read substituted argument text, by design: shell
+ * injection (CC parity, see the A.3.5 security note) and variable
+ * substitution.
  */
 
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { stripFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { BashOperations } from "../tools/bash.ts";
 import { parseDeclaredArgumentNames, substituteSkillArguments } from "./arguments.ts";
-import { scanFenceBlocks } from "./fences.ts";
 import type { LoadedSkill } from "./frontmatter.ts";
 import {
 	buildCcToolNote,
@@ -76,22 +79,19 @@ export async function renderSkillInvocation(
 	const content = await readFile(skill.filePath, "utf-8");
 	const rawBody = stripFrontmatter(content).trim();
 
-	// Stage 1: base-dir preamble (skills only).
-	let body = `Base directory for this skill: ${skill.baseDir}\n\n${rawBody}`;
+	// Stage 1: agent-name rewrite (A.3.4), on the authored body alone.
+	const authoredBody = rewriteAgentNames(rawBody, context.rewriteMap);
 
-	// Stage 2: argument substitution (A.3.2).
+	// Stage 2: base-dir preamble (skills only).
+	let body = `Base directory for this skill: ${skill.baseDir}\n\n${authoredBody}`;
+
+	// Stage 3: argument substitution (A.3.2).
 	body = substituteSkillArguments(body, invocation.rawArgs, parseDeclaredArgumentNames(skill.frontmatter.arguments));
 
-	// Stage 3: PI_* / CLAUDE_* variable substitution (A.8).
+	// Stage 4: PI_* / CLAUDE_* variable substitution (A.8).
 	body = substituteSkillVariables(body, buildSkillSubstitutionMap(invocation, { ...context, diagnostics }));
 
-	// Stage 4: `@path` references become absolute against the skill baseDir.
-	body = absolutizeSkillPaths(body, skill.baseDir);
-
-	// Stage 5: agent-name rewrite (A.3.4), including code blocks.
-	body = rewriteAgentNames(body, context.rewriteMap);
-
-	// Stage 6: shell injection (A.3.5). Injection always carries the rendering
+	// Stage 5: shell injection (A.3.5). Injection always carries the rendering
 	// skill's OWN values (A.8), independent of any turn-scoped bash env.
 	body = await injectShellCommands(body, {
 		cwd: context.cwd,
@@ -106,7 +106,7 @@ export async function renderSkillInvocation(
 		diagnostics,
 	});
 
-	// Stage 7: CC tool-name steering note, only when such names are present.
+	// Stage 6: CC tool-name steering note, only when such names are present.
 	const note = buildCcToolNote(body);
 	if (note !== undefined) {
 		body = `${body}\n\n${note}`;
@@ -118,9 +118,15 @@ export async function renderSkillInvocation(
 /**
  * A.3.4 agent-name rewrite: only names in the skill's own rewrite map with
  * `collided: true`; case-insensitive, lexical (complete identifier token, not
- * part of a qualified `skill:agent` form). Applies throughout the body,
- * including code blocks; the frontmatter is already stripped at this stage
- * and `references/` files are never read here.
+ * part of a qualified `skill:agent` form). Applies throughout the authored
+ * body, including code blocks; the frontmatter is already stripped at this
+ * stage and `references/` files are never read here.
+ *
+ * Runs first (A.3.1), so it sees only what the skill author wrote: the base-dir
+ * preamble, substituted arguments, and substituted variable values are all
+ * introduced later and are never scanned for agent names. A `$`-prefixed token
+ * is excluded too — `$reviewer` is an A.3.2 placeholder, not an agent mention,
+ * and rewriting it would stop the placeholder from expanding.
  */
 export function rewriteAgentNames(body: string, rewriteMap: SkillAgentRewriteMap | undefined): string {
 	if (!rewriteMap) {
@@ -132,76 +138,8 @@ export function rewriteAgentNames(body: string, rewriteMap: SkillAgentRewriteMap
 			continue;
 		}
 		const escaped = bareName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		const pattern = new RegExp(`(?<![A-Za-z0-9_:-])${escaped}(?![A-Za-z0-9_:-])`, "gi");
+		const pattern = new RegExp(`(?<![A-Za-z0-9_:$-])${escaped}(?![A-Za-z0-9_:-])`, "gi");
 		result = result.replace(pattern, entry.qualified);
-	}
-	return result;
-}
-
-/**
- * Make skill-relative `@path` references absolute (no inlining, A.3.1).
- * Recognition: `@` + a run of non-whitespace characters, preceded by
- * start-of-line or whitespace, outside fenced code blocks and inline code
- * spans; `\@path` escapes (backslash removed). Already-absolute tokens and
- * tokens without a path separator (prose mentions like `@user`) are left
- * untouched.
- */
-export function absolutizeSkillPaths(body: string, baseDir: string): string {
-	const lines = body.split("\n");
-	// Fenced lines (opener through closer, inclusive) stay verbatim; the shared
-	// scanner (fences.ts) keeps this stage consistent with shell injection's
-	// fence recognition, including unterminated blocks running to end of input.
-	const fencedLines = new Set<number>();
-	for (const block of scanFenceBlocks(lines)) {
-		const lastLine = block.closeLine === -1 ? lines.length - 1 : block.closeLine;
-		for (let i = block.openLine; i <= lastLine; i++) {
-			fencedLines.add(i);
-		}
-	}
-	const out = lines.map((line, index) => (fencedLines.has(index) ? line : absolutizeSkillPathsInLine(line, baseDir)));
-	return out.join("\n");
-}
-
-function isAbsolutePathToken(token: string): boolean {
-	return token.startsWith("/") || token.startsWith("~") || /^[A-Za-z]:[\\/]/.test(token);
-}
-
-function absolutizeSkillPathsInLine(line: string, baseDir: string): string {
-	let result = "";
-	let i = 0;
-	while (i < line.length) {
-		const char = line[i];
-		const atTokenStart = i === 0 || /\s/.test(line[i - 1]);
-		if (char === "\\" && line[i + 1] === "@" && atTokenStart) {
-			// `\@path` escape: renders a literal `@path`.
-			result += "@";
-			i += 2;
-			continue;
-		}
-		if (char === "`") {
-			// Inline code span: copy verbatim through the closing backtick run.
-			const run = line.slice(i).match(/^`+/)?.[0] ?? "`";
-			const close = line.indexOf(run, i + run.length);
-			if (close === -1) {
-				result += line.slice(i);
-				break;
-			}
-			result += line.slice(i, close + run.length);
-			i = close + run.length;
-			continue;
-		}
-		if (char === "@" && atTokenStart) {
-			const token = line.slice(i + 1).match(/^[^\s]+/)?.[0] ?? "";
-			if (token !== "" && !isAbsolutePathToken(token) && (token.includes("/") || token.startsWith("."))) {
-				result += resolve(baseDir, token);
-			} else {
-				result += `@${token}`;
-			}
-			i += 1 + token.length;
-			continue;
-		}
-		result += char;
-		i++;
 	}
 	return result;
 }

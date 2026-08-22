@@ -2,11 +2,12 @@
 /**
  * A.3.2 argument grammar conformance: one focused case per rule, plus the
  * byte-exact Claude Code corpus in test/suite/fixtures/cc-argument-grammar/
- * (probes 1-10 and 12; probe 11 pins the stage-4 `@path` absolutization
- * deviation and is not an argument-grammar assertion).
+ * (all twelve probes; probe 11 is the corpus's `@path` evidence and also gets a
+ * full-pipeline assertion, since argument substitution alone cannot see it).
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -17,6 +18,10 @@ import {
 	substituteSkillArguments,
 	tokenizeSkillArgs,
 } from "../src/core/skills/arguments.ts";
+import { normalizeSkillInput } from "../src/core/skills/frontmatter.ts";
+import { renderSkillInvocation } from "../src/core/skills/render.ts";
+import { DEFAULT_SKILL_SHELL_SETTINGS } from "../src/core/skills/shell-injection.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { parseFrontmatter } from "../src/utils/frontmatter.ts";
 
 describe("tokenizeSkillArgs (A.3.2 tokenizer deviation)", () => {
@@ -244,9 +249,6 @@ describe("substituteSkillArguments — no-substitution shell fixtures", () => {
 // ============================================================================
 
 const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "suite", "fixtures", "cc-argument-grammar");
-// Probe 11 pins the stage-4 `@path` absolutization deviation (issue #6), not
-// the argument grammar, so it is excluded from the byte-equality loop.
-const CORPUS_EXCLUDED_PROBES = new Set(["probe11"]);
 
 interface ManifestEntry {
 	skill: string;
@@ -278,9 +280,6 @@ describe("cc-argument-grammar corpus", () => {
 	});
 
 	for (const entry of manifest) {
-		if (CORPUS_EXCLUDED_PROBES.has(entry.skill)) {
-			continue;
-		}
 		it(`${entry.skill} reproduces CC byte-for-byte (${entry.covers})`, () => {
 			const probeDir = join(CORPUS_DIR, "probes", entry.skill);
 			const skillContent = readFileSync(join(probeDir, "SKILL.md"), "utf-8");
@@ -291,6 +290,53 @@ describe("cc-argument-grammar corpus", () => {
 			expect(rendered).toBe(expected);
 		});
 	}
+
+	it("probe11 reproduces CC through the whole render pipeline, not just argument substitution", async () => {
+		// The loop above exercises `substituteSkillArguments` only. Probe 11 is
+		// the corpus's `@path` evidence, so it needs the full renderer: CC leaves
+		// authored and argument-derived `@path` tokens alone, and so must Pi.
+		const probeDir = join(CORPUS_DIR, "probes", "probe11");
+		const expected = readFileSync(join(probeDir, "expected.txt"), "utf-8");
+		const args = manifest.find((entry) => entry.skill === "probe11")?.args ?? "";
+
+		const dir = mkdtempSync(join(tmpdir(), "pi-probe11-"));
+		try {
+			const filePath = join(dir, "SKILL.md");
+			copyFileSync(join(probeDir, "SKILL.md"), filePath);
+			const { skill } = normalizeSkillInput({
+				name: "probe11",
+				description: "Corpus probe",
+				filePath,
+				baseDir: dir,
+				sourceInfo: createSyntheticSourceInfo(filePath, { source: "test" }),
+				disableModelInvocation: false,
+				frontmatter: {},
+			});
+			const result = await renderSkillInvocation(
+				skill,
+				{
+					invocationId: "inv-probe11",
+					skillId: skill.id,
+					name: skill.name,
+					baseDir: skill.baseDir,
+					filePath: skill.filePath,
+					rawArgs: args,
+				},
+				{
+					cwd: dir,
+					sessionId: "session-1",
+					thinkingLevel: "medium",
+					skillInterop: true,
+					activeToolNames: [],
+					shellSettings: { ...DEFAULT_SKILL_SHELL_SETTINGS },
+				},
+			);
+			// The renderer trims the raw body and prepends the base-dir preamble.
+			expect(result.body).toBe(`Base directory for this skill: ${dir}\n\n${expected.trimEnd()}`);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("public surface (AC8)", () => {

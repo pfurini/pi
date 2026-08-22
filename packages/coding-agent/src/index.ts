@@ -291,7 +291,6 @@ export {
 	skillPathTouchFromToolCall,
 } from "./core/skills/paths-boost.ts";
 export {
-	absolutizeSkillPaths,
 	type RenderedSkillInvocation,
 	type RenderSkillContext,
 	renderSkillInvocation,

@@ -434,19 +434,30 @@ extensions. `license`, `compatibility`, `metadata` are parsed and preserved.
 
 #### A.3.1 Stages
 
-1. Base-dir preamble: prepend `Base directory for this skill: <dir>` (skills only).
-2. Argument substitution (A.3.2).
-3. Variable substitution: `${PI_SKILL_DIR}`, `${PI_PROJECT_DIR}`, `${PI_SESSION_ID}`,
+**Amended 2026-08-22 (issue #6 — spec amendment — not original frozen-v6 text):** the
+`@path` absolutization stage this section previously listed is removed, and the agent-name
+rewrite moves to the front of the pipeline. The removed stage was a Pi-only invention with no
+Claude Code counterpart (corpus probe 11), and because it ran after argument substitution it
+resolved user-supplied argument text against the skill's base directory. The stage list and
+the cross-stage rule below replace the previous text in full.
+
+1. Agent-name rewrite (A.3.4) — no-op without a Workstream 2 rewrite map.
+2. Base-dir preamble: prepend `Base directory for this skill: <dir>` (skills only).
+3. Argument substitution (A.3.2).
+4. Variable substitution: `${PI_SKILL_DIR}`, `${PI_PROJECT_DIR}`, `${PI_SESSION_ID}`,
    `${PI_EFFORT}`; the `${CLAUDE_*}` spellings accepted as aliases (ADR-0007).
-4. Agent-name rewrite (A.3.4) — no-op without a Workstream 2 rewrite map.
 5. Shell injection (A.3.5).
 
-Commands prepend an include-inlining stage before stage 2 (A.7.1) and skip stage 1. Single
-pass: later stages never re-scan text produced by earlier stages for earlier-stage syntax
-(e.g. shell output is not substituted; substituted args inside `` !` `` **are** part of the
-command — see A.3.5 security note). There is **no `@file` inlining for skills**: substitution
-makes `@`-referenced paths absolute and the model reads them. The rendered result is what gets
-delivered (A.4) and persists in context for the session.
+Commands prepend an include-inlining stage before argument substitution (A.7.1) and skip the
+preamble stage. Single pass: **no stage reinterprets introduced text as a skill-authored
+reference.** The agent-name rewrite runs first and therefore sees only what the author wrote;
+shell output is not substituted. Two stages do read substituted argument text, deliberately:
+shell injection (substituted args inside `` !` `` **are** part of the command — see the A.3.5
+security note) and variable substitution. There is **no `@file` inlining and no `@path`
+rewriting for skills**: an author marks a skill-local reference with `@${PI_SKILL_DIR}/x.md`
+and ordinary variable substitution makes exactly that reference absolute, matching CC's
+mechanism. The rendered result is what gets delivered (A.4) and persists in context for the
+session.
 
 #### A.3.2 Argument grammar (normative)
 
@@ -460,8 +471,9 @@ trigger the corpus falsifies) and is replaced in full by the CC-exact grammar be
 `packages/coding-agent/test/suite/fixtures/cc-argument-grammar/` (twelve probe skills
 with byte-exact captured output, a `manifest.json` of invocation args, and a README
 recording the capture method and re-capture procedure), captured 2026-08-21 against
-Claude Code 2.1.237. Probes 1-10 and 12 establish the grammar below; probe 11 pins the
-neighbouring `@path` absolutization stage. For this section only, the corpus supersedes
+Claude Code 2.1.237. Probes 1-10 and 12 establish the grammar below; probe 11 shows that CC
+performs no `@path` rewriting at all, authored or argument-derived (issue #6 removed Pi's
+stage on that evidence). For this section only, the corpus supersedes
 the appendix-wide CC 2.1.220 anchor in the Appendix A preamble; the binary-extracted
 reference behind that anchor never recorded the index base, which is what admitted the
 defect this amendment removes. The preamble's governance clause is unchanged: where CC
@@ -534,17 +546,16 @@ Single pass. Substitution is one pass over the body: repeated placeholders subst
 repeatedly (probes 1, 10), and substituted values are never re-scanned for placeholders
 *(derived, unprobed)*.
 
-Cross-stage reinterpretation. Two later A.3.1 stages deliberately process the whole
-rendered body and so reach substituted argument text by design: agent-name rewrite
-(A.3.4) and shell injection (A.3.5). A.3.5's post-substitution scanning of argument text
-is CC parity — an argument-supplied `` !`cmd` `` executes, including inside the rule-8
-`ARGUMENTS: R` append — and the A.3.5 security note states this is by design. Outside
-those deliberate stages, later stages do not reinterpret substituted argument text as
-skill-authored syntax. **Known violation** of that rule: the `@path` absolutization stage
-(`core/skills/render.ts`) rewrites argument-supplied `@path` values against the skill
-base directory, tracked at https://github.com/pfurini/pi/issues/6. CC performs no `@path`
-absolutization at all (corpus probe 11), so the stage is itself a deviation the issue
-tracks.
+Cross-stage reinterpretation. **Amended 2026-08-22 (issue #6).** The previous text named two
+A.3.1 stages as deliberately reaching substituted argument text — agent-name rewrite (A.3.4)
+and shell injection (A.3.5) — and recorded the `@path` absolutization stage as a known
+violation of the surrounding rule. Both statements are now obsolete: A.3.4 runs first and sees
+only authored text, and the `@path` stage no longer exists. Replacement rule: **no stage
+reinterprets introduced text as a skill-authored reference.** Two stages still read substituted
+argument text by design. A.3.5's post-substitution scanning is CC parity — an argument-supplied
+`` !`cmd` `` executes, including inside the rule-8 `ARGUMENTS: R` append — and the A.3.5
+security note states this is by design. Variable substitution likewise sees argument text; no
+probe covers whether CC does the same, so it is unverified rather than deliberate parity.
 
 Pi deviations (deliberate):
 
@@ -651,13 +662,26 @@ Reply with exactly: done
 
 #### A.3.4 Agent-name rewrite rule (ADR-0008)
 
+**Amended 2026-08-22 (issue #6 — spec amendment — not original frozen-v6 text):** this stage
+now runs **first** in A.3.1, on the authored body alone, and skips `$`-prefixed tokens. The
+paragraph below replaces the previous text in full.
+
 Applies only to names in the invoked skill's own rewrite map with `collided: true` (A.9).
 Matching is **case-insensitive** (the subagents registry folds case) and **lexical**: a match
-is a complete identifier token — not preceded or followed by `[A-Za-z0-9_-]` — and not already
-part of a qualified `skill:agent` form. Rewrites apply throughout the SKILL.md body **including
-code blocks** (agent-invocation examples live in fenced blocks, e.g. the `simplify` reference
-skill) but never inside frontmatter. `references/` files are not rewritten (ADR-0008; bare
-names there resolve via the bare-when-free rule).
+is a complete identifier token — not preceded or followed by `[A-Za-z0-9_-]`, not preceded by
+`$`, and not already part of a qualified `skill:agent` form. Rewrites apply throughout the
+SKILL.md body **including code blocks** (agent-invocation examples live in fenced blocks, e.g.
+the `simplify` reference skill) but never inside frontmatter. `references/` files are not
+rewritten (ADR-0008; bare names there resolve via the bare-when-free rule).
+
+Scope is the **authored body only.** Running first is what makes that true: the base-dir
+preamble, substituted arguments, and substituted variable values are all introduced by later
+stages and are never scanned for agent names, so a user argument that happens to equal a
+collided agent name is delivered unchanged. The `$` exclusion is required by the same ordering:
+`$reviewer` and `$ARGUMENTS` are A.3.2 placeholders, and rewriting them before substitution
+would stop them from expanding (a collided agent named `arguments` would otherwise consume the
+built-in placeholder, since matching is case-insensitive). Consequence: an authored `$name` is
+never treated as an agent mention, even when `name` is collided and undeclared.
 
 #### A.3.5 Shell injection executor
 

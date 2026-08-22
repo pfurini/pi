@@ -70,6 +70,7 @@ const interactiveModePrototype = InteractiveMode.prototype as unknown as Interac
 const HANDLER_NAMES = [
 	"showSettingsSelector",
 	"handleModelCommand",
+	"handleThinkingCommand",
 	"showModelsSelector",
 	"showSkillsSelector",
 	"handleExportCommand",
@@ -105,6 +106,7 @@ function handler(context: DispatchContext, name: HandlerName): ReturnType<typeof
 const HANDLER_BY_COMMAND: Record<string, HandlerName> = {
 	settings: "showSettingsSelector",
 	model: "handleModelCommand",
+	thinking: "handleThinkingCommand",
 	"scoped-models": "showModelsSelector",
 	skills: "showSkillsSelector",
 	export: "handleExportCommand",
@@ -131,6 +133,7 @@ const HANDLER_BY_COMMAND: Record<string, HandlerName> = {
 /** Argument convention per built-in; every name not listed here is exact-only. */
 const ARG_CONVENTION: Record<string, "remainder" | "full"> = {
 	model: "remainder",
+	thinking: "remainder",
 	login: "remainder",
 	compact: "remainder",
 	export: "full",

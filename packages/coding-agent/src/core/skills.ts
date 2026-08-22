@@ -271,37 +271,57 @@ function loadSkillFromFile(
 		diagnostics.push(isolationDiagnostic(filePath));
 		return { skill: null, diagnostics };
 	}
-	try {
-		const rawContent = readFileSync(filePath, "utf-8");
-		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
-		const skillDir = dirname(filePath);
-		const parentDirName = basename(skillDir);
-		const description = typeof frontmatter.description === "string" ? frontmatter.description : undefined;
-		if (!description || description.trim() === "") {
-			for (const error of validateSkillDescription(description)) {
-				diagnostics.push({ type: "warning", message: error, path: filePath });
-			}
-			return { skill: null, diagnostics };
-		}
 
-		const name =
-			typeof frontmatter.name === "string" && frontmatter.name.trim() !== "" ? frontmatter.name : parentDirName;
-		const normalized = normalizeSkillInput({
-			name,
-			description,
-			filePath,
-			baseDir: skillDir,
-			sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
-			disableModelInvocation: false,
-			frontmatter,
-		});
-		diagnostics.push(...normalized.diagnostics);
-		return { skill: normalized.skill, diagnostics };
+	// A root Markdown file that is not a declared `SKILL.md` (README.md, AGENTS.md, ...) is
+	// scanned but is not an authored skill, so a parse failure or a missing description is
+	// not an authoring error and must not be reported as a broken skill.
+	const isDeclaredSkill = basename(filePath) === "SKILL.md";
+
+	let rawContent: string;
+	try {
+		rawContent = readFileSync(filePath, "utf-8");
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "failed to parse skill file";
+		const message = error instanceof Error ? error.message : "failed to read skill file";
 		diagnostics.push({ type: "warning", message, path: filePath });
 		return { skill: null, diagnostics };
 	}
+
+	let frontmatter: SkillFrontmatter;
+	try {
+		({ frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent));
+	} catch (error) {
+		if (isDeclaredSkill) {
+			const message = error instanceof Error ? error.message : "failed to parse skill file";
+			diagnostics.push({ type: "warning", message, path: filePath });
+		}
+		return { skill: null, diagnostics };
+	}
+
+	const skillDir = dirname(filePath);
+	const parentDirName = basename(skillDir);
+	const description = typeof frontmatter.description === "string" ? frontmatter.description : undefined;
+	if (!description || description.trim() === "") {
+		if (isDeclaredSkill) {
+			for (const error of validateSkillDescription(description)) {
+				diagnostics.push({ type: "warning", message: error, path: filePath });
+			}
+		}
+		return { skill: null, diagnostics };
+	}
+
+	const name =
+		typeof frontmatter.name === "string" && frontmatter.name.trim() !== "" ? frontmatter.name : parentDirName;
+	const normalized = normalizeSkillInput({
+		name,
+		description,
+		filePath,
+		baseDir: skillDir,
+		sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
+		disableModelInvocation: false,
+		frontmatter,
+	});
+	diagnostics.push(...normalized.diagnostics);
+	return { skill: normalized.skill, diagnostics };
 }
 
 export interface LoadSkillsOptions {

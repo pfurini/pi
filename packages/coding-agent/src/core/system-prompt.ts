@@ -88,7 +88,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 				skillVisibility,
 			);
 		}
-		prompt += `\nCurrent working directory: ${promptCwd}`;
+		prompt += `\nCurrent working directory: ${promptCwd}\n`;
 
 		return prompt;
 	}

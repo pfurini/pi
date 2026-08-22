@@ -1,3 +1,7 @@
+// CROSS-REPO COPY SET, import discipline: the wire declarations in this module
+// are copied verbatim into companion repos (see the header below). Do NOT add
+// an import the wire types would depend on (in particular nothing from
+// `./visibility.ts`); new imports may serve only the controller internals.
 import { deepFreeze } from "../../utils/deep-freeze.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { SourceInfo } from "../source-info.ts";
@@ -53,8 +57,8 @@ export interface SkillSetSnapshotSource {
 /**
  * Resolved A.6 visibility carried on the wire (decision 6): a JSON-safe
  * structural copy of `ResolvedSkillVisibility` from `./visibility.ts`. Duplicated
- * (not imported) so this module stays self-contained for byte-for-byte copying
- * into companion repos. `userInvokeError` is `true` iff the effective state is
+ * (not imported) so the wire declarations stay dependency-free for byte-for-byte
+ * copying into companion repos. `userInvokeError` is `true` iff the effective state is
  * `off`; the fork suppresses a skill's bundled agents exactly when it is `true`.
  */
 export interface SkillSetVisibility {

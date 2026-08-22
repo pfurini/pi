@@ -217,6 +217,36 @@ describe("SkillForkClient: presence detection", () => {
 		bus.emit("subagents:ready", {});
 		expect(await client.detectPresence()).toBe(true);
 	});
+
+	it("re-negotiates version and capabilities when subagents:ready fires again", async () => {
+		// The peer changed under the session (extension upgrade/downgrade + /reload):
+		// ready must invalidate the cached probe AND the captured negotiation, or the
+		// capability gate keeps a stale verdict in both directions.
+		const bus = createEventBus();
+		let ping: { version: number; capabilities?: { skillAgents: boolean } } = { version: 2 };
+		bus.on("subagents:rpc:ping", (raw) => {
+			const { requestId } = raw as { requestId: string };
+			bus.emit(stubReplyChannel("subagents:rpc:ping", requestId), { success: true, data: ping });
+		});
+		const client = new SkillForkClient(bus, CLIENT_OPTIONS);
+		expect(await client.detectPresence()).toBe(true);
+		expect(client.getDetectedVersion()).toBe(2);
+		expect(client.isSkillAgentsCapable()).toBe(false);
+
+		// Upgrade: the next probe must see v3 + skillAgents, not the cached v2.
+		ping = { version: 3, capabilities: { skillAgents: true } };
+		bus.emit("subagents:ready", {});
+		expect(await client.detectPresence()).toBe(true);
+		expect(client.getDetectedVersion()).toBe(3);
+		expect(client.isSkillAgentsCapable()).toBe(true);
+
+		// Downgrade: a stale capable verdict would leak qualified types to a v2 peer.
+		ping = { version: 2 };
+		bus.emit("subagents:ready", {});
+		expect(await client.detectPresence()).toBe(true);
+		expect(client.getDetectedVersion()).toBe(2);
+		expect(client.isSkillAgentsCapable()).toBe(false);
+	});
 });
 
 describe("SkillForkClient: spawn outcomes", () => {
@@ -418,8 +448,11 @@ describe("normalizeAgentEnded (WI-3)", () => {
 				status,
 			});
 		}
-		// Missing/garbage payloads degrade to a non-error, empty-id completion.
-		expect(normalizeAgentEnded(null)).toEqual({ agentId: "", ok: true });
+		// A payload without a string status is malformed: dropped (undefined), never
+		// guessed as a success.
+		expect(normalizeAgentEnded(null)).toBeUndefined();
+		expect(normalizeAgentEnded({ agentId: "m" })).toBeUndefined();
+		expect(normalizeAgentEnded({ agentId: "m", status: 3 })).toBeUndefined();
 	});
 });
 
@@ -444,6 +477,7 @@ describe("SkillForkClient: v3 negotiation and agent-ended (WI-3)", () => {
 			["steered", true],
 			["error", false],
 			["aborted", false],
+			["stopped", false],
 		] as const) {
 			const { bus } = boundStub({
 				protocolVersion: 3,
@@ -458,7 +492,11 @@ describe("SkillForkClient: v3 negotiation and agent-ended (WI-3)", () => {
 				options: {},
 				background: false,
 			});
-			expect(outcome).toMatchObject({ kind: "completed", ok: expectedOk, status });
+			expect(outcome).toMatchObject(
+				expectedOk
+					? { kind: "completed", ok: true, status, result: "r" }
+					: { kind: "completed", ok: false, status, error: "e" },
+			);
 		}
 	});
 
@@ -510,6 +548,40 @@ describe("SkillForkClient: v3 negotiation and agent-ended (WI-3)", () => {
 		expect(spawnRequestId).toBeDefined();
 		expect(outcome).toMatchObject({ kind: "completed", ok: true, result: "first" });
 	});
+
+	it("delivers a pre-reply dual-emit exactly once to a background collector", async () => {
+		// Same dual-emit race, observed through the background callback: the
+		// collector must see exactly ONE delivery, carrying the FIRST payload (a
+		// foreground promise can only observe one resolution, so it cannot
+		// distinguish one delivery from two).
+		const bus = createEventBus();
+		bus.on("subagents:rpc:ping", (raw) => {
+			const { requestId } = raw as { requestId: string };
+			bus.emit(stubReplyChannel("subagents:rpc:ping", requestId), {
+				success: true,
+				data: { version: STUB_PROTOCOL_VERSION_V3, capabilities: { skillAgents: true } },
+			});
+		});
+		bus.on("subagents:rpc:spawn", (raw) => {
+			const { requestId } = raw as { requestId: string };
+			bus.emit("subagents:completed", { id: "race-bg", status: "completed", result: "first" });
+			bus.emit("subagents:agent-ended", { agentId: "race-bg", status: "completed", result: "second" });
+			bus.emit(stubReplyChannel("subagents:rpc:spawn", requestId), { success: true, data: { id: "race-bg" } });
+		});
+		const client = new SkillForkClient(bus, CLIENT_OPTIONS);
+		const delivered: string[] = [];
+		const outcome = await client.spawn({
+			skillId: "s",
+			agentType: undefined,
+			prompt: "p",
+			options: {},
+			background: true,
+			onBackgroundComplete: (completion) => delivered.push(completion.result ?? ""),
+		});
+		expect(outcome).toMatchObject({ kind: "spawned-background", agentId: "race-bg" });
+		await flush();
+		expect(delivered).toEqual(["first"]);
+	});
 });
 
 describe("stub v3 mode (WI-4)", () => {
@@ -548,8 +620,13 @@ describe("stub v3 mode (WI-4)", () => {
 		stub.factory({ events: bus } as unknown as ExtensionAPI);
 		const ended: unknown[] = [];
 		bus.on("subagents:agent-ended", (data) => ended.push(data));
+		// The no-completion default is a bare completed event (the common WS2 path).
+		stub.endAgent("agent-0");
 		stub.endAgent("agent-1", { status: "steered", result: "wrapped" });
-		expect(ended).toEqual([{ agentId: "agent-1", status: "steered", result: "wrapped" }]);
+		expect(ended).toEqual([
+			{ agentId: "agent-0", status: "completed" },
+			{ agentId: "agent-1", status: "steered", result: "wrapped" },
+		]);
 	});
 });
 

@@ -1086,7 +1086,9 @@ Facts an implementer builds on; re-locate by symbol name if lines drift.
    A.9 envelope (`PROTOCOL_VERSION = 2`, `RpcReply`, `requestId`, ping → `{version}`, spawn →
    `{id}` only; the RPC reply is emitted after the handler returns). Internal completion state
    already carries the native status set `completed|error|aborted|stopped` plus result/error
-   (`src/index.ts` ~148, ~242, ~402) — the A.9 `agent-ended` event surfaces it unchanged.
+   (`src/index.ts` ~148, ~242, ~402); the fork extends that set with `steered`, and the A.9
+   `agent-ended` event surfaces the fork's native set unchanged (see the 2026-08-22 A.9
+   core-prep clarification).
 6. **Bash tool env seam:** `core/tools/bash.ts` — `resolveSpawnContext` builds a
    **per-execution** env snapshot from `getShellEnv()`, strips `PI_SESSION_ID`/`PI_MODEL`/etc.,
    and re-injects them when `exposeSessionEnvironment` is on; a `BashSpawnHook` can transform

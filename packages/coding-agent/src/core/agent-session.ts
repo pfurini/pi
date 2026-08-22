@@ -606,6 +606,8 @@ export class AgentSession {
 	private _skillListingSkeletonOverflowing = false;
 	/** A.6 per-skill visibility (c4c): the shared, settings-derived resolved-visibility map, refreshed at every prompt rebuild; the model-facing gates (listing, `skill` tool), the user-facing registry, and the `/skills` view all consume this one map so they cannot drift. */
 	private _skillVisibility: ReadonlyMap<string, ResolvedSkillVisibility> = new Map();
+	/** One-time (per session) warning that the loader cannot republish the A.9 snapshot after a visibility change (WI-2). */
+	private _republishUnsupportedWarned = false;
 	/** Skill-listing diagnostics computed before an extension error listener was bound; flushed once `bindExtensions` attaches one. */
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
 	/** Lightweight-loader fallback: diagnostics from the latest prompt-template adaptation (replaced, never appended). */
@@ -2425,7 +2427,21 @@ export class AgentSession {
 			// WI-2: re-publish the A.9 snapshot so a subagents fork sees the new
 			// visibility immediately (not only at the next reload). Pass the session's
 			// just-refreshed resolution so the wire matches the local surfaces above.
-			this._resourceLoader.republishSkillSet?.(this._skillVisibility);
+			if (this._resourceLoader.republishSkillSet) {
+				this._resourceLoader.republishSkillSet(this._skillVisibility);
+			} else if (!this._republishUnsupportedWarned) {
+				// Once per session: without `republishSkillSet` the A.9 wire snapshot
+				// stays stale until the next reload; surface the degraded consistency
+				// instead of silently claiming full success.
+				this._republishUnsupportedWarned = true;
+				this._emitSkillDiagnostics([
+					{
+						type: "warning",
+						message:
+							"Skill visibility changed, but this resource loader does not implement republishSkillSet; extensions keep the previous skills:changed snapshot until the next reload.",
+					},
+				]);
+			}
 		} catch (error) {
 			return { ok: false, error: error instanceof Error ? error.message : String(error) };
 		}

@@ -38,7 +38,7 @@ import {
 	type WatchTimers,
 } from "./skills/resource-watch.ts";
 import { getSkillSetController, type SkillSetController, type SkillSetVisibility } from "./skills/skill-set-events.ts";
-import { resolveSkillVisibility } from "./skills/visibility.ts";
+import { type ResolvedSkillVisibility, resolveSkillVisibility } from "./skills/visibility.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
@@ -1075,9 +1075,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 				{ disableModelInvocation: skill.disableModelInvocation, userInvocable: skill.userInvocable },
 				this.settingsManager.getSkillVisibilityState(skill.id),
 			);
-			// Projection guard: ResolvedSkillVisibility must remain assignable to the
-			// wire SkillSetVisibility (both structural; kept separate for copyability).
-			const wire: SkillSetVisibility = resolved;
+			// Parity guard, both directions: `ResolvedSkillVisibility` and the wire
+			// `SkillSetVisibility` are deliberate duplicates (cross-repo copyability).
+			// The plain assignment rejects wire fields the resolver lacks; the
+			// `Record<Exclude…>` intersection rejects resolver fields the wire copy
+			// would silently drop — either drift fails compilation here, forcing the
+			// deliberate wire-contract review the duplicated type exists for.
+			const wire: SkillSetVisibility &
+				Record<Exclude<keyof ResolvedSkillVisibility, keyof SkillSetVisibility>, never> = resolved;
 			byId.set(skill.id, wire);
 		}
 		return byId;

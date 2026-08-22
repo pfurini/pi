@@ -467,3 +467,43 @@ findings verified against source and accepted:
   `fields/` round-trip does not assert the A.9 entry shape, fixture skills
   default to `on`, stub v2 default, fork existence/version/reply-template, and
   the no-changelog rule for branch `personal`.
+
+## Second adversarial review incorporated (2026-08-22, post-landing)
+
+A second multi-lens review of the landed implementation (bd4bb3f91 + 37b4acfda)
+produced one Important and several Minor findings; all except one deliberate
+skip are fixed in the follow-up commit:
+
+- **Important, stale negotiation:** `onReady` invalidated only a cached
+  *negative* probe, so an extension upgrade/downgrade + `/reload` kept a stale
+  version/capability verdict for the rest of the session (qualified types could
+  leak to a v2 peer after a downgrade; falsely degraded after an upgrade, while
+  the new peer's rewrite maps still applied). `onReady` now invalidates the
+  probe and the captured negotiation unconditionally; a re-negotiation test
+  covers upgrade and downgrade.
+- **agent-ended without a status:** a payload lacking a string `status`
+  normalized to `ok: true`; `normalizeAgentEnded` now returns `undefined` for
+  it (dropped as malformed) instead of guessing success. Known statuses keep
+  the open `!(error|stopped|aborted)` derivation so fork-native successes such
+  as `steered` never become false failures.
+- **Visibility parity guard:** the loader's one-way `ResolvedSkillVisibility ->
+  SkillSetVisibility` assignment silently permitted resolver-side field
+  additions; replaced with a bidirectional compile-time guard
+  (`Record<Exclude<keyof ...>, never>` intersection on the projection).
+- **Silent republish no-op:** a loader without `republishSkillSet` now triggers
+  a one-time session diagnostic on a visibility change instead of silently
+  leaving the wire snapshot stale while reporting success.
+- **Test gaps closed:** `stopped` added to the agent-ended settlement matrix
+  (with result/error carriage asserted per branch); the first-wins dual-emit
+  race now also asserts exactly-one delivery via a background collector; the
+  isolation test asserts a caller-owned visibility map value stays unfrozen and
+  mutable after publish; the stub's `endAgent` default `completed` payload is
+  pinned.
+- **Copy-set guard placement:** the do-not-import warning now sits directly at
+  the import block of `skill-set-events.ts`, and the "self-contained" claim is
+  narrowed to the wire declarations.
+- **Docs:** Appendix B.5's status set now notes the fork adds `steered`,
+  restoring consistency with the A.9 core-prep clarification.
+- **Deliberately not fixed:** accepting a non-finite `version` from a malformed
+  ping reply (`typeof === "number"` without `Number.isInteger`); requires a
+  broken same-bus peer to matter.

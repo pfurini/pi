@@ -871,6 +871,21 @@ unknown-map:
 		const skill = loader.getSkills().skills[0];
 		expect(skill.frontmatter.metadata).toEqual({ owner: "core" });
 		expect(Object.isFrozen(skill.frontmatter)).toBe(false);
+
+		// WI-1 detach-before-freeze: a caller-owned visibility map value is copied,
+		// not frozen — publication must never freeze loader/session-owned state.
+		const callerOwned: { model: "full" | "name" | "no"; user: "yes" | "no"; userInvokeError: boolean } = {
+			model: "full",
+			user: "yes",
+			userInvokeError: false,
+		};
+		const controller = getSkillSetController(eventBus);
+		const republished = controller.publish([skill], new Map([[skill.id, callerOwned]]));
+		expect(republished.skills[0].visibility).toEqual(callerOwned);
+		expect(Object.isFrozen(republished.skills[0].visibility)).toBe(true);
+		expect(Object.isFrozen(callerOwned)).toBe(false);
+		callerOwned.model = "no"; // still mutable, and the published snapshot is unaffected
+		expect(republished.skills[0].visibility.model).toBe("full");
 	});
 
 	it("ignores malformed query payloads without throwing or emitting replies", () => {

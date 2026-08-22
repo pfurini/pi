@@ -106,27 +106,33 @@ export function normalizeSubagentCompletion(channel: string, payload: unknown): 
 }
 
 /**
- * Map a `subagents:agent-ended` event (WS2 v3) to the routing shape. Correlated
- * by `agentId` (not `id`), and `ok` is derived from the native status: success is
- * everything that is not a hard failure, mirroring the fork's own `isError` split
+ * Map a `subagents:agent-ended` event (WS2 v3) to the routing shape, or
+ * `undefined` for a malformed payload without a string `status`: a terminal
+ * event must carry the fork's native status, and guessing success for one that
+ * does not would silently swallow a failure. Correlated by `agentId` (not
+ * `id`), and `ok` is derived from the native status: success is everything that
+ * is not a hard failure, mirroring the fork's own `isError` split
  * (`error | stopped | aborted`). So `completed` AND `steered` are successes,
  * whether or not the fork carries `steered` in this event.
  */
-export function normalizeAgentEnded(payload: unknown): NormalizedCompletion {
+export function normalizeAgentEnded(payload: unknown): NormalizedCompletion | undefined {
 	const p = (typeof payload === "object" && payload !== null ? payload : {}) as {
 		agentId?: unknown;
 		result?: unknown;
 		error?: unknown;
 		status?: unknown;
 	};
-	const status = typeof p.status === "string" ? p.status : undefined;
+	if (typeof p.status !== "string") {
+		return undefined;
+	}
+	const status = p.status;
 	const isError = status === "error" || status === "stopped" || status === "aborted";
 	return {
 		agentId: typeof p.agentId === "string" ? p.agentId : "",
 		ok: !isError,
 		...(typeof p.result === "string" && { result: p.result }),
 		...(typeof p.error === "string" && { error: p.error }),
-		...(status !== undefined && { status }),
+		status,
 	};
 }
 
@@ -158,7 +164,6 @@ export class SkillForkClient {
 	private awaitingSpawnReply = 0;
 	private readonly unsubscribers: Array<() => void> = [];
 	private presencePromise: Promise<boolean> | undefined;
-	private presenceResolved: boolean | undefined;
 	/** Negotiated protocol version from the ping reply (WS2); undefined until detection runs. */
 	private detectedVersion: number | undefined;
 	/** Advertised `capabilities.skillAgents` from the ping reply; undefined until detection runs. */
@@ -182,7 +187,12 @@ export class SkillForkClient {
 				eventBus.on(SUBAGENTS_FAILED, (data) =>
 					this.deliverCompletion(normalizeSubagentCompletion(SUBAGENTS_FAILED, data)),
 				),
-				eventBus.on(SUBAGENTS_AGENT_ENDED, (data) => this.deliverCompletion(normalizeAgentEnded(data))),
+				eventBus.on(SUBAGENTS_AGENT_ENDED, (data) => {
+					const completion = normalizeAgentEnded(data);
+					if (completion) {
+						this.deliverCompletion(completion);
+					}
+				}),
 				eventBus.on(SUBAGENTS_READY, () => this.onReady()),
 			);
 		}
@@ -190,8 +200,9 @@ export class SkillForkClient {
 
 	/**
 	 * Feature-detect a subagents extension via `subagents:rpc:ping` (2s). Memoized
-	 * as a `Promise<boolean>` so concurrent first calls single-flight; a cached
-	 * negative is invalidated by a later `subagents:ready` broadcast.
+	 * as a `Promise<boolean>` so concurrent first calls single-flight; any cached
+	 * result (and captured negotiation) is invalidated by a later `subagents:ready`
+	 * broadcast, since the peer may have changed.
 	 */
 	detectPresence(): Promise<boolean> {
 		if (this.presencePromise) {
@@ -204,7 +215,6 @@ export class SkillForkClient {
 	private probePresence(): Promise<boolean> {
 		const bus = this.eventBus;
 		if (!bus) {
-			this.presenceResolved = false;
 			return Promise.resolve(false);
 		}
 		return new Promise<boolean>((resolve) => {
@@ -221,7 +231,6 @@ export class SkillForkClient {
 					clearTimeout(timer);
 				}
 				unsubscribe();
-				this.presenceResolved = present;
 				resolve(present);
 			};
 			const unsubscribe = bus.on(replyChannel, (data) => {
@@ -241,12 +250,14 @@ export class SkillForkClient {
 	}
 
 	private onReady(): void {
-		// A subagents extension loaded mid-session: invalidate only a cached negative
-		// so the next fork re-probes; a cached positive stays.
-		if (this.presenceResolved === false) {
-			this.presencePromise = undefined;
-			this.presenceResolved = undefined;
-		}
+		// A subagents extension (re)announced itself mid-session: install, upgrade,
+		// downgrade, or /reload. Invalidate the memoized probe AND the captured
+		// negotiation — the peer may have changed version/capabilities, and a stale
+		// verdict would mis-gate qualified skill:agent types in both directions. The
+		// next fork re-probes (and re-negotiates) before spawning.
+		this.presencePromise = undefined;
+		this.detectedVersion = undefined;
+		this.skillAgentsCapable = undefined;
 	}
 
 	/** Record the negotiated protocol version and capabilities from a successful ping reply (WS2). */

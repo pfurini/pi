@@ -37,6 +37,9 @@ describe("defaultTools setting", () => {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: tempDir,
 			agentDir,
+			// Hermetic: global ~/.agents/skills would otherwise register the C1c
+			// skill tool on machines that have user skills installed.
+			noSkills: true,
 			settingsManager,
 			extensionFactories,
 		});
@@ -63,10 +66,19 @@ describe("defaultTools setting", () => {
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-		).toEqual(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+		).toEqual(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 		expect(session.getActiveToolNames()).toEqual(["grep", "find"]);
 		expect(session.systemPrompt).toContain("- grep:");
 		expect(session.systemPrompt).not.toContain("- read:");
+		session.dispose();
+	});
+
+	it("can select powershell instead of bash", async () => {
+		const session = await createSession(["read", "powershell", "edit", "write"]);
+
+		expect(session.getActiveToolNames()).toEqual(["read", "powershell", "edit", "write"]);
+		expect(session.systemPrompt).toContain("- powershell: Execute PowerShell commands");
+		expect(session.systemPrompt).not.toContain("- bash:");
 		session.dispose();
 	});
 
@@ -131,7 +143,13 @@ describe("defaultTools setting", () => {
 
 	it("applies through service-based session creation", async () => {
 		const settingsManager = SettingsManager.inMemory({ defaultTools: ["ls"] });
-		const services = await createAgentSessionServices({ cwd: tempDir, agentDir, settingsManager });
+		const services = await createAgentSessionServices({
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+			// Hermetic, as above: this path builds its own loader.
+			resourceLoaderOptions: { noSkills: true },
+		});
 		const { session } = await createAgentSessionFromServices({
 			services,
 			sessionManager: SessionManager.inMemory(tempDir),
@@ -143,7 +161,7 @@ describe("defaultTools setting", () => {
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-		).toEqual(["bash", "edit", "find", "grep", "ls", "read", "write"]);
+		).toEqual(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 		expect(session.getActiveToolNames()).toEqual(["ls"]);
 		session.dispose();
 	});

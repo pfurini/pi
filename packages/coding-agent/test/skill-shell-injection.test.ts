@@ -4,6 +4,7 @@
  * output cap, abort, aggregate budget, and sequential ordering.
  */
 
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
 import {
@@ -320,6 +321,28 @@ describe("injectShellCommands", () => {
 		expect(result).toBe(shellUnavailableMarker("powershell"));
 		expect(diagnostics).toHaveLength(1);
 		expect(diagnostics[0].message).toContain("shell unavailable: powershell");
+	});
+
+	it("reports powershell unavailable instead of running the command under bash", async () => {
+		// No `operations`, so this exercises the real resolveSkillShellConfig path.
+		// Stubbing win32 makes it take the getPowerShellConfig() branch, which throws
+		// here because no PowerShell exists on a non-Windows CI box. Returning undefined
+		// from that catch would mean "use the default shell" and execute PowerShell
+		// source under bash, so this pins the ENOENT/unavailable outcome instead.
+		const realPlatform = process.platform;
+		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+		try {
+			const diagnostics: ResourceDiagnostic[] = [];
+			const result = await injectShellCommands(
+				"!`echo executed-under-the-wrong-shell`",
+				injectionOptions({ cwd: tmpdir(), shell: "powershell", diagnostics }),
+			);
+
+			expect(result).toBe(shellUnavailableMarker("powershell"));
+			expect(result).not.toContain("executed-under-the-wrong-shell");
+		} finally {
+			Object.defineProperty(process, "platform", { value: realPlatform, configurable: true });
+		}
 	});
 
 	it("an aborted session inlines the aborted marker and does not execute further blocks", async () => {

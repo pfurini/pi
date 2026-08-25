@@ -13,7 +13,6 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
 	Agent,
@@ -27,6 +26,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import { contentText } from "@earendil-works/pi-ai";
 import type {
+	Api,
 	AssistantMessage,
 	AuthResult,
 	ImageContent,
@@ -49,7 +49,6 @@ import {
 	resetApiProviders,
 } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
-import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
@@ -129,6 +128,7 @@ import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import type { PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader, ResourceLoaderChangeEvent } from "./resource-loader.ts";
+import { exportSessionToJsonl } from "./session-export.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -137,7 +137,7 @@ import type {
 	SessionMessageMetadata,
 	SkillInvocationEntry,
 } from "./session-manager.ts";
-import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
+import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager, SettingsScope } from "./settings-manager.ts";
 import { deriveCarriedSkills } from "./skills/carry-forward.ts";
 import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
@@ -479,6 +479,8 @@ export class AgentSession {
 	private _followUpMessages: string[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
+	/** Context-only custom messages queued during a run, flushed once the current turn's tool results are in. */
+	private _pendingCustomMessages: CustomMessage[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -546,6 +548,9 @@ export class AgentSession {
 	private readonly _skillForkClient: SkillForkClient;
 	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
 	private _pendingForkNotices: ForkNoticeEnvelope[] = [];
+	/** Deferred "switch waiting on the in-flight run" notices, keyed to dedup a pinned chain. */
+	private _pendingContinuationNotices: string[] = [];
+	private _lastContinuationPinKey: string | undefined;
 	/**
 	 * Queued skill invocations (C1c): application-defined queue message → its
 	 * structured record. The message carries the literal `/skill:` text for the
@@ -680,6 +685,10 @@ export class AgentSession {
 		// transform above, after the loop config was built, so re-resolve
 		// model/effort/tools for the consuming request.
 		this.agent.refreshTurnAfterInjection = () => this._resolveInjectedTurnOverride();
+		// A model switch applied to session state is deferred while the originating
+		// provider's run is still calling tools. Session state and the UI already show
+		// the new model, so report the deferral instead of letting the two diverge.
+		this.agent.onContinuationPinned = (pinned, requested) => this._recordContinuationPinned(pinned, requested);
 		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call
 		// to a disallowed tool returns a policy block naming the tool.
 		this.agent.isToolCallDisallowed = (name) => this._resolveDisallowedToolBlock(name);
@@ -1180,6 +1189,15 @@ export class AgentSession {
 					this._retryAttempt = 0;
 				}
 			}
+		}
+
+		// A turn ends after its assistant message and every tool result has been appended,
+		// so this is the first point in the run where a context-only custom message can be
+		// inserted without landing between a tool call and its result. Flushing after the
+		// extension and listener dispatch above also picks up messages that turn_end
+		// handlers queued.
+		if (event.type === "turn_end") {
+			this._flushPendingCustomMessages();
 		}
 	};
 
@@ -1823,6 +1841,10 @@ export class AgentSession {
 				this._expireTurnOverrideState();
 				this._flushPendingBashMessages();
 				this._flushPendingForkNotices();
+				// The pin is released with the run, so a later switch notices again.
+				this._lastContinuationPinKey = undefined;
+				this._flushPendingContinuationNotices();
+				this._flushPendingCustomMessages();
 				await this._emitAgentSettled();
 			}
 		});
@@ -1965,9 +1987,11 @@ export class AgentSession {
 			// before the next request observes the skill listing.
 			this._refreshSkillListingIfDirty();
 
-			// Flush any pending bash messages / fork notices before the new prompt
+			// Flush pending messages and notices before the new prompt.
 			this._flushPendingBashMessages();
 			this._flushPendingForkNotices();
+			this._flushPendingContinuationNotices();
+			this._flushPendingCustomMessages();
 
 			// Validate model
 			if (!this.model) {
@@ -3164,6 +3188,52 @@ export class AgentSession {
 	}
 
 	/**
+	 * Record that a model switch was deferred because the originating provider's run
+	 * is still calling tools. Fires per pinned turn, so a chain of tool-calling turns
+	 * would repeat one notice: dedup on the (pinned, requested) pair and reset the key
+	 * once the switch takes effect, so a later re-switch notices again.
+	 */
+	private _recordContinuationPinned(pinned: Model<Api>, requested: Model<Api>): void {
+		const key = `${pinned.provider}/${pinned.id}>${requested.provider}/${requested.id}`;
+		if (this._lastContinuationPinKey === key) {
+			return;
+		}
+		this._lastContinuationPinKey = key;
+		this._pendingContinuationNotices.push(
+			`Staying on ${pinned.name} until the current tool run finishes; ${requested.name} applies to the next request.`,
+		);
+	}
+
+	/** Flush deferred continuation-pin notices at a turn boundary (mirrors the fork-notice flush). */
+	private _flushPendingContinuationNotices(): void {
+		if (this._pendingContinuationNotices.length === 0) {
+			return;
+		}
+		const notices = this._pendingContinuationNotices;
+		this._pendingContinuationNotices = [];
+		for (const text of notices) {
+			const notice: CustomMessage = {
+				role: "custom",
+				customType: "continuation_pin",
+				content: text,
+				display: true,
+				excludeFromContext: true,
+				timestamp: Date.now(),
+			};
+			this.agent.state.messages.push(notice);
+			this.sessionManager.appendCustomMessageEntry(
+				notice.customType,
+				notice.content,
+				notice.display,
+				notice.details,
+				notice.excludeFromContext,
+			);
+			this._emit({ type: "message_start", message: notice });
+			this._emit({ type: "message_end", message: notice });
+		}
+	}
+
+	/**
 	 * Warn once per mid-prompt (non-sole) `context: fork` skill: it is not one of the
 	 * two A.5 invocation paths, so it renders inline. The diagnostic keeps that from
 	 * being a silent leak of fork-only content into the parent (Problem Statement).
@@ -3402,8 +3472,9 @@ export class AgentSession {
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry.
 	 *
-	 * Handles three cases:
+	 * Handles four cases:
 	 * - Streaming: queues message, processed when loop pulls from queue
+	 * - Streaming + triggerTurn false: appended to state/session once the current turn ends
 	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
 	 * - Not streaming + no trigger: appends to state/session, no turn
 	 *
@@ -3434,16 +3505,40 @@ export class AgentSession {
 			}
 		} else if (options?.triggerTurn) {
 			await this._runAgentPrompt(appMessage);
+		} else if (this.isStreaming) {
+			// Appending now would put the message between an assistant tool call and its
+			// result, which providers that validate message order reject on replay. Defer
+			// to the end of the turn. Nothing is emitted yet: message events must not
+			// describe messages the session tree does not contain.
+			this._pendingCustomMessages.push(appMessage);
 		} else {
-			this.agent.state.messages.push(appMessage);
-			this.sessionManager.appendCustomMessageEntry(
-				message.customType,
-				message.content,
-				message.display,
-				message.details,
-			);
-			this._emit({ type: "message_start", message: appMessage });
-			this._emit({ type: "message_end", message: appMessage });
+			this._appendCustomMessage(appMessage);
+		}
+	}
+
+	private _appendCustomMessage(appMessage: CustomMessage): void {
+		this.agent.state.messages.push(appMessage);
+		this.sessionManager.appendCustomMessageEntry(
+			appMessage.customType,
+			appMessage.content,
+			appMessage.display,
+			appMessage.details,
+		);
+		this._emit({ type: "message_start", message: appMessage });
+		this._emit({ type: "message_end", message: appMessage });
+	}
+
+	/**
+	 * Append custom messages queued while the agent was running.
+	 * Called once the current turn's tool results are in agent state and session history.
+	 */
+	private _flushPendingCustomMessages(): void {
+		if (this._pendingCustomMessages.length === 0) return;
+
+		const pending = this._pendingCustomMessages;
+		this._pendingCustomMessages = [];
+		for (const appMessage of pending) {
+			this._appendCustomMessage(appMessage);
 		}
 	}
 
@@ -5360,36 +5455,7 @@ export class AgentSession {
 	 * @returns The resolved output file path.
 	 */
 	exportToJsonl(outputPath?: string): string {
-		const filePath = resolvePath(
-			outputPath ?? `session-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`,
-			process.cwd(),
-		);
-		const dir = dirname(filePath);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
-
-		const header: SessionHeader = {
-			type: "session",
-			version: CURRENT_SESSION_VERSION,
-			id: this.sessionManager.getSessionId(),
-			timestamp: new Date().toISOString(),
-			cwd: this.sessionManager.getCwd(),
-		};
-
-		const branchEntries = this.sessionManager.getBranch();
-		const lines = [JSON.stringify(header)];
-
-		// Re-chain parentIds to form a linear sequence
-		let prevId: string | null = null;
-		for (const entry of branchEntries) {
-			const linear = { ...entry, parentId: prevId };
-			lines.push(JSON.stringify(linear));
-			prevId = entry.id;
-		}
-
-		writeFileSync(filePath, `${lines.join("\n")}\n`);
-		return filePath;
+		return exportSessionToJsonl(this.sessionManager, outputPath);
 	}
 
 	// =========================================================================

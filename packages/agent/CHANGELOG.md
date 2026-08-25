@@ -13,6 +13,13 @@
 - Added `harness/listing-budget.ts`, the new home of the A.6 skill listing-budget oracle (`buildBudgetedListingBlock`, `estimateListingEntryCost`, `skillListingBudgetCodeUnits`, `est`, `escapeXml`, the v2 delimiters, and the entry/diagnostic types) relocated from pi-coding-agent so the harness can apply the byte-identical algorithm; pi-coding-agent re-exports it unchanged.
 - Added the optional `{ contextWindow, budgetFraction }` second parameter to `formatSkillsForSystemPrompt()`: with a positive context window the listing block is the byte-exact A.6 budgeted v2 oracle (name-sorted emission, 1,536-code-unit description cap, skeleton floor), while omitted/non-positive windows keep the previous unbudgeted v1 output byte-for-byte.
 
+## [0.84.3] - 2026-08-24
+
+### Fixed
+
+- Fixed single-object `edit` tool inputs failing validation by accepting them as one-edit arrays ([#7835](https://github.com/earendil-works/pi/issues/7835)).
+- Fixed root Markdown files such as `README.md` and `AGENTS.md` in skill directories being reported as broken skills unless they declare valid skill frontmatter ([#7805](https://github.com/earendil-works/pi/issues/7805)).
+
 ## [0.84.2] - 2026-08-14
 
 ### Fixed

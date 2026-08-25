@@ -142,7 +142,7 @@ If you use pi for open source work and want to publish sessions for model, promp
 ## CLI Reference
 
 ```bash
-pi [options] [@files...] [messages...]
+pi [options] [--] [@files...] [messages...]
 ```
 
 ### Package Commands
@@ -199,6 +199,7 @@ cat README.md | pi -p "Summarize this text"
 | `-c`, `--continue` | Continue the most recent session |
 | `-r`, `--resume` | Browse and select a session |
 | `--session <path\|id>` | Use a specific session file or partial UUID |
+| `--session-id <id>` | Use exact project session ID, creating it if missing |
 | `--fork <path\|id>` | Fork a session file or partial UUID into a new session |
 | `--session-dir <dir>` | Custom session storage directory |
 | `--no-session` | Ephemeral mode; do not save |
@@ -213,7 +214,7 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+Built-in tools: `read`, `bash`, `powershell` (Windows), `edit`, `write`, `grep`, `find`, `ls`.
 
 ### Resource Options
 
@@ -246,6 +247,7 @@ pi --no-extensions -e ./my-extension.ts
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
+| `--` | Stop option parsing; remaining arguments are prompts or `@file` inputs |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show version |
 
@@ -271,6 +273,9 @@ pi "List all .ts files in src/"
 
 # Non-interactive
 pi -p "Summarize this codebase"
+
+# Prompt beginning with a dash
+pi -p -- "- Summarize these points"
 
 # Non-interactive with piped stdin
 cat README.md | pi -p "Summarize this text"

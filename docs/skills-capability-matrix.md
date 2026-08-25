@@ -10,7 +10,7 @@ The two columns have **different evidence strength**, deliberately:
 
 | Column | Source | Strength |
 | --- | --- | --- |
-| **Pi** | Read from source at commit `9168d8a31` (2026-08-21), file references given per row | Verified now |
+| **Pi** | Read from source at commit `1e5666870` (2026-08-22), file references given per row | Verified now |
 | **Claude Code** | Inherited from [`claude-code-skill-system-reference.md`](./claude-code-skill-system-reference.md), extracted from binary `2.1.220` on 2026-08-02 | **Not re-verified**; may have drifted |
 
 Treat the CC column as a well-sourced snapshot, not current ground truth. Where
@@ -41,15 +41,15 @@ render-pipeline ordering, hook wire formats — see
 | `disallowed-tools` | Turn-scoped removal from the tool pool | Enforced. Redirect-canonicalized, and **unioned** across stacked skills so restrictions accumulate | `core/skills/skill-overrides.ts:150` |
 | `Skill(name)` permission rules | Yes, integrated with allow/ask/deny | **None** — no permission layer exists | — |
 | Per-skill `model` / `effort` | Turn-scoped, then revert | Turn-scoped and ephemeral; last invocation wins when stacked | `core/skills/runtime.ts:170-171` |
-| `context: fork` / `agent` / `background` | Yes; forks into a named agent type | Yes, over the pi-subagents RPC | `core/skills/skill-fork.ts` |
-| Skill-bundled agent definitions | Yes, via skills-dir plugins (`<skill>/agents/`) | Yes, via pi-subagents (ADR-0008): registered qualified-always (`skill:agent`), bare only when globally free; the render pipeline rewrites the skill's own agent names to the qualified form; hidden from global listings, spawnable by qualified name | `core/skills/runtime.ts:27`, `core/skills/render.ts` stage 1 |
+| `context: fork` / `agent` / `background` | Yes; forks into a named agent type | Yes, over the pi-subagents RPC at protocol v3: capability negotiation from ping (`{version: 3, capabilities: {skillAgents}}`), completion via `subagents:agent-ended` with the fork's native status set (`steered` is a success), and a fail-closed gate — a qualified `skill:agent` type is forwarded only to a v3 `skillAgents` peer, else degraded to `general-purpose` with a diagnostic | `core/skills/skill-fork.ts`, `core/agent-session.ts` `_gateForkAgentType` |
+| Skill-bundled agent definitions | Yes, via skills-dir plugins (`<skill>/agents/`) | Yes — shipped in pi-subagents (`f19923f`, ADR-0008): discovered from the A.9 skill-set seam, registered qualified-always (`skill:agent`, minted from the skill's `listingName`), bare alias only when globally free and claimed by exactly one skill; soft-scoped (hidden from listings, `@`-mention autocomplete, and `/agents`; spawnable by name); the render pipeline rewrites the skill's own collided agent names to the qualified form. Only off-switch: the skill's visibility `off` state suppresses its agents | `core/skills/runtime.ts:27`, `core/skills/render.ts` stage 1 |
 | `paths` | Glob-gated **auto-activation** | Glob-gated **listing boost** — matching skills sort first and truncate last. Not auto-activation | `core/skills/paths-boost.ts` |
 | Listing budget | ~1% of context window; per-skill 1,536 cap; least-invoked truncated first | Same shape: `skillListingBudgetFraction` (default 0.01), `MAX_LISTING_DESCRIPTION_LENGTH` 1,536 | `packages/agent/src/harness/listing-budget.ts` (re-exported at `core/skills/listing-budget.ts`) |
 | Re-invocation dedup | Short "already loaded" note | Deduped on `(skillId, raw args, byte-identical body)` against the last inline delivery still in context | `core/skills/dedup.ts:1-7` |
 | Compaction carry-forward | Re-attach MRU invocation per skill; 5k each, 25k combined | Same: MRU-first, 5,000 per skill, 25,000 combined; recomputed per rebuild, never persisted | `core/skills/carry-forward.ts:19` |
 | Live reload | File watchers + `/reload-skills` | Debounced per-directory watchers over every scanned skill and command root; `/reload` remains the fallback | `core/skills/resource-watch.ts` |
 | Nested / monorepo discovery | Runtime discovery when the model touches the subtree; `dir:name` on clash | Same, triggered by a tool touching a file under an unscanned root; `dir:name` on collision | `core/skills/nested-discovery.ts` |
-| Visibility management | `/skills` menu; 4-state `skillOverrides` | `/skills` overlay with listing cost; 4-state `skillVisibility` keyed by **canonical ID**, global + project scope | `core/skills/visibility.ts` |
+| Visibility management | `/skills` menu; 4-state `skillOverrides` | `/skills` overlay with listing cost; 4-state `skillVisibility` keyed by **canonical ID**, global + project scope. Resolved visibility (`{model, user, userInvokeError}`) rides the A.9 `skills:changed` payload, and a visibility change re-publishes the snapshot immediately (no reload needed) | `core/skills/visibility.ts`, `core/skills/skill-set-events.ts` |
 | `when_to_use` | Yes, folded into the listing | Yes, folded into the capped listing description | `core/skills/listing.ts:18-20` |
 | `argument-hint` | Yes | Yes, shown in `/` autocomplete | `packages/tui/src/autocomplete.ts:441` |
 | `user-invocable` | Yes | Yes; independent of `disable-model-invocation` | `core/skills/skill-tool.ts:92-95` |
@@ -123,7 +123,10 @@ as aliases), `@path` includes, `` !`cmd` `` shell injection, `when_to_use`,
   plugins: always qualified (`skill:agent`), bare only when the name is globally
   free, hidden from global agent listings. Skills referencing their own agents by
   bare name still resolve (render-time rewrite), but cross-skill references need
-  the qualified form.
+  the qualified form. There is no per-agent disable: setting the whole skill's
+  visibility to `off` is the only way to unregister its bundled agents (every
+  other state, including an uninvocable `disable-model-invocation` +
+  `user-invocable: false` "container" skill, keeps them registered).
 
 **Breaks — needs rework.**
 

@@ -32,4 +32,7 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// WS-Q: unscoped bare-Agent dispatch with more than one eligible live session fails
 	// with an actionable error instead of silently routing through the newest session.
 	"unscoped-bare-agent-ambiguity",
+	// Stateful providers can opt into retaining the originating model for the immediate
+	// tool-result continuation when session state switches to another provider.
+	"originating-provider-tool-continuation",
 ]);

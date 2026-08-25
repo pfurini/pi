@@ -65,6 +65,7 @@ type _AiModelFieldsAccountedFor = Assert<
 		| "baseUrl"
 		| "reasoning"
 		| "syntheticToolResultReplay"
+		| "toolResultContinuation"
 		| "thinkingLevelMap"
 		| "input"
 		| "cost"

@@ -1017,7 +1017,7 @@ describe("C3b fork: stub contract pin", () => {
 			return;
 		}
 		const source = readFileSync(realPath, "utf-8");
-		expect(source).toContain(`PROTOCOL_VERSION = ${STUB_PROTOCOL_VERSION}`);
+		expect(source).toContain(`PROTOCOL_VERSION = ${STUB_PROTOCOL_VERSION_V3}`);
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: asserting on the real source's literal reply-channel template
 		expect(source).toContain("`${channel}:reply:${params.requestId}`");
 		expect(source).toContain("subagents:rpc:ping");

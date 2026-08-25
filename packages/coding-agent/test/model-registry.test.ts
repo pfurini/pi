@@ -11,6 +11,7 @@ import type {
 import { getApiProvider, getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import type { ModelsJsonProvider } from "../src/core/model-config.ts";
 import { clearApiKeyCache, type ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
 
 import { createModelRegistry } from "./model-runtime-test-utils.ts";
@@ -767,6 +768,26 @@ describe("ModelRegistry", () => {
 			expect(compat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
 		});
 
+		test("supportsFinishReason can be configured at provider and model levels", async () => {
+			const provider: ModelsJsonProvider = {
+				compat: { supportsFinishReason: true },
+				modelOverrides: {
+					"anthropic/claude-sonnet-4": {
+						compat: { supportsFinishReason: false },
+					},
+				},
+			};
+			writeRawModelsJson({ openrouter: provider });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const models = getModelsForProvider(registry, "openrouter");
+			const sonnet = models.find((model) => model.id === "anthropic/claude-sonnet-4");
+			const opus = models.find((model) => model.id === "anthropic/claude-opus-4");
+
+			expect((sonnet?.compat as OpenAICompletionsCompat | undefined)?.supportsFinishReason).toBe(false);
+			expect((opus?.compat as OpenAICompletionsCompat | undefined)?.supportsFinishReason).toBe(true);
+		});
+
 		test("model override deep merges compat settings", async () => {
 			writeRawModelsJson({
 				openrouter: {
@@ -1073,6 +1094,37 @@ describe("ModelRegistry", () => {
 				ok: true,
 				headers: { "x-model-override": "enabled" },
 			});
+		});
+
+		test("registerProvider carries toolResultContinuation onto the composed model", async () => {
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			registry.registerProvider("stateful-provider", {
+				baseUrl: "https://provider.test/v1",
+				apiKey: "test-key",
+				api: "openai-completions",
+				models: [
+					{
+						id: "stateful-model",
+						name: "Stateful Model",
+						reasoning: false,
+						toolResultContinuation: "originating-provider",
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+
+			// The agent loop reads this off the composed Model to pin a tool-result
+			// continuation, so a composer that drops it silently disables the opt-in.
+			// Two separate guards: the model literal above only typechecks while
+			// ProviderConfigInput["models"] declares the field, and this assertion covers
+			// the composer actually carrying it through. Removing the declaration breaks
+			// the typecheck, not this expectation.
+			expect(registry.find("stateful-provider", "stateful-model")?.toolResultContinuation).toBe(
+				"originating-provider",
+			);
 		});
 
 		test("stored API key env propagates to request auth and resolves headers", async () => {

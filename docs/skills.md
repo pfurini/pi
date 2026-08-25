@@ -38,7 +38,7 @@ field set.
 | `effort` | string \| number | Reasoning effort for the invocation; a number maps to a level. |
 | `disallowed-tools` | string \| string[] | Tools the model may not call while the skill is active. Enforced. |
 | `context` | `inline` \| `fork` | `fork` runs the skill in a subagent instead of the current context. |
-| `agent` | string | Which subagent a forked skill runs in. |
+| `agent` | string | Which subagent a forked skill runs in — a global agent type, one of the skill's own [bundled agents](#skill-bundled-agents) by bare name, or a qualified `skill:agent` name. |
 | `background` | boolean | Runs a forked skill without blocking the session. |
 | `shell` | string | Shell used for `!`-injected commands in the body (default `bash`). |
 | `license`, `compatibility`, `metadata` | — | Carried for interop; no runtime effect. |
@@ -161,13 +161,48 @@ An invocation can carry overrides that apply only for its duration:
   restrictions accumulate and never cancel each other out.
 - **`context: fork`** runs the skill in a subagent over the pi-subagents RPC
   instead of the current context, optionally in a named `agent` and, with
-  `background: true`, without blocking the session.
+  `background: true`, without blocking the session. Forking degrades gracefully
+  with one diagnostic each time: with no subagents extension present (or in
+  headless `-p`/`--mode json` runs) the skill runs inline instead, and a
+  qualified `skill:agent` type sent to a subagents extension too old to support
+  skill-scoped agents (pre-v3 protocol) spawns `general-purpose` instead.
 
 When invocations stack, the most recent one wins for the environment and for
 the `model`/`effort` overrides; conflicting overrides on superseded records
 produce a diagnostic and are preserved rather than applied. `disallowed-tools`
 is the deliberate exception, since relaxing a restriction because a later skill
 did not repeat it would be the unsafe direction.
+
+## Skill-bundled agents
+
+A skill can ship its own subagent definitions as `<skill>/agents/*.md`, using
+the same frontmatter format as `.pi/agents/` files. They are discovered by the
+pi-subagents extension (protocol v3 or later) from the loaded skill set — every
+skill root works, including `--skill` paths, packages, and nested roots.
+
+Naming (ADR-0008): each bundled agent always registers under the qualified name
+`<skill>:<agent>` (the skill part is its listing name, so a nested skill's
+agents are `apps/web:deploy:reviewer`). The bare agent name also works when it
+is globally free — not taken by a built-in, user, or project agent
+(case-insensitively), and not claimed by another skill. When the bare name is
+taken, references inside the skill's own SKILL.md and its `agent:` frontmatter
+still resolve: Pi rewrites them to the qualified form at render time. Cross-
+skill references must use the qualified form explicitly.
+
+Bundled agents are **soft-scoped**: hidden from the Agent tool's advertised
+type list, `@`-mention autocomplete, and `/agents`, but spawnable by name
+(qualified always; bare when free). They participate in nested delegation like
+any other agent.
+
+There is no per-agent disable. Setting the skill's visibility to `off` (see
+below) unregisters its bundled agents; every other state — including a skill
+that is itself uninvocable via `disable-model-invocation` plus
+`user-invocable: false`, a valid pattern for a pure agent-container skill —
+keeps them registered.
+
+Without a subagents extension (or with one older than protocol v3), bundled
+agents simply do not register; the skill itself still works, and a
+`context: fork` invocation degrades as described above.
 
 ## Re-invocation and compaction
 
@@ -203,6 +238,8 @@ frontmatter removed (`disable-model-invocation` always hides from the model,
 that turns a `/name` invocation into an error rather than literal text, and it
 does so for every valid name of the skill — bare, `skill:`-qualified, and
 collision-qualified — even when frontmatter also sets `user-invocable: false`.
+`off` is also the only state that unregisters the skill's
+[bundled agents](#skill-bundled-agents).
 
 States persist in settings under `skillVisibility`, keyed by the skill's
 **canonical ID** (its canonicalized `SKILL.md` path), at both global and
@@ -227,8 +264,9 @@ and toggle whether changes persist to global or project settings (all
 configurable modified keys, so typing filters the list unambiguously). A
 malformed persisted value falls back to `on`, shows an invalid-value
 indicator, and produces one settings warning. Changes apply to the next
-request across every surface — listing, `skill` tool, and `/name` — without a
-`/reload`.
+request across every surface — listing, `skill` tool, `/name`, and the
+`skills:changed` extension feed (so a subagents extension deregisters an `off`
+skill's bundled agents immediately) — without a `/reload`.
 
 Visibility is **prospective-only**: restricting a skill gates the next
 request's surfaces; it does not rewrite already-delivered skill content or

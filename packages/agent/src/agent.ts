@@ -1,4 +1,5 @@
 import type {
+	Api,
 	ImageContent,
 	Message,
 	Model,
@@ -128,6 +129,7 @@ export interface AgentOptions {
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	isToolCallDisallowed?: (name: string) => string | undefined;
+	onContinuationPinned?: (pinned: Model<Api>, requested: Model<Api>) => void;
 }
 
 class PendingMessageQueue {
@@ -248,6 +250,13 @@ export class Agent {
 	 */
 	public isToolCallDisallowed?: (name: string) => string | undefined;
 	/**
+	 * Optional report that a turn's tool results were pinned to their originating
+	 * provider, deferring a model switch already applied to session state. Lets the
+	 * owner explain why the run continues on the previous provider.
+	 * See AgentLoopConfig.
+	 */
+	public onContinuationPinned?: (pinned: Model<Api>, requested: Model<Api>) => void;
+	/**
 	 * Ephemeral per-turn override for the next provider request(s). Non-persistent:
 	 * read by `createLoopConfig` (model/reasoning) and `createContextSnapshot`
 	 * (tools), never written back into `state`. The owner sets it before a run and
@@ -285,6 +294,7 @@ export class Agent {
 		this.transformInjectedMessages = runtimeOptions.transformInjectedMessages;
 		this.refreshTurnAfterInjection = runtimeOptions.refreshTurnAfterInjection;
 		this.isToolCallDisallowed = runtimeOptions.isToolCallDisallowed;
+		this.onContinuationPinned = runtimeOptions.onContinuationPinned;
 	}
 
 	/**
@@ -538,6 +548,7 @@ export class Agent {
 			resolveToolRedirect: this.resolveToolRedirect,
 			refreshTurnAfterInjection: this.refreshTurnAfterInjection,
 			isToolCallDisallowed: this.isToolCallDisallowed,
+			onContinuationPinned: this.onContinuationPinned,
 		};
 	}
 

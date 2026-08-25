@@ -835,6 +835,17 @@ export interface Model<TApi extends Api> {
 	 */
 	syntheticToolResultReplay?: true;
 	/**
+	 * Keep tool-result continuations on this model when session state switches to a
+	 * different provider while a tool call is executing. Stateful providers use this
+	 * to deliver results back to the in-flight run that issued the call.
+	 *
+	 * The pin covers the whole tool-calling run, not just the first continuation: it
+	 * re-applies on every turn that produces tool results, so a switch requested
+	 * mid-run takes effect only once a turn calls no tools. Same-provider model
+	 * changes are never pinned and stay visible to that provider.
+	 */
+	toolResultContinuation?: "originating-provider";
+	/**
 	 * Maps pi thinking levels to provider/model-specific values.
 	 * Missing keys use provider defaults. null marks a level as unsupported.
 	 */

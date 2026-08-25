@@ -1118,6 +1118,10 @@ describe("ModelRegistry", () => {
 
 			// The agent loop reads this off the composed Model to pin a tool-result
 			// continuation, so a composer that drops it silently disables the opt-in.
+			// Two separate guards: the model literal above only typechecks while
+			// ProviderConfigInput["models"] declares the field, and this assertion covers
+			// the composer actually carrying it through. Removing the declaration breaks
+			// the typecheck, not this expectation.
 			expect(registry.find("stateful-provider", "stateful-model")?.toolResultContinuation).toBe(
 				"originating-provider",
 			);

@@ -19,7 +19,7 @@
  * `[Task]` blocks `Agent`.
  */
 
-import { getPowerShellConfig, type ShellConfig } from "../../utils/shell.ts";
+import { getPowerShellConfig, POWERSHELL_ARGS, type ShellConfig } from "../../utils/shell.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import { type BashOperations, createLocalBashOperations } from "../tools/bash.ts";
 import { inlineCodeSpans, scanFenceBlocks } from "./fences.ts";
@@ -284,14 +284,13 @@ function resolveSkillShellConfig(
 		if (process.platform === "win32") {
 			try {
 				return getPowerShellConfig();
-			} catch (error) {
-				// Throws when no PowerShell is on PATH. This resolver is contracted not to
-				// throw, so degrade to bash like an unknown shell name does.
-				diagnostics?.push({
-					type: "warning",
-					message: `${error instanceof Error ? error.message : String(error)}; falling back to bash`,
-				});
-				return undefined;
+			} catch {
+				// Throws only when no PowerShell is on PATH. Returning undefined here would
+				// mean "use the default shell" and run PowerShell source under bash, so hand
+				// back the conventional executable instead: the spawn fails with ENOENT and
+				// executeCommand emits the shell-unavailable marker without running anything,
+				// exactly as it did before this delegation.
+				return { shell: "powershell.exe", args: [...POWERSHELL_ARGS] };
 			}
 		}
 		// Off Windows PowerShell is always pwsh and execution policy does not exist, so

@@ -106,7 +106,10 @@ Body of ${name}.
 
 		// Its API is fenced off rather than merely inert.
 		expect(capturedApi).toBeDefined();
-		expect(() => capturedApi?.registerFlag("late-flag", { type: "boolean", default: true })).toThrow();
+		// Matched on message: a bare toThrow() would also pass on an unrelated TypeError.
+		expect(() => capturedApi?.registerFlag("late-flag", { type: "boolean", default: true })).toThrow(
+			/failed to load and its API is no longer active/,
+		);
 	});
 
 	it("loads a healthy extension and its skills when another extension fails", async () => {
@@ -118,7 +121,9 @@ Body of ${name}.
 			extensionFactories: [
 				{
 					name: "failing",
-					factory: () => {
+					factory: (pi) => {
+						// Registered before the throw so the rollback assertion below is not vacuous.
+						pi.registerFlag("failing-flag", { type: "boolean", default: true });
 						throw new Error("integration factory failed");
 					},
 				},

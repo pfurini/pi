@@ -1096,6 +1096,33 @@ describe("ModelRegistry", () => {
 			});
 		});
 
+		test("registerProvider carries toolResultContinuation onto the composed model", async () => {
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			registry.registerProvider("stateful-provider", {
+				baseUrl: "https://provider.test/v1",
+				apiKey: "test-key",
+				api: "openai-completions",
+				models: [
+					{
+						id: "stateful-model",
+						name: "Stateful Model",
+						reasoning: false,
+						toolResultContinuation: "originating-provider",
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+
+			// The agent loop reads this off the composed Model to pin a tool-result
+			// continuation, so a composer that drops it silently disables the opt-in.
+			expect(registry.find("stateful-provider", "stateful-model")?.toolResultContinuation).toBe(
+				"originating-provider",
+			);
+		});
+
 		test("stored API key env propagates to request auth and resolves headers", async () => {
 			await authStorage.modify("cloudflare-ai-gateway", async () => ({
 				type: "api_key",

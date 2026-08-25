@@ -1272,6 +1272,9 @@ SKILLS_CHANGED_CHANNEL, SKILLS_QUERY_CHANNEL, skillsQueryReplyChannel
 type SkillSetController, type SkillSetSnapshot, type SkillSetSnapshotEntry, type SkillSetSnapshotSource, type RpcReply
 type PromptTemplate
 type Tool
+
+// Fork-capability marker (see extensions.md)
+piForkCapabilities
 ```
 
 For extension types, see [extensions.md](extensions.md) for the full API.

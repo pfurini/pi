@@ -26,6 +26,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import { contentText } from "@earendil-works/pi-ai";
 import type {
+	Api,
 	AssistantMessage,
 	AuthResult,
 	ImageContent,
@@ -547,6 +548,9 @@ export class AgentSession {
 	private readonly _skillForkClient: SkillForkClient;
 	/** Background-fork completion follow-up notices (display-only), flushed like pending bash messages. */
 	private _pendingForkNotices: ForkNoticeEnvelope[] = [];
+	/** Deferred "switch waiting on the in-flight run" notices, keyed to dedup a pinned chain. */
+	private _pendingContinuationNotices: string[] = [];
+	private _lastContinuationPinKey: string | undefined;
 	/**
 	 * Queued skill invocations (C1c): application-defined queue message → its
 	 * structured record. The message carries the literal `/skill:` text for the
@@ -681,6 +685,10 @@ export class AgentSession {
 		// transform above, after the loop config was built, so re-resolve
 		// model/effort/tools for the consuming request.
 		this.agent.refreshTurnAfterInjection = () => this._resolveInjectedTurnOverride();
+		// A model switch applied to session state is deferred while the originating
+		// provider's run is still calling tools. Session state and the UI already show
+		// the new model, so report the deferral instead of letting the two diverge.
+		this.agent.onContinuationPinned = (pinned, requested) => this._recordContinuationPinned(pinned, requested);
 		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call
 		// to a disallowed tool returns a policy block naming the tool.
 		this.agent.isToolCallDisallowed = (name) => this._resolveDisallowedToolBlock(name);
@@ -1833,6 +1841,9 @@ export class AgentSession {
 				this._expireTurnOverrideState();
 				this._flushPendingBashMessages();
 				this._flushPendingForkNotices();
+				// The pin is released with the run, so a later switch notices again.
+				this._lastContinuationPinKey = undefined;
+				this._flushPendingContinuationNotices();
 				this._flushPendingCustomMessages();
 				await this._emitAgentSettled();
 			}
@@ -1979,6 +1990,7 @@ export class AgentSession {
 			// Flush pending messages and notices before the new prompt.
 			this._flushPendingBashMessages();
 			this._flushPendingForkNotices();
+			this._flushPendingContinuationNotices();
 			this._flushPendingCustomMessages();
 
 			// Validate model
@@ -3172,6 +3184,52 @@ export class AgentSession {
 		this._pendingForkNotices = [];
 		for (const envelope of notices) {
 			this._appendForkNotice(envelope);
+		}
+	}
+
+	/**
+	 * Record that a model switch was deferred because the originating provider's run
+	 * is still calling tools. Fires per pinned turn, so a chain of tool-calling turns
+	 * would repeat one notice: dedup on the (pinned, requested) pair and reset the key
+	 * once the switch takes effect, so a later re-switch notices again.
+	 */
+	private _recordContinuationPinned(pinned: Model<Api>, requested: Model<Api>): void {
+		const key = `${pinned.provider}/${pinned.id}>${requested.provider}/${requested.id}`;
+		if (this._lastContinuationPinKey === key) {
+			return;
+		}
+		this._lastContinuationPinKey = key;
+		this._pendingContinuationNotices.push(
+			`Staying on ${pinned.name} until the current tool run finishes; ${requested.name} applies to the next request.`,
+		);
+	}
+
+	/** Flush deferred continuation-pin notices at a turn boundary (mirrors the fork-notice flush). */
+	private _flushPendingContinuationNotices(): void {
+		if (this._pendingContinuationNotices.length === 0) {
+			return;
+		}
+		const notices = this._pendingContinuationNotices;
+		this._pendingContinuationNotices = [];
+		for (const text of notices) {
+			const notice: CustomMessage = {
+				role: "custom",
+				customType: "continuation_pin",
+				content: text,
+				display: true,
+				excludeFromContext: true,
+				timestamp: Date.now(),
+			};
+			this.agent.state.messages.push(notice);
+			this.sessionManager.appendCustomMessageEntry(
+				notice.customType,
+				notice.content,
+				notice.display,
+				notice.details,
+				notice.excludeFromContext,
+			);
+			this._emit({ type: "message_start", message: notice });
+			this._emit({ type: "message_end", message: notice });
 		}
 	}
 

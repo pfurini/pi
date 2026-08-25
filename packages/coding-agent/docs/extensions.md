@@ -1906,6 +1906,28 @@ The object form accepts a complete pi-ai `Provider`, including native `auth`, `g
 - `oauth` - OAuth provider config for `/login` support. When provided, the provider appears in the login menu.
 - `streamSimple` - Custom streaming implementation for non-standard APIs.
 
+**Stateful providers:** a model definition may set `toolResultContinuation: "originating-provider"`. When session state switches to a different provider while one of this model's tool calls is still executing, the tool results stay on this model, along with the reasoning level the original request was sent with, so the provider's still-open run receives its own results instead of having them delivered elsewhere. The pin covers the whole tool-calling run rather than a single continuation: a switch requested mid-run takes effect on the first request after a turn that calls no tools, and pi reports the deferral in the transcript. Model changes within the same provider are never pinned. Leave the field unset unless the provider keeps server-side run state that a redirected continuation would break.
+
+```typescript
+pi.registerProvider("stateful-proxy", {
+  baseUrl: "https://proxy.example.com",
+  apiKey: "$PROXY_API_KEY",
+  api: "openai-responses",
+  models: [
+    {
+      id: "stateful-model",
+      name: "Stateful Model",
+      reasoning: false,
+      toolResultContinuation: "originating-provider",
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 4096
+    }
+  ]
+});
+```
+
 See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.
 
 ### pi.unregisterProvider(name)

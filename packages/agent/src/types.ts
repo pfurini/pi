@@ -358,6 +358,21 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * rethrown, so a faulty policy can never interrupt the low-level loop.
 	 */
 	isToolCallDisallowed?: (name: string) => string | undefined;
+
+	/**
+	 * Called when a turn's tool results were pinned to their originating
+	 * provider, deferring a model switch that {@link prepareNextTurn} had already
+	 * applied. Fires once per pinned turn, so a chain of tool-calling turns
+	 * reports each one.
+	 *
+	 * Exists because session state moves to `requested` immediately while the
+	 * loop keeps running on `pinned`: without this seam the two diverge with
+	 * nothing to tell the user why.
+	 *
+	 * Contract: synchronous and advisory. A throw is swallowed, so a faulty
+	 * reporter can never interrupt the low-level loop.
+	 */
+	onContinuationPinned?: (pinned: Model<Api>, requested: Model<Api>) => void;
 }
 
 /**

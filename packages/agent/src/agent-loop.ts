@@ -251,10 +251,11 @@ async function runLoop(
 			}
 
 			// Stream assistant response
-			// Capture the request model before prepareNextTurn can replace it. Stateful
-			// providers may need the immediate tool-result continuation routed back to
-			// the provider whose still-running request issued the tool call.
+			// Capture the request model and its reasoning binding before prepareNextTurn
+			// can replace them. Stateful providers may need the tool-result continuation
+			// routed back to the provider whose still-running request issued the tool call.
 			const requestModel = config.model;
+			const requestReasoning = config.reasoning;
 			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
 			newMessages.push(message);
 
@@ -307,7 +308,19 @@ async function runLoop(
 				// Only pin a cross-provider switch. A model or reasoning change inside
 				// the same provider must still reach that provider so it can decide
 				// whether to apply, defer, or reject the new binding.
-				config = { ...config, model: requestModel };
+				//
+				// Reasoning is restored with the model: applyTurnUpdateToConfig set it
+				// from the incoming model's binding, and sending that to the originating
+				// provider is the mid-run rebinding this pin exists to prevent.
+				const requestedModel = config.model;
+				config = { ...config, model: requestModel, reasoning: requestReasoning };
+				// Advisory: session state has already moved to requestedModel, so the
+				// owner needs this to explain why the run stays on requestModel.
+				try {
+					config.onContinuationPinned?.(requestModel, requestedModel);
+				} catch {
+					// A faulty reporter must never interrupt the loop.
+				}
 			}
 
 			if (

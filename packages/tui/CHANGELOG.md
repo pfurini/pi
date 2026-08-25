@@ -6,6 +6,8 @@
 
 - Mid-prompt `/` autocomplete with per-source badges: the slash menu triggers and applies at the cursor for command runs at message start or after whitespace on any editor line, renders a `builtin`/`extension`/`command`/`prompt`/`skill` badge per candidate, and keeps control commands (both `builtin` and `extension`) and argument completion whole-message-initial. Suggestions carry a `kind` discriminant (`command`/`argument`/`file`/`symbol`, exported as `AutocompleteSuggestionKind`) so the editor submits on Enter only for a completed slash command and never for a `/`-prefixed file or argument completion.
 
+## [0.84.3] - 2026-08-24
+
 ### Fixed
 
 - Fixed duplicate fullscreen right-click paste in VS Code-based terminals on Windows ([#8186](https://github.com/earendil-works/pi/issues/8186)).

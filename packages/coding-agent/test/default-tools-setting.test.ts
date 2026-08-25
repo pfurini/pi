@@ -37,6 +37,9 @@ describe("defaultTools setting", () => {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: tempDir,
 			agentDir,
+			// Hermetic: global ~/.agents/skills would otherwise register the C1c
+			// skill tool on machines that have user skills installed.
+			noSkills: true,
 			settingsManager,
 			extensionFactories,
 		});
@@ -140,7 +143,13 @@ describe("defaultTools setting", () => {
 
 	it("applies through service-based session creation", async () => {
 		const settingsManager = SettingsManager.inMemory({ defaultTools: ["ls"] });
-		const services = await createAgentSessionServices({ cwd: tempDir, agentDir, settingsManager });
+		const services = await createAgentSessionServices({
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+			// Hermetic, as above: this path builds its own loader.
+			resourceLoaderOptions: { noSkills: true },
+		});
 		const { session } = await createAgentSessionFromServices({
 			services,
 			sessionManager: SessionManager.inMemory(tempDir),

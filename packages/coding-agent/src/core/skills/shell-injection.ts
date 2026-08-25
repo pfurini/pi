@@ -19,7 +19,7 @@
  * `[Task]` blocks `Agent`.
  */
 
-import type { ShellConfig } from "../../utils/shell.ts";
+import { getPowerShellConfig, type ShellConfig } from "../../utils/shell.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import { type BashOperations, createLocalBashOperations } from "../tools/bash.ts";
 import { inlineCodeSpans, scanFenceBlocks } from "./fences.ts";
@@ -277,8 +277,28 @@ function resolveSkillShellConfig(
 		return undefined;
 	}
 	if (shell === "powershell") {
+		// On Windows defer to the same resolver the powershell tool uses, so a skill and
+		// an equivalent tool call get the same interpreter (PowerShell 7 when present) and
+		// the same flags. Without this a skill ran 5.1 under the host execution policy while
+		// the tool ran 7 with it bypassed, so a skill could fail where the tool succeeded.
+		if (process.platform === "win32") {
+			try {
+				return getPowerShellConfig();
+			} catch (error) {
+				// Throws when no PowerShell is on PATH. This resolver is contracted not to
+				// throw, so degrade to bash like an unknown shell name does.
+				diagnostics?.push({
+					type: "warning",
+					message: `${error instanceof Error ? error.message : String(error)}; falling back to bash`,
+				});
+				return undefined;
+			}
+		}
+		// Off Windows PowerShell is always pwsh and execution policy does not exist, so
+		// getPowerShellConfig() throws by design. Resolve pwsh from PATH as before, without
+		// the Windows-only -ExecutionPolicy flag that POWERSHELL_ARGS carries.
 		return {
-			shell: process.platform === "win32" ? "powershell.exe" : "pwsh",
+			shell: "pwsh",
 			args: ["-NoProfile", "-NonInteractive", "-Command"],
 		};
 	}

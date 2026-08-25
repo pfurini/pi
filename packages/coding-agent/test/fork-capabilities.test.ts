@@ -14,6 +14,7 @@ describe("piForkCapabilities", () => {
 			"force-oauth-refresh",
 			"kimi-oauth-error-hardening",
 			"unscoped-bare-agent-ambiguity",
+			"originating-provider-tool-continuation",
 		]) {
 			expect(piForkCapabilities.has(entry)).toBe(true);
 		}

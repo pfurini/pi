@@ -8,7 +8,6 @@
 
 import { join } from "node:path";
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai/compat";
 import { describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -27,6 +26,18 @@ function record(fields: Partial<SkillInvocation> = {}): SkillInvocation {
 		filePath: "/skills/test-skill/SKILL.md",
 		rawArgs: "",
 		...fields,
+	};
+}
+
+function continuationModels(agent: Agent) {
+	return {
+		pinned: agent.state.model,
+		requested: {
+			...agent.state.model,
+			id: "requested-model",
+			name: "Requested Model",
+			provider: "requested-provider",
+		},
 	};
 }
 
@@ -89,12 +100,30 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 			agentOptions: { onContinuationPinned: embedderCallback },
 		});
 		try {
-			const pinned = getModel("anthropic", "claude-sonnet-4-5");
-			const requested = getModel("openai", "gpt-4o-mini");
-			if (!pinned || !requested) throw new Error("expected test models to resolve");
+			const { pinned, requested } = continuationModels(session.agent);
 			expect(session.agent.onContinuationPinned).not.toBe(embedderCallback);
 			expect(() => session.agent.onContinuationPinned?.(pinned, requested)).not.toThrow();
 			expect(embedderCallback).toHaveBeenCalledWith(pinned, requested);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("onContinuationPinned: a throwing embedder callback cannot suppress the session's recording", async () => {
+		const embedderCallback = vi.fn(() => {
+			throw new Error("embedder callback failed");
+		});
+		const { session, cleanup } = await createTestSession({
+			inMemory: true,
+			agentOptions: { onContinuationPinned: embedderCallback },
+		});
+		try {
+			const { pinned, requested } = continuationModels(session.agent);
+			expect(() => session.agent.onContinuationPinned?.(pinned, requested)).toThrow("embedder callback failed");
+			expect(embedderCallback).toHaveBeenCalledWith(pinned, requested);
+			const pendingNotices = (session as unknown as { _pendingContinuationNotices: string[] })
+				._pendingContinuationNotices;
+			expect(pendingNotices).toHaveLength(1);
 		} finally {
 			cleanup();
 		}
@@ -130,6 +159,22 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 			expect(embedderRefresh).toHaveBeenCalled();
 			expect(result).toBeDefined();
 			expect(result?.context?.systemPrompt).not.toBe("PREVIOUS_MARKER");
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("refreshTurnAfterInjection: a rejected embedder refresh cannot suppress an active skill override", async () => {
+		const embedderRefresh = vi.fn().mockRejectedValue(new Error("embedder refresh failed"));
+		const { session, cleanup } = await createTestSession({
+			inMemory: true,
+			agentOptions: { refreshTurnAfterInjection: embedderRefresh },
+		});
+		try {
+			session.skillRuntime.activate(record());
+			const result = await session.agent.refreshTurnAfterInjection?.(undefined);
+			expect(embedderRefresh).toHaveBeenCalled();
+			expect(result).toBeDefined();
 		} finally {
 			cleanup();
 		}

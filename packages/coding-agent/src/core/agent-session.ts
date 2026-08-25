@@ -708,7 +708,14 @@ export class AgentSession {
 		// merge below, where session state overlays the previous snapshot).
 		this._previousRefreshTurnAfterInjection = this.agent.refreshTurnAfterInjection;
 		this._installedRefreshTurnAfterInjection = async (signal) => {
-			const previousUpdate = await this._previousRefreshTurnAfterInjection?.(signal);
+			let previousUpdate: AgentLoopTurnUpdate | undefined;
+			try {
+				previousUpdate = await this._previousRefreshTurnAfterInjection?.(signal);
+			} catch {
+				// Match the low-level loop contract: a rejected application refresh
+				// degrades to no embedder update without suppressing the session refresh.
+				previousUpdate = undefined;
+			}
 			const sessionUpdate = this._resolveInjectedTurnOverride();
 			return sessionUpdate ?? previousUpdate;
 		};
@@ -717,11 +724,12 @@ export class AgentSession {
 		// provider's run is still calling tools. Session state and the UI already show
 		// the new model, so report the deferral instead of letting the two diverge.
 		// Chained: a pure notification, so both the embedder's callback and the
-		// session's transcript notice fire; order is irrelevant.
+		// session's transcript notice fire. Record the session notice first so a
+		// faulty embedder reporter, swallowed by the low-level loop, cannot suppress it.
 		this._previousOnContinuationPinned = this.agent.onContinuationPinned;
 		this._installedOnContinuationPinned = (pinned, requested) => {
-			this._previousOnContinuationPinned?.(pinned, requested);
 			this._recordContinuationPinned(pinned, requested);
+			this._previousOnContinuationPinned?.(pinned, requested);
 		};
 		this.agent.onContinuationPinned = this._installedOnContinuationPinned;
 		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call

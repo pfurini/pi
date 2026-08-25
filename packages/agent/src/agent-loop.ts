@@ -251,6 +251,10 @@ async function runLoop(
 			}
 
 			// Stream assistant response
+			// Capture the request model before prepareNextTurn can replace it. Stateful
+			// providers may need the immediate tool-result continuation routed back to
+			// the provider whose still-running request issued the tool call.
+			const requestModel = config.model;
 			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
 			newMessages.push(message);
 
@@ -294,6 +298,16 @@ async function runLoop(
 			if (nextTurnSnapshot) {
 				currentContext = nextTurnSnapshot.context ?? currentContext;
 				config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
+			}
+			if (
+				toolResults.length > 0 &&
+				requestModel.toolResultContinuation === "originating-provider" &&
+				config.model.provider !== requestModel.provider
+			) {
+				// Only pin a cross-provider switch. A model or reasoning change inside
+				// the same provider must still reach that provider so it can decide
+				// whether to apply, defer, or reject the new binding.
+				config = { ...config, model: requestModel };
 			}
 
 			if (

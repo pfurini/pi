@@ -835,6 +835,13 @@ export interface Model<TApi extends Api> {
 	 */
 	syntheticToolResultReplay?: true;
 	/**
+	 * Keep the immediate tool-result continuation on this model when session state
+	 * switches to a different provider while its tool call is executing. Stateful
+	 * providers use this to deliver the result back to the in-flight run that issued
+	 * the call; same-provider model changes remain visible to that provider.
+	 */
+	toolResultContinuation?: "originating-provider";
+	/**
 	 * Maps pi thinking levels to provider/model-specific values.
 	 * Missing keys use provider defaults. null marks a level as unsupported.
 	 */

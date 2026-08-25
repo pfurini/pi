@@ -1564,6 +1564,8 @@ export interface ProviderModelConfig {
 	baseUrl?: string;
 	/** Whether the model supports extended thinking. */
 	reasoning: boolean;
+	/** Tool-result continuation routing required by stateful providers. */
+	toolResultContinuation?: Model<Api>["toolResultContinuation"];
 	/** Maps pi thinking levels to provider/model-specific values; null marks a level unsupported. */
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	/** Supported input types. */

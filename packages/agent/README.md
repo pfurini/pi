@@ -270,6 +270,13 @@ const agent = new Agent({
   // has been removed from the context. Synchronous; a throw fails closed (the
   // call is blocked, never rethrown).
   isToolCallDisallowed: (name) => undefined,
+
+  // Notified when a turn's tool results were pinned to their originating
+  // provider, deferring a model switch already applied to session state (so
+  // the run continues on the previous provider until tool calls settle).
+  // Pure notification, called inside the loop's own try/catch; a throw here
+  // is swallowed and never propagates.
+  onContinuationPinned: (pinned, requested) => undefined,
 });
 
 // Ephemeral per-turn override (not an AgentOptions field; a public instance

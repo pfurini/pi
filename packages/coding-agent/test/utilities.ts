@@ -6,7 +6,7 @@ import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentOptions } from "@earendil-works/pi-agent-core";
 import type { OAuthCredentials } from "@earendil-works/pi-ai";
 import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
@@ -162,6 +162,8 @@ export interface TestSessionOptions {
 	systemPrompt?: string;
 	/** Custom settings overrides */
 	settingsOverrides?: Record<string, unknown>;
+	/** Extra options merged into the underlying Agent constructor call, for tests that need to observe or supply Agent-level hooks. */
+	agentOptions?: Partial<AgentOptions>;
 }
 
 /**
@@ -253,6 +255,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			tools: createCodingTools(process.cwd()),
 		},
 		streamFn: streamSimple,
+		...options.agentOptions,
 	});
 
 	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);

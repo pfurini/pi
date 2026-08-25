@@ -468,6 +468,19 @@ export class AgentSession {
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
+
+	// Chained Agent hooks: previous (pre-construction) value plus the closure installed
+	// over it, so teardown can restore identity-safely (see _disconnectFromAgent).
+	private _previousTransformInjectedMessages?: Agent["transformInjectedMessages"];
+	private _installedTransformInjectedMessages?: Agent["transformInjectedMessages"];
+	private _previousResolveToolRedirect?: Agent["resolveToolRedirect"];
+	private _installedResolveToolRedirect?: Agent["resolveToolRedirect"];
+	private _previousRefreshTurnAfterInjection?: Agent["refreshTurnAfterInjection"];
+	private _installedRefreshTurnAfterInjection?: Agent["refreshTurnAfterInjection"];
+	private _previousOnContinuationPinned?: Agent["onContinuationPinned"];
+	private _installedOnContinuationPinned?: Agent["onContinuationPinned"];
+	private _previousIsToolCallDisallowed?: Agent["isToolCallDisallowed"];
+	private _installedIsToolCallDisallowed?: Agent["isToolCallDisallowed"];
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
 	private _idleWaitPromise: Promise<void> | undefined;
@@ -664,34 +677,61 @@ export class AgentSession {
 		// it: queued skill delivery runs first, then its output feeds the captured
 		// transform. The constructor assignment (Agent) runs before this, so
 		// composition must happen here, not in the Agent constructor.
-		const previousTransformInjectedMessages = this.agent.transformInjectedMessages;
-		this.agent.transformInjectedMessages = async (messages, signal) => {
+		this._previousTransformInjectedMessages = this.agent.transformInjectedMessages;
+		this._installedTransformInjectedMessages = async (messages, signal) => {
 			const delivered = await this._deliverQueuedSkillMessages(messages, signal);
-			return previousTransformInjectedMessages
-				? await previousTransformInjectedMessages(delivered, signal)
+			return this._previousTransformInjectedMessages
+				? await this._previousTransformInjectedMessages(delivered, signal)
 				: delivered;
 		};
+		this.agent.transformInjectedMessages = this._installedTransformInjectedMessages;
 		// ADR-0006 unknown-tool redirect (C1d): corrective text only, never
 		// execution. The agent loop supplies the live active registry on every
 		// miss, so reload/tool deactivation is respected without caching here.
-		this.agent.resolveToolRedirect = ({ attemptedName, registeredToolNames }) =>
+		// Chained: an embedder-supplied resolver (AgentOptions.resolveToolRedirect)
+		// is consulted whenever the session's own redirect table has no match.
+		this._previousResolveToolRedirect = this.agent.resolveToolRedirect;
+		this._installedResolveToolRedirect = (context) =>
 			resolveToolRedirect({
-				attemptedName,
-				registeredToolNames,
+				attemptedName: context.attemptedName,
+				registeredToolNames: context.registeredToolNames,
 				redirects: this.settingsManager.getToolRedirects(),
 				disabled: this.settingsManager.getDisableToolRedirects(),
-			});
+			}) ?? this._previousResolveToolRedirect?.(context);
+		this.agent.resolveToolRedirect = this._installedResolveToolRedirect;
 		// C3a application point (b): a queued invocation activates inside the
 		// transform above, after the loop config was built, so re-resolve
 		// model/effort/tools for the consuming request.
-		this.agent.refreshTurnAfterInjection = () => this._resolveInjectedTurnOverride();
+		// Chained: the previous hook runs first and its result is returned unchanged
+		// when no skill override is active; the session's override wins over the
+		// embedder's only when one is active (matches the prepareNextTurnWithContext
+		// merge below, where session state overlays the previous snapshot).
+		this._previousRefreshTurnAfterInjection = this.agent.refreshTurnAfterInjection;
+		this._installedRefreshTurnAfterInjection = async (signal) => {
+			const previousUpdate = await this._previousRefreshTurnAfterInjection?.(signal);
+			const sessionUpdate = this._resolveInjectedTurnOverride();
+			return sessionUpdate ?? previousUpdate;
+		};
+		this.agent.refreshTurnAfterInjection = this._installedRefreshTurnAfterInjection;
 		// A model switch applied to session state is deferred while the originating
 		// provider's run is still calling tools. Session state and the UI already show
 		// the new model, so report the deferral instead of letting the two diverge.
-		this.agent.onContinuationPinned = (pinned, requested) => this._recordContinuationPinned(pinned, requested);
+		// Chained: a pure notification, so both the embedder's callback and the
+		// session's transcript notice fire; order is irrelevant.
+		this._previousOnContinuationPinned = this.agent.onContinuationPinned;
+		this._installedOnContinuationPinned = (pinned, requested) => {
+			this._previousOnContinuationPinned?.(pinned, requested);
+			this._recordContinuationPinned(pinned, requested);
+		};
+		this.agent.onContinuationPinned = this._installedOnContinuationPinned;
 		// C3a A.2 pre-lookup block: reachable even after schema removal, so a call
 		// to a disallowed tool returns a policy block naming the tool.
-		this.agent.isToolCallDisallowed = (name) => this._resolveDisallowedToolBlock(name);
+		// Chained and fail-closed like the loop's own contract (see README): the
+		// session's block wins when present, else the embedder's is consulted.
+		this._previousIsToolCallDisallowed = this.agent.isToolCallDisallowed;
+		this._installedIsToolCallDisallowed = (name) =>
+			this._resolveDisallowedToolBlock(name) ?? this._previousIsToolCallDisallowed?.(name);
+		this.agent.isToolCallDisallowed = this._installedIsToolCallDisallowed;
 		// Skill runtime (C1b): records activate on consumption and expire at the
 		// logical-turn boundary (see _runAgentPrompt's finally). The spawn-context
 		// composer reaches EVERY active bash execution (built-in or extension/SDK
@@ -1437,6 +1477,27 @@ export class AgentSession {
 		if (this._unsubscribeAgent) {
 			this._unsubscribeAgent();
 			this._unsubscribeAgent = undefined;
+		}
+		// Restore each chained hook to its pre-construction value, but only if it
+		// still holds the closure installed here. An embedder that reassigned the
+		// hook after construction owns that reassignment; teardown must not stomp it.
+		// Without this, an embedder reusing one Agent across sessions would have
+		// session #2 capture session #1's dead closure as `previous` and stack on
+		// it, running composed work (e.g. skill delivery) twice and accumulating.
+		if (this.agent.transformInjectedMessages === this._installedTransformInjectedMessages) {
+			this.agent.transformInjectedMessages = this._previousTransformInjectedMessages;
+		}
+		if (this.agent.resolveToolRedirect === this._installedResolveToolRedirect) {
+			this.agent.resolveToolRedirect = this._previousResolveToolRedirect;
+		}
+		if (this.agent.refreshTurnAfterInjection === this._installedRefreshTurnAfterInjection) {
+			this.agent.refreshTurnAfterInjection = this._previousRefreshTurnAfterInjection;
+		}
+		if (this.agent.onContinuationPinned === this._installedOnContinuationPinned) {
+			this.agent.onContinuationPinned = this._previousOnContinuationPinned;
+		}
+		if (this.agent.isToolCallDisallowed === this._installedIsToolCallDisallowed) {
+			this.agent.isToolCallDisallowed = this._previousIsToolCallDisallowed;
 		}
 	}
 

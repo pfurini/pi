@@ -39,6 +39,15 @@ export interface InvocationSpan {
 	readonly invocation: ResolvedInvocation;
 	/** Raw argument string (non-empty only in argument-ownership mode). */
 	readonly rawArgs: string;
+	/**
+	 * Exact source text this span consumed: `/name` as typed (bare or
+	 * qualified), plus the owned raw remainder verbatim in argument-ownership
+	 * mode. Excludes stripped trailing punctuation and collapsed backslashes,
+	 * which the tokenizer emits as their own text. Replayed in place of an
+	 * expansion when a caller declines to expand the invocation (A.6 dedup), so
+	 * the user's message survives byte-for-byte.
+	 */
+	readonly literal: string;
 }
 /**
  * A.6 `off` tombstone hit (c4c): the token is recognized as a disabled skill
@@ -193,8 +202,14 @@ export function tokenizeMessage(message: string, registry: CommandRegistry): Tok
 					if (invocation && !invocation.control) {
 						appendLiteral(literalBackslashes);
 						flush();
-						const rawArgs = message.slice(nameEnd).replace(/^\s+/, "");
-						spans.push({ kind: "invocation", invocation, rawArgs });
+						const ownedRemainder = message.slice(nameEnd);
+						const rawArgs = ownedRemainder.replace(/^\s+/, "");
+						spans.push({
+							kind: "invocation",
+							invocation,
+							rawArgs,
+							literal: `/${name}${ownedRemainder}`,
+						});
 						return { spans, messageInitial: true, diagnostics };
 					}
 					// A.6 `off`: the name is tombstoned — consume the token (never
@@ -253,7 +268,7 @@ export function tokenizeMessage(message: string, registry: CommandRegistry): Tok
 					}
 					appendLiteral(literalBackslashes);
 					flush();
-					spans.push({ kind: "invocation", invocation, rawArgs: "" });
+					spans.push({ kind: "invocation", invocation, rawArgs: "", literal: `/${name}` });
 					count++;
 					if (isForkSkill(invocation)) {
 						forkStopped = true;

@@ -212,6 +212,44 @@ describe("A.1 tokenizer grammar examples", () => {
 	});
 });
 
+describe("A.1 invocation span literals", () => {
+	const reg = registry({ skills: [makeSkill("review"), makeSkill("fix")], commands: [makeCommand("deploy")] });
+
+	function literals(message: string, registryOverride: CommandRegistry = reg): string[] {
+		return tokenizeMessage(message, registryOverride)
+			.spans.filter((span): span is InvocationSpan => span.kind === "invocation")
+			.map((span) => span.literal);
+	}
+
+	it("records the bare mid-prompt token as typed", () => {
+		expect(literals("please /review this and then /fix it")).toEqual(["/review", "/fix"]);
+	});
+
+	it("records the qualified token as typed, not the bare registry name", () => {
+		expect(literals("please /skill:review it")).toEqual(["/skill:review"]);
+	});
+
+	it("records a generated nested-dir qualifier as typed", () => {
+		const nested = registry({
+			skills: [
+				makeSkill("deploy", { baseDir: "/root/web", filePath: "/root/web/SKILL.md" }),
+				makeSkill("deploy", { baseDir: "/root/api", filePath: "/root/api/SKILL.md", id: "/root/api/SKILL.md" }),
+			],
+		});
+		expect(literals("ship it with /web:deploy now", nested)).toEqual(["/web:deploy"]);
+	});
+
+	it("excludes stripped trailing punctuation (the punctuation stays a text span)", () => {
+		expect(literals("run /review.")).toEqual(["/review"]);
+	});
+
+	it("includes the owned raw remainder verbatim in argument-ownership mode", () => {
+		// `\\/` collapses to one literal backslash, so this composes rather than
+		// taking the sole-skill path: the span owns `/review   src/core` verbatim.
+		expect(literals("\\\\/review   src/core")).toEqual(["/review   src/core"]);
+	});
+});
+
 describe("A.1 caps and fork stop", () => {
 	it("caps at 6 invocations with one aggregated diagnostic", () => {
 		const skills = ["a", "b", "c", "d", "e", "f", "g"].map((n) => makeSkill(n));

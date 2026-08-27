@@ -44,7 +44,7 @@ export interface InvocationCoordinatorDeps {
 	renderCommand(command: LoadedCommand, rawArgs: string, signal?: AbortSignal): Promise<RenderedCommand>;
 	/** Activate a rendered invocation for the rest of the logical turn; returns diagnostics. */
 	activateSkill(invocation: SkillInvocation): readonly ResourceDiagnostic[];
-	/** A.6 re-invocation dedup (c4b): a hit returns the short "already loaded" note to splice in place of the full block. */
+	/** A.6 re-invocation dedup (c4b): a hit returns the short "already loaded" note to deliver in place of the full block. */
 	checkDedup(rendered: RenderedSkillInvocation): { note: string } | undefined;
 	emitDiagnostics(diagnostics: readonly ResourceDiagnostic[]): void;
 	emitRenderError(extensionPath: string, event: "skill_expansion" | "command_expansion", error: unknown): void;
@@ -66,6 +66,13 @@ export interface ComposedPreparation {
 	kind: "message";
 	message: AgentMessage;
 	textForm: string;
+	/**
+	 * A.6 dedup notes raised while composing (c4b). Out-of-band by construction:
+	 * a mid-prompt dedup hit replays the user's own token instead of the note, so
+	 * the caller delivers these as display-only notices rather than splicing
+	 * status text into the user's message. Empty on every other path.
+	 */
+	notes: string[];
 }
 
 export type PreparedInvocationMessage = SoleSkillPreparation | ComposedPreparation;
@@ -137,10 +144,15 @@ export class InvocationCoordinator {
 			if (composed) {
 				return composed;
 			}
-			return { kind: "message", message: this.deps.literalMessage(text, images), textForm: text };
+			return { kind: "message", message: this.deps.literalMessage(text, images), textForm: text, notes: [] };
 		}
 		const finalText = tokenized ? this.plainText(tokenized.spans) : text;
-		return { kind: "message", message: this.deps.literalMessage(finalText, images), textForm: finalText };
+		return {
+			kind: "message",
+			message: this.deps.literalMessage(finalText, images),
+			textForm: finalText,
+			notes: [],
+		};
 	}
 
 	/**
@@ -168,6 +180,7 @@ export class InvocationCoordinator {
 			kind: "message",
 			message: this.deps.literalMessage(queued.originalText, queued.images),
 			textForm: queued.originalText,
+			notes: [],
 		};
 	}
 
@@ -198,6 +211,12 @@ export class InvocationCoordinator {
 	 * UTF-16 offsets. Skill records activate only after the whole composition
 	 * succeeds (A.5). Returns undefined after emitting a diagnostic on any render
 	 * failure, so the caller falls back to the whole original literal message.
+	 *
+	 * An A.6 dedup hit is the one case where a span contributes no expansion. The
+	 * span's own `/name` text is replayed verbatim instead, because this message
+	 * is the USER's: splicing the "already loaded" note here would both interrupt
+	 * their prose and delete the token that tells the model they re-invoked the
+	 * skill on purpose. The note is returned for out-of-band delivery.
 	 */
 	private async composeSpans(
 		spans: MessageSpan[],
@@ -207,6 +226,7 @@ export class InvocationCoordinator {
 		let text = "";
 		const invocations: SkillInvocationEntry[] = [];
 		const activations: SkillInvocation[] = [];
+		const notes: string[] = [];
 		for (const span of spans) {
 			if (span.kind === "text") {
 				text += span.text;
@@ -230,7 +250,11 @@ export class InvocationCoordinator {
 				const dedup = this.deps.checkDedup(prepared.rendered);
 				const metadata = prepared.rendered.invocation;
 				if (dedup) {
-					text += dedup.note;
+					// Replay the user's token; the note is delivered out of band. The
+					// 0/0 entry still counts the invocation while staying unusable as a
+					// dedup anchor or carry-forward source (`recoverDeliveredBody`).
+					text += span.literal;
+					notes.push(dedup.note);
 					invocations.push({
 						skillId: metadata.skillId,
 						name: metadata.name,
@@ -269,6 +293,6 @@ export class InvocationCoordinator {
 		if (invocations.length > 0) {
 			this.deps.attachInvocations(message, invocations);
 		}
-		return { kind: "message", message, textForm: text };
+		return { kind: "message", message, textForm: text, notes };
 	}
 }

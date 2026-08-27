@@ -2,7 +2,9 @@
  * A.6 re-invocation dedup + compaction carry-forward (c4b) end-to-end through
  * AgentSession with the faux provider: identical inline re-invocations note
  * instead of re-pasting the full body across all three inline delivery paths
- * (sole-skill, `skill` tool, mid-prompt composed); a compaction (manual or
+ * (sole-skill and the `skill` tool carry the note as their payload; a
+ * mid-prompt composed span keeps the user's message verbatim and delivers the
+ * note as a display-only notice beside it); a compaction (manual or
  * auto) re-attaches the most-recent inline body of each invoked skill,
  * MRU-first, budget-capped; carry-forward keeps dedup valid for a carried
  * skill and invalidates it for a dropped-and-not-carried one; reconstruction
@@ -14,8 +16,16 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, streamSimple } from "@earendil-works/pi-ai/compat";
+import {
+	type Context,
+	type FauxResponseFactory,
+	fauxAssistantMessage,
+	fauxToolCall,
+	streamSimple,
+} from "@earendil-works/pi-ai/compat";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../../src/core/agent-session.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
@@ -86,6 +96,7 @@ async function createDedupHarness(
 		contextWindow?: number;
 		settings?: { compaction?: { keepRecentTokens?: number } };
 		extensionFactories?: HarnessOptions["extensionFactories"];
+		tools?: AgentTool[];
 	} = {},
 ): Promise<{ harness: Harness; tempDir: string }> {
 	const tempDir = makeTempDir();
@@ -103,6 +114,7 @@ async function createDedupHarness(
 		models: [{ id: "session-model", contextWindow: options.contextWindow ?? 200_000 }],
 		resourceLoader,
 		settings: options.settings,
+		...(options.tools && { tools: options.tools }),
 	});
 	harnesses.push(harness);
 	return { harness, tempDir };
@@ -129,6 +141,55 @@ function lastToolResultText(harness: Harness): string {
 
 function isNote(text: string): boolean {
 	return text.includes("is already loaded");
+}
+
+/** Display-only A.6 dedup notices (`skill_note` custom messages), in transcript order. */
+function skillNotes(harness: Harness): string[] {
+	return harness.session.messages
+		.filter((m) => m.role === "custom" && m.customType === "skill_note")
+		.map((m) => getMessageText(m));
+}
+
+/** Transcript index of a message, for asserting the notice follows its user message. */
+function indexOf(harness: Harness, predicate: (message: AgentMessage) => boolean): number {
+	return harness.session.messages.findIndex(predicate);
+}
+
+/** A faux response that records the LLM-converted context text the provider received. */
+function captureRequest(sink: string[], reply = "ok"): FauxResponseFactory {
+	return (context: Context) => {
+		sink.push(context.messages.map((message) => getMessageText(message)).join("\n"));
+		return fauxAssistantMessage(reply);
+	};
+}
+
+function waitTool(): { tool: AgentTool; release: () => void } {
+	let releaseExecution: (() => void) | undefined;
+	const gate = new Promise<void>((resolve) => {
+		releaseExecution = resolve;
+	});
+	const tool: AgentTool = {
+		name: "wait",
+		label: "Wait",
+		description: "Wait for release",
+		parameters: Type.Object({}),
+		execute: async () => {
+			await gate;
+			return { content: [{ type: "text", text: "released" }], details: {} };
+		},
+	};
+	return { tool, release: () => releaseExecution?.() };
+}
+
+function waitForWaitToolStart(harness: Harness): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const unsubscribe = harness.session.subscribe((event) => {
+			if (event.type === "tool_execution_start" && event.toolName === "wait") {
+				unsubscribe();
+				resolve();
+			}
+		});
+	});
 }
 
 function countFor(harness: Harness, name: string): number | undefined {
@@ -196,15 +257,74 @@ describe("A.6 dedup delivered form (AC1, AC2)", () => {
 		}
 	});
 
-	it("mid-prompt composed: an identical re-invocation splices a note instead of the full block", async () => {
+	it("mid-prompt composed: an identical re-invocation preserves the prompt verbatim and notes out of band", async () => {
 		const { harness } = await createDedupHarness([A]);
-		harness.setResponses([fauxAssistantMessage("ack1"), fauxAssistantMessage("ack2")]);
+		const requests: string[] = [];
+		harness.setResponses([fauxAssistantMessage("ack1")]);
 
 		await harness.session.prompt("please read /skill:skill-a now");
 		expect(lastUserText(harness)).toContain("Skill A instructions.");
 
+		harness.setResponses([captureRequest(requests, "ack2")]);
 		await harness.session.prompt("please read /skill:skill-a now");
-		expect(isNote(lastUserText(harness))).toBe(true);
+
+		// The user's own message is preserved byte-for-byte, token included: the
+		// model still sees that the skill was explicitly re-invoked.
+		expect(lastUserText(harness)).toBe("please read /skill:skill-a now");
+		expect(isNote(lastUserText(harness))).toBe(false);
+		// The note is a display-only notice, never spliced into the prompt and
+		// never sent to the model.
+		expect(skillNotes(harness).filter(isNote)).toHaveLength(1);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toContain("please read /skill:skill-a now");
+		expect(isNote(requests[0])).toBe(false);
+		// It still counts as an invocation (A.6 counting-only 0/0 entry).
+		expect(countFor(harness, "skill-a")).toBe(2);
+	});
+
+	it("mid-prompt composed: the notice follows the user message it belongs to", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("ack1"), fauxAssistantMessage("ack2")]);
+
+		await harness.session.prompt("please read /skill:skill-a now");
+		await harness.session.prompt("please read /skill:skill-a now");
+
+		const promptIndex = indexOf(
+			harness,
+			(message) => message.role === "user" && getMessageText(message) === "please read /skill:skill-a now",
+		);
+		const noticeIndex = indexOf(
+			harness,
+			(message) => message.role === "custom" && message.customType === "skill_note",
+		);
+		expect(promptIndex).toBeGreaterThanOrEqual(0);
+		expect(noticeIndex).toBe(promptIndex + 1);
+	});
+
+	it("mid-prompt composed (queued): a follow-up re-invocation is preserved and notes out of band", async () => {
+		const { tool, release } = waitTool();
+		const { harness } = await createDedupHarness([A], { tools: [tool] });
+		const requests: string[] = [];
+		harness.setResponses([fauxAssistantMessage("ack1")]);
+		await harness.session.prompt("please read /skill:skill-a now");
+
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("first turn done"),
+			captureRequest(requests, "after follow-up"),
+		]);
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.followUp("please read /skill:skill-a now");
+		release();
+		await promptPromise;
+
+		expect(lastUserText(harness)).toBe("please read /skill:skill-a now");
+		expect(skillNotes(harness).filter(isNote)).toHaveLength(1);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toContain("please read /skill:skill-a now");
+		expect(isNote(requests[0])).toBe(false);
+		expect(countFor(harness, "skill-a")).toBe(2);
 	});
 
 	it("changed args re-delivers the full body", async () => {

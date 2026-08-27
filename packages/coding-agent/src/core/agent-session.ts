@@ -2139,6 +2139,10 @@ export class AgentSession {
 				this._warnMidPromptForks(tokenized?.spans);
 				messages.push(prepared.message);
 				promptText = prepared.textForm;
+				// A.6 dedup notices sit next to the preserved user message, never inside it.
+				for (const note of prepared.notes) {
+					messages.push(this._skillNoteMessage(note));
+				}
 			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
@@ -3214,6 +3218,24 @@ export class AgentSession {
 	}
 
 	/**
+	 * Build a display-only A.6 dedup notice (excluded from LLM context). Sits
+	 * beside the composed user message rather than inside it: the message-block
+	 * and `skill`-tool transports can carry the note as their whole payload, but
+	 * a mid-prompt hit would otherwise inject status text into the user's own
+	 * prose and drop the `/name` token they typed.
+	 */
+	private _skillNoteMessage(text: string): CustomMessage {
+		return {
+			role: "custom",
+			customType: "skill_note",
+			content: text,
+			display: true,
+			excludeFromContext: true,
+			timestamp: Date.now(),
+		};
+	}
+
+	/**
 	 * Record a fork notice: append immediately (with message events) when idle, or
 	 * defer to the next turn boundary when streaming (mirrors the pending-bash
 	 * injection precedent so a completion that lands mid-turn is not lost).
@@ -3432,6 +3454,10 @@ export class AgentSession {
 					// Mid-prompt / mixed / command: composed at consumption time.
 					this._warnMidPromptForks(queued.snapshot.spans);
 					delivered.push(prepared.message);
+					// A.6 dedup notices sit next to the preserved user message, never inside it.
+					for (const note of prepared.notes) {
+						delivered.push(this._skillNoteMessage(note));
+					}
 				}
 			} catch (err) {
 				// Defensive: render helpers already report and fall back; never lose the message.

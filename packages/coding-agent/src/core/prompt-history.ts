@@ -60,6 +60,25 @@ export function extractUserMessageText(message: unknown): string | null {
 		.join("");
 }
 
+/**
+ * The text to recall for one session entry, or null when the entry is not a
+ * user prompt. An entry that recorded the user's submitted text wins over its
+ * delivered content, so a skill or command invocation recalls `/skill:name
+ * args` instead of the expanded block it was delivered as. That field is the
+ * only reason a non-user entry can be a prompt: a synthetic skill pair (A.4)
+ * persists an assistant tool call and its result, never a user message.
+ *
+ * Shared by the project-scope collector and the session-scope controller so the
+ * two scopes can never recall different text for the same entry.
+ */
+export function extractPromptRecallText(entry: FileEntry): string | null {
+	if (entry.type !== "message") return null;
+	if (typeof entry.originalText === "string" && entry.originalText !== "") {
+		return entry.originalText;
+	}
+	return extractUserMessageText(entry.message);
+}
+
 /** Finite `message.timestamp`, then the entry's ISO timestamp, then the session header's ISO timestamp, then 0. */
 function deriveOrderingTime(message: unknown, entryTimestampIso: string, headerTimestampIso: string): number {
 	const msgTimestamp = (message as { timestamp?: unknown } | null)?.timestamp;
@@ -81,7 +100,7 @@ function recordFromEntry(
 	fallbackTimestampIso: string,
 ): PromptHistoryRecord | null {
 	if (entry.type !== "message") return null;
-	const text = extractUserMessageText(entry.message)?.trim();
+	const text = extractPromptRecallText(entry)?.trim();
 	if (!text) return null;
 	return {
 		text,

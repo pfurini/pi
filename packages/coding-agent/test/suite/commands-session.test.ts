@@ -12,12 +12,14 @@ import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { EditorComponent } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LoadedCommand } from "../../src/core/commands/loader.ts";
 import { sliceSkillInvocationSegments } from "../../src/core/skills/delivery.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
+import { PromptHistoryController } from "../../src/modes/interactive/prompt-history-controller.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
@@ -221,6 +223,122 @@ describe("replay bypass", () => {
 
 		const text = getMessageText(deliveredUserMessage(harness));
 		expect(text).toBe("/rev keep literal");
+	});
+});
+
+/**
+ * Recall (prompt history) must replay what the user typed, not the expanded
+ * delivery. Drives the real controller in session scope over the harness's
+ * persisted entries, which is exactly what a resumed session rebuilds from.
+ */
+async function recalledHistory(harness: Harness): Promise<string[]> {
+	let applied: string[] = [];
+	const controller = new PromptHistoryController({
+		settings: {
+			getPromptHistoryScope: () => "session",
+			getPromptHistoryMaxEntries: () => 0,
+		},
+	});
+	controller.setEditor({
+		getText: () => "",
+		setText: () => {},
+		handleInput: () => {},
+		render: () => [],
+		invalidate: () => {},
+		setHistory: (entries: readonly string[]) => {
+			applied = [...entries];
+		},
+	} as unknown as EditorComponent);
+	await controller.refresh({
+		isPersisted: () => false,
+		getCwd: () => harness.tempDir,
+		getSessionDir: () => harness.tempDir,
+		getSessionFile: () => undefined,
+		getEntries: () => harness.sessionManager.getEntries(),
+	});
+	return applied;
+}
+
+function originalTextOf(harness: Harness, predicate: (text: string) => boolean): string | undefined {
+	for (const entry of harness.sessionManager.getEntries()) {
+		if (entry.type !== "message") continue;
+		if (predicate(getMessageText(entry.message))) {
+			return entry.originalText;
+		}
+	}
+	return undefined;
+}
+
+describe("prompt recall preserves the submitted text", () => {
+	it("a sole skill invocation persists the typed text, not the delivered block", async () => {
+		const harness = await createSession({ skills: [{ name: "rev", body: "RENDERED" }] });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("/skill:rev src/core");
+
+		expect(getMessageText(deliveredUserMessage(harness))).toContain("RENDERED");
+		expect(originalTextOf(harness, (text) => text.includes("RENDERED"))).toBe("/skill:rev src/core");
+		expect(await recalledHistory(harness)).toEqual(["/skill:rev src/core"]);
+	});
+
+	it("a mid-prompt invocation persists the whole typed message", async () => {
+		const harness = await createSession({
+			skills: [{ name: "rev", body: "RENDERED" }],
+			commands: [command("note", "NOTE-BODY")],
+		});
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("start /rev mid /note end");
+
+		expect(await recalledHistory(harness)).toEqual(["start /rev mid /note end"]);
+	});
+
+	it("a command invocation persists the typed text, not the rendered body", async () => {
+		const harness = await createSession({ commands: [command("deploy", "Deploy to $0 now")] });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("/deploy prod");
+
+		expect(getMessageText(deliveredUserMessage(harness))).toBe("Deploy to prod now");
+		expect(await recalledHistory(harness)).toEqual(["/deploy prod"]);
+	});
+
+	it("a synthetic-pair delivery is still recalled even though it persists no user message", async () => {
+		const harness = await createSession({ skills: [{ name: "rev", body: "RENDERED" }] });
+		harness.session.agent.state.model = { ...harness.getModel(), syntheticToolResultReplay: true };
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("/skill:rev go");
+
+		expect(deliveredUserMessage(harness)).toBeUndefined();
+		expect(await recalledHistory(harness)).toEqual(["/skill:rev go"]);
+	});
+
+	it("a queued invocation persists the typed text at consumption time", async () => {
+		const { harness, releaseToolExecution, promptPromise, waitForToolStart } = await createWaitingSession({
+			skills: [{ name: "rev", body: "RENDERED" }],
+		});
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			() => fauxAssistantMessage("first turn done"),
+			() => fauxAssistantMessage("after follow-up"),
+		]);
+		await waitForToolStart;
+		await harness.session.followUp("please read /rev now");
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(await recalledHistory(harness)).toEqual(["start", "please read /rev now"]);
+	});
+
+	it("a plain prompt records no originalText and recalls unchanged", async () => {
+		const harness = await createSession({ skills: [{ name: "rev", body: "RENDERED" }] });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("just a plain prompt");
+
+		expect(originalTextOf(harness, (text) => text === "just a plain prompt")).toBeUndefined();
+		expect(await recalledHistory(harness)).toEqual(["just a plain prompt"]);
 	});
 });
 

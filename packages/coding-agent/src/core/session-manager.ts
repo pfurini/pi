@@ -72,6 +72,17 @@ export interface SessionMessageMetadata {
 	invocations?: SkillInvocationEntry[];
 	/** Correlates the two entries of a synthetic skill pair (A.4). */
 	pairId?: string;
+	/**
+	 * The user's submitted text, recorded only when the delivered message
+	 * differs from what they typed (skill and command expansion). Recall (prompt
+	 * history) prefers it, so navigating history after a resume replays
+	 * `/skill:name args` rather than the expanded `<skill>` block or a rendered
+	 * command body. Carried by the FIRST message of a delivery, so one prompt
+	 * yields one history record; on a synthetic pair (A.4) that is the assistant
+	 * half, since such a delivery persists no user message at all. An absent
+	 * field means the message text is what the user typed.
+	 */
+	originalText?: string;
 }
 
 export interface SessionMessageEntry extends SessionEntryBase {
@@ -79,6 +90,8 @@ export interface SessionMessageEntry extends SessionEntryBase {
 	message: AgentMessage;
 	invocations?: SkillInvocationEntry[];
 	pairId?: string;
+	/** The user's submitted text when it differs from the delivered message; see {@link SessionMessageMetadata.originalText}. */
+	originalText?: string;
 }
 export interface ThinkingLevelChangeEntry extends SessionEntryBase {
 	type: "thinking_level_change";
@@ -1199,6 +1212,9 @@ export class SessionManager {
 		if (metadata?.pairId) {
 			entry.pairId = metadata.pairId;
 		}
+		if (metadata?.originalText) {
+			entry.originalText = metadata.originalText;
+		}
 		this._appendEntry(entry);
 		return entry.id;
 	}
@@ -1233,6 +1249,10 @@ export class SessionManager {
 		};
 		if (assistantMetadata?.invocations) {
 			assistantEntry.invocations = assistantMetadata.invocations;
+		}
+		// The assistant half is the pair's first entry, so it carries the recall text.
+		if (assistantMetadata?.originalText) {
+			assistantEntry.originalText = assistantMetadata.originalText;
 		}
 		assistantEntry.pairId = pairId;
 		const toolResultEntry: SessionMessageEntry = {

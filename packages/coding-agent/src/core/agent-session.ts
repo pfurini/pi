@@ -2145,6 +2145,13 @@ export class AgentSession {
 				}
 			}
 
+			// Recall must replay what the user typed, not the expansion it was
+			// delivered as. Only the first delivered message carries it, so one
+			// prompt yields one history record.
+			if (promptText !== currentText && messages.length > 0) {
+				this._attachOriginalText(messages[0], currentText);
+			}
+
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
 				messages.push(msg);
@@ -2386,6 +2393,17 @@ export class AgentSession {
 			content.push(...images);
 		}
 		return { role: "user", content, timestamp: Date.now() };
+	}
+
+	/**
+	 * Record the user's submitted text on the first message of a delivery whose
+	 * text differs from it, so prompt-history recall replays what they typed
+	 * rather than the expansion. Merges into any delivery metadata already
+	 * attached (B.12 invocations, `pairId`) instead of replacing it.
+	 */
+	private _attachOriginalText(message: AgentMessage, originalText: string): void {
+		const existing = this._messageDeliveryMeta.get(message);
+		this._messageDeliveryMeta.set(message, { ...existing, originalText });
 	}
 
 	/**
@@ -3424,6 +3442,10 @@ export class AgentSession {
 				continue;
 			}
 			this._queuedSkillInvocations.delete(message);
+			const startIndex = delivered.length;
+			// The delivered text form, once known: compared against the queued
+			// original to decide whether recall needs the typed text recorded.
+			let deliveredTextForm: string | undefined;
 			try {
 				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
 				if (prepared.kind === "sole-skill") {
@@ -3436,6 +3458,7 @@ export class AgentSession {
 						signal,
 					);
 					if (!forkResult.forked) {
+						deliveredTextForm = forkResult.delivery?.textForm;
 						delivered.push(
 							...(forkResult.delivery?.messages ?? [
 								this._literalUserMessage(queued.originalText, queued.images),
@@ -3453,11 +3476,18 @@ export class AgentSession {
 				} else {
 					// Mid-prompt / mixed / command: composed at consumption time.
 					this._warnMidPromptForks(queued.snapshot.spans);
+					deliveredTextForm = prepared.textForm;
 					delivered.push(prepared.message);
 					// A.6 dedup notices sit next to the preserved user message, never inside it.
 					for (const note of prepared.notes) {
 						delivered.push(this._skillNoteMessage(note));
 					}
+				}
+				// Recall must replay what the user queued, not the expansion it was
+				// delivered as (the literal fallbacks already match, and need nothing).
+				const first = delivered[startIndex];
+				if (first && deliveredTextForm !== undefined && deliveredTextForm !== queued.originalText) {
+					this._attachOriginalText(first, queued.originalText);
 				}
 			} catch (err) {
 				// Defensive: render helpers already report and fall back; never lose the message.

@@ -1,6 +1,6 @@
 import type { EditorComponent } from "@earendil-works/pi-tui";
 import {
-	extractUserMessageText,
+	extractPromptRecallText,
 	type LoadProjectPromptHistoryOptions,
 	loadProjectPromptHistory,
 } from "../../core/prompt-history.ts";
@@ -43,7 +43,7 @@ function extractSessionScopeHistory(entries: readonly SessionEntry[]): string[] 
 	const texts: string[] = [];
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
-		const text = extractUserMessageText(entry.message);
+		const text = extractPromptRecallText(entry);
 		if (text === null) continue;
 		const trimmed = text.trim();
 		if (!trimmed) continue;

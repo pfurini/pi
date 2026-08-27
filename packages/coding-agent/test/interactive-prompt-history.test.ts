@@ -135,6 +135,28 @@ describe("PromptHistoryController", () => {
 		expect(editor.historyCalls.at(-1)).toEqual(["first", "second"]);
 	});
 
+	it("applies session-scope history from a persisted originalText, not the expanded delivery", async () => {
+		const settings = new FakeSettings();
+		settings.scope = "session";
+		const session = new FakeSession();
+		session.entries = [
+			{
+				...userMessageEntry("m1", '<skill name="rev" args="">\nBODY\n</skill>'),
+				originalText: "/skill:rev",
+			} as SessionEntry,
+			assistantMessageEntry("m2", "reply", "m1"),
+			userMessageEntry("m3", "plain follow-up", "m2"),
+		];
+
+		const controller = new PromptHistoryController({ settings });
+		const editor = new FakeEditor();
+		controller.setEditor(editor);
+
+		await controller.refresh(session);
+
+		expect(editor.historyCalls.at(-1)).toEqual(["/skill:rev", "plain follow-up"]);
+	});
+
 	it("applies project-scope history via the injected collector", async () => {
 		const settings = new FakeSettings();
 		settings.scope = "project";

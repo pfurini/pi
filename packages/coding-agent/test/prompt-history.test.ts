@@ -120,6 +120,61 @@ describe("prompt-history collector", () => {
 		expect(result[1]).toBe("hello world");
 	});
 
+	it("prefers a persisted originalText over the expanded delivery text", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			JSON.stringify({
+				type: "message",
+				id: "m1",
+				parentId: null,
+				timestamp: "2025-01-01T00:00:01Z",
+				message: { role: "user", content: '<skill name="rev" args="">\nBODY\n</skill>' },
+				originalText: "/skill:rev",
+			}),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual(["/skill:rev"]);
+	});
+
+	it("recalls originalText from a non-user entry (a synthetic skill pair persists no user message)", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			JSON.stringify({
+				type: "message",
+				id: "m1",
+				parentId: null,
+				timestamp: "2025-01-01T00:00:01Z",
+				message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "skill", arguments: {} }] },
+				originalText: "/skill:rev go",
+			}),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual(["/skill:rev go"]);
+	});
+
+	it("falls back to the message text when originalText is absent (legacy session) or empty", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			userMessageLine("m1", null, "2025-01-01T00:00:01Z", "legacy expanded text"),
+			JSON.stringify({
+				type: "message",
+				id: "m2",
+				parentId: "m1",
+				timestamp: "2025-01-01T00:00:02Z",
+				message: { role: "user", content: "torn empty field" },
+				originalText: "",
+			}),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual([
+			"legacy expanded text",
+			"torn empty field",
+		]);
+	});
+
 	it("excludes assistant messages", async () => {
 		const cwd = "/project";
 		writeFile("a.jsonl", [

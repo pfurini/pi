@@ -228,6 +228,47 @@ describe("sliceSkillInvocationSegments", () => {
 		]);
 	});
 
+	it("skips a counting-only 0/0 entry instead of emitting an empty block", () => {
+		expect(
+			sliceSkillInvocationSegments("please read /skill:a now", [
+				{ skillId: "1", name: "a", args: "", blockStart: 0, blockEnd: 0 },
+			]),
+		).toEqual([{ type: "text", text: "please read /skill:a now" }]);
+	});
+
+	it("accepts a 0/0 entry that follows a real block (it marks no text region, so it cannot go backwards)", () => {
+		const text = `use <skill name="a" args="">BODY-A</skill> and /skill:b`;
+		const start = text.indexOf("<skill");
+		const end = text.indexOf("</skill>") + "</skill>".length;
+		const blockInvocation = { skillId: "1", name: "a", args: "", blockStart: start, blockEnd: end };
+		expect(
+			sliceSkillInvocationSegments(text, [
+				blockInvocation,
+				{ skillId: "2", name: "b", args: "", blockStart: 0, blockEnd: 0 },
+			]),
+		).toEqual([
+			{ type: "text", text: "use " },
+			{ type: "block", invocation: blockInvocation, content: '<skill name="a" args="">BODY-A</skill>' },
+			{ type: "text", text: " and /skill:b" },
+		]);
+	});
+
+	it("skips 0/0 entries on either side of a real block", () => {
+		const text = `x <skill name="a" args="">BODY-A</skill> y`;
+		const start = text.indexOf("<skill");
+		const end = text.indexOf("</skill>") + "</skill>".length;
+		const blockInvocation = { skillId: "2", name: "a", args: "", blockStart: start, blockEnd: end };
+		const segments = sliceSkillInvocationSegments(text, [
+			{ skillId: "1", name: "before", args: "", blockStart: 0, blockEnd: 0 },
+			blockInvocation,
+			{ skillId: "3", name: "after", args: "", blockStart: 0, blockEnd: 0 },
+		]);
+		expect(segments?.filter((segment) => segment.type === "block")).toEqual([
+			{ type: "block", invocation: blockInvocation, content: '<skill name="a" args="">BODY-A</skill>' },
+		]);
+		expect(segments?.map((segment) => (segment.type === "text" ? segment.text : "")).join("")).toBe("x  y");
+	});
+
 	it("rejects malformed metadata", () => {
 		const inv = { skillId: "1", name: "a", args: "" };
 		expect(sliceSkillInvocationSegments("text", [{ ...inv, blockStart: 2, blockEnd: 99 }])).toBeUndefined();

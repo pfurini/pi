@@ -382,6 +382,15 @@ export type SkillTextSegment =
  * overlapping, or unordered offsets); callers must render the plain message
  * plus a non-fatal diagnostic in that case and must NOT fall back to the
  * legacy parser (fallback is for absent metadata only).
+ *
+ * An exact `0/0` entry is the counting-only marker (a dedup note, a fork
+ * spawn): it claims no text region, so it yields no segment and neither
+ * advances nor is checked against the cursor. Otherwise a message mixing a
+ * real block with a later `0/0` entry would read as an unordered `blockStart <
+ * cursor` and condemn the whole message as malformed, and a leading `0/0`
+ * would render as an empty block. Only an exact `0/0` is exempt: a reversed or
+ * zero-length-at-offset range is still a torn entry and still rejected, the
+ * same distinction `recoverDeliveredBody` draws.
  */
 export function sliceSkillInvocationSegments(
 	text: string,
@@ -400,6 +409,9 @@ export function sliceSkillInvocationSegments(
 			return undefined;
 		}
 		const { blockStart, blockEnd } = invocation;
+		if (blockStart === 0 && blockEnd === 0) {
+			continue;
+		}
 		if (
 			!Number.isInteger(blockStart) ||
 			!Number.isInteger(blockEnd) ||

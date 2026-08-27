@@ -220,6 +220,12 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 /** A queued invocation-bearing message awaiting consumption by the agent loop (C1c). */
 interface QueuedInvocation extends QueuedInvocationSnapshot {
 	queue: "steer" | "followUp";
+	/**
+	 * The raw submission for recall, when an extension `input` handler rewrote it.
+	 * `originalText` stays the rewritten text, since that is what the queue UI
+	 * shows and what the render-failure fallback must deliver.
+	 */
+	submittedText?: string;
 }
 
 /** Entry metadata plus the pending synthetic tool_result notification payload. */
@@ -2038,14 +2044,17 @@ export class AgentSession {
 					);
 				}
 				const queue = options.streamingBehavior === "followUp" ? "followUp" : "steer";
+				// `text` is the raw submission; `currentText` may be an extension rewrite
+				// of it. The queue carries the rewrite (that is what will be delivered),
+				// while recall keeps the submission.
 				if (tokenized && invocationSpans.length > 0) {
-					await this._queueInvocation(queue, currentText, tokenized, currentImages);
+					await this._queueInvocation(queue, currentText, tokenized, currentImages, text);
 				} else {
 					const queuedText = tokenized ? this._spansPlainText(tokenized.spans) : currentText;
 					if (queue === "followUp") {
-						await this._queueFollowUp(queuedText, currentImages);
+						await this._queueFollowUp(queuedText, currentImages, text);
 					} else {
-						await this._queueSteer(queuedText, currentImages);
+						await this._queueSteer(queuedText, currentImages, text);
 					}
 				}
 				preflightResult?.(true);
@@ -2145,11 +2154,12 @@ export class AgentSession {
 				}
 			}
 
-			// Recall must replay what the user typed, not the expansion it was
-			// delivered as. Only the first delivered message carries it, so one
-			// prompt yields one history record.
-			if (promptText !== currentText && messages.length > 0) {
-				this._attachOriginalText(messages[0], currentText);
+			// Recall must replay what the user submitted, not the expansion it was
+			// delivered as, and not an extension's `input` rewrite of it (the editor
+			// records the raw submission live, so persistence has to agree). Only the
+			// first delivered message carries it, so one prompt yields one record.
+			if (promptText !== text && messages.length > 0) {
+				this._attachOriginalText(messages[0], text);
 			}
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
@@ -3403,6 +3413,7 @@ export class AgentSession {
 		originalText: string,
 		tokenized: TokenizeResult,
 		images?: ImageContent[],
+		submittedText?: string,
 	): Promise<void> {
 		const message = this._buildQueueMessage(originalText, images);
 		this._queuedSkillInvocations.set(message, {
@@ -3410,6 +3421,7 @@ export class AgentSession {
 			originalText,
 			queue,
 			...(images && { images }),
+			...(submittedText !== undefined && submittedText !== originalText && { submittedText }),
 		});
 		this._dispatchQueue(queue, originalText, message);
 	}
@@ -3443,8 +3455,8 @@ export class AgentSession {
 			}
 			this._queuedSkillInvocations.delete(message);
 			const startIndex = delivered.length;
-			// The delivered text form, once known: compared against the queued
-			// original to decide whether recall needs the typed text recorded.
+			// The delivered text form, once known: compared against the recall text to
+			// decide whether the submission needs recording.
 			let deliveredTextForm: string | undefined;
 			try {
 				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
@@ -3483,11 +3495,12 @@ export class AgentSession {
 						delivered.push(this._skillNoteMessage(note));
 					}
 				}
-				// Recall must replay what the user queued, not the expansion it was
+				// Recall must replay what the user submitted, not the expansion it was
 				// delivered as (the literal fallbacks already match, and need nothing).
+				const recallText = queued.submittedText ?? queued.originalText;
 				const first = delivered[startIndex];
-				if (first && deliveredTextForm !== undefined && deliveredTextForm !== queued.originalText) {
-					this._attachOriginalText(first, queued.originalText);
+				if (first && deliveredTextForm !== undefined && deliveredTextForm !== recallText) {
+					this._attachOriginalText(first, recallText);
 				}
 			} catch (err) {
 				// Defensive: render helpers already report and fall back; never lose the message.
@@ -3567,16 +3580,27 @@ export class AgentSession {
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
+	 * `submittedText` is the raw submission when an extension `input` handler
+	 * rewrote it, so recall replays what the user typed rather than the rewrite.
 	 */
-	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._dispatchQueue("steer", text, this._buildQueueMessage(text, images));
+	private async _queueSteer(text: string, images?: ImageContent[], submittedText?: string): Promise<void> {
+		const message = this._buildQueueMessage(text, images);
+		if (submittedText !== undefined && submittedText !== text) {
+			this._attachOriginalText(message, submittedText);
+		}
+		this._dispatchQueue("steer", text, message);
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
+	 * See {@link _queueSteer} for `submittedText`.
 	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._dispatchQueue("followUp", text, this._buildQueueMessage(text, images));
+	private async _queueFollowUp(text: string, images?: ImageContent[], submittedText?: string): Promise<void> {
+		const message = this._buildQueueMessage(text, images);
+		if (submittedText !== undefined && submittedText !== text) {
+			this._attachOriginalText(message, submittedText);
+		}
+		this._dispatchQueue("followUp", text, message);
 	}
 
 	/**

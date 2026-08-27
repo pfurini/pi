@@ -20,7 +20,7 @@ import { sliceSkillInvocationSegments } from "../../src/core/skills/delivery.ts"
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
 import { PromptHistoryController } from "../../src/modes/interactive/prompt-history-controller.ts";
-import { createTestResourceLoader } from "../utilities.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 const tempDirs: string[] = [];
@@ -90,15 +90,20 @@ async function createSession(options: SessionOptions): Promise<Harness> {
 		};
 	});
 	const commands = options.commands ?? [];
+	// A custom resourceLoader bypasses harness.ts's own extensionFactories wiring
+	// (it only applies to the DEFAULT resourceLoader), so build the extensionsResult here.
+	const extensionsResult = options.extensionFactories
+		? await createTestExtensionsResult(options.extensionFactories, tempDir)
+		: undefined;
 	const resourceLoader: ResourceLoader = {
 		...createTestResourceLoader(),
 		getSkills: () => ({ skills, diagnostics: [] }),
 		getCommands: () => ({ commands, diagnostics: [] }),
+		...(extensionsResult && { getExtensions: () => extensionsResult }),
 	};
 	const harness = await createHarness({
 		resourceLoader,
 		...(options.tools && { tools: options.tools }),
-		...(options.extensionFactories && { extensionFactories: options.extensionFactories }),
 	});
 	harnesses.push(harness);
 	return harness;
@@ -329,6 +334,57 @@ describe("prompt recall preserves the submitted text", () => {
 		await promptPromise;
 
 		expect(await recalledHistory(harness)).toEqual(["start", "please read /rev now"]);
+	});
+
+	// The interactive editor records the raw submission before `prompt()` runs, so a
+	// reconstructed history must recall that, not an extension's rewrite of it.
+	const quickPrefixTransform = (pi: ExtensionAPI): void => {
+		pi.on("input", async (event) => {
+			if (!event.text.startsWith("?quick ")) {
+				return { action: "continue" };
+			}
+			return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
+		});
+	};
+
+	it("an extension input transform recalls the submission, not the rewrite", async () => {
+		const harness = await createSession({ extensionFactories: [quickPrefixTransform] });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("?quick hello");
+
+		expect(getMessageText(deliveredUserMessage(harness))).toBe("Respond briefly: hello");
+		expect(await recalledHistory(harness)).toEqual(["?quick hello"]);
+	});
+
+	it("an input transform feeding an invocation recalls the submission, not the transformed or expanded text", async () => {
+		const harness = await createSession({
+			skills: [{ name: "rev", body: "RENDERED" }],
+			extensionFactories: [quickPrefixTransform],
+		});
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("?quick /rev now");
+
+		expect(getMessageText(deliveredUserMessage(harness))).toContain("RENDERED");
+		expect(await recalledHistory(harness)).toEqual(["?quick /rev now"]);
+	});
+
+	it("a queued input transform recalls the submission, not the rewrite", async () => {
+		const { harness, releaseToolExecution, promptPromise, waitForToolStart } = await createWaitingSession({
+			extensionFactories: [quickPrefixTransform],
+		});
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			() => fauxAssistantMessage("first turn done"),
+			() => fauxAssistantMessage("after follow-up"),
+		]);
+		await waitForToolStart;
+		await harness.session.prompt("?quick hello", { streamingBehavior: "followUp" });
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(await recalledHistory(harness)).toEqual(["start", "?quick hello"]);
 	});
 
 	it("a plain prompt records no originalText and recalls unchanged", async () => {

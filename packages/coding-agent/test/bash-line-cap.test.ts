@@ -333,32 +333,54 @@ describe("bash tool line cap", () => {
 		cleanup(details);
 	});
 
-	it("renders the full-output path once", async () => {
+	function render(result: unknown, command: string): string {
 		// Same definition on both sides: the wrapper runs it, the definition renders it.
-		const definition = createBashToolDefinition(testDir);
+		const component = createBashToolDefinition(testDir).renderResult?.(
+			result as never,
+			{ expanded: true, isPartial: false },
+			theme,
+			{
+				args: { command },
+				toolCallId: "test-linecap-render",
+				invalidate: () => {},
+				lastComponent: undefined,
+				state: {},
+				cwd: testDir,
+				executionStarted: true,
+				showImages: false,
+				isError: false,
+			} as never,
+		);
+		const container = new Container();
+		if (component) container.addChild(component);
+		return stripAnsi(container.render(200).join("\n"));
+	}
+
+	it("renders the full-output path once", async () => {
 		const command = "node -e \"for(let i=0;i<40;i++)console.log('L'+i+'_'+'z'.repeat(1400))\"";
 		const result = await createBashTool(testDir).execute("test-linecap-render", { command });
 		const details = (result as { details?: { fullOutputPath?: string } }).details;
 		const fullOutputPath = details?.fullOutputPath ?? "";
-
-		const component = definition.renderResult?.(result as never, { expanded: true, isPartial: false }, theme, {
-			args: { command },
-			toolCallId: "test-linecap-render",
-			invalidate: () => {},
-			lastComponent: undefined,
-			state: {},
-			cwd: testDir,
-			executionStarted: true,
-			showImages: false,
-			isError: false,
-		} as never);
-		const container = new Container();
-		if (component) container.addChild(component);
-		const rendered = stripAnsi(container.render(200).join("\n"));
+		const rendered = render(result, command);
 
 		expect(fullOutputPath).not.toBe("");
 		expect(rendered.split(fullOutputPath).length - 1).toBe(1);
 		expect(rendered).toMatch(/40 lines capped at \d+ chars/);
 		cleanup(details);
+	});
+
+	it("renders a capped temp file as a prefix, not as the full output", () => {
+		const rendered = render(
+			{
+				content: [{ type: "text", text: "some output" }],
+				details: { fullOutputPath: "/tmp/pi-bash-example.log", fullOutputCapped: { bytes: 5 * 1024 * 1024 } },
+			},
+			"cat huge.log",
+		);
+
+		// The file holds a prefix; calling it the full output sends the reader looking
+		// for content that was never written.
+		expect(rendered).toContain("First 5.0MB saved to: /tmp/pi-bash-example.log");
+		expect(rendered).not.toContain("Full output:");
 	});
 });

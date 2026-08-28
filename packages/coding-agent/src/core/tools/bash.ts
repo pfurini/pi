@@ -55,7 +55,9 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
-	/** Set only when the per-line char cap actually shortened something. */
+	/** Set only when `fullOutputPath` holds a prefix because the temp-file cap was reached. */
+	fullOutputCapped?: { bytes: number };
+	/** Set only when the per-line allowance actually shortened something. */
 	lineCap?: { lines: number; maxChars: number };
 }
 
@@ -66,9 +68,23 @@ function toLineCap(snapshot: OutputSnapshot): BashToolDetails["lineCap"] {
 		: undefined;
 }
 
+/** Present only when the temp file holds a prefix, so the byte count cannot go stale. */
+function toFullOutputCapped(snapshot: OutputSnapshot): BashToolDetails["fullOutputCapped"] {
+	return snapshot.fullOutputCapped ? { bytes: snapshot.fullOutputBytes ?? 0 } : undefined;
+}
+
 /** One phrasing for the cap note, shared by the tool text footer and the TUI warning. */
 function formatLineCapNote(lineCap: { lines: number; maxChars: number }): string {
 	return `${lineCap.lines} line${lineCap.lines === 1 ? "" : "s"} capped at ${lineCap.maxChars} chars`;
+}
+
+/**
+ * One phrasing for the saved-file note, shared by the tool text footer and the TUI
+ * warning. A capped file is a prefix, not the full output; saying otherwise sends the
+ * reader looking for content that was never written.
+ */
+function formatSavedFileNote(path: string, capped: { bytes: number } | undefined): string {
+	return capped ? `First ${formatSize(capped.bytes)} saved to: ${path}` : `Full output: ${path}`;
 }
 
 /**
@@ -349,7 +365,7 @@ function rebuildBashResultRenderComponent(
 	if (truncation?.truncated || fullOutputPath || lineCap) {
 		const warnings: string[] = [];
 		if (fullOutputPath) {
-			warnings.push(`Full output: ${fullOutputPath}`);
+			warnings.push(formatSavedFileNote(fullOutputPath, result.details?.fullOutputCapped));
 		}
 		if (truncation?.truncated) {
 			if (truncation.truncatedBy === "lines") {
@@ -425,6 +441,7 @@ export function createShellToolDefinition(
 					details: {
 						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
+						fullOutputCapped: toFullOutputCapped(snapshot),
 						lineCap: toLineCap(snapshot),
 					},
 				});
@@ -475,12 +492,9 @@ export function createShellToolDefinition(
 			const formatOutput = (snapshot: Awaited<ReturnType<typeof finishOutput>>, emptyText = "(no output)") => {
 				const truncation = snapshot.truncation;
 				let text = snapshot.content || emptyText;
-				// A capped file is a prefix, not the full output; saying otherwise sends the model
-				// looking for content that was never written.
+				const fullOutputCapped = toFullOutputCapped(snapshot);
 				const savedFile = snapshot.fullOutputPath
-					? snapshot.fullOutputCapped
-						? `First ${formatSize(snapshot.fullOutputBytes ?? 0)} saved to: ${snapshot.fullOutputPath}`
-						: `Full output: ${snapshot.fullOutputPath}`
+					? formatSavedFileNote(snapshot.fullOutputPath, fullOutputCapped)
 					: "";
 				const lineCap = toLineCap(snapshot);
 				if (!truncation.truncated && !lineCap) {
@@ -489,6 +503,7 @@ export function createShellToolDefinition(
 				const details: BashToolDetails = {
 					truncation: truncation.truncated ? truncation : undefined,
 					fullOutputPath: snapshot.fullOutputPath,
+					fullOutputCapped,
 					lineCap,
 				};
 				const notices: string[] = [];

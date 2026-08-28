@@ -3,7 +3,13 @@ import { readdir } from "fs/promises";
 import { join } from "path";
 import { createInterface } from "readline";
 import { resolvePath } from "../utils/paths.ts";
-import { type FileEntry, parseSessionEntryLine, type SessionEntry, type SessionHeader } from "./session-manager.ts";
+import {
+	type FileEntry,
+	parseSessionEntryLine,
+	type SessionEntry,
+	type SessionHeader,
+	SKILL_FORK_NOTICE_TYPE,
+} from "./session-manager.ts";
 
 export interface PromptHistoryRecord {
 	/** Trimmed prompt text, matching what PromptHistoryController caches for live submissions. */
@@ -72,6 +78,14 @@ export function extractUserMessageText(message: unknown): string | null {
  * two scopes can never recall different text for the same entry.
  */
 export function extractPromptRecallText(entry: FileEntry): string | null {
+	// A sole `context: fork` invocation spawns a subagent and delivers nothing, so
+	// its spawn notice is the only durable trace of the prompt. Gated on the fork
+	// customType: `continuation_pin` notices and extension-authored custom messages
+	// share this entry type and are not user prompts.
+	if (entry.type === "custom_message") {
+		if (entry.customType !== SKILL_FORK_NOTICE_TYPE) return null;
+		return typeof entry.originalText === "string" && entry.originalText !== "" ? entry.originalText : null;
+	}
 	if (entry.type !== "message") return null;
 	if (typeof entry.originalText === "string" && entry.originalText !== "") {
 		return entry.originalText;
@@ -99,12 +113,14 @@ function recordFromEntry(
 	ordinal: number,
 	fallbackTimestampIso: string,
 ): PromptHistoryRecord | null {
-	if (entry.type !== "message") return null;
 	const text = extractPromptRecallText(entry)?.trim();
 	if (!text) return null;
+	// A fork spawn notice has no `message`; `deriveOrderingTime` then orders it by
+	// the entry's own ISO timestamp, which is when the prompt was submitted.
+	const message = entry.type === "message" ? entry.message : undefined;
 	return {
 		text,
-		timestamp: deriveOrderingTime(entry.message, entry.timestamp, fallbackTimestampIso),
+		timestamp: deriveOrderingTime(message, entry.timestamp, fallbackTimestampIso),
 		sessionPath,
 		ordinal,
 		entryId: typeof entry.id === "string" && entry.id !== "" ? entry.id : undefined,

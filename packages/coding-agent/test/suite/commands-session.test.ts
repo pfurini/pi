@@ -12,16 +12,15 @@ import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { EditorComponent } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LoadedCommand } from "../../src/core/commands/loader.ts";
 import { sliceSkillInvocationSegments } from "../../src/core/skills/delivery.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import type { ResourceLoader } from "../../src/index.ts";
-import { PromptHistoryController } from "../../src/modes/interactive/prompt-history-controller.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
+import { recalledHistory } from "./support/prompt-recall.ts";
 
 const tempDirs: string[] = [];
 const harnesses: Harness[] = [];
@@ -230,39 +229,6 @@ describe("replay bypass", () => {
 		expect(text).toBe("/rev keep literal");
 	});
 });
-
-/**
- * Recall (prompt history) must replay what the user typed, not the expanded
- * delivery. Drives the real controller in session scope over the harness's
- * persisted entries, which is exactly what a resumed session rebuilds from.
- */
-async function recalledHistory(harness: Harness): Promise<string[]> {
-	let applied: string[] = [];
-	const controller = new PromptHistoryController({
-		settings: {
-			getPromptHistoryScope: () => "session",
-			getPromptHistoryMaxEntries: () => 0,
-		},
-	});
-	controller.setEditor({
-		getText: () => "",
-		setText: () => {},
-		handleInput: () => {},
-		render: () => [],
-		invalidate: () => {},
-		setHistory: (entries: readonly string[]) => {
-			applied = [...entries];
-		},
-	} as unknown as EditorComponent);
-	await controller.refresh({
-		isPersisted: () => false,
-		getCwd: () => harness.tempDir,
-		getSessionDir: () => harness.tempDir,
-		getSessionFile: () => undefined,
-		getEntries: () => harness.sessionManager.getEntries(),
-	});
-	return applied;
-}
 
 function originalTextOf(harness: Harness, predicate: (text: string) => boolean): string | undefined {
 	for (const entry of harness.sessionManager.getEntries()) {

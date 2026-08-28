@@ -157,6 +157,45 @@ describe("PromptHistoryController", () => {
 		expect(editor.historyCalls.at(-1)).toEqual(["/skill:rev", "plain follow-up"]);
 	});
 
+	it("applies session-scope history from a fork spawn notice, which persists no message", async () => {
+		const settings = new FakeSettings();
+		settings.scope = "session";
+		const session = new FakeSession();
+		session.entries = [
+			userMessageEntry("m1", "before"),
+			{
+				type: "custom_message",
+				customType: "skill_fork",
+				id: "m2",
+				parentId: "m1",
+				timestamp: "2025-01-01T00:00:00Z",
+				content: 'Skill "plan" is running in a background subagent (agent a1).',
+				display: true,
+				excludeFromContext: true,
+				originalText: "/skill:plan refactor auth",
+			} as SessionEntry,
+			{
+				type: "custom_message",
+				customType: "skill_fork",
+				id: "m3",
+				parentId: "m2",
+				timestamp: "2025-01-01T00:00:00Z",
+				content: 'Skill "plan" (agent a1) completed: done',
+				display: true,
+				excludeFromContext: true,
+			} as SessionEntry,
+			userMessageEntry("m4", "after", "m3"),
+		];
+
+		const controller = new PromptHistoryController({ settings });
+		const editor = new FakeEditor();
+		controller.setEditor(editor);
+
+		await controller.refresh(session);
+
+		expect(editor.historyCalls.at(-1)).toEqual(["before", "/skill:plan refactor auth", "after"]);
+	});
+
 	it("applies project-scope history via the injected collector", async () => {
 		const settings = new FakeSettings();
 		settings.scope = "project";

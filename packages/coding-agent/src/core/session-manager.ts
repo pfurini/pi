@@ -180,7 +180,22 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	excludeFromContext?: boolean;
 	/** B.12 invocation metadata (c4b): a user `/name context: fork` spawn notice counts once, symmetric with a model fork's toolResult entry. */
 	invocations?: SkillInvocationEntry[];
+	/**
+	 * The user's submitted text, when this notice stands in for a prompt that
+	 * produced no message of its own: a sole `context: fork` invocation spawns a
+	 * subagent instead of delivering anything, so its notice is the only durable
+	 * trace. Read by prompt-history recall, and only ever set on a
+	 * {@link SKILL_FORK_NOTICE_TYPE} entry — see {@link SessionMessageMetadata.originalText}.
+	 */
+	originalText?: string;
 }
+
+/**
+ * The one `customType` whose entries may carry {@link CustomMessageEntry.originalText}.
+ * Prompt-history recall gates on it so a `continuation_pin` notice or an
+ * extension-authored custom message can never be mistaken for a user prompt.
+ */
+export const SKILL_FORK_NOTICE_TYPE = "skill_fork";
 
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
@@ -1371,6 +1386,7 @@ export class SessionManager {
 	 * @param details Optional extension-specific metadata (not sent to LLM)
 	 * @param excludeFromContext When true, the entry is display-only and excluded from LLM context on reload
 	 * @param invocations B.12 invocation metadata (c4b): counted by `computeSkillInvocationCounts` like any other entry
+	 * @param originalText The user's submitted text, for a notice that stands in for a prompt with no message of its own (a `context: fork` spawn). Supplied only by the fork-notice writer; see {@link CustomMessageEntry.originalText}
 	 * @returns Entry id
 	 */
 	appendCustomMessageEntry<T = unknown>(
@@ -1380,6 +1396,7 @@ export class SessionManager {
 		details?: T,
 		excludeFromContext?: boolean,
 		invocations?: SkillInvocationEntry[],
+		originalText?: string,
 	): string {
 		const entry: CustomMessageEntry<T> = {
 			type: "custom_message",
@@ -1389,6 +1406,7 @@ export class SessionManager {
 			details,
 			...(excludeFromContext && { excludeFromContext }),
 			...(invocations && { invocations }),
+			...(originalText && { originalText }),
 			id: generateId(this.byId),
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),

@@ -137,7 +137,7 @@ import type {
 	SessionMessageMetadata,
 	SkillInvocationEntry,
 } from "./session-manager.ts";
-import { getLatestCompactionEntry } from "./session-manager.ts";
+import { getLatestCompactionEntry, SKILL_FORK_NOTICE_TYPE } from "./session-manager.ts";
 import type { SettingsManager, SettingsScope } from "./settings-manager.ts";
 import { deriveCarriedSkills } from "./skills/carry-forward.ts";
 import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
@@ -235,6 +235,13 @@ type DeliveryMeta = SessionMessageMetadata & { syntheticNotification?: Synthetic
 interface ForkNoticeEnvelope {
 	notice: CustomMessage;
 	invocations?: SkillInvocationEntry[];
+	/**
+	 * The user's submitted text, for a notice that stands in for a prompt which
+	 * produced no message: a fork spawn or a repeat-blocked refusal. Follow-up
+	 * notices (completion, timeout, abort) describe an already-recorded prompt and
+	 * must leave this unset, or one prompt would yield several history records.
+	 */
+	originalText?: string;
 }
 
 /** Session-specific events that extend the core AgentEvent */
@@ -2120,6 +2127,9 @@ export class AgentSession {
 					prepared.rawArgs,
 					currentImages,
 					this._sessionAbortController?.signal,
+					// A fork delivers no message, so its notice is the only place the
+					// submission can be recorded for recall.
+					text,
 				);
 				if (forkResult.forked) {
 					// A sole `context: fork` skill spawned a subagent (A.5): the body
@@ -3122,6 +3132,7 @@ export class AgentSession {
 		rawArgs: string,
 		images: ImageContent[] | undefined,
 		signal?: AbortSignal,
+		submittedText?: string,
 	): Promise<{ forked: true } | { forked: false; delivery: SkillDelivery | undefined }> {
 		let prepared: PreparedSkillInvocation;
 		try {
@@ -3151,19 +3162,26 @@ export class AgentSession {
 			return { forked: false, delivery: this._finishSkillDelivery(prepared, images) };
 		}
 		if (outcome.kind === "repeat-blocked") {
+			// Nothing spawned, and the prompt is consumed: the refusal notice is the
+			// only trace, so it carries the submission for recall.
 			this._recordForkNotice({
 				notice: this._forkNoticeMessage(
 					`Skill "${skill.name}" is already running in a background subagent; wait for it to finish before invoking it again.`,
 				),
+				...(submittedText !== undefined && { originalText: submittedText }),
 			});
 			return { forked: true };
 		}
 		// A subagent was spawned: the spawn notice enters the transcript; the body
-		// went only to the subagent (never to the parent turn).
+		// went only to the subagent (never to the parent turn). The spawn notice is
+		// the prompt's only durable trace, so it carries the submission for recall;
+		// the terminal notices below must not, or one prompt would yield several
+		// history records.
 		const background = prepared.record.background ?? true;
 		this._recordForkNotice({
 			notice: this._forkSpawnNoticeMessage(skill.name, outcome.agentId, background),
 			invocations: [this._forkSpawnInvocationEntry(prepared.record, skill.name)],
+			...(submittedText !== undefined && { originalText: submittedText }),
 		});
 		switch (outcome.kind) {
 			case "spawned-background":
@@ -3237,7 +3255,7 @@ export class AgentSession {
 	private _forkNoticeMessage(text: string): CustomMessage {
 		return {
 			role: "custom",
-			customType: "skill_fork",
+			customType: SKILL_FORK_NOTICE_TYPE,
 			content: text,
 			display: true,
 			excludeFromContext: true,
@@ -3277,7 +3295,7 @@ export class AgentSession {
 	}
 
 	private _appendForkNotice(envelope: ForkNoticeEnvelope): void {
-		const { notice, invocations } = envelope;
+		const { notice, invocations, originalText } = envelope;
 		this.agent.state.messages.push(notice);
 		this.sessionManager.appendCustomMessageEntry(
 			notice.customType,
@@ -3286,6 +3304,7 @@ export class AgentSession {
 			notice.details,
 			notice.excludeFromContext,
 			invocations,
+			originalText,
 		);
 		if (invocations) {
 			this._markSkillListingBudgetDirty();
@@ -3458,6 +3477,7 @@ export class AgentSession {
 			// The delivered text form, once known: compared against the recall text to
 			// decide whether the submission needs recording.
 			let deliveredTextForm: string | undefined;
+			const recallText = queued.submittedText ?? queued.originalText;
 			try {
 				const prepared = await this._invocationCoordinator.prepareQueued(queued, signal);
 				if (prepared.kind === "sole-skill") {
@@ -3468,6 +3488,9 @@ export class AgentSession {
 						prepared.rawArgs,
 						queued.images,
 						signal,
+						// A fork delivers no message, so its notice is the only place the
+						// submission can be recorded for recall.
+						recallText,
 					);
 					if (!forkResult.forked) {
 						deliveredTextForm = forkResult.delivery?.textForm;
@@ -3497,7 +3520,7 @@ export class AgentSession {
 				}
 				// Recall must replay what the user submitted, not the expansion it was
 				// delivered as (the literal fallbacks already match, and need nothing).
-				const recallText = queued.submittedText ?? queued.originalText;
+				// A fork recorded it on its notice above and delivers no message here.
 				const first = delivered[startIndex];
 				if (first && deliveredTextForm !== undefined && deliveredTextForm !== recallText) {
 					this._attachOriginalText(first, recallText);

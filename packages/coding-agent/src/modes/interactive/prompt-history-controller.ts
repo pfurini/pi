@@ -42,7 +42,8 @@ export interface PromptHistoryRefreshResult {
 function extractSessionScopeHistory(entries: readonly SessionEntry[]): string[] {
 	const texts: string[] = [];
 	for (const entry of entries) {
-		if (entry.type !== "message") continue;
+		// No entry-type guard: a `context: fork` spawn notice is a `custom_message`
+		// entry and is still a user prompt. `extractPromptRecallText` is the gate.
 		const text = extractPromptRecallText(entry);
 		if (text === null) continue;
 		const trimmed = text.trim();

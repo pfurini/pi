@@ -35,6 +35,7 @@ import type { ResourceLoader } from "../../src/index.ts";
 import { canonicalizePath } from "../../src/utils/paths.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
+import { recalledHistory } from "./support/prompt-recall.ts";
 import {
 	createStubSubagentsExtension,
 	STUB_PROTOCOL_VERSION,
@@ -705,6 +706,110 @@ describe("C3b fork routing: user/synthetic sole-skill delivery", () => {
 		stub.complete(stub.spawns[0].agentId, { result: "done" });
 		await harness.session.prompt("/skill:forkbg");
 		expect(stub.spawns.length).toBe(2);
+	});
+});
+
+/**
+ * A sole `context: fork` invocation delivers no message at all, so its spawn
+ * notice is the prompt's only durable trace. Without the recall text on that
+ * notice the prompt survives live (the editor caches it) but vanishes from a
+ * resumed session's history.
+ */
+describe("C3b fork routing: prompt recall", () => {
+	/** `originalText` of every persisted fork-notice entry, in transcript order. */
+	function noticeRecallTexts(harness: Harness): (string | undefined)[] {
+		return harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "custom_message" && entry.customType === "skill_fork")
+			.map((entry) => (entry.type === "custom_message" ? entry.originalText : undefined));
+	}
+
+	it("a spawned background fork records the submission on its spawn notice", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkBg], { stub });
+		harness.setResponses([]);
+
+		await harness.session.prompt("/skill:forkbg refactor auth");
+
+		expect(stub.spawns.length).toBe(1);
+		expect(noticeRecallTexts(harness)).toEqual(["/skill:forkbg refactor auth"]);
+		expect(await recalledHistory(harness)).toEqual(["/skill:forkbg refactor auth"]);
+	});
+
+	it("a completion follow-up adds no second record for the same prompt", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkBg], { stub });
+		harness.setResponses([]);
+
+		await harness.session.prompt("/skill:forkbg go");
+		stub.complete(stub.spawns[0].agentId, { result: "bg result" });
+
+		expect(forkNotices(harness).some((text) => text.includes("completed: bg result"))).toBe(true);
+		// Two notices persisted, but only the spawn one stands in for the prompt.
+		expect(noticeRecallTexts(harness)).toEqual(["/skill:forkbg go", undefined]);
+		expect(await recalledHistory(harness)).toEqual(["/skill:forkbg go"]);
+	});
+
+	it("a repeat-blocked refusal records its own distinct submission", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkBg], { stub });
+		harness.setResponses([]);
+
+		// Distinct argument strings: prompt history collapses consecutive duplicates,
+		// so identical text could not tell the two notices apart.
+		await harness.session.prompt("/skill:forkbg first");
+		await harness.session.prompt("/skill:forkbg second");
+
+		expect(stub.spawns.length).toBe(1);
+		expect(forkNotices(harness).some((text) => text.includes("already running"))).toBe(true);
+		expect(noticeRecallTexts(harness)).toEqual(["/skill:forkbg first", "/skill:forkbg second"]);
+		expect(await recalledHistory(harness)).toEqual(["/skill:forkbg first", "/skill:forkbg second"]);
+	});
+
+	it("a queued background fork records the queued submission", async () => {
+		const stub = createStubSubagentsExtension();
+		const { tool, release } = waitTool();
+		const harness = await createForkHarness([forkBg], { stub, tools: [tool] });
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			() => fauxAssistantMessage("done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.followUp("/skill:forkbg queued work");
+		release();
+		await promptPromise;
+
+		expect(stub.spawns.length).toBe(1);
+		expect(await recalledHistory(harness)).toEqual(["start", "/skill:forkbg queued work"]);
+	});
+
+	it("a queued foreground fork flushes spawn and completion together, yielding one record", async () => {
+		// Both notices defer to `_pendingForkNotices` and flush at the same turn
+		// boundary: the terminal notice must not carry recall text of its own.
+		const stub = createStubSubagentsExtension({ autoComplete: { when: "after-reply", result: "fg done" } });
+		const { tool, release } = waitTool();
+		const harness = await createForkHarness([forkFg], { stub, tools: [tool] });
+		harness.setResponses([
+			(_c, _o, _s, _m) => fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			() => fauxAssistantMessage("done"),
+		]);
+
+		const promptPromise = harness.session.prompt("start");
+		await waitForWaitToolStart(harness);
+		await harness.session.followUp("/skill:forkfg queued fg");
+		release();
+		await promptPromise;
+
+		expect(stub.spawns.length).toBe(1);
+		expect(noticeRecallTexts(harness)[0]).toBe("/skill:forkfg queued fg");
+		expect(
+			noticeRecallTexts(harness)
+				.slice(1)
+				.every((text) => text === undefined),
+		).toBe(true);
+		expect(await recalledHistory(harness)).toEqual(["start", "/skill:forkfg queued fg"]);
 	});
 });
 

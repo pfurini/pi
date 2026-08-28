@@ -175,6 +175,82 @@ describe("prompt-history collector", () => {
 		]);
 	});
 
+	// A sole `context: fork` invocation spawns a subagent and delivers no message at
+	// all; its spawn notice is the prompt's only durable trace.
+	function forkNoticeLine(
+		id: string,
+		parentId: string | null,
+		timestamp: string,
+		content: string,
+		originalText?: string,
+	): string {
+		return JSON.stringify({
+			type: "custom_message",
+			customType: "skill_fork",
+			id,
+			parentId,
+			timestamp,
+			content,
+			display: true,
+			excludeFromContext: true,
+			...(originalText !== undefined && { originalText }),
+		});
+	}
+
+	it("recalls a fork spawn notice's originalText, ordered by its entry timestamp", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			userMessageLine("m1", null, "2025-01-01T00:00:01Z", "before"),
+			forkNoticeLine(
+				"m2",
+				"m1",
+				"2025-01-01T00:00:02Z",
+				'Skill "plan" is running in a background subagent (agent a1).',
+				"/skill:plan refactor auth",
+			),
+			userMessageLine("m3", "m2", "2025-01-01T00:00:03Z", "after"),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual([
+			"before",
+			"/skill:plan refactor auth",
+			"after",
+		]);
+	});
+
+	it("ignores a fork notice with no originalText (a completion or timeout follow-up)", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			forkNoticeLine("m1", null, "2025-01-01T00:00:01Z", 'Skill "plan" (agent a1) completed: done'),
+			userMessageLine("m2", "m1", "2025-01-01T00:00:02Z", "after"),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual(["after"]);
+	});
+
+	it("ignores a non-fork custom message even when it carries an originalText field", async () => {
+		const cwd = "/project";
+		writeFile("a.jsonl", [
+			sessionHeaderLine("a", cwd),
+			JSON.stringify({
+				type: "custom_message",
+				customType: "continuation_pin",
+				id: "m1",
+				parentId: null,
+				timestamp: "2025-01-01T00:00:01Z",
+				content: "Staying on model X until the current tool run finishes.",
+				display: true,
+				excludeFromContext: true,
+				originalText: "not a prompt",
+			}),
+			userMessageLine("m2", "m1", "2025-01-01T00:00:02Z", "after"),
+		]);
+
+		expect(await loadProjectPromptHistory({ cwd, sessionDir, maxEntries: 0 })).toEqual(["after"]);
+	});
+
 	it("excludes assistant messages", async () => {
 		const cwd = "/project";
 		writeFile("a.jsonl", [

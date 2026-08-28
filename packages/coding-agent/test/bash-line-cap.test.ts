@@ -11,6 +11,7 @@ import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 const MARKER = /\.\.\. \[truncated \d+ chars\] \.\.\./;
+const FRAGMENT_MARKER = "[truncated] ...";
 
 function toBashSingleQuotedArg(value: string): string {
 	return `'${value.replace(/'/g, `'"'"'`)}'`;
@@ -71,6 +72,42 @@ describe("capLineLengths", () => {
 
 		// A fair share would be 25 chars; the floor wins.
 		expect(many.allowance).toBe(1000);
+	});
+
+	it("claims no char count for a first line whose head was already discarded", () => {
+		const fragment = `${"a".repeat(5000)}THE_END\nsecond${"b".repeat(5000)}\n`;
+		const result = capLineLengths(fragment, { minChars: 100, maxBytes: 600, firstLineTruncated: true });
+
+		const lines = result.content.split("\n");
+		// A count taken off a fragment would describe the fragment, not the real line.
+		expect(lines[0].startsWith(FRAGMENT_MARKER)).toBe(true);
+		expect(lines[0].endsWith("THE_END")).toBe(true);
+		expect(lines[0]).not.toMatch(MARKER);
+		// Only the first line is a fragment; the rest are complete and keep their count.
+		expect(lines[1]).toMatch(MARKER);
+		expect(lines[1].startsWith("second")).toBe(true);
+		expect(result.cappedCount).toBe(2);
+	});
+
+	it("marks a short first line that was still cut off upstream", () => {
+		// The fragment fits the allowance, so nothing here needs shortening - but its
+		// head is gone regardless, and saying nothing would present it as a whole line.
+		const result = capLineLengths("tail of a much longer line", {
+			minChars: 100,
+			maxBytes: 1024,
+			firstLineTruncated: true,
+		});
+
+		expect(result.content).toBe(`${FRAGMENT_MARKER}tail of a much longer line`);
+		expect(result.cappedCount).toBe(1);
+	});
+
+	it("leaves the first line alone when it was not truncated upstream", () => {
+		const result = capLineLengths(`${"a".repeat(5000)}END`, { minChars: 100, maxBytes: 600 });
+
+		expect(result.content.startsWith(FRAGMENT_MARKER)).toBe(false);
+		expect(result.content.startsWith("a")).toBe(true);
+		expect(result.content).toMatch(MARKER);
 	});
 
 	it("does not split BMP characters at the cut", () => {
@@ -207,11 +244,16 @@ describe("OutputAccumulator line cap", () => {
 		track(snapshot);
 		await accumulator.closeTempFile();
 
-		// Known limit: the rolling tail buffer discards the head long before capping
-		// runs, so beyond ~200KB the excerpt's head is an interior offset, not the
-		// line's start. The true end still survives, and the temp file stays complete.
+		// Known limit: the rolling tail buffer discards the head long before shortening
+		// runs, so beyond ~200KB the line's start is unrecoverable. The excerpt says so
+		// instead of pairing an interior offset with the true end and calling it a head,
+		// and it claims no char count, which off a fragment would understate the loss.
+		expect(snapshot.content.startsWith(FRAGMENT_MARKER)).toBe(true);
 		expect(snapshot.content.endsWith("END")).toBe(true);
+		expect(snapshot.content).not.toMatch(MARKER);
 		expect(snapshot.content.startsWith("START")).toBe(false);
+		// The whole allowance goes to one contiguous ending, not split across two ends.
+		expect(snapshot.content.length).toBeGreaterThan(50_000);
 		expect(readFileSync(snapshot.fullOutputPath ?? "", "utf-8").startsWith("START")).toBe(true);
 	});
 

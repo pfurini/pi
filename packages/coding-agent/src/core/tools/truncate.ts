@@ -316,6 +316,20 @@ function excerptLine(line: string, maxChars: number): { text: string; wasTruncat
 	};
 }
 
+/**
+ * Keep the end of a line whose head was already discarded upstream.
+ *
+ * Such a line is a fragment, so its `length` is not the real line's length: a count of
+ * omitted chars derived from it would understate the loss, and pairing a "head" taken
+ * from an arbitrary interior offset with the true tail would imply we still have the
+ * start. Claim neither. Always marks, since the head is missing whether or not the
+ * fragment itself needed shortening.
+ */
+function excerptLineEnd(line: string, maxChars: number): { text: string; wasTruncated: boolean } {
+	const tail = line.length <= maxChars ? line : line.slice(safeTailCut(line, line.length - maxChars));
+	return { text: `[truncated] ...${tail}`, wasTruncated: true };
+}
+
 export interface LineCapResult {
 	/** Content with every over-length line excerpted in place. */
 	content: string;
@@ -332,6 +346,11 @@ export interface LineCapOptions {
 	minChars: number;
 	/** Budget the lines share; each may use `maxBytes / lineCount` before the floor applies. */
 	maxBytes: number;
+	/**
+	 * The first line's head was discarded before this call, so its length is not the
+	 * real line's length. Its excerpt keeps the end and omits any char count.
+	 */
+	firstLineTruncated?: boolean;
 }
 
 /**
@@ -343,6 +362,10 @@ export interface LineCapOptions {
  * giant line keeps the whole budget, forty long lines keep a fortieth each. A fixed
  * cap would hand back 1KB of a 2MB single-line response and leave the rest of the
  * budget unspent.
+ *
+ * A shortened line reports how many chars it dropped, which is only knowable for a
+ * complete line. Set `firstLineTruncated` when the caller has already discarded that
+ * line's head, and it keeps the end without claiming a count.
  *
  * The allowance counts characters, not bytes, so a shortened CJK or emoji line can
  * still be 3-4x its allowance in bytes. This bounds the damage one line can do; it is
@@ -364,7 +387,10 @@ export function capLineLengths(content: string, options: LineCapOptions): LineCa
 	let cappedCount = 0;
 	if (options.minChars > 0) {
 		for (let index = 0; index < lines.length; index++) {
-			const excerpt = excerptLine(lines[index], allowance);
+			const excerpt =
+				index === 0 && options.firstLineTruncated
+					? excerptLineEnd(lines[index], allowance)
+					: excerptLine(lines[index], allowance);
 			if (!excerpt.wasTruncated) continue;
 			lines[index] = excerpt.text;
 			cappedLines[index] = true;

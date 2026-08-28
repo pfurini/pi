@@ -127,11 +127,15 @@ export class OutputAccumulator {
 		// not its true start, and lines preceding one that big are lost outright.
 		// Fixing that means making the rolling buffer line-aware and shortening
 		// incrementally as output arrives.
-		const snapshotText = this.getSnapshotText();
+		const tail = this.getSnapshotText();
 		const overBudget = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
 		const capped = overBudget
-			? capLineLengths(snapshotText, { minChars: this.minLineChars, maxBytes: this.maxBytes })
-			: { content: snapshotText, cappedLines: [], cappedCount: 0, allowance: 0 };
+			? capLineLengths(tail.text, {
+					minChars: this.minLineChars,
+					maxBytes: this.maxBytes,
+					firstLineTruncated: tail.firstLineTruncated,
+				})
+			: { content: tail.text, cappedLines: [], cappedCount: 0, allowance: 0 };
 		const tailTruncation = truncateTail(capped.content, {
 			maxLines: this.maxLines,
 			maxBytes: this.maxBytes,
@@ -247,13 +251,23 @@ export class OutputAccumulator {
 		this.tailBytes = byteLength(this.tailText);
 	}
 
-	private getSnapshotText(): string {
+	/**
+	 * The displayable tail, plus whether its first line is missing a head that
+	 * `trimTail` already discarded. Only this method knows that, so it reports it
+	 * rather than leaving callers to re-derive the condition.
+	 */
+	private getSnapshotText(): { text: string; firstLineTruncated: boolean } {
 		if (this.tailStartsAtLineBoundary) {
-			return this.tailText;
+			return { text: this.tailText, firstLineTruncated: false };
 		}
 
+		// Dropping up to the first newline removes the partial line entirely. With no
+		// newline at all there is nothing to drop to: the whole tail is that partial
+		// line, and the bytes before it are gone for good.
 		const firstNewline = this.tailText.indexOf("\n");
-		return firstNewline === -1 ? this.tailText : this.tailText.slice(firstNewline + 1);
+		return firstNewline === -1
+			? { text: this.tailText, firstLineTruncated: true }
+			: { text: this.tailText.slice(firstNewline + 1), firstLineTruncated: false };
 	}
 
 	/** Persist up to the cap, then stop; the snapshot reports the file as a prefix. */

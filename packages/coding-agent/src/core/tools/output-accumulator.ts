@@ -6,8 +6,8 @@ import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "../temp-file-regi
 import {
 	capLineLengths,
 	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINE_CHARS,
 	DEFAULT_MAX_LINES,
+	DEFAULT_MIN_LINE_CHARS,
 	type TruncationResult,
 	truncateTail,
 } from "./truncate.ts";
@@ -18,8 +18,8 @@ export interface OutputAccumulatorOptions {
 	tempFilePrefix?: string;
 	/** Max bytes persisted to the full-output temp file. 0 means unlimited. */
 	maxTempFileBytes?: number;
-	/** Max chars per line in snapshot content; 0 disables. Default: 1000. */
-	maxLineChars?: number;
+	/** Floor for the per-line char allowance in snapshot content; 0 disables. Default: 1000. */
+	minLineChars?: number;
 }
 
 export interface OutputSnapshot {
@@ -30,10 +30,10 @@ export interface OutputSnapshot {
 	fullOutputBytes?: number;
 	/** True when the temp file holds only a prefix because the cap was reached. */
 	fullOutputCapped?: boolean;
-	/** Lines in `content` capped at `maxLineChars`. */
+	/** Lines in `content` shortened to fit the per-line allowance. */
 	cappedLineCount: number;
-	/** Effective per-line char cap (0 = disabled). */
-	maxLineChars: number;
+	/** Per-line char allowance actually applied (0 when no shortening ran). */
+	lineCapChars: number;
 }
 
 function defaultTempFilePath(prefix: string): string {
@@ -55,7 +55,7 @@ function byteLength(text: string): number {
 export class OutputAccumulator {
 	private readonly maxLines: number;
 	private readonly maxBytes: number;
-	private readonly maxLineChars: number;
+	private readonly minLineChars: number;
 	private readonly maxRollingBytes: number;
 	private readonly tempFilePrefix: string;
 	private readonly maxTempFileBytes: number;
@@ -81,7 +81,7 @@ export class OutputAccumulator {
 	constructor(options: OutputAccumulatorOptions = {}) {
 		this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-		this.maxLineChars = options.maxLineChars ?? DEFAULT_MAX_LINE_CHARS;
+		this.minLineChars = options.minLineChars ?? DEFAULT_MIN_LINE_CHARS;
 		this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
 		this.tempFilePrefix = options.tempFilePrefix ?? "pi-output";
 		this.maxTempFileBytes = options.maxTempFileBytes ?? DEFAULT_MAX_TEMP_FILE_BYTES;
@@ -115,20 +115,33 @@ export class OutputAccumulator {
 	}
 
 	snapshot(options: { persistIfTruncated?: boolean } = {}): OutputSnapshot {
-		// Cap line lengths before the tail budget so freed budget holds more real
-		// lines; the temp file keeps receiving raw bytes, so recovery stays lossless.
-		const capped = capLineLengths(this.getSnapshotText(), this.maxLineChars);
+		// Shortening lines only earns its keep under budget pressure. Below the limits
+		// every line reaches the model anyway, so trimming one would drop content for
+		// nothing. Above them the lines compete, and an even split beats letting one
+		// line spend everything. The temp file keeps receiving raw bytes either way,
+		// so recovery stays lossless.
+		//
+		// Known limit: this runs on the rolling tail, which `trimTail` has already
+		// bounded. Content evicted from that buffer is gone before shortening can
+		// preserve it, so a line longer than the rolling window keeps its true end but
+		// not its true start, and lines preceding one that big are lost outright.
+		// Fixing that means making the rolling buffer line-aware and shortening
+		// incrementally as output arrives.
+		const snapshotText = this.getSnapshotText();
+		const overBudget = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
+		const capped = overBudget
+			? capLineLengths(snapshotText, { minChars: this.minLineChars, maxBytes: this.maxBytes })
+			: { content: snapshotText, cappedLines: [], cappedCount: 0, allowance: 0 };
 		const tailTruncation = truncateTail(capped.content, {
 			maxLines: this.maxLines,
 			maxBytes: this.maxBytes,
 		});
-		const truncated = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
-		const truncatedBy = truncated
+		const truncatedBy = overBudget
 			? (tailTruncation.truncatedBy ?? (this.totalDecodedBytes > this.maxBytes ? "bytes" : "lines"))
 			: null;
 		const truncation: TruncationResult = {
 			...tailTruncation,
-			truncated,
+			truncated: overBudget,
 			truncatedBy,
 			totalLines: this.totalLines,
 			totalBytes: this.totalDecodedBytes,
@@ -144,7 +157,7 @@ export class OutputAccumulator {
 				? capped.cappedLines.slice(-tailTruncation.outputLines).filter((wasCapped) => wasCapped).length
 				: 0;
 
-		if (options.persistIfTruncated && (truncation.truncated || cappedLineCount > 0)) {
+		if (options.persistIfTruncated && overBudget) {
 			this.ensureTempFile();
 		}
 
@@ -155,7 +168,7 @@ export class OutputAccumulator {
 			fullOutputBytes: this.tempFilePath ? this.tempFileBytes : undefined,
 			fullOutputCapped: this.tempFilePath ? this.tempFileCapped : undefined,
 			cappedLineCount,
-			maxLineChars: this.maxLineChars,
+			lineCapChars: cappedLineCount > 0 ? capped.allowance : 0,
 		};
 	}
 

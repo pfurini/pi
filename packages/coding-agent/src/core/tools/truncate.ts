@@ -12,8 +12,8 @@
 export const DEFAULT_MAX_LINES = 2000;
 export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
 export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
-/** Default per-line char cap for shell tool output; 0 disables capping. */
-export const DEFAULT_MAX_LINE_CHARS = 1000;
+/** Floor for the per-line char allowance in shell output; 0 disables shortening. */
+export const DEFAULT_MIN_LINE_CHARS = 1000;
 
 export interface TruncationResult {
 	/** The truncated content */
@@ -293,63 +293,85 @@ export function truncateLine(
 	return { text: `${line.slice(0, safeHeadCut(line, maxChars))}... [truncated]`, wasTruncated: true };
 }
 
+/** Upper bound on `excerptLine`'s middle marker: 26 fixed chars plus room for the digit count. */
+const EXCERPT_MARKER_MAX_CHARS = 40;
+
 /**
- * Truncate a single line to max characters keeping its END, marking the dropped head.
- * Used for the final line of shell output, whose end is the end of the output.
+ * Keep both ends of an over-long line, marking the omitted middle.
+ *
+ * One-ended excerpts always lose something a caller needed: a single-line JSON
+ * response needs its opening keys and its final values, and a single-line stack
+ * trace needs the exception and the terminal cause.
  */
-function truncateLineFromEnd(line: string, maxChars: number): { text: string; wasTruncated: boolean } {
+function excerptLine(line: string, maxChars: number): { text: string; wasTruncated: boolean } {
 	if (line.length <= maxChars) {
 		return { text: line, wasTruncated: false };
 	}
-	return { text: `[truncated] ...${line.slice(safeTailCut(line, line.length - maxChars))}`, wasTruncated: true };
+	const head = line.slice(0, safeHeadCut(line, Math.ceil(maxChars / 2)));
+	const tailChars = maxChars - head.length;
+	const tail = tailChars > 0 ? line.slice(safeTailCut(line, line.length - tailChars)) : "";
+	return {
+		text: `${head}... [truncated ${line.length - head.length - tail.length} chars] ...${tail}`,
+		wasTruncated: true,
+	};
 }
 
 export interface LineCapResult {
-	/** Content with every over-length line capped in place. */
+	/** Content with every over-length line excerpted in place. */
 	content: string;
 	/** Per-line flags aligned with the lines of `content` (trailing newline excluded). */
 	cappedLines: boolean[];
-	/** Number of lines capped. */
+	/** Number of lines shortened. */
 	cappedCount: number;
+	/** Per-line allowance actually applied. */
+	allowance: number;
+}
+
+export interface LineCapOptions {
+	/** Floor for the per-line allowance. `<= 0` disables capping. */
+	minChars: number;
+	/** Budget the lines share; each may use `maxBytes / lineCount` before the floor applies. */
+	maxBytes: number;
 }
 
 /**
- * Cap the length of each line with the same "[truncated]" marker grep uses, so a
- * byte/line budget is spent on distinct lines instead of one giant one. Never adds
- * or removes lines, and never moves content across the newline separator: line
- * counts and "Showing lines X-Y of Z" math stay exact. `maxChars <= 0` disables
- * capping.
+ * Shorten over-long lines so a byte budget is spent on distinct lines instead of one
+ * giant one. Never adds or removes lines, and never moves content across the newline
+ * separator: line counts and "Showing lines X-Y of Z" math stay exact.
  *
- * The last line is capped from its END rather than its head: it finishes where the
- * output finishes, which is the part tail truncation exists to show. Capping it from
- * the head instead would hand back an interior slice of, say, a 2MB single-line
- * response and hide the result the command actually ended with.
+ * Each line may use its fair share of the budget, never less than `minChars`: one
+ * giant line keeps the whole budget, forty long lines keep a fortieth each. A fixed
+ * cap would hand back 1KB of a 2MB single-line response and leave the rest of the
+ * budget unspent.
  *
- * `maxChars` counts characters, not bytes, so a capped CJK or emoji line can still
- * be 3-4x `maxChars` bytes. This bounds the damage one line can do; it is not a byte
- * bound.
+ * The allowance counts characters, not bytes, so a shortened CJK or emoji line can
+ * still be 3-4x its allowance in bytes. This bounds the damage one line can do; it is
+ * not a byte bound, and tail truncation remains the hard enforcer.
  */
-export function capLineLengths(content: string, maxChars: number): LineCapResult {
-	if (content.length === 0) return { content: "", cappedLines: [], cappedCount: 0 };
+export function capLineLengths(content: string, options: LineCapOptions): LineCapResult {
+	if (content.length === 0) return { content: "", cappedLines: [], cappedCount: 0, allowance: 0 };
 
 	const endsWithNewline = content.endsWith("\n");
 	const lines = content.split("\n");
 	if (endsWithNewline) lines.pop();
 
+	// Reserve the marker and the newline out of each line's share, so an excerpted line
+	// still fits it. Otherwise a single line handed the whole budget overshoots by the
+	// marker's width and tail truncation re-cuts it, eating the head we just preserved.
+	const share = Math.floor(options.maxBytes / lines.length) - EXCERPT_MARKER_MAX_CHARS - 1;
+	const allowance = Math.max(options.minChars, share);
 	const cappedLines: boolean[] = new Array<boolean>(lines.length).fill(false);
 	let cappedCount = 0;
-	if (maxChars > 0) {
-		const lastIndex = lines.length - 1;
+	if (options.minChars > 0) {
 		for (let index = 0; index < lines.length; index++) {
-			const line = lines[index];
-			if (line.length <= maxChars) continue;
-			lines[index] =
-				index === lastIndex ? truncateLineFromEnd(line, maxChars).text : truncateLine(line, maxChars).text;
+			const excerpt = excerptLine(lines[index], allowance);
+			if (!excerpt.wasTruncated) continue;
+			lines[index] = excerpt.text;
 			cappedLines[index] = true;
 			cappedCount++;
 		}
 	}
-	if (cappedCount === 0) return { content, cappedLines, cappedCount };
+	if (cappedCount === 0) return { content, cappedLines, cappedCount, allowance };
 
-	return { content: `${lines.join("\n")}${endsWithNewline ? "\n" : ""}`, cappedLines, cappedCount };
+	return { content: `${lines.join("\n")}${endsWithNewline ? "\n" : ""}`, cappedLines, cappedCount, allowance };
 }

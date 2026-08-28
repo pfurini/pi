@@ -22,13 +22,7 @@ import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "
 import { OutputAccumulator, type OutputSnapshot } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
-import {
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINE_CHARS,
-	DEFAULT_MAX_LINES,
-	formatSize,
-	type TruncationResult,
-} from "./truncate.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
@@ -68,7 +62,7 @@ export interface BashToolDetails {
 /** Present only when lines were actually shortened, so the two numbers can never disagree. */
 function toLineCap(snapshot: OutputSnapshot): BashToolDetails["lineCap"] {
 	return snapshot.cappedLineCount > 0
-		? { lines: snapshot.cappedLineCount, maxChars: snapshot.maxLineChars }
+		? { lines: snapshot.cappedLineCount, maxChars: snapshot.lineCapChars }
 		: undefined;
 }
 
@@ -399,7 +393,7 @@ export function createShellToolDefinition(
 	const exposeSessionEnvironment = options?.exposeSessionEnvironment ?? true;
 	const spawnHook = options?.spawnHook;
 	return {
-		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first), and lines longer than ${DEFAULT_MAX_LINE_CHARS} chars are capped. If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). When that limit is exceeded, over-long lines are shortened to both ends so the budget covers more lines, and the full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		name: config.name,
 		label: config.label,
 		promptSnippet: config.promptSnippet,
@@ -507,8 +501,8 @@ export function createShellToolDefinition(
 							`Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize})`,
 						);
 					} else if (truncation.outputLines === truncation.totalLines) {
-						// Only reachable when line capping freed enough budget to show every line;
-						// the raw byte total still tripped the limit.
+						// Only reachable when shortening lines freed enough budget to show every
+						// line; the raw byte total still tripped the limit.
 						notices.push(
 							`Showing all ${truncation.totalLines} line${truncation.totalLines === 1 ? "" : "s"} (raw output ${formatSize(truncation.totalBytes)})`,
 						);

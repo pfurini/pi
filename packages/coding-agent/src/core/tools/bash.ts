@@ -22,7 +22,13 @@ import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINE_CHARS,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	type TruncationResult,
+} from "./truncate.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
@@ -372,9 +378,9 @@ export function createShellToolDefinition(
 	const exposeSessionEnvironment = options?.exposeSessionEnvironment ?? true;
 	const spawnHook = options?.spawnHook;
 	return {
+		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first), and lines longer than ${DEFAULT_MAX_LINE_CHARS} chars are capped. If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		name: config.name,
 		label: config.label,
-		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		promptSnippet: config.promptSnippet,
 		promptGuidelines: exposeSessionEnvironment && config.promptGuidelines ? [...config.promptGuidelines] : undefined,
 		parameters: bashSchema,
@@ -454,23 +460,47 @@ export function createShellToolDefinition(
 				const truncation = snapshot.truncation;
 				let text = snapshot.content || emptyText;
 				let details: BashToolDetails | undefined;
+				// A capped file is a prefix, not the full output; saying otherwise sends the model
+				// looking for content that was never written.
+				const savedFile = snapshot.fullOutputPath
+					? snapshot.fullOutputCapped
+						? `First ${formatSize(snapshot.fullOutputBytes ?? 0)} saved to: ${snapshot.fullOutputPath}`
+						: `Full output: ${snapshot.fullOutputPath}`
+					: "";
+				const cappedCount = snapshot.maxLineChars > 0 ? snapshot.cappedLineCount : 0;
+				const capNote =
+					cappedCount > 0
+						? `${cappedCount} line${cappedCount === 1 ? "" : "s"} capped at ${snapshot.maxLineChars} chars`
+						: "";
 				if (truncation.truncated) {
 					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
-					// A capped file is a prefix, not the full output; saying otherwise sends the model
-					// looking for content that was never written.
-					const savedFile = snapshot.fullOutputCapped
-						? `First ${formatSize(snapshot.fullOutputBytes ?? 0)} saved to: ${snapshot.fullOutputPath}`
-						: `Full output: ${snapshot.fullOutputPath}`;
+					const notices: string[] = [];
 					if (truncation.lastLinePartial) {
 						const lastLineSize = formatSize(output.getLastLineBytes());
-						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). ${savedFile}]`;
+						notices.push(
+							`Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize})`,
+						);
+					} else if (truncation.outputLines === truncation.totalLines) {
+						// Only reachable when line capping freed enough budget to show every line;
+						// the raw byte total still tripped the limit.
+						notices.push(
+							`Showing all ${truncation.totalLines} lines (raw output ${formatSize(truncation.totalBytes)})`,
+						);
 					} else if (truncation.truncatedBy === "lines") {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. ${savedFile}]`;
+						notices.push(`Showing lines ${startLine}-${endLine} of ${truncation.totalLines}`);
 					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). ${savedFile}]`;
+						notices.push(
+							`Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit)`,
+						);
 					}
+					if (capNote) notices.push(capNote);
+					if (savedFile) notices.push(savedFile);
+					text += `\n\n[${notices.join(". ")}]`;
+				} else if (capNote) {
+					details = { fullOutputPath: snapshot.fullOutputPath };
+					text += `\n\n[${[capNote, savedFile].filter(Boolean).join(". ")}]`;
 				}
 				return { text, details };
 			};

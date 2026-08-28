@@ -11,6 +11,8 @@
 export const DEFAULT_MAX_LINES = 2000;
 export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
 export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
+/** Default per-line char cap for shell tool output; 0 disables capping. */
+export const DEFAULT_MAX_LINE_CHARS = 1000;
 
 export interface TruncationResult {
 	/** The truncated content */
@@ -273,4 +275,43 @@ export function truncateLine(
 		return { text: line, wasTruncated: false };
 	}
 	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
+}
+
+export interface LineCapResult {
+	/** Content with every over-length line capped in place. */
+	content: string;
+	/** Per-line flags aligned with the lines of `content` (trailing newline excluded). */
+	cappedLines: boolean[];
+	/** Number of lines capped. */
+	cappedCount: number;
+}
+
+/**
+ * Cap the length of each line, appending the same "... [truncated]" marker
+ * grep uses, so a byte/line budget is spent on distinct lines instead of one
+ * giant one. Never adds or removes lines, and never moves content across the
+ * newline separator: line counts and "Showing lines X-Y of Z" math stay exact.
+ * `maxChars <= 0` disables capping.
+ */
+export function capLineLengths(content: string, maxChars: number): LineCapResult {
+	if (content.length === 0) return { content: "", cappedLines: [], cappedCount: 0 };
+
+	const endsWithNewline = content.endsWith("\n");
+	const lines = content.split("\n");
+	if (endsWithNewline) lines.pop();
+
+	const cappedLines: boolean[] = new Array<boolean>(lines.length).fill(false);
+	let cappedCount = 0;
+	if (maxChars > 0) {
+		for (let index = 0; index < lines.length; index++) {
+			const line = lines[index];
+			if (line.length <= maxChars) continue;
+			lines[index] = truncateLine(line, maxChars).text;
+			cappedLines[index] = true;
+			cappedCount++;
+		}
+	}
+
+	const joined = lines.length === 0 ? "" : `${lines.join("\n")}${endsWithNewline ? "\n" : ""}`;
+	return { content: joined, cappedLines, cappedCount };
 }

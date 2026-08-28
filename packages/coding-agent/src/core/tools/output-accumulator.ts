@@ -3,7 +3,14 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "../temp-file-registry.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.ts";
+import {
+	capLineLengths,
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINE_CHARS,
+	DEFAULT_MAX_LINES,
+	type TruncationResult,
+	truncateTail,
+} from "./truncate.ts";
 
 export interface OutputAccumulatorOptions {
 	maxLines?: number;
@@ -11,6 +18,8 @@ export interface OutputAccumulatorOptions {
 	tempFilePrefix?: string;
 	/** Max bytes persisted to the full-output temp file. 0 means unlimited. */
 	maxTempFileBytes?: number;
+	/** Max chars per line in snapshot content; 0 disables. Default: 1000. */
+	maxLineChars?: number;
 }
 
 export interface OutputSnapshot {
@@ -21,6 +30,10 @@ export interface OutputSnapshot {
 	fullOutputBytes?: number;
 	/** True when the temp file holds only a prefix because the cap was reached. */
 	fullOutputCapped?: boolean;
+	/** Lines in `content` capped at `maxLineChars`. */
+	cappedLineCount: number;
+	/** Effective per-line char cap (0 = disabled). */
+	maxLineChars: number;
 }
 
 function defaultTempFilePath(prefix: string): string {
@@ -42,6 +55,7 @@ function byteLength(text: string): number {
 export class OutputAccumulator {
 	private readonly maxLines: number;
 	private readonly maxBytes: number;
+	private readonly maxLineChars: number;
 	private readonly maxRollingBytes: number;
 	private readonly tempFilePrefix: string;
 	private readonly maxTempFileBytes: number;
@@ -67,6 +81,7 @@ export class OutputAccumulator {
 	constructor(options: OutputAccumulatorOptions = {}) {
 		this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+		this.maxLineChars = options.maxLineChars ?? DEFAULT_MAX_LINE_CHARS;
 		this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
 		this.tempFilePrefix = options.tempFilePrefix ?? "pi-output";
 		this.maxTempFileBytes = options.maxTempFileBytes ?? DEFAULT_MAX_TEMP_FILE_BYTES;
@@ -100,7 +115,10 @@ export class OutputAccumulator {
 	}
 
 	snapshot(options: { persistIfTruncated?: boolean } = {}): OutputSnapshot {
-		const tailTruncation = truncateTail(this.getSnapshotText(), {
+		// Cap line lengths before the tail budget so freed budget holds more real
+		// lines; the temp file keeps receiving raw bytes, so recovery stays lossless.
+		const capped = capLineLengths(this.getSnapshotText(), this.maxLineChars);
+		const tailTruncation = truncateTail(capped.content, {
 			maxLines: this.maxLines,
 			maxBytes: this.maxBytes,
 		});
@@ -118,7 +136,13 @@ export class OutputAccumulator {
 			maxBytes: this.maxBytes,
 		};
 
-		if (options.persistIfTruncated && truncation.truncated) {
+		// Only capped lines that survive tail truncation count: the kept window is
+		// the last `outputLines` lines of the capped text, so the flags align 1:1.
+		const cappedLineCount = capped.cappedLines
+			.slice(-tailTruncation.outputLines)
+			.filter((wasCapped) => wasCapped).length;
+
+		if (options.persistIfTruncated && (truncation.truncated || cappedLineCount > 0)) {
 			this.ensureTempFile();
 		}
 
@@ -128,6 +152,8 @@ export class OutputAccumulator {
 			fullOutputPath: this.tempFilePath,
 			fullOutputBytes: this.tempFilePath ? this.tempFileBytes : undefined,
 			fullOutputCapped: this.tempFilePath ? this.tempFileCapped : undefined,
+			cappedLineCount,
+			maxLineChars: this.maxLineChars,
 		};
 	}
 

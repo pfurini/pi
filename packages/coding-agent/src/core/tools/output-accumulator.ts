@@ -138,9 +138,11 @@ export class OutputAccumulator {
 
 		// Only capped lines that survive tail truncation count: the kept window is
 		// the last `outputLines` lines of the capped text, so the flags align 1:1.
-		const cappedLineCount = capped.cappedLines
-			.slice(-tailTruncation.outputLines)
-			.filter((wasCapped) => wasCapped).length;
+		// The explicit 0 check matters: `slice(-0)` would return every flag instead of none.
+		const cappedLineCount =
+			tailTruncation.outputLines > 0
+				? capped.cappedLines.slice(-tailTruncation.outputLines).filter((wasCapped) => wasCapped).length
+				: 0;
 
 		if (options.persistIfTruncated && (truncation.truncated || cappedLineCount > 0)) {
 			this.ensureTempFile();

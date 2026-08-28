@@ -5,7 +5,8 @@
  * - Line limit (default: 2000 lines)
  * - Byte limit (default: 50KB)
  *
- * Never returns partial lines (except bash tail truncation edge case).
+ * Never returns partial lines, except for the bash tail truncation edge case and
+ * lines shortened by `capLineLengths`, which mark themselves with a [truncated] marker.
  */
 
 export const DEFAULT_MAX_LINES = 2000;
@@ -264,6 +265,21 @@ function truncateStringToBytesFromEnd(str: string, maxBytes: number): string {
 }
 
 /**
+ * Move a head-slice end index off the middle of a surrogate pair, so a cut never
+ * leaves a lone surrogate that would encode as U+FFFD.
+ */
+function safeHeadCut(line: string, index: number): number {
+	const code = line.charCodeAt(index - 1);
+	return code >= 0xd800 && code <= 0xdbff ? index - 1 : index;
+}
+
+/** Mirror of `safeHeadCut` for a tail-slice start index. */
+function safeTailCut(line: string, index: number): number {
+	const code = line.charCodeAt(index);
+	return code >= 0xdc00 && code <= 0xdfff ? index + 1 : index;
+}
+
+/**
  * Truncate a single line to max characters, adding [truncated] suffix.
  * Used for grep match lines.
  */
@@ -274,7 +290,18 @@ export function truncateLine(
 	if (line.length <= maxChars) {
 		return { text: line, wasTruncated: false };
 	}
-	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
+	return { text: `${line.slice(0, safeHeadCut(line, maxChars))}... [truncated]`, wasTruncated: true };
+}
+
+/**
+ * Truncate a single line to max characters keeping its END, marking the dropped head.
+ * Used for the final line of shell output, whose end is the end of the output.
+ */
+function truncateLineFromEnd(line: string, maxChars: number): { text: string; wasTruncated: boolean } {
+	if (line.length <= maxChars) {
+		return { text: line, wasTruncated: false };
+	}
+	return { text: `[truncated] ...${line.slice(safeTailCut(line, line.length - maxChars))}`, wasTruncated: true };
 }
 
 export interface LineCapResult {
@@ -287,11 +314,20 @@ export interface LineCapResult {
 }
 
 /**
- * Cap the length of each line, appending the same "... [truncated]" marker
- * grep uses, so a byte/line budget is spent on distinct lines instead of one
- * giant one. Never adds or removes lines, and never moves content across the
- * newline separator: line counts and "Showing lines X-Y of Z" math stay exact.
- * `maxChars <= 0` disables capping.
+ * Cap the length of each line with the same "[truncated]" marker grep uses, so a
+ * byte/line budget is spent on distinct lines instead of one giant one. Never adds
+ * or removes lines, and never moves content across the newline separator: line
+ * counts and "Showing lines X-Y of Z" math stay exact. `maxChars <= 0` disables
+ * capping.
+ *
+ * The last line is capped from its END rather than its head: it finishes where the
+ * output finishes, which is the part tail truncation exists to show. Capping it from
+ * the head instead would hand back an interior slice of, say, a 2MB single-line
+ * response and hide the result the command actually ended with.
+ *
+ * `maxChars` counts characters, not bytes, so a capped CJK or emoji line can still
+ * be 3-4x `maxChars` bytes. This bounds the damage one line can do; it is not a byte
+ * bound.
  */
 export function capLineLengths(content: string, maxChars: number): LineCapResult {
 	if (content.length === 0) return { content: "", cappedLines: [], cappedCount: 0 };
@@ -303,15 +339,17 @@ export function capLineLengths(content: string, maxChars: number): LineCapResult
 	const cappedLines: boolean[] = new Array<boolean>(lines.length).fill(false);
 	let cappedCount = 0;
 	if (maxChars > 0) {
+		const lastIndex = lines.length - 1;
 		for (let index = 0; index < lines.length; index++) {
 			const line = lines[index];
 			if (line.length <= maxChars) continue;
-			lines[index] = truncateLine(line, maxChars).text;
+			lines[index] =
+				index === lastIndex ? truncateLineFromEnd(line, maxChars).text : truncateLine(line, maxChars).text;
 			cappedLines[index] = true;
 			cappedCount++;
 		}
 	}
+	if (cappedCount === 0) return { content, cappedLines, cappedCount };
 
-	const joined = lines.length === 0 ? "" : `${lines.join("\n")}${endsWithNewline ? "\n" : ""}`;
-	return { content: joined, cappedLines, cappedCount };
+	return { content: `${lines.join("\n")}${endsWithNewline ? "\n" : ""}`, cappedLines, cappedCount };
 }

@@ -19,7 +19,7 @@ import {
 } from "../../utils/shell.ts";
 import { getExperimentalToolSampling } from "../experimental.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
-import { OutputAccumulator } from "./output-accumulator.ts";
+import { OutputAccumulator, type OutputSnapshot } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import {
@@ -61,6 +61,20 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+	/** Set only when the per-line char cap actually shortened something. */
+	lineCap?: { lines: number; maxChars: number };
+}
+
+/** Present only when lines were actually shortened, so the two numbers can never disagree. */
+function toLineCap(snapshot: OutputSnapshot): BashToolDetails["lineCap"] {
+	return snapshot.cappedLineCount > 0
+		? { lines: snapshot.cappedLineCount, maxChars: snapshot.maxLineChars }
+		: undefined;
+}
+
+/** One phrasing for the cap note, shared by the tool text footer and the TUI warning. */
+function formatLineCapNote(lineCap: { lines: number; maxChars: number }): string {
+	return `${lineCap.lines} line${lineCap.lines === 1 ? "" : "s"} capped at ${lineCap.maxChars} chars`;
 }
 
 /**
@@ -293,7 +307,10 @@ function rebuildBashResultRenderComponent(
 	let output = getTextOutput(result as any, showImages).trim();
 	const truncation = result.details?.truncation;
 	const fullOutputPath = result.details?.fullOutputPath;
-	if (!options.isPartial && truncation?.truncated && fullOutputPath && output.endsWith("]")) {
+	// The footer is re-rendered below as a styled warning, so strip it whenever it is
+	// present. Line capping emits a footer without setting `truncation`, so gating this
+	// on truncation would print the path twice.
+	if (!options.isPartial && fullOutputPath && output.endsWith("]")) {
 		const footerStart = output.lastIndexOf("\n\n[");
 		if (footerStart !== -1 && output.slice(footerStart).includes(fullOutputPath)) {
 			output = output.slice(0, footerStart).trimEnd();
@@ -334,7 +351,8 @@ function rebuildBashResultRenderComponent(
 		}
 	}
 
-	if (truncation?.truncated || fullOutputPath) {
+	const lineCap = result.details?.lineCap;
+	if (truncation?.truncated || fullOutputPath || lineCap) {
 		const warnings: string[] = [];
 		if (fullOutputPath) {
 			warnings.push(`Full output: ${fullOutputPath}`);
@@ -347,6 +365,9 @@ function rebuildBashResultRenderComponent(
 					`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
 				);
 			}
+		}
+		if (lineCap) {
+			warnings.push(formatLineCapNote(lineCap));
 		}
 		component.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
 	}
@@ -410,6 +431,7 @@ export function createShellToolDefinition(
 					details: {
 						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
+						lineCap: toLineCap(snapshot),
 					},
 				});
 			};
@@ -459,7 +481,6 @@ export function createShellToolDefinition(
 			const formatOutput = (snapshot: Awaited<ReturnType<typeof finishOutput>>, emptyText = "(no output)") => {
 				const truncation = snapshot.truncation;
 				let text = snapshot.content || emptyText;
-				let details: BashToolDetails | undefined;
 				// A capped file is a prefix, not the full output; saying otherwise sends the model
 				// looking for content that was never written.
 				const savedFile = snapshot.fullOutputPath
@@ -467,16 +488,19 @@ export function createShellToolDefinition(
 						? `First ${formatSize(snapshot.fullOutputBytes ?? 0)} saved to: ${snapshot.fullOutputPath}`
 						: `Full output: ${snapshot.fullOutputPath}`
 					: "";
-				const cappedCount = snapshot.maxLineChars > 0 ? snapshot.cappedLineCount : 0;
-				const capNote =
-					cappedCount > 0
-						? `${cappedCount} line${cappedCount === 1 ? "" : "s"} capped at ${snapshot.maxLineChars} chars`
-						: "";
+				const lineCap = toLineCap(snapshot);
+				if (!truncation.truncated && !lineCap) {
+					return { text, details: undefined };
+				}
+				const details: BashToolDetails = {
+					truncation: truncation.truncated ? truncation : undefined,
+					fullOutputPath: snapshot.fullOutputPath,
+					lineCap,
+				};
+				const notices: string[] = [];
 				if (truncation.truncated) {
-					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
-					const notices: string[] = [];
 					if (truncation.lastLinePartial) {
 						const lastLineSize = formatSize(output.getLastLineBytes());
 						notices.push(
@@ -486,7 +510,7 @@ export function createShellToolDefinition(
 						// Only reachable when line capping freed enough budget to show every line;
 						// the raw byte total still tripped the limit.
 						notices.push(
-							`Showing all ${truncation.totalLines} lines (raw output ${formatSize(truncation.totalBytes)})`,
+							`Showing all ${truncation.totalLines} line${truncation.totalLines === 1 ? "" : "s"} (raw output ${formatSize(truncation.totalBytes)})`,
 						);
 					} else if (truncation.truncatedBy === "lines") {
 						notices.push(`Showing lines ${startLine}-${endLine} of ${truncation.totalLines}`);
@@ -495,13 +519,10 @@ export function createShellToolDefinition(
 							`Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit)`,
 						);
 					}
-					if (capNote) notices.push(capNote);
-					if (savedFile) notices.push(savedFile);
-					text += `\n\n[${notices.join(". ")}]`;
-				} else if (capNote) {
-					details = { fullOutputPath: snapshot.fullOutputPath };
-					text += `\n\n[${[capNote, savedFile].filter(Boolean).join(". ")}]`;
 				}
+				if (lineCap) notices.push(formatLineCapNote(lineCap));
+				if (savedFile) notices.push(savedFile);
+				text += `\n\n[${notices.join(". ")}]`;
 				return { text, details };
 			};
 

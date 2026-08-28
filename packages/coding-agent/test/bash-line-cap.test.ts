@@ -1,13 +1,17 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Container } from "@earendil-works/pi-tui";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { forgetTempFile } from "../src/core/temp-file-registry.ts";
-import { createBashTool } from "../src/core/tools/bash.ts";
+import { createBashTool, createBashToolDefinition } from "../src/core/tools/bash.ts";
 import { OutputAccumulator, type OutputSnapshot } from "../src/core/tools/output-accumulator.ts";
 import { capLineLengths, DEFAULT_MAX_LINE_CHARS } from "../src/core/tools/truncate.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 const TRUNCATED_SUFFIX = "... [truncated]";
+const TRUNCATED_PREFIX = "[truncated] ...";
 
 function toBashSingleQuotedArg(value: string): string {
 	return `'${value.replace(/'/g, `'"'"'`)}'`;
@@ -46,12 +50,35 @@ describe("capLineLengths", () => {
 		expect(result.cappedLines).toEqual([false, true, false]);
 	});
 
-	it("does not split multi-byte characters at the cut", () => {
+	it("caps the final line from its end so the output's last chars survive", () => {
+		const input = `head\n${"a".repeat(500)}END`;
+		const result = capLineLengths(input, 100);
+
+		const lines = result.content.split("\n");
+		expect(lines).toHaveLength(2);
+		expect(lines[1].startsWith(TRUNCATED_PREFIX)).toBe(true);
+		expect(lines[1].endsWith(`${"a".repeat(97)}END`)).toBe(true);
+		expect(result.cappedLines).toEqual([false, true]);
+	});
+
+	it("does not split BMP characters at the cut", () => {
 		const cjk = "漢".repeat(200);
 		const result = capLineLengths(`before\n${cjk}\nafter`, 100);
 
 		expect(result.content).not.toContain("\uFFFD");
 		expect(result.cappedCount).toBe(1);
+	});
+
+	it("does not split surrogate pairs at either cut", () => {
+		// An odd leading char forces the cut to land mid-pair for both directions.
+		const astral = `a${"\u{1F600}".repeat(200)}`;
+		const result = capLineLengths(`${astral}\n${astral}`, 101);
+
+		// A lone surrogate silently becomes U+FFFD on UTF-8 encoding.
+		expect(Buffer.from(result.content, "utf-8").toString("utf-8")).not.toContain("\uFFFD");
+		expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(result.content)).toBe(false);
+		expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(result.content)).toBe(false);
+		expect(result.cappedCount).toBe(2);
 	});
 
 	it("returns everything unchanged when disabled", () => {
@@ -109,7 +136,9 @@ describe("OutputAccumulator line cap", () => {
 		const lines = snapshot.content.split("\n");
 		expect(lines).toHaveLength(5);
 		expect(lines[1].endsWith(TRUNCATED_SUFFIX)).toBe(true);
-		expect(lines[3].endsWith(TRUNCATED_SUFFIX)).toBe(true);
+		// The final line is capped from its end instead, so its tail survives.
+		expect(lines[3].startsWith(TRUNCATED_PREFIX)).toBe(true);
+		expect(lines[3].endsWith("y".repeat(100))).toBe(true);
 		// Recovery is lossless: the spilled file holds the uncapped lines.
 		expect(snapshot.fullOutputCapped).toBe(false);
 		expect(readFileSync(snapshot.fullOutputPath ?? "", "utf-8")).toContain(long);
@@ -157,6 +186,28 @@ describe("OutputAccumulator line cap", () => {
 		expect(snapshot.cappedLineCount).toBe(1);
 	});
 
+	it("keeps the end of a single giant line, not an interior slice", async () => {
+		const accumulator = new OutputAccumulator({
+			maxBytes: 50 * 1024,
+			maxLines: 2000,
+			maxLineChars: 1000,
+			tempFilePrefix: "pi-line-cap-test",
+		});
+		// One 2MB line, no newline: `curl` of a JSON API, `cat` of a minified bundle.
+		// The rolling tail buffer drops the head, so a head-capped line would hand back
+		// a slice from ~100KB before the end - neither the start nor the result.
+		accumulator.append(Buffer.from(`START${"a".repeat(2_000_000)}END`));
+		accumulator.finish();
+		const snapshot = accumulator.snapshot({ persistIfTruncated: true });
+		track(snapshot);
+		await accumulator.closeTempFile();
+
+		expect(snapshot.cappedLineCount).toBe(1);
+		expect(snapshot.content.startsWith(TRUNCATED_PREFIX)).toBe(true);
+		expect(snapshot.content.endsWith("END")).toBe(true);
+		expect(readFileSync(snapshot.fullOutputPath ?? "", "utf-8").endsWith("END")).toBe(true);
+	});
+
 	it("does not cap when disabled", () => {
 		const accumulator = new OutputAccumulator({
 			maxBytes: 8 * 1024,
@@ -177,6 +228,10 @@ describe("OutputAccumulator line cap", () => {
 
 describe("bash tool line cap", () => {
 	let testDir: string;
+
+	beforeAll(() => {
+		initTheme("dark");
+	});
 
 	beforeEach(() => {
 		testDir = mkdtempSync(join(tmpdir(), "pi-bash-line-cap-test-"));
@@ -220,5 +275,52 @@ describe("bash tool line cap", () => {
 			rmSync(details.fullOutputPath, { force: true });
 			forgetTempFile(details.fullOutputPath);
 		}
+	});
+
+	it("keeps the tail of a command whose output is one giant line", async () => {
+		const bashTool = createBashTool(testDir);
+		const command = "node -e \"process.stdout.write('S'+'a'.repeat(2000000)+'THE_END')\"";
+		const result = await bashTool.execute("test-linecap-giant", { command });
+		const text = getTextOutput(result);
+		const details = (result as { details?: { fullOutputPath?: string } }).details;
+
+		// The point of tail truncation: whatever the command ended with must survive.
+		expect(text).toContain("THE_END");
+		expect(text).toContain(`1 line capped at ${DEFAULT_MAX_LINE_CHARS} chars.`);
+		if (details?.fullOutputPath) {
+			rmSync(details.fullOutputPath, { force: true });
+			forgetTempFile(details.fullOutputPath);
+		}
+	});
+
+	it("renders the full-output path once when only the line cap fired", async () => {
+		// Same definition on both sides: the wrapper runs it, the definition renders it.
+		const definition = createBashToolDefinition(testDir);
+		const long = "z".repeat(1500);
+		const command = `printf '%s\n%s\n' ${toBashSingleQuotedArg(long)} short`;
+		const result = await createBashTool(testDir).execute("test-linecap-render", { command });
+		const details = (result as { details?: { fullOutputPath?: string } }).details;
+		const fullOutputPath = details?.fullOutputPath ?? "";
+
+		const component = definition.renderResult?.(result as never, { expanded: true, isPartial: false }, theme, {
+			args: { command },
+			toolCallId: "test-linecap-render",
+			invalidate: () => {},
+			lastComponent: undefined,
+			state: {},
+			cwd: testDir,
+			executionStarted: true,
+			showImages: false,
+			isError: false,
+		} as never);
+		const container = new Container();
+		if (component) container.addChild(component);
+		const rendered = stripAnsi(container.render(200).join("\n"));
+
+		expect(fullOutputPath).not.toBe("");
+		expect(rendered.split(fullOutputPath).length - 1).toBe(1);
+		expect(rendered).toContain(`1 line capped at ${DEFAULT_MAX_LINE_CHARS} chars`);
+		rmSync(fullOutputPath, { force: true });
+		forgetTempFile(fullOutputPath);
 	});
 });

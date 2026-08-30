@@ -20,6 +20,7 @@ import type {
 	AgentTool,
 	AgentToolCall,
 	AgentToolResult,
+	PrepareNextTurnContext,
 	StreamFn,
 } from "./types.ts";
 
@@ -189,10 +190,19 @@ async function runLoop(
 ): Promise<void> {
 	let currentContext = initialContext;
 	let config = initialConfig;
-	let firstTurn = true;
 	// Fires refreshTurnAfterInjection before the next stream when set: seeded by
 	// the top-level injection and re-set after every inner-loop injection.
 	let injectionPending = initialInjected;
+	// Set at every turn_end, so it doubles as the "this is not the first turn" marker.
+	// It carries the request binding of the turn that produced `turn.toolResults`, which
+	// the originating-provider pin below needs after prepareNextTurn has moved config on.
+	let lastCompletedTurn:
+		| {
+				turn: PrepareNextTurnContext;
+				requestModel: AgentLoopConfig["model"];
+				requestReasoning: AgentLoopConfig["reasoning"];
+		  }
+		| undefined;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -202,10 +212,42 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
-			if (!firstTurn) {
+			if (lastCompletedTurn) {
+				const { turn, requestModel, requestReasoning } = lastCompletedTurn;
+				const nextTurnSnapshot = await config.prepareNextTurn?.(turn);
+				if (nextTurnSnapshot) {
+					currentContext = nextTurnSnapshot.context ?? currentContext;
+					config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
+				}
+				if (
+					turn.toolResults.length > 0 &&
+					requestModel.toolResultContinuation === "originating-provider" &&
+					config.model.provider !== requestModel.provider
+				) {
+					// Only pin a cross-provider switch. A model or reasoning change inside
+					// the same provider must still reach that provider so it can decide
+					// whether to apply, defer, or reject the new binding.
+					//
+					// Reasoning is restored with the model: applyTurnUpdateToConfig set it
+					// from the incoming model's binding, and sending that to the originating
+					// provider is the mid-run rebinding this pin exists to prevent.
+					const requestedModel = config.model;
+					config = { ...config, model: requestModel, reasoning: requestReasoning };
+					// Advisory: session state has already moved to requestedModel, so the
+					// owner needs this to explain why the run stays on requestModel.
+					try {
+						config.onContinuationPinned?.(requestModel, requestedModel);
+					} catch {
+						// A faulty reporter must never interrupt the loop.
+					}
+				}
+				// Preparation can be long-running (for example, compaction). Pick up steering
+				// queued while it ran. Only poll again if the earlier poll returned nothing;
+				// otherwise one-at-a-time mode would deliver two messages in this turn.
+				if (pendingMessages.length === 0) {
+					pendingMessages = (await config.getSteeringMessages?.()) || [];
+				}
 				await emit({ type: "turn_start" });
-			} else {
-				firstTurn = false;
 			}
 
 			// Process pending messages (inject before next assistant response)
@@ -251,8 +293,9 @@ async function runLoop(
 			}
 
 			// Stream assistant response
-			// Capture the request model and its reasoning binding before prepareNextTurn
-			// can replace them. Stateful providers may need the tool-result continuation
+			// Capture the request model and its reasoning binding, and carry them on
+			// lastCompletedTurn: prepareNextTurn runs at the top of the next iteration and
+			// can replace both. Stateful providers may need the tool-result continuation
 			// routed back to the provider whose still-running request issued the tool call.
 			const requestModel = config.model;
 			const requestReasoning = config.reasoning;
@@ -289,48 +332,18 @@ async function runLoop(
 
 			await emit({ type: "turn_end", message, toolResults });
 
-			const nextTurnContext = {
-				message,
-				toolResults,
-				context: currentContext,
-				newMessages,
-			};
-			const nextTurnSnapshot = await config.prepareNextTurn?.(nextTurnContext);
-			if (nextTurnSnapshot) {
-				currentContext = nextTurnSnapshot.context ?? currentContext;
-				config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
-			}
-			if (
-				toolResults.length > 0 &&
-				requestModel.toolResultContinuation === "originating-provider" &&
-				config.model.provider !== requestModel.provider
-			) {
-				// Only pin a cross-provider switch. A model or reasoning change inside
-				// the same provider must still reach that provider so it can decide
-				// whether to apply, defer, or reject the new binding.
-				//
-				// Reasoning is restored with the model: applyTurnUpdateToConfig set it
-				// from the incoming model's binding, and sending that to the originating
-				// provider is the mid-run rebinding this pin exists to prevent.
-				const requestedModel = config.model;
-				config = { ...config, model: requestModel, reasoning: requestReasoning };
-				// Advisory: session state has already moved to requestedModel, so the
-				// owner needs this to explain why the run stays on requestModel.
-				try {
-					config.onContinuationPinned?.(requestModel, requestedModel);
-				} catch {
-					// A faulty reporter must never interrupt the loop.
-				}
-			}
-
-			if (
-				await config.shouldStopAfterTurn?.({
+			lastCompletedTurn = {
+				turn: {
 					message,
 					toolResults,
 					context: currentContext,
 					newMessages,
-				})
-			) {
+				},
+				requestModel,
+				requestReasoning,
+			};
+
+			if (await config.shouldStopAfterTurn?.(lastCompletedTurn.turn)) {
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
 			}

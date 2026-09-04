@@ -888,6 +888,7 @@ export interface SkillSyntheticReplayClass {
  */
 export const SKILL_SYNTHETIC_REPLAY_CLASSES: readonly SkillSyntheticReplayClass[] = [
 	{ api: "openai-completions", provider: "groq" },
+	{ api: "openai-completions", provider: "zai" },
 	{ api: "openai-responses", provider: "openai" },
 	{ api: "azure-openai-responses", provider: "azure-openai-responses" },
 	{ api: "openai-codex-responses", provider: "openai-codex" },

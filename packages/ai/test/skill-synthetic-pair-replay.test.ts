@@ -139,6 +139,7 @@ const RENDERED_TEXT = '<result status="ok">details</result>\n$(echo hi) `backtic
 // SKILL_SYNTHETIC_REPLAY_CLASSES so a matrix entry can't go unexercised.
 const TESTED_REPLAY_CLASSES: ReadonlyArray<{ api: string; provider: string }> = [
 	{ api: "openai-completions", provider: "groq" },
+	{ api: "openai-completions", provider: "zai" },
 	{ api: "openai-responses", provider: "openai" },
 	{ api: "azure-openai-responses", provider: "azure-openai-responses" },
 	{ api: "openai-codex-responses", provider: "openai-codex" },
@@ -208,6 +209,50 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 128000,
 			maxTokens: 8192,
+		};
+		const { assistant, result } = buildSyntheticPair(model);
+		const context: Context = { messages: [assistant, result] };
+		await streamOpenAICompletions(model, context, { apiKey: "test" }).result();
+
+		const params = openAICompletionsMock.lastParams as {
+			messages: Array<{
+				role: string;
+				tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+				tool_call_id?: string;
+				content?: unknown;
+			}>;
+		};
+		const assistantMsg = params.messages.find((m) => m.role === "assistant");
+		const toolMsg = params.messages.find((m) => m.role === "tool");
+		expect(assistantMsg?.tool_calls).toHaveLength(1);
+		const call = assistantMsg!.tool_calls![0];
+		expect(call.id).toBe(SKILL_TOOL_CALL_ID);
+		expect(call.function.name).toBe("skill");
+		expect(JSON.parse(call.function.arguments)).toEqual({ name: "code-review", args: "" });
+		expect(toolMsg?.tool_call_id).toBe(SKILL_TOOL_CALL_ID);
+		expect(toolMsg?.content).toBe(RENDERED_TEXT);
+	});
+
+	it("openai-completions (zai): replays skill call/result via chat.completions.create", async () => {
+		const model: Model<"openai-completions"> = {
+			id: "glm-5.3-flash",
+			name: "GLM-5.3-Flash",
+			api: "openai-completions",
+			provider: "zai",
+			baseUrl: "https://api.z.ai/api/coding/paas/v4",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 131072,
+			compat: {
+				supportsStore: false,
+				supportsDeveloperRole: false,
+				supportsReasoningEffort: true,
+				maxTokensField: "max_tokens",
+				thinkingFormat: "zai",
+				zaiToolStream: true,
+			},
 		};
 		const { assistant, result } = buildSyntheticPair(model);
 		const context: Context = { messages: [assistant, result] };

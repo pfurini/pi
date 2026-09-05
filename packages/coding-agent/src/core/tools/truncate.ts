@@ -71,6 +71,20 @@ export function formatSize(bytes: number): string {
 	}
 }
 
+/** One phrasing for the cap note, shared by the tool text footer and the TUI warning. */
+export function formatLineCapNote(lineCap: { lines: number; maxChars: number }): string {
+	return `${lineCap.lines} line${lineCap.lines === 1 ? "" : "s"} capped at ${lineCap.maxChars} chars`;
+}
+
+/**
+ * One phrasing for the saved-file note, shared by the tool text footer and the TUI
+ * warning. A capped file is a prefix, not the full output; saying otherwise sends the
+ * reader looking for content that was never written.
+ */
+export function formatSavedFileNote(path: string, capped: { bytes: number } | undefined): string {
+	return capped ? `First ${formatSize(capped.bytes)} saved to: ${path}` : `Full output: ${path}`;
+}
+
 /**
  * Truncate content from the head (keep first N lines/bytes).
  * Suitable for file reads where you want to see the beginning.

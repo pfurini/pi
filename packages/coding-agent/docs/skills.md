@@ -60,7 +60,7 @@ Every skill load path (`--skill`, the `skills` settings array, SDK sources, proj
 
 1. At startup, pi scans skill locations and extracts names, descriptions, and the rest of the [frontmatter contract](#frontmatter)
 2. The system prompt includes a versioned listing of available skills; see [Listing and Visibility](#listing-and-visibility)
-3. When a task matches, the model invokes the skill through the `skill` tool (or reads the SKILL.md with `read` on minimal tool sets); the user can force invocation with `/skill:name`
+3. When a task matches, the model invokes the skill through the `skill` tool (or, on minimal tool sets without it, reads the SKILL.md with `read`, or with `bash` when `read` is disabled too); the user can force invocation with `/skill:name`
 4. The skill body is rendered once (see [Rendering Pipeline](#rendering-pipeline)) and delivered to the model (see [Delivery Transports](#delivery-transports))
 5. The agent follows the instructions, using relative paths to reference scripts and assets
 

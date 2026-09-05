@@ -14,6 +14,13 @@
 - Added `harness/listing-budget.ts`, the new home of the A.6 skill listing-budget oracle (`buildBudgetedListingBlock`, `estimateListingEntryCost`, `skillListingBudgetCodeUnits`, `est`, `escapeXml`, the v2 delimiters, and the entry/diagnostic types) relocated from pi-coding-agent so the harness can apply the byte-identical algorithm; pi-coding-agent re-exports it unchanged.
 - Added the optional `{ contextWindow, budgetFraction }` second parameter to `formatSkillsForSystemPrompt()`: with a positive context window the listing block is the byte-exact A.6 budgeted v2 oracle (name-sorted emission, 1,536-code-unit description cap, skeleton floor), while omitted/non-positive windows keep the previous unbudgeted v1 output byte-for-byte.
 
+## [0.85.0] - 2026-09-04
+
+### Fixed
+
+- Fixed proxied assistant responses dropping persisted provider-native thinking levels.
+- Fixed the write tool reporting UTF-16 code-unit counts as byte counts by removing the misleading count ([#8979](https://github.com/earendil-works/pi/issues/8979)).
+
 ## [0.84.4] - 2026-08-28
 
 ### Breaking Changes
@@ -23,6 +30,10 @@
 ### Fixed
 
 - Fixed Windows `NodeExecutionEnv` aborts crashing when `taskkill.exe` is unavailable on `PATH` ([#6596](https://github.com/earendil-works/pi/issues/6596)).
+
+### Removed
+
+- Removed the withdrawn manual-drive configuration, action inspection methods, action outcomes, and snapshot action field from `AgentHarness`.
 
 ## [0.84.3] - 2026-08-24
 

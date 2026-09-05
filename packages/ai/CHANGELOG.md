@@ -7,6 +7,10 @@
 - Added an optional `Model.syntheticToolResultReplay` capability, generated from a verified converter matrix, marking built-in models whose API path correctly replays a synthetic assistant tool-call/tool-result pair.
 - Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
 
+### Changed
+
+- Changed the OpenAI Codex GPT-6 Astra context window to 875K, matching the GPT-5.6 Codex models. A live probe against the Codex subscription backend accepted 890K input tokens and recalled a marker planted near the start of that payload. Direct OpenAI API defaults stay at 272K.
+
 ## [0.85.0] - 2026-09-04
 
 ### Breaking Changes

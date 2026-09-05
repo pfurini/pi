@@ -2739,12 +2739,13 @@ async function generateModels() {
 
 	// OpenAI Codex (ChatGPT OAuth) models
 	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
-	// Older model limits are based on observed server behavior. GPT-5.6 uses an 875k window
-	// so Pi compacts well below the observed Codex subscription overflow point; GPT-6 Astra
-	// uses Codex's 272k default catalog limit.
+	// Older model limits are based on observed server behavior. GPT-5.6 and GPT-6 Astra use an
+	// 875k window so Pi compacts well below the observed Codex subscription overflow point. Both
+	// families document a 1.05M physical window; a live probe accepted 890k input tokens for
+	// gpt-6-astra and recalled a needle placed near the start of that payload.
 	const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 	const CODEX_CONTEXT = 272000;
-	const CODEX_GPT_56_CONTEXT = 875000;
+	const CODEX_LONG_CONTEXT = 875000;
 	const CODEX_SPARK_CONTEXT = 128000;
 	const CODEX_MAX_TOKENS = 128000;
 	const codexModels: Model<"openai-codex-responses">[] = [
@@ -2757,7 +2758,7 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: withOpenAiLongContextPricing({ input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }),
-			contextWindow: CODEX_CONTEXT,
+			contextWindow: CODEX_LONG_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
 		{
@@ -2817,7 +2818,7 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: withOpenAiLongContextPricing(OPENAI_GPT_56_STANDARD_COSTS["gpt-5.6-luna"]),
-			contextWindow: CODEX_GPT_56_CONTEXT,
+			contextWindow: CODEX_LONG_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
 		{
@@ -2829,7 +2830,7 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: withOpenAiLongContextPricing({ input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 }),
-			contextWindow: CODEX_GPT_56_CONTEXT,
+			contextWindow: CODEX_LONG_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
 		{
@@ -2841,7 +2842,7 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: withOpenAiLongContextPricing(OPENAI_GPT_56_STANDARD_COSTS["gpt-5.6-terra"]),
-			contextWindow: CODEX_GPT_56_CONTEXT,
+			contextWindow: CODEX_LONG_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
 	];

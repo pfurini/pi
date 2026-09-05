@@ -52,7 +52,7 @@ export interface CustomMessage<T = unknown> {
 export interface BranchSummaryMessage {
 	role: "branchSummary";
 	summary: string;
-	fromId: string;
+	fromId: string | null;
 	timestamp: number;
 }
 
@@ -92,7 +92,7 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 
 export function createBranchSummaryMessage(
 	summary: string,
-	fromId: string,
+	fromId: string | null,
 	timestamp: string | number,
 ): BranchSummaryMessage {
 	return {

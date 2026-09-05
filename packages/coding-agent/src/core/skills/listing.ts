@@ -23,16 +23,24 @@ export function getListingDescription(skill: LoadedSkill): string {
 	return combined.slice(0, MAX_LISTING_DESCRIPTION_LENGTH);
 }
 
-/** Format skills for inclusion in a system prompt. */
+/** The one instruction line that tells the model how to reach a skill's content. */
+const INVOCATION_INSTRUCTION = {
+	tool: "Use the skill tool to invoke a skill and receive its rendered instructions when the task matches its description.",
+	read: "Use the read tool to load a skill's file when the task matches its description.",
+	bash: "Use bash to load a skill's file when the task matches its description.",
+} as const;
+
 /**
  * Format skills for inclusion in a system prompt.
  * `invocation` selects the instruction line: "tool" when the A.1 `skill` tool
- * is active (the model invokes skills through it), "read" otherwise (legacy
- * model-read convention for consumers without the tool, e.g. AskClaude).
+ * is active (the model invokes skills through it), "read" when the model must
+ * open the file itself (legacy model-read convention for consumers without the
+ * tool, e.g. AskClaude), and "bash" when `read` is disabled but `bash` is not
+ * ([#8552](https://github.com/earendil-works/pi/pull/8552)).
  */
 export function formatSkillsForPrompt(
 	skills: SkillInput[],
-	invocation: "read" | "tool" = "read",
+	invocation: "read" | "tool" | "bash" = "read",
 	boost?: { touchedPaths: readonly string[]; cwd: string },
 	budget?: {
 		budgetCodeUnits: number | undefined;
@@ -53,9 +61,7 @@ export function formatSkillsForPrompt(
 
 	const lines = [
 		"\n\nThe following skills provide specialized instructions for specific tasks.",
-		invocation === "tool"
-			? "Use the skill tool to invoke a skill and receive its rendered instructions when the task matches its description."
-			: "Use the read tool to load a skill's file when the task matches its description.",
+		INVOCATION_INSTRUCTION[invocation],
 		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"",
 	];

@@ -57,6 +57,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
+	const tools = selectedTools || ["read", "bash", "edit", "write"];
+	// How the model reaches a skill's content: the A.1 `skill` tool when it is active,
+	// otherwise the model opens the file itself, with bash as the fallback when `read` is
+	// disabled ([#8552](https://github.com/earendil-works/pi/pull/8552)).
+	const skillInvocation = tools.includes("skill")
+		? "tool"
+		: (["read", "bash"] as const).find((tool) => tools.includes(tool));
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -75,18 +82,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += "</project_context>\n";
 		}
 
-		// Append skills section (available when the model can invoke skills: the
-		// read tool, or the A.1 skill tool when it is active)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		const customPromptHasSkillTool = selectedTools?.includes("skill") ?? false;
-		if ((customPromptHasRead || customPromptHasSkillTool) && skills.length > 0) {
-			prompt += formatSkillsForPrompt(
-				skills,
-				customPromptHasSkillTool ? "tool" : "read",
-				skillPathsBoost,
-				skillListingBudget,
-				skillVisibility,
-			);
+		// Append skills when the model has a way to reach them.
+		if (skillInvocation && skills.length > 0) {
+			prompt += formatSkillsForPrompt(skills, skillInvocation, skillPathsBoost, skillListingBudget, skillVisibility);
 		}
 		prompt += `\nCurrent working directory: ${promptCwd}\n`;
 
@@ -100,7 +98,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -121,7 +118,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const hasGrep = tools.includes("grep");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
 
 	// File exploration guidelines
 	if ((hasBash || hasPowerShell) && !hasGrep && !hasFind && !hasLs) {
@@ -180,17 +176,9 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 		prompt += "</project_context>\n";
 	}
 
-	// Append skills section (available when the model can invoke skills: the
-	// read tool, or the A.1 skill tool when it is active)
-	const hasSkillTool = tools.includes("skill");
-	if ((hasRead || hasSkillTool) && skills.length > 0) {
-		prompt += formatSkillsForPrompt(
-			skills,
-			hasSkillTool ? "tool" : "read",
-			skillPathsBoost,
-			skillListingBudget,
-			skillVisibility,
-		);
+	// Append skills when the model has a way to reach them.
+	if (skillInvocation && skills.length > 0) {
+		prompt += formatSkillsForPrompt(skills, skillInvocation, skillPathsBoost, skillListingBudget, skillVisibility);
 	}
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 

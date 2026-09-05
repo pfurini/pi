@@ -67,6 +67,9 @@ vi.mock("@anthropic-ai/sdk", () => {
 				return { asResponse: async () => createSseResponse() };
 			},
 		};
+		// The streaming path moved to the beta namespace upstream (`4e69b0c28`, per-turn
+		// thinking effort). Record both entry points so the fixture follows the transport.
+		beta = { messages: this.messages };
 	}
 	return { default: FakeAnthropic };
 });

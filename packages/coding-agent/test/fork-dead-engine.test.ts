@@ -29,6 +29,17 @@ const DEFINITION_FILES = [
 	join(REPO_ROOT, "packages/agent/src/harness/prompt-templates.ts"),
 ];
 
+/**
+ * Upstream surfaces that legitimately drive the legacy engine.
+ *
+ * The durable lane renders a `PromptTemplate` invocation into a user message on the harness
+ * lane protocol (upstream `5c6655e76`). That is upstream's own template surface, not the
+ * coding-agent skill/command grammar this fork rebased, and nothing routes a skill or a
+ * `commands/` entry through it. The two index bases are therefore never reachable from one
+ * surface, which is the property this guard exists to protect.
+ */
+const UPSTREAM_EXEMPT_FILES = [join(REPO_ROOT, "packages/agent/src/harness/runtime/lane.ts")];
+
 const SRC_ROOTS = [join(REPO_ROOT, "packages/coding-agent/src"), join(REPO_ROOT, "packages/agent/src")];
 
 /**
@@ -102,7 +113,7 @@ describe("legacy argument engine quarantine", () => {
 
 		const violations: string[] = [];
 		for (const file of files) {
-			if (DEFINITION_FILES.includes(file)) continue;
+			if (DEFINITION_FILES.includes(file) || UPSTREAM_EXEMPT_FILES.includes(file)) continue;
 			const references = findLegacyEngineReferences(readFileSync(file, "utf-8"));
 			for (const symbol of references) {
 				violations.push(`${file.slice(REPO_ROOT.length + 1)} -> ${symbol}`);

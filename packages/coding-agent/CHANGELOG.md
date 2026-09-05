@@ -55,7 +55,24 @@
 - Added a warning when a `commands/` directory exists but cannot be read (permission failures were previously indistinguishable from an absent directory), and a load-time normalization warning for skill frontmatter `context` values other than `inline`/`fork` (treated as `inline`).
 - Fixed `extractSkillListingBlock()` returning a span that is not a skill listing when a project context file contains an `<available_skills version="2">` delimiter. The helper scanned from the front, but `buildSystemPrompt` appends the listing *after* every context file and embeds those files verbatim, so an `AGENTS.md` that merely documents the skill system took precedence over the real listing: a copied example block was returned in its place, and an unterminated opener in prose returned everything from that opener through the real listing's terminator, swallowing the intervening project context and the skills preamble. It now returns the **last** complete block, so the documented contract changes from first to last; a consumer that deliberately extracted the first of several listings is affected. Position is the only signal available (a copied block is byte-identical to a real one), so a prompt built without a real listing still yields a copied one.
 - Fixed a `context: fork` skill whose bundled agent's bare name collided (ADR-0008) spawning the wrong agent (or `general-purpose`): the frontmatter `agent:` value was put on the pi-subagents wire verbatim, and the wire carries no skill id, so the fork could not disambiguate a bare name the render pipeline had already qualified inside the body. The fork now resolves `agent:` through the invoking skill's own rewrite map, mirroring the A.3.4 body rule (case-insensitive, rewriting only `collided: true` entries; an already-qualified `skill:agent` value is left untouched), via the new `SkillRuntime.resolveForkAgentType`. Latent until Workstream 2 publishes rewrite maps.
-- Fixed configurable save keybindings in the model and thinking selectors ([#8797](https://github.com/earendil-works/pi/issues/8797)).
+
+## [0.85.1] - 2026-09-05
+
+### New Features
+
+- **GPT-6 Astra** — Available through OpenAI API keys and OpenAI Codex subscriptions. See [API Keys](docs/providers.md#api-keys) and [OpenAI Codex](docs/providers.md#openai-codex).
+
+### Added
+
+- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
+- Added five-times-faster mouse wheel scrolling while holding Alt in fullscreen mode ([#9166](https://github.com/earendil-works/pi/pull/9166) by [@xl0](https://github.com/xl0)).
+
+### Fixed
+
+- Fixed configurable save keybindings in the model and thinking selectors ([#9149](https://github.com/earendil-works/pi/pull/9149) by [@rwachtler](https://github.com/rwachtler)).
+- Fixed SDK import failures caused by unintentionally publishing internal experimental code and dependencies in 0.85.0. The experimental `client` and `experimental/plugin` subpaths and server/client commands are now source-only through `pi-test.sh`; the supported local SDK and stdio RPC API are unchanged ([#9132](https://github.com/earendil-works/pi/issues/9132)).
+- Fixed mouse hover changing selection and recentering autocomplete and settings lists, causing clicks to target a different item.
+- Fixed long prompt-cache requests for GPT-5.6+ Responses models to use `prompt_cache_options.ttl: "30m"` instead of `prompt_cache_retention: "24h"`.
 
 ## [0.85.0] - 2026-09-04
 

@@ -41,6 +41,7 @@ import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
 import { type GitSource, parseGitUrl } from "../utils/git.ts";
 import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
+import { isStartupInstallSkipped } from "../utils/startup-network.ts";
 import { stripBom } from "../utils/text.ts";
 import { isStdoutTakenOver } from "./output-guard.ts";
 import { type PiManifest, readPiManifest } from "./pi-manifest.ts";
@@ -49,12 +50,6 @@ import type { PackageSource, SettingsManager } from "./settings-manager.ts";
 const NETWORK_TIMEOUT_MS = 10000;
 const UPDATE_CHECK_CONCURRENCY = 4;
 const GIT_UPDATE_CONCURRENCY = 4;
-
-function isOfflineModeEnabled(): boolean {
-	const value = process.env.PI_OFFLINE;
-	if (!value) return false;
-	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
-}
 
 function isExactNpmVersion(version: string | undefined): boolean {
 	return valid(version ?? "") !== null;
@@ -1145,7 +1140,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async updateConfiguredSources(sources: ConfiguredUpdateSource[]): Promise<void> {
-		if (isOfflineModeEnabled() || sources.length === 0) {
+		if (isStartupInstallSkipped() || sources.length === 0) {
 			return;
 		}
 
@@ -1240,7 +1235,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async checkForAvailableUpdates(): Promise<PackageUpdate[]> {
-		if (isOfflineModeEnabled()) {
+		if (isStartupInstallSkipped()) {
 			return [];
 		}
 
@@ -1325,7 +1320,7 @@ export class DefaultPackageManager implements PackageManager {
 			}
 
 			const installMissing = async (): Promise<boolean> => {
-				if (isOfflineModeEnabled()) return false;
+				if (isStartupInstallSkipped()) return false;
 				if (!onMissing) {
 					await this.installParsedSource(parsed, resolvedScope);
 					return true;
@@ -1356,7 +1351,7 @@ export class DefaultPackageManager implements PackageManager {
 				if (!existsSync(installedPath)) {
 					const installed = await installMissing();
 					if (!installed) continue;
-				} else if (resolvedScope === "temporary" && !parsed.pinned && !isOfflineModeEnabled()) {
+				} else if (resolvedScope === "temporary" && !parsed.pinned && !isStartupInstallSkipped()) {
 					await this.refreshTemporaryGitSource(parsed, resolvedSource);
 				}
 				metadata.baseDir = installedPath;
@@ -1535,7 +1530,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async npmHasAvailableUpdate(source: NpmSource, installedPath: string): Promise<boolean> {
-		if (isOfflineModeEnabled()) {
+		if (isStartupInstallSkipped()) {
 			return false;
 		}
 
@@ -1586,7 +1581,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async gitHasAvailableUpdate(installedPath: string): Promise<boolean> {
-		if (isOfflineModeEnabled()) {
+		if (isStartupInstallSkipped()) {
 			return false;
 		}
 
@@ -2014,7 +2009,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {
-		if (isOfflineModeEnabled()) {
+		if (isStartupInstallSkipped()) {
 			return;
 		}
 		try {

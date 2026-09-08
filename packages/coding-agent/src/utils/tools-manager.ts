@@ -6,16 +6,11 @@ import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.ts";
 import { fetchWithRetry } from "./management-http.ts";
+import { isOfflineModeEnabled, isStartupInstallSkipped } from "./startup-network.ts";
 
 const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
-
-function isOfflineModeEnabled(): boolean {
-	const value = process.env.PI_OFFLINE;
-	if (!value) return false;
-	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
-}
 
 interface ToolConfig {
 	name: string;
@@ -360,6 +355,13 @@ export async function ensureTool(
 
 	if (isOfflineModeEnabled()) {
 		onStatus?.({ type: "warning", message: `${config.name} not found. Offline mode enabled, skipping download.` });
+		return undefined;
+	}
+	if (isStartupInstallSkipped()) {
+		onStatus?.({
+			type: "warning",
+			message: `${config.name} not found. Startup installs are skipped (PI_SKIP_STARTUP_INSTALL), skipping download.`,
+		});
 		return undefined;
 	}
 

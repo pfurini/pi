@@ -1,10 +1,62 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type CredentialStore, createModels, type Provider } from "@earendil-works/pi-ai";
+import { type CredentialStore, createModels, InMemoryModelsStore, type Provider } from "@earendil-works/pi-ai";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage, FileAuthStorageBackend } from "../src/core/auth-storage.ts";
+import { AuthStorage, FileAuthStorageBackend, ReadOnlyAuthStorage } from "../src/core/auth-storage.ts";
+import { ModelRuntime } from "../src/core/model-runtime.ts";
+
+/**
+ * Simulates OS-level denial of auth.json reads (pi-fence sandbox: EPERM on
+ * stat and on open) for exact paths only. Every fs function passes through to
+ * the real module until a denial is armed for a path.
+ */
+const authFileDenial = vi.hoisted(() => {
+	const state = {
+		paths: new Set<string>(),
+		readDenied: false,
+		statDenied: false,
+		existsDenied: false,
+		code: "EPERM",
+		writes: [] as string[],
+	};
+	const isDenied = (candidate: unknown): boolean => typeof candidate === "string" && state.paths.has(candidate);
+	const deniedError = (operation: string, path: string): Error =>
+		Object.assign(new Error(`${state.code}: operation not permitted, ${operation} '${path}'`), {
+			code: state.code,
+		});
+	const build = <T extends Record<string, unknown>>(actual: T) => {
+		const mocked = {
+			...actual,
+			existsSync: (path: unknown): boolean => {
+				if (isDenied(path) && state.existsDenied) return false;
+				return (actual.existsSync as (candidate: unknown) => boolean)(path);
+			},
+			readFileSync: (path: unknown, options?: unknown): unknown => {
+				if (isDenied(path) && state.readDenied) throw deniedError("open", String(path));
+				return (actual.readFileSync as (candidate: unknown, options?: unknown) => unknown)(path, options);
+			},
+			statSync: (path: unknown, options?: unknown): unknown => {
+				if (isDenied(path) && state.statDenied) throw deniedError("stat", String(path));
+				return (actual.statSync as (candidate: unknown, options?: unknown) => unknown)(path, options);
+			},
+			writeFileSync: (path: unknown, data: unknown, options?: unknown): void => {
+				if (isDenied(path)) state.writes.push(String(path));
+				(actual.writeFileSync as (candidate: unknown, data: unknown, options?: unknown) => void)(
+					path,
+					data,
+					options,
+				);
+			},
+		};
+		return { ...mocked, default: mocked };
+	};
+	return { state, build };
+});
+
+vi.mock("fs", async (importOriginal) => authFileDenial.build(await importOriginal<Record<string, unknown>>()));
+vi.mock("node:fs", async (importOriginal) => authFileDenial.build(await importOriginal<Record<string, unknown>>()));
 
 describe("AuthStorage", () => {
 	const tempDir = join(tmpdir(), `pi-test-auth-storage-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -548,4 +600,361 @@ describe("AuthStorage", () => {
 		await expect(storage.modify("openai", async () => ({ type: "api_key", key: "new" }))).rejects.toThrow();
 		expect(readFileSync(authJsonPath, "utf8")).toBe("{invalid-json");
 	});
+});
+
+describe("denied auth.json", () => {
+	const tempDir = join(tmpdir(), `pi-test-auth-storage-denied-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const authJsonPath = join(tempDir, "auth.json");
+	const storedFixture = JSON.stringify({ anthropic: { type: "api_key", key: "stored" } }, null, 2);
+
+	interface AuthFileSnapshot {
+		bytes: string;
+		mode: number;
+	}
+
+	beforeEach(() => {
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		mkdirSync(tempDir, { recursive: true });
+		writeFileSync(authJsonPath, storedFixture, { mode: 0o600 });
+	});
+
+	afterEach(() => {
+		resetAuthFileDenial();
+		if (process.platform !== "win32" && existsSync(authJsonPath)) {
+			try {
+				chmodSync(authJsonPath, 0o600);
+			} catch {
+				// Removal only needs directory permissions.
+			}
+		}
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		vi.restoreAllMocks();
+	});
+
+	function resetAuthFileDenial(): void {
+		authFileDenial.state.paths.clear();
+		authFileDenial.state.readDenied = false;
+		authFileDenial.state.statDenied = false;
+		authFileDenial.state.existsDenied = false;
+		authFileDenial.state.code = "EPERM";
+		authFileDenial.state.writes.length = 0;
+	}
+
+	function denyAuthFileRead(code: string, options: { read?: boolean; stat?: boolean; exists?: boolean } = {}): void {
+		resetAuthFileDenial();
+		authFileDenial.state.code = code;
+		authFileDenial.state.paths.add(authJsonPath);
+		authFileDenial.state.readDenied = options.read ?? true;
+		authFileDenial.state.statDenied = options.stat ?? false;
+		authFileDenial.state.existsDenied = options.exists ?? false;
+	}
+
+	function snapshotAuthFile(): AuthFileSnapshot {
+		return { bytes: readFileSync(authJsonPath, "utf-8"), mode: statSync(authJsonPath).mode };
+	}
+
+	function expectAuthFileUnchanged(snapshot: AuthFileSnapshot): void {
+		expect(readFileSync(authJsonPath, "utf-8")).toBe(snapshot.bytes);
+		if (process.platform !== "win32") {
+			expect(statSync(authJsonPath).mode & 0o777).toBe(snapshot.mode & 0o777);
+		}
+	}
+
+	function expectNoAuthFileWrites(): void {
+		expect(authFileDenial.state.writes).toEqual([]);
+	}
+
+	test("still creates {} on the first locked operation when auth.json is missing", () => {
+		rmSync(authJsonPath);
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(backend.withLock(() => ({ result: "ok" }))).toBe("ok");
+
+		expect(readFileSync(authJsonPath, "utf-8")).toBe("{}");
+		if (process.platform !== "win32") {
+			expect(statSync(authJsonPath).mode & 0o777).toBe(0o600);
+		}
+	});
+
+	test("leaves a stat-denied auth.json untouched instead of recreating it", () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EPERM", { stat: true, exists: true });
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(backend.withLock(() => ({ result: "ok" }))).toBe("ok");
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("still throws when checking auth.json fails for another reason", () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EIO", { stat: true, exists: true });
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(() => backend.withLock(() => ({ result: "ok" }))).toThrow();
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("withLock treats a read-denied auth.json as empty for read-only operations", () => {
+		denyAuthFileRead("EPERM");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+		let observed: string | undefined = "sentinel";
+
+		expect(
+			backend.withLock((current) => {
+				observed = current;
+				return { result: "ok" };
+			}),
+		).toBe("ok");
+
+		expect(observed).toBeUndefined();
+		expectNoAuthFileWrites();
+	});
+
+	test("withLockAsync treats a read-denied auth.json as empty for read-only operations", async () => {
+		denyAuthFileRead("EPERM");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+		let observed: string | undefined = "sentinel";
+
+		await expect(
+			backend.withLockAsync(async (current) => {
+				observed = current;
+				return { result: "ok" };
+			}),
+		).resolves.toBe("ok");
+
+		expect(observed).toBeUndefined();
+		expectNoAuthFileWrites();
+	});
+
+	test("withLock refuses credential changes on a read-denied auth.json", () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EPERM");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(() =>
+			backend.withLock(() => ({
+				result: undefined,
+				next: JSON.stringify({ anthropic: { type: "api_key", key: "new" } }, null, 2),
+			})),
+		).toThrow("auth.json is not readable in this session; credential changes are refused");
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("withLockAsync refuses credential changes on a read-denied auth.json", async () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EPERM");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		await expect(
+			backend.withLockAsync(async () => ({
+				result: undefined,
+				next: JSON.stringify({ anthropic: { type: "api_key", key: "new" } }, null, 2),
+			})),
+		).rejects.toThrow("auth.json is not readable in this session; credential changes are refused");
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("reports an empty store while auth.json is fully denied", async () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EPERM", { stat: true, exists: true });
+		const storage = AuthStorage.create(authJsonPath);
+		const signal = new AbortController().signal;
+
+		await expect(storage.read("anthropic")).resolves.toBeUndefined();
+		await expect(storage.list()).resolves.toEqual([]);
+		await expect(storage.read("anthropic", { signal })).resolves.toBeUndefined();
+		await expect(storage.list({ signal })).resolves.toEqual([]);
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("refuses modify and delete while auth.json is read-denied", async () => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead("EPERM");
+		const storage = AuthStorage.create(authJsonPath);
+
+		await expect(storage.modify("openai", async () => ({ type: "api_key", key: "new" }))).rejects.toThrow(
+			"auth.json is not readable in this session; credential changes are refused",
+		);
+		await expect(storage.delete("anthropic")).rejects.toThrow(
+			"auth.json is not readable in this session; credential changes are refused",
+		);
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test("ReadOnlyAuthStorage treats a denied auth.json as empty", async () => {
+		for (const code of ["EPERM", "EACCES"] as const) {
+			denyAuthFileRead(code);
+			const storage = new ReadOnlyAuthStorage(authJsonPath);
+			await expect(storage.read("anthropic")).resolves.toBeUndefined();
+			await expect(storage.list()).resolves.toEqual([]);
+		}
+	});
+
+	test("ReadOnlyAuthStorage still surfaces corrupt auth.json", async () => {
+		writeFileSync(authJsonPath, "{invalid-json");
+
+		await expect(new ReadOnlyAuthStorage(authJsonPath).read("anthropic")).rejects.toThrow("Failed to read auth.json");
+	});
+
+	test("resolves the environment API key when auth.json is read-denied", async () => {
+		const original = process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = "env-openrouter-key";
+		try {
+			const snapshot = snapshotAuthFile();
+			denyAuthFileRead("EPERM");
+			const storage = AuthStorage.create(authJsonPath);
+			const runtime = await ModelRuntime.create({
+				credentials: storage,
+				modelsPath: null,
+				modelsStore: new InMemoryModelsStore(),
+				allowModelNetwork: false,
+				refreshOnCreate: false,
+			});
+
+			await expect(runtime.getAuth("openrouter")).resolves.toMatchObject({
+				auth: { apiKey: "env-openrouter-key" },
+				source: "OPENROUTER_API_KEY",
+			});
+
+			expectNoAuthFileWrites();
+			resetAuthFileDenial();
+			expectAuthFileUnchanged(snapshot);
+		} finally {
+			if (original === undefined) delete process.env.OPENROUTER_API_KEY;
+			else process.env.OPENROUTER_API_KEY = original;
+		}
+	});
+
+	test.each(["EPERM", "EACCES"] as const)("does not recreate a stat-denied auth.json (%s)", (code) => {
+		const snapshot = snapshotAuthFile();
+		denyAuthFileRead(code, { stat: true, exists: true });
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(backend.withLock(() => ({ result: "ok" }))).toBe("ok");
+
+		expectNoAuthFileWrites();
+		resetAuthFileDenial();
+		expectAuthFileUnchanged(snapshot);
+	});
+
+	test.each(["EPERM", "EACCES"] as const)("withLock treats a read-denied auth.json as empty (%s)", (code) => {
+		denyAuthFileRead(code);
+		const backend = new FileAuthStorageBackend(authJsonPath);
+		let observed: string | undefined = "sentinel";
+
+		expect(
+			backend.withLock((current) => {
+				observed = current;
+				return { result: "ok" };
+			}),
+		).toBe("ok");
+
+		expect(observed).toBeUndefined();
+		expectNoAuthFileWrites();
+	});
+
+	test.each(["EPERM", "EACCES"] as const)(
+		"withLockAsync treats a read-denied auth.json as empty (%s)",
+		async (code) => {
+			denyAuthFileRead(code);
+			const backend = new FileAuthStorageBackend(authJsonPath);
+			let observed: string | undefined = "sentinel";
+
+			await expect(
+				backend.withLockAsync(async (current) => {
+					observed = current;
+					return { result: "ok" };
+				}),
+			).resolves.toBe("ok");
+
+			expect(observed).toBeUndefined();
+			expectNoAuthFileWrites();
+		},
+	);
+
+	test("withLock surfaces non-permission read errors", () => {
+		denyAuthFileRead("EIO");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		expect(() => backend.withLock(() => ({ result: "ok" }))).toThrow("EIO: operation not permitted");
+	});
+
+	test("withLockAsync surfaces non-permission read errors", async () => {
+		denyAuthFileRead("EIO");
+		const backend = new FileAuthStorageBackend(authJsonPath);
+
+		await expect(backend.withLockAsync(async () => ({ result: "ok" }))).rejects.toThrow(
+			"EIO: operation not permitted",
+		);
+	});
+
+	test("ReadOnlyAuthStorage wraps non-permission read errors", async () => {
+		denyAuthFileRead("EIO");
+
+		await expect(new ReadOnlyAuthStorage(authJsonPath).read("anthropic")).rejects.toThrow(
+			"Failed to read auth.json: EIO: operation not permitted",
+		);
+	});
+
+	test("clears a warm cache when stat and read are denied", async () => {
+		const storage = AuthStorage.create(authJsonPath);
+		await expect(storage.read("anthropic")).resolves.toEqual({ type: "api_key", key: "stored" });
+
+		denyAuthFileRead("EPERM", { stat: true });
+		const signal = new AbortController().signal;
+		await expect(storage.read("anthropic")).resolves.toBeUndefined();
+		await expect(storage.list()).resolves.toEqual([]);
+		await expect(storage.read("anthropic", { signal })).resolves.toBeUndefined();
+		await expect(storage.list({ signal })).resolves.toEqual([]);
+	});
+
+	test("reloads readable data when only stat is denied after a warm cache", async () => {
+		const storage = AuthStorage.create(authJsonPath);
+		await expect(storage.read("anthropic")).resolves.toEqual({ type: "api_key", key: "stored" });
+
+		denyAuthFileRead("EPERM", { read: false, stat: true });
+		await expect(storage.read("anthropic")).resolves.toEqual({ type: "api_key", key: "stored" });
+		await expect(storage.list()).resolves.toEqual([{ providerId: "anthropic", type: "api_key" }]);
+	});
+
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"tolerates a real mode-000 auth.json",
+		async () => {
+			const snapshot = snapshotAuthFile();
+			chmodSync(authJsonPath, 0o000);
+			const storage = AuthStorage.create(authJsonPath);
+			const signal = new AbortController().signal;
+
+			try {
+				await expect(storage.read("anthropic")).resolves.toBeUndefined();
+				await expect(storage.list()).resolves.toEqual([]);
+				await expect(storage.read("anthropic", { signal })).resolves.toBeUndefined();
+				await expect(storage.modify("openai", async () => ({ type: "api_key", key: "new" }))).rejects.toThrow(
+					"auth.json is not readable in this session; credential changes are refused",
+				);
+			} finally {
+				chmodSync(authJsonPath, 0o600);
+			}
+
+			expectAuthFileUnchanged(snapshot);
+		},
+	);
 });

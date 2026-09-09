@@ -4,7 +4,7 @@
  */
 
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { setTimeout as sleep } from "timers/promises";
@@ -23,6 +23,16 @@ type LockResult<T> = {
 
 // The mode applies only on creation so administrator-managed modes and ACLs remain intact.
 const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
+const AUTH_FILE_PERMISSION_ERROR = "auth.json is not readable in this session; credential changes are refused";
+
+function isPermissionDenied(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		((error as { code?: unknown }).code === "EPERM" || (error as { code?: unknown }).code === "EACCES")
+	);
+}
 
 type AuthFileReload = {
 	controller: AbortController;
@@ -61,7 +71,11 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 	}
 
 	private ensureFileExists(): void {
-		if (!existsSync(this.authPath)) {
+		try {
+			statSync(this.authPath);
+		} catch (error) {
+			if (isPermissionDenied(error)) return;
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
 		}
 	}
@@ -100,9 +114,17 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		let release: (() => void) | undefined;
 		try {
 			release = this.acquireLockSyncWithRetry(this.authPath);
-			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+			let current: string | undefined;
+			let denied = false;
+			try {
+				current = readFileSync(this.authPath, "utf-8");
+			} catch (error) {
+				if (isPermissionDenied(error)) denied = true;
+				else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
 			const { result, next } = fn(current);
 			if (next !== undefined) {
+				if (denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
 				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
 			}
 			return result;
@@ -179,11 +201,19 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
-			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+			let current: string | undefined;
+			let denied = false;
+			try {
+				current = readFileSync(this.authPath, "utf-8");
+			} catch (error) {
+				if (isPermissionDenied(error)) denied = true;
+				else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
 			const { result, next } = await fn(current);
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
 			if (next !== undefined) {
+				if (denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
 				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
 			}
 			throwIfCompromised();
@@ -215,7 +245,7 @@ export class ReadOnlyAuthStorage implements CredentialStore {
 		try {
 			parsed = JSON.parse(stripBom(readFileSync(this.authPath, "utf-8")));
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT" || isPermissionDenied(error)) {
 				this.data = {};
 				return this.data;
 			}

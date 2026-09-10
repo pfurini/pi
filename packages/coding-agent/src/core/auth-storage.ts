@@ -12,6 +12,8 @@ import { getAgentDir } from "../config.ts";
 import { raceWithAbortSignal } from "../utils/abort.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
+import { commitAtomicallySync, LOCK_STALE_MS, type ReconcileResult, reconcileTransactionSync } from "./auth-atomic.ts";
+import { CODEX_PROVIDER_ID, checkCodexQuarantine } from "./auth-quarantine.ts";
 import { isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.ts";
 
 type AuthStorageData = Record<string, Credential>;
@@ -21,9 +23,16 @@ type LockResult<T> = {
 	next?: string;
 };
 
-// The mode applies only on creation so administrator-managed modes and ACLs remain intact.
-const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
+// First creation is exclusive, so two first-time writers never truncate each
+// other's store; every later write replaces the file atomically through
+// auth-atomic.ts, which preserves the existing mode through the descriptor.
+const AUTH_FILE_CREATE_OPTIONS = { encoding: "utf-8", mode: 0o600, flag: "wx" } as const;
 const AUTH_FILE_PERMISSION_ERROR = "auth.json is not readable in this session; credential changes are refused";
+const AUTH_FILE_TRANSACTION_ERROR =
+	"auth.json has an unresolved replacement transaction; recover it before changing credentials";
+const AUTH_FILE_COMMIT_ERROR = "auth.json could not be replaced atomically";
+const AUTH_FILE_QUARANTINE_ERROR =
+	"the openai-codex credential is quarantined by an unresolved pi-fence refresh; run `pi credential-recovery codex` before changing it";
 
 function isPermissionDenied(error: unknown): boolean {
 	return (
@@ -48,11 +57,16 @@ type AuthFileReadState = {
 
 let sharedAuthFileReadState: { authPath: string; readState: AuthFileReadState } | undefined;
 
+export interface AuthStorageLockOptions {
+	/** Read-only callbacks may inspect an unresolved store but must never return next. */
+	readOnly?: boolean;
+}
+
 export interface AuthStorageBackend {
-	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T;
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>, options?: AuthStorageLockOptions): T;
 	withLockAsync<T>(
 		fn: (current: string | undefined) => Promise<LockResult<T>>,
-		options?: AuthOperationOptions,
+		options?: AuthOperationOptions & AuthStorageLockOptions,
 	): Promise<T>;
 }
 
@@ -76,18 +90,32 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		} catch (error) {
 			if (isPermissionDenied(error)) return;
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+			try {
+				writeFileSync(this.authPath, "{}", AUTH_FILE_CREATE_OPTIONS);
+			} catch (createError) {
+				// Another process created the store between the check and the write: keep its bytes.
+				if ((createError as NodeJS.ErrnoException).code !== "EEXIST") throw createError;
+			}
 		}
 	}
 
+	/** Replaces the store atomically; a failure before the rename is an error, a failure after it is not. */
+	private persist(next: string, reconciled: ReconcileResult): void {
+		if (reconciled.status === "error") throw new Error(AUTH_FILE_TRANSACTION_ERROR);
+		const outcome = commitAtomicallySync(this.authPath, next);
+		if (outcome.status === "not-installed") throw new Error(`${AUTH_FILE_COMMIT_ERROR} (${outcome.stage})`);
+	}
+
 	private acquireLockSyncWithRetry(path: string): () => void {
-		const maxAttempts = 10;
+		// Allow roughly one second for another process to finish an atomic credential commit.
+		const maxAttempts = 50;
 		const delayMs = 20;
 		let lastError: unknown;
 
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
-				return lockfile.lockSync(path, { realpath: false });
+				// The same stale window as the asynchronous lock: a shorter one would steal a live holder's lock.
+				return lockfile.lockSync(path, { realpath: false, stale: LOCK_STALE_MS });
 			} catch (error) {
 				const code =
 					typeof error === "object" && error !== null && "code" in error
@@ -107,13 +135,16 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		throw (lastError as Error) ?? new Error("Failed to acquire auth storage lock");
 	}
 
-	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>, options?: AuthStorageLockOptions): T {
 		this.ensureParentDir();
 		this.ensureFileExists();
 
 		let release: (() => void) | undefined;
 		try {
 			release = this.acquireLockSyncWithRetry(this.authPath);
+			// Whatever an earlier writer left behind is finished before the base is read.
+			const reconciled = reconcileTransactionSync(this.authPath);
+			if (!options?.readOnly && reconciled.status === "error") throw new Error(AUTH_FILE_TRANSACTION_ERROR);
 			let current: string | undefined;
 			let denied = false;
 			try {
@@ -122,10 +153,12 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 				if (isPermissionDenied(error)) denied = true;
 				else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
+			if (!options?.readOnly && denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
 			const { result, next } = fn(current);
 			if (next !== undefined) {
+				if (options?.readOnly) throw new Error("Read-only auth storage operations cannot return next");
 				if (denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				this.persist(next, reconciled);
 			}
 			return result;
 		} finally {
@@ -139,7 +172,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		signal: AbortSignal | undefined,
 		onCompromised: (error: Error) => void,
 	): Promise<() => Promise<void>> {
-		const staleMs = 30_000;
+		const staleMs = LOCK_STALE_MS;
 		const maxDelayMs = 2_000;
 		const deadline = Date.now() + staleMs;
 		let retry = 0;
@@ -178,7 +211,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 	async withLockAsync<T>(
 		fn: (current: string | undefined) => Promise<LockResult<T>>,
-		options?: AuthOperationOptions,
+		options?: AuthOperationOptions & AuthStorageLockOptions,
 	): Promise<T> {
 		options?.signal?.throwIfAborted();
 		this.ensureParentDir();
@@ -201,6 +234,8 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
+			const reconciled = reconcileTransactionSync(this.authPath);
+			if (!options?.readOnly && reconciled.status === "error") throw new Error(AUTH_FILE_TRANSACTION_ERROR);
 			let current: string | undefined;
 			let denied = false;
 			try {
@@ -209,12 +244,14 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 				if (isPermissionDenied(error)) denied = true;
 				else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
+			if (!options?.readOnly && denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
 			const { result, next } = await fn(current);
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
 			if (next !== undefined) {
+				if (options?.readOnly) throw new Error("Read-only auth storage operations cannot return next");
 				if (denied) throw new Error(AUTH_FILE_PERMISSION_ERROR);
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				this.persist(next, reconciled);
 			}
 			throwIfCompromised();
 			return result;
@@ -323,9 +360,10 @@ export class InMemoryAuthStorageBackend implements AuthStorageBackend {
 	private value: string | undefined;
 	private asyncChain: Promise<unknown> = Promise.resolve();
 
-	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>, options?: AuthStorageLockOptions): T {
 		const { result, next } = fn(this.value);
 		if (next !== undefined) {
+			if (options?.readOnly) throw new Error("Read-only auth storage operations cannot return next");
 			this.value = next;
 		}
 		return result;
@@ -333,7 +371,7 @@ export class InMemoryAuthStorageBackend implements AuthStorageBackend {
 
 	withLockAsync<T>(
 		fn: (current: string | undefined) => Promise<LockResult<T>>,
-		options?: AuthOperationOptions,
+		options?: AuthOperationOptions & AuthStorageLockOptions,
 	): Promise<T> {
 		const previous = this.asyncChain;
 		const operation = (async () => {
@@ -342,6 +380,7 @@ export class InMemoryAuthStorageBackend implements AuthStorageBackend {
 			const { result, next } = await fn(this.value);
 			options?.signal?.throwIfAborted();
 			if (next !== undefined) {
+				if (options?.readOnly) throw new Error("Read-only auth storage operations cannot return next");
 				this.value = next;
 			}
 			return result;
@@ -389,6 +428,11 @@ export class AuthStorage implements CredentialStore {
 		return AuthStorage.fromStorage(storage);
 	}
 
+	private assertNotQuarantined(provider: string, current: Credential | undefined): void {
+		if (provider !== CODEX_PROVIDER_ID || this.authPath === undefined) return;
+		if (checkCodexQuarantine(this.authPath, current).status !== "clear") throw new Error(AUTH_FILE_QUARANTINE_ERROR);
+	}
+
 	private parseStorageData(content: string | undefined): AuthStorageData {
 		if (!content) {
 			return {};
@@ -408,11 +452,14 @@ export class AuthStorage implements CredentialStore {
 		let content: string | undefined;
 		let revision: string | undefined;
 		try {
-			this.storage.withLock((current) => {
-				content = current;
-				revision = this.authPath ? getFileRevision(this.authPath) : undefined;
-				return { result: undefined };
-			});
+			this.storage.withLock(
+				(current) => {
+					content = current;
+					revision = this.authPath ? getFileRevision(this.authPath) : undefined;
+					return { result: undefined };
+				},
+				{ readOnly: true },
+			);
 			this.updateReadState(this.parseStorageData(content), revision);
 		} catch {
 			// Preserve the last valid in-memory snapshot.
@@ -420,12 +467,15 @@ export class AuthStorage implements CredentialStore {
 	}
 
 	private async reloadFromStorageAsync(options?: AuthOperationOptions): Promise<AuthStorageData> {
-		return this.storage.withLockAsync(async (content) => {
-			const currentData = this.parseStorageData(content);
-			const revision = this.authPath ? getFileRevision(this.authPath) : undefined;
-			this.updateReadState(currentData, revision);
-			return { result: currentData };
-		}, options);
+		return this.storage.withLockAsync(
+			async (content) => {
+				const currentData = this.parseStorageData(content);
+				const revision = this.authPath ? getFileRevision(this.authPath) : undefined;
+				this.updateReadState(currentData, revision);
+				return { result: currentData };
+			},
+			{ ...options, readOnly: true },
+		);
 	}
 
 	private async readLatestData(options?: AuthOperationOptions): Promise<AuthStorageData> {
@@ -485,6 +535,10 @@ export class AuthStorage implements CredentialStore {
 		let revision: string | undefined;
 		const result = await this.storage.withLockAsync(async (content) => {
 			const currentData = this.parseStorageData(content);
+			// A pi-fence launcher may have left this credential's refresh token in
+			// an uncertain state; the check runs under the same lock, before the
+			// callback that could spend it.
+			this.assertNotQuarantined(provider, currentData[provider]);
 			const next = await fn(currentData[provider]);
 			if (next === undefined) {
 				latestData = currentData;
@@ -504,6 +558,7 @@ export class AuthStorage implements CredentialStore {
 		let latestData = this.readState.data;
 		await this.storage.withLockAsync(async (content) => {
 			const currentData = this.parseStorageData(content);
+			this.assertNotQuarantined(provider, currentData[provider]);
 			delete currentData[provider];
 			latestData = currentData;
 			return { result: undefined, next: JSON.stringify(currentData, null, 2) };

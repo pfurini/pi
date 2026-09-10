@@ -1,4 +1,15 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CredentialStore, createModels, InMemoryModelsStore, type Provider } from "@earendil-works/pi-ai";
@@ -602,6 +613,248 @@ describe("AuthStorage", () => {
 	});
 });
 
+describe("atomic persistence (pi-fence phase 5a protocol)", () => {
+	const tempDir = join(tmpdir(), `pi-test-auth-atomic-backend-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const authJsonPath = join(tempDir, "auth.json");
+
+	beforeEach(() => {
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		mkdirSync(tempDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		vi.restoreAllMocks();
+	});
+
+	const listing = (): string[] => readdirSync(tempDir).sort();
+
+	test("withLock replaces the store by rename, leaving no artifact and preserving the mode", () => {
+		writeFileSync(authJsonPath, JSON.stringify({ anthropic: { type: "api_key", key: "old" } }, null, 2), {
+			mode: 0o600,
+		});
+		const inode = statSync(authJsonPath).ino;
+		const backend = new FileAuthStorageBackend(authJsonPath);
+		backend.withLock(() => ({
+			result: undefined,
+			next: JSON.stringify({ anthropic: { type: "api_key", key: "new" } }, null, 2),
+		}));
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "new" } });
+		expect(statSync(authJsonPath).ino).not.toBe(inode);
+		if (process.platform !== "win32") expect(statSync(authJsonPath).mode & 0o7777).toBe(0o600);
+		expect(listing()).toEqual(["auth.json"]);
+	});
+
+	test("withLockAsync replaces the store by rename too", async () => {
+		writeFileSync(authJsonPath, JSON.stringify({ anthropic: { type: "api_key", key: "old" } }, null, 2), {
+			mode: 0o600,
+		});
+		const inode = statSync(authJsonPath).ino;
+		const backend = new FileAuthStorageBackend(authJsonPath);
+		await backend.withLockAsync(async () => ({
+			result: undefined,
+			next: JSON.stringify({ anthropic: { type: "api_key", key: "new" } }, null, 2),
+		}));
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "new" } });
+		expect(statSync(authJsonPath).ino).not.toBe(inode);
+		expect(listing()).toEqual(["auth.json"]);
+	});
+
+	test("a complete candidate left by a crashed writer is finished before the mutation reads its base", async () => {
+		const seed = JSON.stringify({ anthropic: { type: "api_key", key: "old" } }, null, 2);
+		const next = JSON.stringify({ anthropic: { type: "api_key", key: "crashed-writer" } }, null, 2);
+		writeFileSync(authJsonPath, seed, { mode: 0o600 });
+		const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+		writeFileSync(
+			`${authJsonPath}.atomic-meta`,
+			JSON.stringify({
+				version: 1,
+				operation: "op-772001",
+				predecessor: digest(seed),
+				candidate: digest(next),
+				size: Buffer.byteLength(next),
+				mode: 0o600,
+			}),
+			{ mode: 0o600 },
+		);
+		writeFileSync(`${authJsonPath}.atomic`, next, { mode: 0o600 });
+		const storage = AuthStorage.create(authJsonPath);
+		let seen: unknown;
+		await storage.modify("openai", async () => {
+			seen = JSON.parse(readFileSync(authJsonPath, "utf8"));
+			return { type: "api_key", key: "added" };
+		});
+		expect(seen).toEqual({ anthropic: { type: "api_key", key: "crashed-writer" } });
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({
+			anthropic: { type: "api_key", key: "crashed-writer" },
+			openai: { type: "api_key", key: "added" },
+		});
+		expect(listing()).toEqual(["auth.json"]);
+	});
+
+	test("an unresolved candidate refuses credential changes but not reads", async () => {
+		const seed = JSON.stringify({ anthropic: { type: "api_key", key: "stored" } }, null, 2);
+		writeFileSync(authJsonPath, seed, { mode: 0o600 });
+		writeFileSync(`${authJsonPath}.atomic`, '{"orphan":true}', { mode: 0o600 });
+		const storage = AuthStorage.create(authJsonPath);
+		await expect(storage.read("anthropic")).resolves.toEqual({ type: "api_key", key: "stored" });
+		await expect(storage.list()).resolves.toEqual([{ providerId: "anthropic", type: "api_key" }]);
+		await expect(storage.modify("openai", async () => ({ type: "api_key", key: "new" }))).rejects.toThrow(
+			"unresolved replacement transaction",
+		);
+		expect(readFileSync(authJsonPath, "utf8")).toBe(seed);
+		expect(readFileSync(`${authJsonPath}.atomic`, "utf8")).toBe('{"orphan":true}');
+	});
+
+	test("creates a missing store exclusively: a stat that misses an existing file never truncates it", () => {
+		writeFileSync(authJsonPath, JSON.stringify({ anthropic: { type: "api_key", key: "winner" } }), { mode: 0o600 });
+		// The race of two first-time writers: this process's existence check
+		// missed the file the other process just created.
+		authFileDenial.state.paths.add(authJsonPath);
+		authFileDenial.state.statDenied = true;
+		authFileDenial.state.code = "ENOENT";
+		try {
+			const backend = new FileAuthStorageBackend(authJsonPath);
+			expect(backend.withLock((current) => ({ result: current }))).toBe(
+				JSON.stringify({ anthropic: { type: "api_key", key: "winner" } }),
+			);
+		} finally {
+			authFileDenial.state.paths.clear();
+			authFileDenial.state.statDenied = false;
+			authFileDenial.state.code = "EPERM";
+		}
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "winner" } });
+	});
+
+	test.skipIf(process.platform === "win32")(
+		"the synchronous lock honors the 30-second stale window of the asynchronous one",
+		() => {
+			writeFileSync(authJsonPath, JSON.stringify({ anthropic: { type: "api_key", key: "stored" } }, null, 2), {
+				mode: 0o600,
+			});
+			const lockDir = `${authJsonPath}.lock`;
+			mkdirSync(lockDir);
+			// A live holder refreshes its lock every 15 s, so a 15-second-old lock is held.
+			const fifteenSecondsAgo = (Date.now() - 15_000) / 1000;
+			utimesSync(lockDir, fifteenSecondsAgo, fifteenSecondsAgo);
+			const backend = new FileAuthStorageBackend(authJsonPath);
+			expect(() => backend.withLock(() => ({ result: undefined, next: "{}" }))).toThrow(
+				/ELOCKED|already being held/,
+			);
+			expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({
+				anthropic: { type: "api_key", key: "stored" },
+			});
+			const fortySecondsAgo = (Date.now() - 40_000) / 1000;
+			utimesSync(lockDir, fortySecondsAgo, fortySecondsAgo);
+			expect(backend.withLock(() => ({ result: "reclaimed" }))).toBe("reclaimed");
+		},
+	);
+});
+
+describe("pi-fence recovery quarantine (phase 5a, section 8.3)", () => {
+	const tempDir = join(tmpdir(), `pi-test-auth-quarantine-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const authJsonPath = join(tempDir, "auth.json");
+	const stateDir = join(tempDir, "auth.json.fence-state");
+	const recordPath = join(stateDir, "codex.json");
+	const IDENTITY = "pi-auth-json/openai-codex";
+	const codex = {
+		type: "oauth" as const,
+		access: "access-fixture-quarantine-773001",
+		refresh: "refresh-fixture-quarantine-773002",
+		expires: 1,
+		accountId: "acct-773003",
+	};
+	const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+	const fingerprints = (access: string, refresh: string) => ({
+		generation: digest(`${IDENTITY}\u0000${access}\u0000${refresh}`),
+		refresh: digest(`${IDENTITY}\u0000${refresh}`),
+	});
+	const record = (predecessor: { generation: string; refresh: string }, state = "dispatching") =>
+		JSON.stringify({
+			version: 1,
+			provider: "openai-codex",
+			source: IDENTITY,
+			operation: "11111111-2222-4333-8444-555555555555",
+			state,
+			predecessor,
+			createdAt: "2026-09-10T12:00:00.000Z",
+			updatedAt: "2026-09-10T12:00:00.000Z",
+		});
+
+	beforeEach(() => {
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+		writeFileSync(
+			authJsonPath,
+			JSON.stringify({ "openai-codex": codex, anthropic: { type: "api_key", key: "stored" } }, null, 2),
+			{ mode: 0o600 },
+		);
+	});
+
+	afterEach(() => {
+		if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+	});
+
+	test("a matching predecessor record blocks the openai-codex mutation before its callback runs, and blocks deletion", async () => {
+		writeFileSync(recordPath, record(fingerprints(codex.access, codex.refresh)), { mode: 0o600 });
+		const storage = AuthStorage.create(authJsonPath);
+		const callback = vi.fn(async () => ({ ...codex, access: "spent-fixture-773005" }));
+		await expect(storage.modify("openai-codex", callback)).rejects.toThrow("quarantined");
+		expect(callback).not.toHaveBeenCalled();
+		await expect(storage.delete("openai-codex")).rejects.toThrow("quarantined");
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))["openai-codex"]).toEqual(codex);
+	});
+
+	test("unrelated providers and read-only access stay available under quarantine", async () => {
+		writeFileSync(recordPath, record(fingerprints(codex.access, codex.refresh), "recovery-required"), {
+			mode: 0o600,
+		});
+		const storage = AuthStorage.create(authJsonPath);
+		await expect(storage.read("openai-codex")).resolves.toEqual(codex);
+		await expect(storage.list()).resolves.toEqual([
+			{ providerId: "openai-codex", type: "oauth" },
+			{ providerId: "anthropic", type: "api_key" },
+		]);
+		await storage.modify("anthropic", async () => ({ type: "api_key", key: "changed" }));
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8")).anthropic).toEqual({ type: "api_key", key: "changed" });
+	});
+
+	test("an access-only change that still carries the spent refresh token stays quarantined (section 8.2)", async () => {
+		writeFileSync(recordPath, record(fingerprints(codex.access, codex.refresh)), { mode: 0o600 });
+		writeFileSync(
+			authJsonPath,
+			JSON.stringify({ "openai-codex": { ...codex, access: "access-only-change-773010" } }, null, 2),
+			{ mode: 0o600 },
+		);
+		const storage = AuthStorage.create(authJsonPath);
+		const callback = vi.fn(async () => ({ ...codex, access: "spent-again-773011" }));
+		await expect(storage.modify("openai-codex", callback)).rejects.toThrow("quarantined");
+		expect(callback).not.toHaveBeenCalled();
+	});
+
+	test("a record whose predecessor no longer matches the stored credential does not block", async () => {
+		writeFileSync(recordPath, record(fingerprints("older-access-773006", "older-refresh-773007")), { mode: 0o600 });
+		const storage = AuthStorage.create(authJsonPath);
+		await storage.modify("openai-codex", async () => ({ ...codex, access: "rotated-fixture-773008" }));
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))["openai-codex"].access).toBe("rotated-fixture-773008");
+	});
+
+	test("malformed or unreadable recovery metadata fails closed for the openai-codex mutation only", async () => {
+		writeFileSync(recordPath, "not json", { mode: 0o600 });
+		const storage = AuthStorage.create(authJsonPath);
+		const callback = vi.fn(async () => codex);
+		await expect(storage.modify("openai-codex", callback)).rejects.toThrow("quarantined");
+		expect(callback).not.toHaveBeenCalled();
+		await storage.modify("anthropic", async () => ({ type: "api_key", key: "still-fine" }));
+	});
+
+	test("no record means no quarantine", async () => {
+		const storage = AuthStorage.create(authJsonPath);
+		await storage.modify("openai-codex", async () => ({ ...codex, access: "rotated-fixture-773009" }));
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))["openai-codex"].access).toBe("rotated-fixture-773009");
+	});
+});
+
 describe("denied auth.json", () => {
 	const tempDir = join(tmpdir(), `pi-test-auth-storage-denied-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	const authJsonPath = join(tempDir, "auth.json");
@@ -681,7 +934,7 @@ describe("denied auth.json", () => {
 		denyAuthFileRead("EPERM", { stat: true, exists: true });
 		const backend = new FileAuthStorageBackend(authJsonPath);
 
-		expect(backend.withLock(() => ({ result: "ok" }))).toBe("ok");
+		expect(backend.withLock(() => ({ result: "ok" }), { readOnly: true })).toBe("ok");
 
 		expectNoAuthFileWrites();
 		resetAuthFileDenial();
@@ -706,10 +959,13 @@ describe("denied auth.json", () => {
 		let observed: string | undefined = "sentinel";
 
 		expect(
-			backend.withLock((current) => {
-				observed = current;
-				return { result: "ok" };
-			}),
+			backend.withLock(
+				(current) => {
+					observed = current;
+					return { result: "ok" };
+				},
+				{ readOnly: true },
+			),
 		).toBe("ok");
 
 		expect(observed).toBeUndefined();
@@ -722,10 +978,13 @@ describe("denied auth.json", () => {
 		let observed: string | undefined = "sentinel";
 
 		await expect(
-			backend.withLockAsync(async (current) => {
-				observed = current;
-				return { result: "ok" };
-			}),
+			backend.withLockAsync(
+				async (current) => {
+					observed = current;
+					return { result: "ok" };
+				},
+				{ readOnly: true },
+			),
 		).resolves.toBe("ok");
 
 		expect(observed).toBeUndefined();
@@ -848,7 +1107,7 @@ describe("denied auth.json", () => {
 		denyAuthFileRead(code, { stat: true, exists: true });
 		const backend = new FileAuthStorageBackend(authJsonPath);
 
-		expect(backend.withLock(() => ({ result: "ok" }))).toBe("ok");
+		expect(backend.withLock(() => ({ result: "ok" }), { readOnly: true })).toBe("ok");
 
 		expectNoAuthFileWrites();
 		resetAuthFileDenial();
@@ -861,10 +1120,13 @@ describe("denied auth.json", () => {
 		let observed: string | undefined = "sentinel";
 
 		expect(
-			backend.withLock((current) => {
-				observed = current;
-				return { result: "ok" };
-			}),
+			backend.withLock(
+				(current) => {
+					observed = current;
+					return { result: "ok" };
+				},
+				{ readOnly: true },
+			),
 		).toBe("ok");
 
 		expect(observed).toBeUndefined();
@@ -879,10 +1141,13 @@ describe("denied auth.json", () => {
 			let observed: string | undefined = "sentinel";
 
 			await expect(
-				backend.withLockAsync(async (current) => {
-					observed = current;
-					return { result: "ok" };
-				}),
+				backend.withLockAsync(
+					async (current) => {
+						observed = current;
+						return { result: "ok" };
+					},
+					{ readOnly: true },
+				),
 			).resolves.toBe("ok");
 
 			expect(observed).toBeUndefined();

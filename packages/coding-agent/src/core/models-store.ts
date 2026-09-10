@@ -72,11 +72,14 @@ export class FileModelsStore implements ModelsStore {
 		readState: ModelsFileReadState,
 		options?: ModelsStoreOperationOptions,
 	): Promise<StoredModels> {
-		return this.storage.withLockAsync(async (content) => {
-			const data = this.parse(content);
-			this.updateReadState(readState, data, getFileRevision(this.path));
-			return { result: data };
-		}, options);
+		return this.storage.withLockAsync(
+			async (content) => {
+				const data = this.parse(content);
+				this.updateReadState(readState, data, getFileRevision(this.path));
+				return { result: data };
+			},
+			{ ...options, readOnly: true },
+		);
 	}
 
 	private async readLatest(

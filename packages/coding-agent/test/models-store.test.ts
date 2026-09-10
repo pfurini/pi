@@ -1,3 +1,4 @@
+import type * as Fs from "node:fs";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,11 +7,25 @@ import lockfile from "proper-lockfile";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FileModelsStore } from "../src/core/models-store.ts";
 
+const deniedRead = vi.hoisted(() => ({ path: "" }));
+vi.mock("fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof Fs>();
+	return {
+		...actual,
+		readFileSync: (file: string, options?: unknown) => {
+			if (file === deniedRead.path) throw Object.assign(new Error("read denied"), { code: "EACCES" });
+			return actual.readFileSync(file, options as Parameters<typeof actual.readFileSync>[1]);
+		},
+	};
+});
+
 const sharedTempDir = join(tmpdir(), `pi-models-store-shared-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const sharedModelsPath = join(sharedTempDir, "models-store.json");
 
 beforeAll(() => {
 	mkdirSync(sharedTempDir, { recursive: true });
+	// The module caches its first store path; retain the shared-path setup for coalescing tests.
+	new FileModelsStore(sharedModelsPath);
 });
 
 afterAll(() => {
@@ -18,6 +33,7 @@ afterAll(() => {
 });
 
 afterEach(() => {
+	deniedRead.path = "";
 	vi.restoreAllMocks();
 });
 
@@ -37,6 +53,23 @@ function model(provider: string, id: string): Model<"openai-completions"> {
 }
 
 describe("FileModelsStore", () => {
+	it("reads a catalog beside an unresolved transaction without permitting writes", async () => {
+		const file = join(sharedTempDir, "unresolved-models.json");
+		writeFileSync(file, JSON.stringify({ one: { models: [model("one", "stored")] } }), { mode: 0o600 });
+		writeFileSync(`${file}.atomic`, '{"orphan":true}', { mode: 0o600 });
+		const store = new FileModelsStore(file);
+		await expect(store.read("one")).resolves.toMatchObject({ models: [{ id: "stored" }] });
+		await expect(store.write("two", { models: [] })).rejects.toThrow("unresolved replacement transaction");
+		expect(readFileSync(`${file}.atomic`, "utf8")).toBe('{"orphan":true}');
+	});
+
+	it("treats a read-denied catalog as empty", async () => {
+		const file = join(sharedTempDir, "denied-models.json");
+		writeFileSync(file, "{}", { mode: 0o600 });
+		deniedRead.path = file;
+		await expect(new FileModelsStore(file).read("one")).resolves.toBeUndefined();
+	});
+
 	it("persists provider catalogs without replacing unrelated providers", async () => {
 		const store = new FileModelsStore(sharedModelsPath);
 

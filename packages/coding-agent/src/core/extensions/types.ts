@@ -873,6 +873,32 @@ export interface UserBashEvent {
 	cwd: string;
 }
 
+/**
+ * Fired before pi records a `!`/`!!` bash execution in session history.
+ * **Can modify the recorded command and output.**
+ *
+ * Mirrors `BashExecutionMessage`. Handlers chain, unlike `user_bash`.
+ */
+export interface BashResultEvent {
+	type: "bash_result";
+	/** The command that was executed */
+	command: string;
+	/** Combined stdout + stderr output (sanitized, possibly truncated) */
+	output: string;
+	/** Process exit code (undefined if killed/cancelled) */
+	exitCode: number | undefined;
+	/** Whether the command was cancelled via signal */
+	cancelled: boolean;
+	/** Whether the output was truncated */
+	truncated: boolean;
+	/** Path to temp file containing full output (if output exceeded truncation threshold) */
+	fullOutputPath?: string;
+	/** True when that file holds only a prefix because the persistence cap was reached. */
+	fullOutputCapped?: boolean;
+	/** True if !! prefix was used (excluded from LLM context) */
+	excludeFromContext?: boolean;
+}
+
 // ============================================================================
 // Input Events
 // ============================================================================
@@ -1132,6 +1158,7 @@ export type ExtensionEvent =
 	| ModelSelectEvent
 	| ThinkingLevelSelectEvent
 	| UserBashEvent
+	| BashResultEvent
 	| InputEvent
 	| ToolCallEvent
 	| ToolResultEvent;
@@ -1163,6 +1190,18 @@ export interface UserBashEventResult {
 	operations?: BashOperations;
 	/** Full replacement: extension handled execution, use this result */
 	result?: BashResult;
+}
+
+/**
+ * Result from bash_result event handler.
+ *
+ * Only the two text fields are patchable: the hook sanitizes, it does not
+ * re-execute. A handler therefore cannot fake an exit code, un-cancel a
+ * command, or change whether the execution reaches the LLM.
+ */
+export interface BashResultEventResult {
+	command?: string;
+	output?: string;
 }
 
 export interface ToolResultEventResult {
@@ -1340,6 +1379,7 @@ export interface ExtensionAPI {
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
+	on(event: "bash_result", handler: ExtensionHandler<BashResultEvent, BashResultEventResult>): void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
 
 	// =========================================================================

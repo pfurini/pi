@@ -923,6 +923,31 @@ pi.on("user_bash", (event, ctx) => {
 });
 ```
 
+#### bash_result
+
+Fired after a `!` or `!!` command finishes and before pi records it in session history. **Can modify the recorded command and output.** It fires for every `!`/`!!` execution: the one pi ran itself, and the one a `user_bash` handler replaced with its own result.
+
+Unlike `user_bash`, which stops at the first handler that returns a result, `bash_result` handlers chain:
+- Handlers run in extension load order
+- Each handler sees the previous handler's `command` and `output`
+- A throwing handler is reported and skipped; the rest of the chain still runs
+
+Only `command` and `output` are patchable. `exitCode`, `cancelled`, `truncated`, `fullOutputPath`, `fullOutputCapped`, and `excludeFromContext` are read-only: a handler sanitizes recorded text, it does not re-execute the command or change whether the execution reaches the LLM. Patch `command` too when the command line itself can carry secrets, because pi renders it into context as ``Ran `<command>` ``.
+
+```typescript
+pi.on("bash_result", (event) => {
+  // event.command, event.output - patchable
+  // event.exitCode, event.cancelled, event.truncated - read-only
+  // event.fullOutputPath, event.fullOutputCapped, event.excludeFromContext - read-only
+  return {
+    command: event.command.replaceAll(secret, "[redacted]"),
+    output: event.output.replaceAll(secret, "[redacted]"),
+  };
+});
+```
+
+Return nothing to leave the execution unchanged.
+
 ### Input Events
 
 #### input

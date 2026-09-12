@@ -95,6 +95,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
+	type BashResultEventResult,
 	type ContextUsage,
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
@@ -5244,7 +5245,7 @@ export class AgentSession {
 				},
 			);
 
-			this.recordBashResult(command, result, options);
+			await this.recordBashResult(command, result, options);
 			return result;
 		} finally {
 			this._bashAbortControllers.delete(abortController);
@@ -5254,12 +5255,35 @@ export class AgentSession {
 	/**
 	 * Record a bash execution result in session history.
 	 * Used by executeBash and by extensions that handle bash execution themselves.
+	 *
+	 * Async because the `bash_result` hook runs first and may patch the recorded
+	 * command and output (for example to strip masked credentials) before the
+	 * message is built. Every other field comes from the executor, untouched.
 	 */
-	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
+	async recordBashResult(
+		command: string,
+		result: BashResult,
+		options?: { excludeFromContext?: boolean },
+	): Promise<void> {
+		let patch: BashResultEventResult | undefined;
+		if (this._extensionRunner.hasHandlers("bash_result")) {
+			patch = await this._extensionRunner.emitBashResult({
+				type: "bash_result",
+				command,
+				output: result.output,
+				exitCode: result.exitCode,
+				cancelled: result.cancelled,
+				truncated: result.truncated,
+				fullOutputPath: result.fullOutputPath,
+				fullOutputCapped: result.fullOutputCapped,
+				excludeFromContext: options?.excludeFromContext,
+			});
+		}
+
 		const bashMessage: BashExecutionMessage = {
 			role: "bashExecution",
-			command,
-			output: result.output,
+			command: patch?.command ?? command,
+			output: patch?.output ?? result.output,
 			exitCode: result.exitCode,
 			cancelled: result.cancelled,
 			truncated: result.truncated,

@@ -58,6 +58,8 @@ export type {
 	AgentToolUpdateCallback,
 	AppKeybinding,
 	AutocompleteProviderFactory,
+	BashResultEvent,
+	BashResultEventResult,
 	BashToolCallEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,

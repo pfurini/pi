@@ -13,6 +13,8 @@ import type { ScopedModel } from "../model-resolver.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
 import type {
+	BashResultEvent,
+	BashResultEventResult,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	BeforeProviderHeadersEvent,
@@ -1104,6 +1106,55 @@ export class ExtensionRunner {
 			}
 
 			return undefined;
+		});
+	}
+
+	/**
+	 * Chains, unlike emitUserBash: every handler runs, in load order, and sees the
+	 * previous handler's text, so load order cannot decide whether a sanitizing
+	 * handler gets to run. Returns the applied patch, or undefined if nothing changed.
+	 */
+	async emitBashResult(event: BashResultEvent): Promise<BashResultEventResult | undefined> {
+		return this.runScoped(async () => {
+			const ctx = this.createContext();
+			const currentEvent: BashResultEvent = { ...event };
+			const patch: BashResultEventResult = {};
+
+			for (const ext of this.extensions) {
+				const handlers = ext.handlers.get("bash_result");
+				if (!handlers || handlers.length === 0) continue;
+
+				for (const handler of handlers) {
+					try {
+						const handlerResult = (await handler(currentEvent, ctx)) as BashResultEventResult | undefined;
+						if (!handlerResult) continue;
+
+						if (handlerResult.command !== undefined) {
+							currentEvent.command = handlerResult.command;
+							patch.command = handlerResult.command;
+						}
+						if (handlerResult.output !== undefined) {
+							currentEvent.output = handlerResult.output;
+							patch.output = handlerResult.output;
+						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: "bash_result",
+							error: message,
+							stack,
+						});
+					}
+				}
+			}
+
+			if (patch.command === undefined && patch.output === undefined) {
+				return undefined;
+			}
+
+			return patch;
 		});
 	}
 

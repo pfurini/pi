@@ -31,6 +31,9 @@ export type {
 	// App keybindings (for custom editors)
 	AppKeybinding,
 	AutocompleteProviderFactory,
+	// Events - User Bash
+	BashResultEvent,
+	BashResultEventResult,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,

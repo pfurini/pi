@@ -25,7 +25,7 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { contentText } from "@earendil-works/pi-ai";
+import { contentText, retryDelayMs } from "@earendil-works/pi-ai";
 import type {
 	Api,
 	AssistantMessage,
@@ -442,10 +442,6 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 	}
 	return tokens;
 }
-
-// ============================================================================
-// Constants
-// ============================================================================
 
 // ============================================================================
 // AgentSession Class
@@ -1094,7 +1090,7 @@ export class AgentSession {
 
 	private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
 		const model = this.model;
-		const settings = this.settingsManager.getCompactionSettings();
+		const settings = this.settingsManager.getCompactionSettings(model);
 
 		if (
 			!model ||
@@ -1983,6 +1979,26 @@ export class AgentSession {
 		return this.agent.hasQueuedMessages();
 	}
 
+	private async _runInputHandlers(
+		text: string,
+		images: ImageContent[] | undefined,
+		source: InputSource,
+		streamingBehavior?: "steer" | "followUp",
+	): Promise<{ text: string; images: ImageContent[] | undefined } | undefined> {
+		if (!this._extensionRunner.hasHandlers("input")) {
+			return { text, images };
+		}
+
+		const inputResult = await this._extensionRunner.emitInput(text, images, source, streamingBehavior);
+		if (inputResult.action === "handled") {
+			return undefined;
+		}
+		if (inputResult.action === "transform") {
+			return { text: inputResult.text, images: inputResult.images ?? images };
+		}
+		return { text, images };
+	}
+
 	/**
 	 * Send a prompt to the agent.
 	 * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
@@ -2034,24 +2050,17 @@ export class AgentSession {
 			}
 
 			// Emit input event for extension interception (before skill/template expansion)
-			let currentText = text;
-			let currentImages = options?.images;
-			if (this._extensionRunner.hasHandlers("input")) {
-				const inputResult = await this._extensionRunner.emitInput(
-					currentText,
-					currentImages,
-					options?.source ?? "interactive",
-					this.isStreaming ? options?.streamingBehavior : undefined,
-				);
-				if (inputResult.action === "handled") {
-					preflightResult?.(true);
-					return;
-				}
-				if (inputResult.action === "transform") {
-					currentText = inputResult.text;
-					currentImages = inputResult.images ?? currentImages;
-				}
+			const processedInput = await this._runInputHandlers(
+				text,
+				options?.images,
+				options?.source ?? "interactive",
+				this.isStreaming ? options?.streamingBehavior : undefined,
+			);
+			if (!processedInput) {
+				preflightResult?.(true);
+				return;
 			}
+			const { text: currentText, images: currentImages } = processedInput;
 
 			// A.1 tokenization: resolve prompt-producing invocations (skills + commands),
 			// bare / mid-prompt / stacked. Replay bypass (expandPromptTemplates:false) keeps
@@ -3567,10 +3576,11 @@ export class AgentSession {
 	 * before the next LLM call.
 	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @param images Optional image attachments to include with the message
+	 * @param options Input source; defaults to interactive
 	 * @throws Error if text is an extension command
 	 */
-	async steer(text: string, images?: ImageContent[]): Promise<void> {
-		await this._queueTokenized("steer", text, images);
+	async steer(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise<void> {
+		await this._queueTokenized("steer", text, images, options?.source ?? "interactive");
 	}
 
 	/**
@@ -3578,18 +3588,25 @@ export class AgentSession {
 	 * Delivered only when agent has no more tool calls or steering messages.
 	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @param images Optional image attachments to include with the message
+	 * @param options Input source; defaults to interactive
 	 * @throws Error if text is an extension command
 	 */
-	async followUp(text: string, images?: ImageContent[]): Promise<void> {
-		await this._queueTokenized("followUp", text, images);
+	async followUp(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise<void> {
+		await this._queueTokenized("followUp", text, images, options?.source ?? "interactive");
 	}
 
 	/**
-	 * Shared steer/follow-up queue path: reject extension commands, tokenize once
-	 * (invocation-bearing messages queue as immutable resolved snapshots rendered
-	 * on consumption; plain text queues directly), then dispatch to the given queue.
+	 * Shared steer/follow-up queue path: reject extension commands, run the extension
+	 * `input` handlers, tokenize once (invocation-bearing messages queue as immutable
+	 * resolved snapshots rendered on consumption; plain text queues directly), then
+	 * dispatch to the given queue.
 	 */
-	private async _queueTokenized(queue: "steer" | "followUp", text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueTokenized(
+		queue: "steer" | "followUp",
+		text: string,
+		images?: ImageContent[],
+		source: InputSource = "interactive",
+	): Promise<void> {
 		// One lazily-built registry shared by the extension-command check and tokenization.
 		let commandRegistry: CommandRegistry | undefined;
 		const getCommandRegistry = (): CommandRegistry => {
@@ -3602,7 +3619,12 @@ export class AgentSession {
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text, getCommandRegistry);
 		}
-		const tokenized = tokenizeMessage(text, getCommandRegistry());
+		// Emit input event for extension interception (before tokenization), so a direct
+		// steer/follow-up sees the same handlers as prompt() + streamingBehavior.
+		const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? queue : undefined);
+		if (!processedInput) return;
+		const { text: currentText, images: currentImages } = processedInput;
+		const tokenized = tokenizeMessage(currentText, getCommandRegistry());
 		// c4c: steer/follow-up emit the `off` disabled diagnostic and drop the
 		// token, matching the direct path exactly once per invocation. Other
 		// tokenizer diagnostics keep their existing (non-queued) behavior.
@@ -3610,15 +3632,18 @@ export class AgentSession {
 		if (disabledDiagnostics.length > 0) {
 			this._emitSkillDiagnostics(disabledDiagnostics);
 		}
+		// `text` is the raw submission; `currentText` may be an extension rewrite of it.
+		// The queue carries the rewrite (that is what will be delivered), while recall
+		// keeps the submission.
 		if (tokenized.spans.some((span) => span.kind === "invocation")) {
-			await this._queueInvocation(queue, text, tokenized, images);
+			await this._queueInvocation(queue, currentText, tokenized, currentImages, text);
 			return;
 		}
 		const plainText = this._spansPlainText(tokenized.spans);
 		if (queue === "steer") {
-			await this._queueSteer(plainText, images);
+			await this._queueSteer(plainText, currentImages, text);
 		} else {
-			await this._queueFollowUp(plainText, images);
+			await this._queueFollowUp(plainText, currentImages, text);
 		}
 	}
 
@@ -4149,14 +4174,15 @@ export class AgentSession {
 		let fromExtension = false;
 
 		try {
-			if (!this.model) {
+			const model = this.model;
+			if (!model) {
 				throw new Error(formatNoModelSelectedMessage());
 			}
 
-			const { model: requestModel, apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model);
+			const settings = this.settingsManager.getCompactionSettings(model);
+			const { model: requestModel, apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
 
 			const pathEntries = this.sessionManager.getBranch();
-			const settings = this.settingsManager.getCompactionSettings();
 
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
@@ -4330,7 +4356,7 @@ export class AgentSession {
 	 * @returns Whether the post-run loop should call `agent.continue()` for overflow recovery or queued messages
 	 */
 	private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
-		const settings = this.settingsManager.getCompactionSettings();
+		const settings = this.settingsManager.getCompactionSettings(this.model);
 		if (!settings.enabled) return false;
 
 		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
@@ -4446,16 +4472,17 @@ export class AgentSession {
 	 * @returns Whether the post-run loop should call `agent.continue()`
 	 */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
-		const settings = this.settingsManager.getCompactionSettings();
+		const model = this.model;
+		const settings = this.settingsManager.getCompactionSettings(model);
 		let started = false;
 		let fromExtension = false;
 
 		try {
-			if (!this.model) {
+			if (!model) {
 				return false;
 			}
 
-			const { model: requestModel, apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model);
+			const { model: requestModel, apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
 
 			const pathEntries = this.sessionManager.getBranch();
 
@@ -5115,7 +5142,7 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const delayMs = retryDelayMs(settings, this._retryAttempt);
 
 		this._emit({
 			type: "auto_retry_start",
@@ -5327,6 +5354,11 @@ export class AgentSession {
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		if (this.isStreaming) {
 			throw new Error("Wait for the current response to finish before navigating the session tree.");
+		}
+		if (this.isCompacting) {
+			throw new Error(
+				"Wait for the current compaction or tree navigation to finish before navigating the session tree.",
+			);
 		}
 
 		const oldLeafId = this.sessionManager.getLeafId();

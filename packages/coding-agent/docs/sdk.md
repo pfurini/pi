@@ -114,6 +114,8 @@ interface AgentSession {
 }
 ```
 
+`session.navigateTree()` rejects while an agent response, manual or automatic compaction, or another tree navigation is active, even with `summarize: false`. It does not queue navigation or return `{ cancelled: true }` for these conflicts. Wait for the active operation to finish (for example, with `await session.waitForIdle()`) and retry. Rejection leaves the active branch unchanged.
+
 To end a session you own directly (created via `createAgentSession`), prefer `await session.shutdown()`. It settles any active turn, emits `session_shutdown` to extensions exactly once (so they run their documented cleanup hook), then disposes. `dispose()` remains **synchronous and eventless** by design — a sync method cannot await async shutdown handlers, and it invalidates the extension context immediately — so calling `dispose()` alone skips the `session_shutdown` hook. The whole `shutdown()` operation is single-flight: concurrent or repeated calls share one execution (the first caller's `reason` wins) and never double-fire the event or re-run disposal, and disposal is guaranteed even if a shutdown handler fails (the failure still rejects every caller's promise). `dispose()` itself is idempotent. When you use `AgentSessionRuntime`, its `dispose()` and session-replacement paths already emit `session_shutdown` for you.
 
 Session replacement APIs such as new-session, resume, fork, and import live on `AgentSessionRuntime`, not on `AgentSession`.

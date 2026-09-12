@@ -925,14 +925,18 @@ pi.on("user_bash", (event, ctx) => {
 
 #### bash_result
 
-Fired after a `!` or `!!` command finishes and before pi records it in session history. **Can modify the recorded command and output.** It fires for every `!`/`!!` execution: the one pi ran itself, and the one a `user_bash` handler replaced with its own result.
+Fired after a `!` or `!!` command finishes and before pi records it in session history. **Can modify the recorded command and output.** The hook fires for every `!`/`!!` execution: the one pi ran itself, and the one a `user_bash` handler replaced with its own result.
 
 Unlike `user_bash`, which stops at the first handler that returns a result, `bash_result` handlers chain:
 - Handlers run in extension load order
 - Each handler sees the previous handler's `command` and `output`
 - A throwing handler is reported and skipped; the rest of the chain still runs
 
-Only `command` and `output` are patchable. `exitCode`, `cancelled`, `truncated`, `fullOutputPath`, `fullOutputCapped`, and `excludeFromContext` are read-only: a handler sanitizes recorded text, it does not re-execute the command or change whether the execution reaches the LLM. Patch `command` too when the command line itself can carry secrets, because pi renders it into context as ``Ran `<command>` ``.
+Two fields are patchable:
+- `output` — the text pi records for the execution
+- `command` — the command line, which pi renders into context as ``Ran `<command>` ``. Patch it too when the command line itself can carry a secret.
+
+Six fields are read-only: `exitCode`, `cancelled`, `truncated`, `fullOutputPath`, `fullOutputCapped`, and `excludeFromContext`. A handler sanitizes recorded text. A handler does not re-execute the command, and does not change whether the execution reaches the LLM.
 
 ```typescript
 pi.on("bash_result", (event) => {

@@ -1110,9 +1110,14 @@ export class ExtensionRunner {
 	}
 
 	/**
-	 * Chains, unlike emitUserBash: every handler runs, in load order, and sees the
-	 * previous handler's text, so load order cannot decide whether a sanitizing
-	 * handler gets to run. Returns the applied patch, or undefined if nothing changed.
+	 * Fires every registered bash_result handler, in extension load order.
+	 *
+	 * The chain is what emitUserBash is not: emitUserBash stops at the first
+	 * handler that returns a result, so load order decides which handler runs.
+	 * Here every handler runs, and each one sees the text the previous handler
+	 * left, so load order cannot silently disable a sanitizing handler.
+	 *
+	 * Returns the applied patch, or undefined when no handler changed anything.
 	 */
 	async emitBashResult(event: BashResultEvent): Promise<BashResultEventResult | undefined> {
 		return this.runScoped(async () => {

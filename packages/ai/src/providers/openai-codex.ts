@@ -15,11 +15,13 @@ export const OPENAI_CODEX_AMBIENT_TOKEN_ENV = "PI_OAUTH_ACCESS_TOKEN_OPENAI_CODE
 /**
  * Ambient-only: `openai-codex` declares OAuth only, so a sandbox that cannot read
  * the stored OAuth credential would otherwise leave the provider unconfigured.
- * Omitting `login` keeps `/login` offering the OAuth flows alone, with no
- * api-key entry option for a provider that has no user-facing API keys. A
- * stored OAuth credential still wins: `resolveProviderAuthWithSignal` only
- * reaches this ambient branch when the credential store has nothing stored
- * for the provider, so this never overrides real OAuth state outside a sandbox.
+ * Omitting `login` means there is no key to enter, because this provider has no
+ * user-facing API keys. `/login` still lists the method (it lists every declared
+ * api-key method, by design), but selecting it opens the ambient-auth notice
+ * rather than a key prompt. A stored OAuth credential still wins:
+ * `resolveProviderAuthWithSignal` only reaches this ambient branch when the
+ * credential store has nothing stored for the provider, so this never overrides
+ * real OAuth state outside a sandbox.
  */
 function openaiCodexAmbientApiKeyAuth(): ApiKeyAuth {
 	return {

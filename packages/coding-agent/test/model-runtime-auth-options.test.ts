@@ -102,7 +102,11 @@ describe("ModelRuntime auth options", () => {
 		);
 		expect(authOptions(runtime, "api_key").every((option) => option.type === "api_key")).toBe(true);
 		expect(authOptions(runtime, "oauth").every((option) => option.type === "oauth")).toBe(true);
-		expect(options.some((option) => option.provider.id === "openai-codex" && option.type === "api_key")).toBe(false);
+		// openai-codex declares an ambient-only api-key method: it resolves a launcher-minted
+		// token from the environment and has no `login`, so it is projected as an option (every
+		// declared method is) but offers no key entry.
+		const codex = runtime.getProviders().find((provider) => provider.id === "openai-codex");
+		expect(codex?.auth.apiKey?.login).toBeUndefined();
 	});
 
 	it("attaches the provider's active auth status to every method option", async () => {

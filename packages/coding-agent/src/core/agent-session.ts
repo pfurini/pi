@@ -892,6 +892,11 @@ export class AgentSession {
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
 	}> {
+		// The session stream resolves auth itself. Forwarding OAuth as an explicit API key can select the wrong auth method.
+		if (this._defaultStreamTarget && this.agent.streamFunction === this._defaultStreamTarget.streamFn) {
+			return { model };
+		}
+
 		if (isDefaultStreamFn(this.agent.streamFunction)) {
 			return this._getRequiredRequestAuth(model);
 		}

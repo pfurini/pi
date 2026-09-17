@@ -402,8 +402,11 @@ export interface ExtensionCommandContext extends ExtensionContext {
 export interface ReplacedSessionContext extends ExtensionCommandContext {
 	sendMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
 	): Promise<void>;
+
+	/** Remove a custom message that is still queued for delivery. */
+	removeQueuedMessage(queueId: string): boolean;
 
 	sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
@@ -1446,8 +1449,11 @@ export interface ExtensionAPI {
 	/** Send a custom message to the session. */
 	sendMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
 	): void;
+
+	/** Remove a custom message that is still queued for delivery. */
+	removeQueuedMessage(queueId: string): boolean;
 
 	/**
 	 * Send a user message to the agent. Always triggers a turn.
@@ -1709,8 +1715,11 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+	queueOwner?: object,
 ) => void;
+
+export type RemoveQueuedMessageHandler = (queueId: string, queueOwner?: object) => boolean;
 
 export type SendUserMessageHandler = (
 	content: string | (TextContent | ImageContent)[],
@@ -1779,6 +1788,7 @@ export interface ExtensionRuntimeState {
  */
 export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
+	removeQueuedMessage: RemoveQueuedMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
 	setSessionName: SetSessionNameHandler;

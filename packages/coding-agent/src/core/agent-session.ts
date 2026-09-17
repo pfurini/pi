@@ -505,6 +505,8 @@ export class AgentSession {
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 	/** Context-only custom messages queued during a run, flushed once the current turn's tool results are in. */
 	private _pendingCustomMessages: CustomMessage[] = [];
+	/** Queued custom messages, indexed first by sender identity and then by caller-provided queue id. */
+	private _queuedCustomMessages = new Map<object | undefined, Map<string, CustomMessage>>();
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -1235,6 +1237,7 @@ export class AgentSession {
 		if (event.type === "message_end") {
 			// Check if this is a custom message from extensions
 			if (event.message.role === "custom") {
+				this._forgetQueuedCustomMessage(event.message);
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -3708,7 +3711,8 @@ export class AgentSession {
 	 */
 	async sendCustomMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+		queueOwner?: object,
 	): Promise<void> {
 		const appMessage = {
 			role: "custom" as const,
@@ -3719,9 +3723,20 @@ export class AgentSession {
 			details: message.details,
 			timestamp: Date.now(),
 		} satisfies CustomMessage<T>;
+		const trackQueuedMessage = () => {
+			if (!options?.queueId) return;
+			let queuedMessages = this._queuedCustomMessages.get(queueOwner);
+			if (!queuedMessages) {
+				queuedMessages = new Map();
+				this._queuedCustomMessages.set(queueOwner, queuedMessages);
+			}
+			queuedMessages.set(options.queueId, appMessage);
+		};
 		if (options?.deliverAs === "nextTurn") {
+			trackQueuedMessage();
 			this._pendingNextTurnMessages.push(appMessage);
 		} else if (this.isStreaming && options?.triggerTurn !== false) {
+			trackQueuedMessage();
 			if (options?.deliverAs === "followUp") {
 				this.agent.followUp(appMessage);
 			} else {
@@ -3734,13 +3749,44 @@ export class AgentSession {
 			// result, which providers that validate message order reject on replay. Defer
 			// to the end of the turn. Nothing is emitted yet: message events must not
 			// describe messages the session tree does not contain.
+			trackQueuedMessage();
 			this._pendingCustomMessages.push(appMessage);
 		} else {
 			this._appendCustomMessage(appMessage);
 		}
 	}
 
+	/** Remove a queued custom message before the agent loop consumes it. */
+	removeQueuedMessage(queueId: string, queueOwner?: object): boolean {
+		const queuedMessages = this._queuedCustomMessages.get(queueOwner);
+		const message = queuedMessages?.get(queueId);
+		if (!message || !queuedMessages) return false;
+		queuedMessages.delete(queueId);
+		if (queuedMessages.size === 0) this._queuedCustomMessages.delete(queueOwner);
+		const removeFrom = (messages: CustomMessage[]): boolean => {
+			const index = messages.indexOf(message);
+			if (index === -1) return false;
+			messages.splice(index, 1);
+			return true;
+		};
+		return (
+			this.agent.removeQueuedMessage?.(message) ||
+			removeFrom(this._pendingNextTurnMessages) ||
+			removeFrom(this._pendingCustomMessages)
+		);
+	}
+
+	private _forgetQueuedCustomMessage(appMessage: CustomMessage): void {
+		for (const [queueOwner, queuedMessages] of this._queuedCustomMessages) {
+			for (const [queueId, queued] of queuedMessages) {
+				if (queued === appMessage) queuedMessages.delete(queueId);
+			}
+			if (queuedMessages.size === 0) this._queuedCustomMessages.delete(queueOwner);
+		}
+	}
+
 	private _appendCustomMessage(appMessage: CustomMessage): void {
+		this._forgetQueuedCustomMessage(appMessage);
 		this.agent.state.messages.push(appMessage);
 		this.sessionManager.appendCustomMessageEntry(
 			appMessage.customType,
@@ -4782,8 +4828,8 @@ export class AgentSession {
 	private _bindExtensionCore(runner: ExtensionRunner): void {
 		runner.bindCore(
 			{
-				sendMessage: (message, options) => {
-					this.sendCustomMessage(message, options).catch((err) => {
+				sendMessage: (message, options, queueOwner) => {
+					this.sendCustomMessage(message, options, queueOwner).catch((err) => {
 						runner.emitError({
 							extensionPath: "<runtime>",
 							event: "send_message",
@@ -4791,6 +4837,7 @@ export class AgentSession {
 						});
 					});
 				},
+				removeQueuedMessage: (queueId, queueOwner) => this.removeQueuedMessage(queueId, queueOwner),
 				sendUserMessage: (content, options) => {
 					this.sendUserMessage(content, options).catch((err) => {
 						runner.emitError({
@@ -5782,6 +5829,7 @@ export class AgentSession {
 		) as ReplacedSessionContext;
 		context.sendMessage = (message, options) => this.sendCustomMessage(message, options);
 		context.sendUserMessage = (content, options) => this.sendUserMessage(content, options);
+		context.removeQueuedMessage = (queueId) => this.removeQueuedMessage(queueId);
 		return context;
 	}
 

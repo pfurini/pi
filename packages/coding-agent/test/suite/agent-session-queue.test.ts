@@ -379,6 +379,71 @@ describe("AgentSession queue characterization", () => {
 		).toBe(true);
 	});
 
+	it("removes a queued custom follow-up before it reaches the agent loop", async () => {
+		let extensionApi: ExtensionAPI | undefined;
+		const waiting = await createWaitingHarness({
+			extensionFactories: [
+				(pi) => {
+					extensionApi = pi;
+				},
+			],
+		});
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+		]);
+
+		await waitForToolStart;
+		await extensionApi?.sendMessage(
+			{ customType: "queue-test", content: "stale completion", display: true, details: {} },
+			{ deliverAs: "followUp", queueId: "completion-1" },
+		);
+		expect(extensionApi?.removeQueuedMessage("completion-1")).toBe(true);
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(
+			harness.session.messages.some((message) => message.role === "custom" && message.customType === "queue-test"),
+		).toBe(false);
+	});
+
+	it("scopes queued custom message IDs to the sending extension", async () => {
+		const extensionApis: ExtensionAPI[] = [];
+		const waiting = await createWaitingHarness({
+			extensionFactories: [(pi) => extensionApis.push(pi), (pi) => extensionApis.push(pi)],
+		});
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+			fauxAssistantMessage("remaining follow-up complete"),
+		]);
+
+		await waitForToolStart;
+		extensionApis[0]?.sendMessage(
+			{ customType: "first-extension", content: "cancel me", display: true, details: {} },
+			{ deliverAs: "followUp", queueId: "shared-id" },
+		);
+		extensionApis[1]?.sendMessage(
+			{ customType: "second-extension", content: "keep me", display: true, details: {} },
+			{ deliverAs: "followUp", queueId: "shared-id" },
+		);
+		expect(extensionApis[0]?.removeQueuedMessage("shared-id")).toBe(true);
+		releaseToolExecution();
+		await promptPromise;
+
+		const customTypes = harness.session.messages
+			.filter((message) => message.role === "custom")
+			.map((message) => message.customType);
+		expect(customTypes).not.toContain("first-extension");
+		expect(customTypes).toContain("second-extension");
+	});
+
 	it("injects nextTurn custom messages into the next prompt", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

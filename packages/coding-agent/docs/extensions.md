@@ -1505,6 +1505,9 @@ pi.sendMessage({
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
 
+- `queueId` - Optional identifier scoped to the extension instance that queued the message.
+- `pi.removeQueuedMessage(queueId)` removes only that extension's queued message and returns whether removal occurred.
+
 ### pi.sendUserMessage(content, options?)
 
 Send a user message to the agent. Unlike `sendMessage()` which sends custom messages, this sends an actual user message that appears as if typed by the user. Always triggers a turn.

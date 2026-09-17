@@ -166,6 +166,13 @@ class PendingMessageQueue {
 	clear(): void {
 		this.messages = [];
 	}
+
+	remove(message: AgentMessage): boolean {
+		const index = this.messages.indexOf(message);
+		if (index === -1) return false;
+		this.messages.splice(index, 1);
+		return true;
+	}
 }
 
 type ActiveRun = {
@@ -363,6 +370,11 @@ export class Agent {
 	clearAllQueues(): void {
 		this.clearSteeringQueue();
 		this.clearFollowUpQueue();
+	}
+
+	/** Remove one queued message by object identity. */
+	removeQueuedMessage(message: AgentMessage): boolean {
+		return this.steeringQueue.remove(message) || this.followUpQueue.remove(message);
 	}
 
 	/** Returns true when either queue still contains pending messages. */

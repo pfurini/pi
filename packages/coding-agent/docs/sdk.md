@@ -1198,6 +1198,44 @@ await runRpcMode(runtime);
 
 See [RPC documentation](rpc.md) for the JSON protocol.
 
+### HTTP proxy support
+
+Node's built-in `fetch` ignores `HTTP_PROXY` and `HTTPS_PROXY`. The `pi` CLI works behind a proxy
+only because its own entry points install undici's `EnvHttpProxyAgent` as the global dispatcher
+before any provider request. An embedded SDK process has no such entry point, so it must install the
+dispatcher itself. Otherwise every provider call fails with `ENOTFOUND` (surfaced as "Connection
+error.") in any environment where direct egress is blocked, such as a sandbox that denies DNS.
+
+Call both functions once, at process start, before creating any session:
+
+```typescript
+import { applyHttpProxySettings, configureHttpDispatcher } from "@earendil-works/pi-coding-agent";
+
+// Optional: seed HTTP_PROXY / HTTPS_PROXY from pi's `httpProxy` setting.
+// Existing environment variables win, so this never overrides the ambient proxy.
+applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
+
+// Reads the proxy environment once, here. Anything that sets HTTP_PROXY after
+// this call is not picked up.
+configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
+```
+
+The order matters: `configureHttpDispatcher` snapshots the proxy environment when it constructs the
+dispatcher, so `applyHttpProxySettings` has to run first.
+
+`configureHttpDispatcher` takes the idle timeout in milliseconds (`0` disables it) and defaults to
+`DEFAULT_HTTP_IDLE_TIMEOUT_MS`. It throws on a negative or non-finite value, so normalize anything
+user-supplied with `parseHttpIdleTimeoutMs`, which returns `undefined` when the value is unusable:
+
+```typescript
+import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "@earendil-works/pi-coding-agent";
+
+const timeoutMs = parseHttpIdleTimeoutMs(userSuppliedValue) ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS;
+configureHttpDispatcher(timeoutMs);
+```
+
+Installing the dispatcher is process-wide and affects every `fetch` in the process, not just pi's.
+
 ## RPC Mode Alternative
 
 For subprocess-based integration without building with the SDK, use the CLI directly:
@@ -1235,6 +1273,12 @@ ModelRegistry // synchronous extension compatibility facade
 CredentialSynchronizationError
 resolveCliModel
 resolveModelScopeWithDiagnostics
+
+// HTTP dispatcher (see "HTTP proxy support" above)
+configureHttpDispatcher
+applyHttpProxySettings
+parseHttpIdleTimeoutMs
+DEFAULT_HTTP_IDLE_TIMEOUT_MS
 
 // Resource loading
 DefaultResourceLoader

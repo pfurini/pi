@@ -123,6 +123,8 @@ Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--off
 }
 ```
 
+`httpProxy` is applied by the `pi` CLI at startup, alongside the proxy-aware HTTP dispatcher that makes the variables take effect. A process that embeds the SDK must do both itself; see [SDK: HTTP proxy support](sdk.md#http-proxy-support).
+
 ### Warnings
 
 | Setting | Type | Default | Description |

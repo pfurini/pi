@@ -109,6 +109,8 @@ These variables are read by Pi itself:
 | `VISUAL`, `EDITOR` | External editor fallback when `externalEditor` is unset |
 | `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests |
 
+`HTTP_PROXY` and `HTTPS_PROXY` take effect because the `pi` CLI installs a proxy-aware HTTP dispatcher at startup; Node's built-in `fetch` ignores them on its own. A process that embeds the SDK instead of running the CLI must install that dispatcher itself, or the variables are ignored. See [SDK: HTTP proxy support](sdk.md#http-proxy-support).
+
 Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Providers](providers.md#environment-variables-or-auth-file).
 
 `PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.

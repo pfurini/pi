@@ -402,7 +402,12 @@ export interface ExtensionCommandContext extends ExtensionContext {
 export interface ReplacedSessionContext extends ExtensionCommandContext {
 	sendMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+		options?: {
+			triggerTurn?: boolean;
+			deliverAs?: "steer" | "followUp" | "nextTurn";
+			queueId?: string;
+			discardIf?: () => boolean;
+		},
 	): Promise<void>;
 
 	/** Remove a custom message that is still queued for delivery. */
@@ -1449,7 +1454,13 @@ export interface ExtensionAPI {
 	/** Send a custom message to the session. */
 	sendMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+		options?: {
+			triggerTurn?: boolean;
+			deliverAs?: "steer" | "followUp" | "nextTurn";
+			queueId?: string;
+			/** Evaluated when the queued message is about to be injected; true drops it. */
+			discardIf?: () => boolean;
+		},
 	): void;
 
 	/** Remove a custom message that is still queued for delivery. */
@@ -1715,7 +1726,12 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 export type SendMessageHandler = <T = unknown>(
 	message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+	options?: {
+		triggerTurn?: boolean;
+		deliverAs?: "steer" | "followUp" | "nextTurn";
+		queueId?: string;
+		discardIf?: () => boolean;
+	},
 	queueOwner?: object,
 ) => void;
 

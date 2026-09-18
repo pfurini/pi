@@ -498,6 +498,166 @@ describe("Agent", () => {
 		expect(agent.state.messages).not.toContainEqual(message);
 	});
 
+	it("drops queued messages the owner rejects at drain time", async () => {
+		let responseCount = 0;
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				responseCount++;
+				queueMicrotask(() => {
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage(`Processed ${responseCount}`),
+					});
+				});
+				return stream;
+			},
+		});
+
+		agent.state.messages = [
+			{
+				role: "user",
+				content: [{ type: "text", text: "Initial" }],
+				timestamp: Date.now() - 10,
+			},
+			createAssistantMessage("Initial response"),
+		];
+
+		const stale = {
+			role: "user" as const,
+			content: [{ type: "text" as const, text: "Stale follow-up" }],
+			timestamp: Date.now(),
+		};
+		const fresh = {
+			role: "user" as const,
+			content: [{ type: "text" as const, text: "Fresh follow-up" }],
+			timestamp: Date.now() + 1,
+		};
+		agent.shouldDropQueuedMessage = (message) => message === stale;
+		agent.followUp(stale);
+		agent.followUp(fresh);
+		expect(agent.hasQueuedMessages()).toBe(true);
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		const userTexts = agent.state.messages
+			.filter((message) => message.role === "user")
+			.map((message) =>
+				typeof message.content === "string"
+					? message.content
+					: message.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+			);
+		expect(userTexts).toEqual(["Initial", "Fresh follow-up"]);
+		expect(responseCount).toBe(1);
+	});
+
+	it("reports no queued messages once only rejected ones remain", () => {
+		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const stale = { role: "user" as const, content: "Stale follow-up", timestamp: Date.now() };
+		agent.shouldDropQueuedMessage = (message) => message === stale;
+		agent.followUp(stale);
+
+		expect(agent.hasQueuedMessages()).toBe(false);
+		expect(agent.removeQueuedMessage(stale)).toBe(false);
+	});
+
+	it("continue() drops rejected messages at its own drain, without a prior inspection", async () => {
+		let responseCount = 0;
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				responseCount++;
+				queueMicrotask(() => {
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage(`Processed ${responseCount}`),
+					});
+				});
+				return stream;
+			},
+		});
+		agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "Initial" }], timestamp: Date.now() - 10 },
+			createAssistantMessage("Initial response"),
+		];
+		const stale = { role: "user" as const, content: "Stale steer", timestamp: Date.now() };
+		const fresh = { role: "user" as const, content: "Fresh steer", timestamp: Date.now() + 1 };
+		agent.shouldDropQueuedMessage = (message) => message === stale;
+		agent.steer(stale);
+		agent.steer(fresh);
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		const userTexts = agent.state.messages
+			.filter((message) => message.role === "user")
+			.map((message) => (typeof message.content === "string" ? message.content : ""));
+		expect(userTexts).toEqual(["", "Fresh steer"]);
+		expect(responseCount).toBe(1);
+	});
+
+	it("continue() is a no-op when every queued message was rejected", async () => {
+		let responseCount = 0;
+		const agent = new Agent({
+			streamFn: () => {
+				responseCount++;
+				return new MockAssistantStream();
+			},
+		});
+		agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "Initial" }], timestamp: Date.now() - 10 },
+			createAssistantMessage("Initial response"),
+		];
+		agent.shouldDropQueuedMessage = () => true;
+		agent.followUp({ role: "user", content: "Stale follow-up", timestamp: Date.now() });
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		expect(agent.state.messages).toHaveLength(2);
+		expect(responseCount).toBe(0);
+		// The original contract still holds for a queue that was empty to begin with.
+		await expect(agent.continue()).rejects.toThrow("Cannot continue from message role: assistant");
+	});
+
+	it("drops rejected steering and follow-up messages when the loop drains them mid-run", async () => {
+		let responseCount = 0;
+		const staleSteer = { role: "user" as const, content: "Stale steer", timestamp: Date.now() };
+		const freshSteer = { role: "user" as const, content: "Fresh steer", timestamp: Date.now() + 1 };
+		const staleFollowUp = { role: "user" as const, content: "Stale follow-up", timestamp: Date.now() + 2 };
+		const freshFollowUp = { role: "user" as const, content: "Fresh follow-up", timestamp: Date.now() + 3 };
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				responseCount++;
+				const turn = responseCount;
+				queueMicrotask(() => {
+					if (turn === 1) {
+						agent.steer(staleSteer);
+						agent.steer(freshSteer);
+						agent.followUp(staleFollowUp);
+						agent.followUp(freshFollowUp);
+					}
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage(`Processed ${turn}`) });
+				});
+				return stream;
+			},
+		});
+		agent.shouldDropQueuedMessage = (message) => message === staleSteer || message === staleFollowUp;
+
+		await agent.prompt("Initial");
+
+		const userTexts = agent.state.messages
+			.filter((message) => message.role === "user")
+			.map((message) =>
+				typeof message.content === "string"
+					? message.content
+					: message.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+			);
+		expect(userTexts).toEqual(["Initial", "Fresh steer", "Fresh follow-up"]);
+		expect(responseCount).toBe(3);
+	});
+
 	it("should handle abort controller", () => {
 		const agent = new Agent({ streamFn: unusedStreamFunction });
 

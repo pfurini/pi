@@ -444,6 +444,116 @@ describe("AgentSession queue characterization", () => {
 		expect(customTypes).toContain("second-extension");
 	});
 
+	it("drops a queued custom follow-up whose discardIf predicate turns true before the drain", async () => {
+		let extensionApi: ExtensionAPI | undefined;
+		const waiting = await createWaitingHarness({
+			extensionFactories: [
+				(pi) => {
+					extensionApi = pi;
+				},
+			],
+		});
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+		]);
+
+		await waitForToolStart;
+		let consumed = false;
+		extensionApi?.sendMessage(
+			{ customType: "queue-test", content: "stale completion", display: true, details: {} },
+			{ deliverAs: "followUp", triggerTurn: true, discardIf: () => consumed },
+		);
+		consumed = true;
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
+		expect(getAssistantTexts(harness)).toEqual(["", "original turn complete"]);
+		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("delivers a queued custom follow-up whose discardIf predicate stays false", async () => {
+		let extensionApi: ExtensionAPI | undefined;
+		const waiting = await createWaitingHarness({
+			extensionFactories: [
+				(pi) => {
+					extensionApi = pi;
+				},
+			],
+		});
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+			fauxAssistantMessage("follow-up complete"),
+		]);
+
+		await waitForToolStart;
+		extensionApi?.sendMessage(
+			{ customType: "queue-test", content: "live completion", display: true, details: {} },
+			{ deliverAs: "followUp", triggerTurn: true, discardIf: () => false },
+		);
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(harness.session.messages.some((message) => message.role === "custom")).toBe(true);
+		expect(getAssistantTexts(harness)).toEqual(["", "original turn complete", "follow-up complete"]);
+		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("does not start a continuation for a follow-up discarded at agent_end", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("agent_end", () => {
+						pi.sendMessage(
+							{ customType: "queue-test", content: "already stale", display: true, details: {} },
+							{ deliverAs: "followUp", triggerTurn: true, discardIf: () => true },
+						);
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("only turn")]);
+		await harness.session.prompt("start");
+
+		expect(getAssistantTexts(harness)).toEqual(["only turn"]);
+		expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
+		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("drops a discarded nextTurn custom message at the next prompt", async () => {
+		let extensionApi: ExtensionAPI | undefined;
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					extensionApi = pi;
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		let stale = false;
+		extensionApi?.sendMessage(
+			{ customType: "queue-test", content: "next turn note", display: true, details: {} },
+			{ deliverAs: "nextTurn", discardIf: () => stale },
+		);
+		stale = true;
+		harness.setResponses([fauxAssistantMessage("done")]);
+		await harness.session.prompt("hello");
+
+		expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
+		expect(getAssistantTexts(harness)).toEqual(["done"]);
+	});
+
 	it("injects nextTurn custom messages into the next prompt", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

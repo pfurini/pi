@@ -1504,9 +1504,8 @@ pi.sendMessage({
   - `"followUp"` - Waits for agent to finish. Delivered only when agent has no more tool calls.
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
-
-- `queueId` - Optional identifier scoped to the extension instance that queued the message.
-- `pi.removeQueuedMessage(queueId)` removes only that extension's queued message and returns whether removal occurred.
+- `queueId` - Optional identifier scoped to the extension instance that queued the message. `pi.removeQueuedMessage(queueId)` removes only that extension's queued message and returns whether removal occurred.
+- `discardIf` - Optional predicate evaluated when the queued message is about to be injected: at the steer and follow-up drains, whenever the session inspects its queues to decide on a continuation, at the next-turn injection, and at the end-of-turn flush of context-only messages. A `true` result drops the message silently; a message that was already drained is delivered. A throwing predicate keeps the message. Use it for notifications that can go stale while queued, such as a completion the model has since fetched itself.
 
 ### pi.sendUserMessage(content, options?)
 

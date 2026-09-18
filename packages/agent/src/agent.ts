@@ -125,6 +125,7 @@ export interface AgentOptions {
 	toolExecution?: ToolExecutionMode;
 	resolveToolRedirect?: (context: ResolveToolRedirectContext) => string | undefined;
 	transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	shouldDropQueuedMessage?: (message: AgentMessage) => boolean;
 	refreshTurnAfterInjection?: (
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
@@ -172,6 +173,12 @@ class PendingMessageQueue {
 		if (index === -1) return false;
 		this.messages.splice(index, 1);
 		return true;
+	}
+
+	/** Drop every queued message the predicate accepts. */
+	prune(shouldDrop: ((message: AgentMessage) => boolean) | undefined): void {
+		if (!shouldDrop || this.messages.length === 0) return;
+		this.messages = this.messages.filter((message) => !shouldDrop(message));
 	}
 }
 
@@ -242,6 +249,14 @@ export class Agent {
 	 */
 	public transformInjectedMessages?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
 	/**
+	 * Optional check consulted whenever a queue is inspected or drained. A queued
+	 * message it accepts is dropped and never injected, so the owner can keep a
+	 * message cancellable up to the moment the loop would consume it. Only the
+	 * agent's own queues are touched: an owner that drops messages it also tracks
+	 * elsewhere (for example a queue display) must update that bookkeeping itself.
+	 */
+	public shouldDropQueuedMessage?: (message: AgentMessage) => boolean;
+	/**
 	 * Optional post-injection turn refresh. Called before a provider request
 	 * whose triggering messages were just injected/transformed, so an override
 	 * that only activates during injection (e.g. a queued skill) can still
@@ -299,6 +314,7 @@ export class Agent {
 		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
 		this.resolveToolRedirect = runtimeOptions.resolveToolRedirect;
 		this.transformInjectedMessages = runtimeOptions.transformInjectedMessages;
+		this.shouldDropQueuedMessage = runtimeOptions.shouldDropQueuedMessage;
 		this.refreshTurnAfterInjection = runtimeOptions.refreshTurnAfterInjection;
 		this.isToolCallDisallowed = runtimeOptions.isToolCallDisallowed;
 		this.onContinuationPinned = runtimeOptions.onContinuationPinned;
@@ -377,8 +393,14 @@ export class Agent {
 		return this.steeringQueue.remove(message) || this.followUpQueue.remove(message);
 	}
 
+	private pruneQueues(): void {
+		this.steeringQueue.prune(this.shouldDropQueuedMessage);
+		this.followUpQueue.prune(this.shouldDropQueuedMessage);
+	}
+
 	/** Returns true when either queue still contains pending messages. */
 	hasQueuedMessages(): boolean {
+		this.pruneQueues();
 		return this.steeringQueue.hasItems() || this.followUpQueue.hasItems();
 	}
 
@@ -441,6 +463,8 @@ export class Agent {
 		}
 
 		if (lastMessage.role === "assistant") {
+			const hadQueuedMessages = this.steeringQueue.hasItems() || this.followUpQueue.hasItems();
+			this.pruneQueues();
 			const queuedSteering = this.steeringQueue.drain();
 			if (queuedSteering.length > 0) {
 				await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
@@ -453,6 +477,8 @@ export class Agent {
 				return;
 			}
 
+			// Everything that was queued was dropped at the drain: nothing to continue with.
+			if (hadQueuedMessages) return;
 			throw new Error("Cannot continue from message role: assistant");
 		}
 
@@ -553,9 +579,13 @@ export class Agent {
 					skipInitialSteeringPoll = false;
 					return [];
 				}
+				this.steeringQueue.prune(this.shouldDropQueuedMessage);
 				return this.steeringQueue.drain();
 			},
-			getFollowUpMessages: async () => this.followUpQueue.drain(),
+			getFollowUpMessages: async () => {
+				this.followUpQueue.prune(this.shouldDropQueuedMessage);
+				return this.followUpQueue.drain();
+			},
 			transformInjectedMessages: this.transformInjectedMessages,
 			resolveToolRedirect: this.resolveToolRedirect,
 			refreshTurnAfterInjection: this.refreshTurnAfterInjection,

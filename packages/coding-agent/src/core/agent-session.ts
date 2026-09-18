@@ -488,6 +488,8 @@ export class AgentSession {
 	private _installedResolveToolRedirect?: Agent["resolveToolRedirect"];
 	private _previousRefreshTurnAfterInjection?: Agent["refreshTurnAfterInjection"];
 	private _installedRefreshTurnAfterInjection?: Agent["refreshTurnAfterInjection"];
+	private _previousShouldDropQueuedMessage?: Agent["shouldDropQueuedMessage"];
+	private _installedShouldDropQueuedMessage?: Agent["shouldDropQueuedMessage"];
 	private _previousOnContinuationPinned?: Agent["onContinuationPinned"];
 	private _installedOnContinuationPinned?: Agent["onContinuationPinned"];
 	private _previousIsToolCallDisallowed?: Agent["isToolCallDisallowed"];
@@ -507,6 +509,8 @@ export class AgentSession {
 	private _pendingCustomMessages: CustomMessage[] = [];
 	/** Queued custom messages, indexed first by sender identity and then by caller-provided queue id. */
 	private _queuedCustomMessages = new Map<object | undefined, Map<string, CustomMessage>>();
+	/** Drain-time discard predicates for queued custom messages, released with the message. */
+	private _queuedMessageDiscard = new WeakMap<AgentMessage, () => boolean>();
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -698,6 +702,18 @@ export class AgentSession {
 				: delivered;
 		};
 		this.agent.transformInjectedMessages = this._installedTransformInjectedMessages;
+		// Drain-time cancellation for queued custom messages: a `discardIf` predicate
+		// handed to sendMessage is evaluated here, right before the loop would inject
+		// the message. Composed the same way: the session's own check first, then the
+		// captured predicate. Session bookkeeping is released whenever either drops.
+		this._previousShouldDropQueuedMessage = this.agent.shouldDropQueuedMessage;
+		this._installedShouldDropQueuedMessage = (message) => {
+			const drop =
+				this._shouldDiscardQueuedMessage(message) || this._previousShouldDropQueuedMessage?.(message) === true;
+			if (drop) this._forgetQueuedCustomMessage(message);
+			return drop;
+		};
+		this.agent.shouldDropQueuedMessage = this._installedShouldDropQueuedMessage;
 		// ADR-0006 unknown-tool redirect (C1d): corrective text only, never
 		// execution. The agent loop supplies the live active registry on every
 		// miss, so reload/tool deactivation is respected without caching here.
@@ -1534,6 +1550,9 @@ export class AgentSession {
 		if (this.agent.transformInjectedMessages === this._installedTransformInjectedMessages) {
 			this.agent.transformInjectedMessages = this._previousTransformInjectedMessages;
 		}
+		if (this.agent.shouldDropQueuedMessage === this._installedShouldDropQueuedMessage) {
+			this.agent.shouldDropQueuedMessage = this._previousShouldDropQueuedMessage;
+		}
 		if (this.agent.resolveToolRedirect === this._installedResolveToolRedirect) {
 			this.agent.resolveToolRedirect = this._previousResolveToolRedirect;
 		}
@@ -2213,6 +2232,10 @@ export class AgentSession {
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
+				if (this._shouldDiscardQueuedMessage(msg)) {
+					this._forgetQueuedCustomMessage(msg);
+					continue;
+				}
 				messages.push(msg);
 			}
 			this._pendingNextTurnMessages = [];
@@ -3711,7 +3734,12 @@ export class AgentSession {
 	 */
 	async sendCustomMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn"; queueId?: string },
+		options?: {
+			triggerTurn?: boolean;
+			deliverAs?: "steer" | "followUp" | "nextTurn";
+			queueId?: string;
+			discardIf?: () => boolean;
+		},
 		queueOwner?: object,
 	): Promise<void> {
 		const appMessage = {
@@ -3724,6 +3752,7 @@ export class AgentSession {
 			timestamp: Date.now(),
 		} satisfies CustomMessage<T>;
 		const trackQueuedMessage = () => {
+			if (options?.discardIf) this._queuedMessageDiscard.set(appMessage, options.discardIf);
 			if (!options?.queueId) return;
 			let queuedMessages = this._queuedCustomMessages.get(queueOwner);
 			if (!queuedMessages) {
@@ -3776,12 +3805,28 @@ export class AgentSession {
 		);
 	}
 
-	private _forgetQueuedCustomMessage(appMessage: CustomMessage): void {
+	private _forgetQueuedCustomMessage(appMessage: AgentMessage): void {
+		this._queuedMessageDiscard.delete(appMessage);
 		for (const [queueOwner, queuedMessages] of this._queuedCustomMessages) {
 			for (const [queueId, queued] of queuedMessages) {
 				if (queued === appMessage) queuedMessages.delete(queueId);
 			}
 			if (queuedMessages.size === 0) this._queuedCustomMessages.delete(queueOwner);
+		}
+	}
+
+	/**
+	 * Whether a still-queued custom message asked to be dropped. Side-effect free:
+	 * callers release the bookkeeping. A throwing predicate keeps the message, so a
+	 * faulty extension never silently loses one.
+	 */
+	private _shouldDiscardQueuedMessage(message: AgentMessage): boolean {
+		const discardIf = this._queuedMessageDiscard.get(message);
+		if (!discardIf) return false;
+		try {
+			return discardIf() === true;
+		} catch {
+			return false;
 		}
 	}
 
@@ -3808,6 +3853,10 @@ export class AgentSession {
 		const pending = this._pendingCustomMessages;
 		this._pendingCustomMessages = [];
 		for (const appMessage of pending) {
+			if (this._shouldDiscardQueuedMessage(appMessage)) {
+				this._forgetQueuedCustomMessage(appMessage);
+				continue;
+			}
 			this._appendCustomMessage(appMessage);
 		}
 	}

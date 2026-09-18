@@ -44,6 +44,10 @@ if (marker !== "local tarball") throw new Error("Wrong Chord artifact");
 export function createAgentSession() {}
 export class SessionManager { static inMemory() {} }
 export class ModelRuntime { static create() {} }
+export function configureHttpDispatcher() {}
+export function applyHttpProxySettings() {}
+export function parseHttpIdleTimeoutMs() {}
+export const DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300000;
 ` : 'export const marker = "local tarball";',
 			...(isAgent ? {
 				"dist/cli.js": 'console.log("1.0.0");',

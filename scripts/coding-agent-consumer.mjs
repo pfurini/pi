@@ -101,10 +101,15 @@ export function smokeTestCodingAgentConsumer(directory, runtime = process.execPa
 	}
 	try {
 		writeFileSync(entry, `import assert from "node:assert/strict";
-import { createAgentSession, SessionManager, ModelRuntime } from "${codingAgentName}";
+import { applyHttpProxySettings, configureHttpDispatcher, createAgentSession, DEFAULT_HTTP_IDLE_TIMEOUT_MS, ModelRuntime, parseHttpIdleTimeoutMs, SessionManager } from "${codingAgentName}";
 assert.equal(typeof createAgentSession, "function");
 assert.equal(typeof SessionManager.inMemory, "function");
 assert.equal(typeof ModelRuntime.create, "function");
+// The proxy-install contract an embedded SDK process needs; see docs/sdk.md.
+assert.equal(typeof configureHttpDispatcher, "function");
+assert.equal(typeof applyHttpProxySettings, "function");
+assert.equal(typeof parseHttpIdleTimeoutMs, "function");
+assert.equal(typeof DEFAULT_HTTP_IDLE_TIMEOUT_MS, "number");
 for (const name of ["pi-client", "pi-protocol", "pi-server"]) {
   assert.throws(() => import.meta.resolve("@earendil-works/" + name), /Cannot find|cannot find/, name + " must not be installed");
 }

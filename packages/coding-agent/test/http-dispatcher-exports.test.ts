@@ -3,7 +3,9 @@ import * as httpDispatcher from "../src/core/http-dispatcher.ts";
 import * as index from "../src/index.ts";
 
 // An embedded SDK process gets no pi entry point, so it must install the undici
-// proxy dispatcher itself. Without these on the package index there is no way to.
+// proxy dispatcher itself. Without these names on the package index, it cannot
+// reach the dispatcher through the public SDK at all.
+// The published surface is guarded separately by scripts/coding-agent-consumer.mjs.
 describe("http dispatcher public exports", () => {
 	it("exposes the proxy-install contract on the package index", () => {
 		expect(index.configureHttpDispatcher).toBe(httpDispatcher.configureHttpDispatcher);

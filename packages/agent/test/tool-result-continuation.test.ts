@@ -92,7 +92,13 @@ interface ProviderSwitchResult {
 async function runProviderSwitch(
 	originModel: Model<"openai-responses">,
 	selectedModel: Model<"openai-responses">,
-	options: { toolTurns?: number; originReasoning?: StreamThinkingLevel; switchThinkingLevel?: ThinkingLevel } = {},
+	options: {
+		toolTurns?: number;
+		originReasoning?: StreamThinkingLevel;
+		switchThinkingLevel?: ThinkingLevel;
+		/** Model selected by `prepareRequest` on every request after the first. */
+		requestModel?: Model<"openai-responses">;
+	} = {},
 ): Promise<ProviderSwitchResult> {
 	// Turns 0..toolTurns-1 return toolUse; the turn after that stops. A value above
 	// 1 keeps the tool chain alive so the pin's per-turn re-application is observable.
@@ -116,6 +122,14 @@ async function runProviderSwitch(
 		onContinuationPinned: (pinned, requested) => {
 			pinReports.push(`${pinned.provider}/${pinned.id}<-${requested.provider}/${requested.id}`);
 		},
+		...(options.requestModel
+			? {
+					prepareRequest: () =>
+						requestedModels.length > 0
+							? { model: options.requestModel, thinkingLevel: "off" as const }
+							: undefined,
+				}
+			: {}),
 	};
 	const requestedModels: string[] = [];
 	const requestedReasoning: (StreamThinkingLevel | undefined)[] = [];
@@ -250,6 +264,41 @@ describe("tool-result continuation routing", () => {
 			createModel("second-provider", "second"),
 		);
 
+		expect(requested.pinReports).toEqual([]);
+	});
+
+	it("keeps the pin when prepareRequest selects another provider after prepareNextTurn", async () => {
+		// prepareRequest runs after prepareNextTurn and could otherwise rebind the tool-result
+		// continuation to a different provider than the one the notice reported.
+		const other = createModel("other-provider", "other");
+		const requested = await runProviderSwitch(createModel("cursor-bridge", "cursor-a", true), other, {
+			originReasoning: "high",
+			switchThinkingLevel: "off",
+			requestModel: other,
+		});
+
+		expect(requested.requestedModels).toEqual(["cursor-bridge/cursor-a", "cursor-bridge/cursor-a"]);
+		expect(requested.requestedReasoning).toEqual(["high", "high"]);
+		expect(requested.pinReports).toEqual(["cursor-bridge/cursor-a<-other-provider/other"]);
+	});
+
+	it("lets prepareRequest switch providers when the model is not opted in", async () => {
+		const other = createModel("second-provider", "second");
+		const requested = await runProviderSwitch(createModel("first-provider", "first"), other, {
+			requestModel: other,
+		});
+
+		expect(requested.requestedModels).toEqual(["first-provider/first", "second-provider/second"]);
+		expect(requested.pinReports).toEqual([]);
+	});
+
+	it("does not report a pin when prepareRequest restores the originating provider", async () => {
+		const origin = createModel("cursor-bridge", "cursor-a", true);
+		const requested = await runProviderSwitch(origin, createModel("other-provider", "other"), {
+			requestModel: origin,
+		});
+
+		expect(requested.requestedModels).toEqual(["cursor-bridge/cursor-a", "cursor-bridge/cursor-a"]);
 		expect(requested.pinReports).toEqual([]);
 	});
 });

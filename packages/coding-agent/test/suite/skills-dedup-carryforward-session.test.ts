@@ -664,3 +664,254 @@ describe("A.6 malformed metadata (completeness, no false note)", () => {
 		expect(errors.some((message) => message.includes("malformed"))).toBe(true);
 	});
 });
+
+/** Text of the compaction summary and each carried block, in request order. */
+function requestOrder(request: string, markers: string[]): number[] {
+	return markers.map((marker) => request.indexOf(marker));
+}
+
+function branchOccurrences(harness: Harness, text: string): number {
+	return harness.sessionManager
+		.getBranch()
+		.filter((e) => e.type === "message" && "message" in e && getMessageText(e.message).includes(text)).length;
+}
+
+function firstInvocationEntryId(harness: Harness): string {
+	const entry = harness.sessionManager
+		.getBranch()
+		.find((e) => e.type === "message" && e.message.role === "user" && (e.invocations?.length ?? 0) > 0);
+	if (!entry) throw new Error("no persisted skill invocation entry");
+	return entry.id;
+}
+
+describe("A.6 carried bodies reach the provider request (request projection)", () => {
+	it("a plain continuation after compaction sends the carried body once, after the summary, with no persisted copy", async () => {
+		const { harness } = await createDedupHarness([A, B], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		harness.setResponses([fauxAssistantMessage("b1")]);
+		await harness.session.prompt("/skill:skill-b");
+		await harness.session.compact();
+		const entriesAfterCompaction = harness.sessionManager.getEntries().length;
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "next")]);
+		await harness.session.prompt("Continue without invoking a skill");
+
+		expect(requests).toHaveLength(1);
+		const request = requests[0]!;
+		expect(request.split("Skill A instructions.").length - 1).toBe(1);
+		expect(request.split("Skill B instructions.").length - 1).toBe(1);
+		// MRU-first, after the compaction summary, before the new prompt.
+		const [summary, b, a, prompt] = requestOrder(request, [
+			"compacted",
+			"Skill B instructions.",
+			"Skill A instructions.",
+			"Continue without invoking a skill",
+		]);
+		expect(summary).toBeGreaterThanOrEqual(0);
+		expect(b).toBeGreaterThan(summary);
+		expect(a).toBeGreaterThan(b);
+		expect(prompt).toBeGreaterThan(a);
+		// Ephemeral: the branch gained only the new prompt and reply, never a carried copy.
+		expect(harness.sessionManager.getEntries().length).toBe(entriesAfterCompaction + 2);
+		expect(branchOccurrences(harness, "Skill A instructions.")).toBe(1);
+	});
+
+	it("without compaction the same continuation sends the original delivery exactly once (control)", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "next")]);
+		await harness.session.prompt("Continue without invoking a skill");
+
+		expect(requests[0]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+
+	it("a re-invocation after compaction sends both the truthful note and the carried body", async () => {
+		const { harness } = await createDedupHarness([A], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		await harness.session.compact();
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "a2")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		expect(isNote(lastUserText(harness))).toBe(true);
+		expect(isNote(requests[0]!)).toBe(true);
+		expect(requests[0]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+
+	it("the carried body stays in requests on later turns without duplicating", async () => {
+		const { harness } = await createDedupHarness([A], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		await harness.session.compact();
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "one")]);
+		await harness.session.prompt("first plain turn");
+		harness.setResponses([captureRequest(requests, "two")]);
+		await harness.session.prompt("second plain turn");
+
+		expect(requests).toHaveLength(2);
+		for (const request of requests) {
+			expect(request.split("Skill A instructions.").length - 1).toBe(1);
+		}
+		expect(harness.session.messages.filter((m) => getMessageText(m).includes("Skill A instructions."))).toHaveLength(
+			1,
+		);
+	});
+
+	it("resume: the first request after reconstruction carries the body", async () => {
+		const { harness } = await createDedupHarness([A], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		await harness.session.compact();
+
+		const resumed = resumeSession(harness);
+		const requests: string[] = [];
+		harness.faux.setResponses([captureRequest(requests, "resumed")]);
+		await resumed.prompt("plain prompt after resume");
+
+		expect(requests).toHaveLength(1);
+		expect(requests[0]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+
+	it("navigateTree: the first request after navigating back to the compacted leaf carries the body", async () => {
+		const { harness } = await createDedupHarness([A], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		await harness.session.compact();
+		const compactedLeaf = harness.sessionManager.getLeafId();
+		await harness.session.navigateTree(harness.sessionManager.getBranch()[0]!.id);
+		await harness.session.navigateTree(compactedLeaf!);
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "back")]);
+		await harness.session.prompt("plain prompt after navigation");
+
+		expect(requests[0]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+});
+
+describe("A.6 dedup and carry-forward respect context edits", () => {
+	it("omitting the delivery re-delivers the full body on re-invocation, with no note", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		harness.sessionManager.appendContextEdit(firstInvocationEntryId(harness), null);
+		harness.session.refreshContext();
+		expect(harness.session.messages.some((m) => getMessageText(m).includes("Skill A instructions."))).toBe(false);
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "a2")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		expect(isNote(lastUserText(harness))).toBe(false);
+		expect(lastUserText(harness)).toContain("Skill A instructions.");
+		expect(isNote(requests[0]!)).toBe(false);
+		expect(requests[0]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+
+	it("replacing the delivery with unrelated content re-delivers the full body on re-invocation", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		harness.sessionManager.appendContextEdit(firstInvocationEntryId(harness), {
+			content: "Replacement without instructions",
+		});
+		harness.session.refreshContext();
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "a2")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		expect(isNote(lastUserText(harness))).toBe(false);
+		expect(isNote(requests[0]!)).toBe(false);
+		expect(requests[0]!).toContain("Skill A instructions.");
+	});
+
+	it("a replacement that keeps the delivered block byte-for-byte still dedups (control)", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		const entryId = firstInvocationEntryId(harness);
+		const entry = harness.sessionManager.getEntry(entryId);
+		if (entry?.type !== "message" || entry.message.role !== "user") throw new Error("expected user message entry");
+
+		harness.sessionManager.appendContextEdit(entryId, { content: entry.message.content });
+		harness.session.refreshContext();
+
+		harness.setResponses([fauxAssistantMessage("a2")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		expect(isNote(lastUserText(harness))).toBe(true);
+	});
+
+	it("an omitted delivery is not carried forward by a later compaction and re-delivers in full", async () => {
+		const { harness } = await createDedupHarness([A, B], {
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: compactionExtensionFactories,
+		});
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		harness.setResponses([fauxAssistantMessage("b1")]);
+		await harness.session.prompt("/skill:skill-b");
+		harness.sessionManager.appendContextEdit(firstInvocationEntryId(harness), null);
+		harness.session.refreshContext();
+
+		await harness.session.compact();
+
+		const requests: string[] = [];
+		harness.setResponses([captureRequest(requests, "next")]);
+		await harness.session.prompt("plain prompt after compaction");
+		// B (unedited) is carried; A (explicitly omitted) is not revived.
+		expect(requests[0]!).toContain("Skill B instructions.");
+		expect(requests[0]!).not.toContain("Skill A instructions.");
+		expect(harness.session.messages.some((m) => getMessageText(m).includes("Skill A instructions."))).toBe(false);
+
+		harness.setResponses([captureRequest(requests, "a2")]);
+		await harness.session.prompt("/skill:skill-a");
+		expect(isNote(lastUserText(harness))).toBe(false);
+		expect(requests[1]!.split("Skill A instructions.").length - 1).toBe(1);
+	});
+
+	it("an unedited delivery still dedups after a context edit elsewhere (control)", async () => {
+		const { harness } = await createDedupHarness([A]);
+		harness.setResponses([fauxAssistantMessage("a1")]);
+		await harness.session.prompt("/skill:skill-a");
+		harness.setResponses([fauxAssistantMessage("x")]);
+		await harness.session.prompt("unrelated prompt");
+		const unrelated = [...harness.sessionManager.getBranch()]
+			.reverse()
+			.find((e) => e.type === "message" && e.message.role === "user");
+		harness.sessionManager.appendContextEdit(unrelated!.id, null);
+		harness.session.refreshContext();
+
+		harness.setResponses([fauxAssistantMessage("a2")]);
+		await harness.session.prompt("/skill:skill-a");
+
+		expect(isNote(lastUserText(harness))).toBe(true);
+	});
+});

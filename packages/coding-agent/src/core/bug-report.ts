@@ -1,5 +1,6 @@
 import * as os from "node:os";
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { contentText, normalizeContext, type RetryPolicy, uuidv7 } from "@earendil-works/pi-ai";
 import type { Api, Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai/compat";
 import { VERSION } from "../config.ts";
@@ -171,7 +172,8 @@ export function collectBugReportMetadata(options: CollectBugReportMetadataOption
 		provider: provider ? describeProvider(options.modelRuntime, provider) : null,
 		thinkingLevel: options.thinkingLevel,
 		extensions: options.extensions.map(describeExtension),
-		extensionErrors: options.extensionErrors.map(({ path, error }) => ({ path, error })),
+		// Loading error text can quote file contents or environment; export only which entries failed.
+		extensionErrors: options.extensionErrors.map(({ path }) => ({ path: redactUrl(path) })),
 		settings: {
 			global: redactSettings(options.globalSettings),
 			project: redactSettings(options.projectSettings),
@@ -179,7 +181,83 @@ export function collectBugReportMetadata(options: CollectBugReportMetadataOption
 	};
 }
 
-/** Collect failed assistant turns without collecting conversation content. */
+/**
+ * Export-safe machine code: a short identifier-like token (letters, digits, and
+ * `_ . : -` separators, at most three digits per segment) or a finite number.
+ * Anything else (sentences, URLs, hex or base64 blobs, keys) is dropped, whatever
+ * the field is called: a value is not safe merely because its key is `code`,
+ * `type`, or `rawStopReason`.
+ */
+const MACHINE_CODE = /^[A-Za-z][A-Za-z0-9]*(?:[_.:-][A-Za-z0-9]+)*$/;
+const MACHINE_CODE_MAX_LENGTH = 48;
+const MACHINE_CODE_MAX_SEGMENT_LENGTH = 24;
+const MACHINE_CODE_MAX_DIGIT_SEGMENT_LENGTH = 12;
+const MACHINE_CODE_MAX_DIGITS_PER_SEGMENT = 3;
+
+/** A segment with digits must stay short, carry few digits, and not mix cases (base64, hex, and key material fail here). */
+function isMachineCodeSegment(segment: string): boolean {
+	if (segment.length > MACHINE_CODE_MAX_SEGMENT_LENGTH) return false;
+	const digits = segment.match(/[0-9]/g)?.length ?? 0;
+	if (digits === 0) return true;
+	if (digits > MACHINE_CODE_MAX_DIGITS_PER_SEGMENT || segment.length > MACHINE_CODE_MAX_DIGIT_SEGMENT_LENGTH)
+		return false;
+	return !(/[a-z]/.test(segment) && /[A-Z]/.test(segment));
+}
+
+export function exportableCode(value: unknown): string | number | undefined {
+	if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+	if (typeof value !== "string" || value.length === 0 || value.length > MACHINE_CODE_MAX_LENGTH) return undefined;
+	if (!MACHINE_CODE.test(value)) return undefined;
+	return value.split(/[_.:-]/).every(isMachineCodeSegment) ? value : undefined;
+}
+
+/**
+ * Keep only top-level numeric and boolean detail entries under export-safe keys
+ * (an HTTP status, an attempt count, a retryable flag). Detail strings are provider
+ * or runtime content of unknown origin and never leave the machine, however
+ * code-like they look.
+ */
+function exportableDetails(details: unknown): Record<string, number | boolean> | undefined {
+	if (!details || typeof details !== "object" || Array.isArray(details)) return undefined;
+	const kept: Record<string, number | boolean> = {};
+	for (const [key, value] of Object.entries(details)) {
+		if (exportableCode(key) === undefined) continue;
+		if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) kept[key] = value;
+	}
+	return Object.keys(kept).length > 0 ? kept : undefined;
+}
+
+type AssistantDiagnostic = NonNullable<AssistantMessage["diagnostics"]>[number];
+
+function exportableDiagnostic(diagnostic: AssistantDiagnostic) {
+	const error = diagnostic.error;
+	return {
+		type: exportableCode(diagnostic.type) ?? null,
+		timestamp: diagnostic.timestamp,
+		...(error
+			? {
+					error: {
+						name: exportableCode(error.name) ?? null,
+						code: exportableCode(error.code) ?? null,
+						hasMessage: typeof error.message === "string" && error.message.length > 0,
+						hasStack: typeof error.stack === "string" && error.stack.length > 0,
+					},
+				}
+			: {}),
+		...(exportableDetails(diagnostic.details) ? { details: exportableDetails(diagnostic.details) } : {}),
+	};
+}
+
+/**
+ * Collect failed assistant turns without collecting conversation content.
+ *
+ * The result is written verbatim into the exported report (upload and zip), so it
+ * keeps only export-safe fields: entry identifiers, timestamps, provider and model
+ * identifiers, standardized stop reasons, and validated machine codes. Provider
+ * error messages, stacks, response bodies, diagnostic detail objects, and crash
+ * text stay on the machine; the session file and `crashes.json` keep them in full
+ * for local inspection.
+ */
 export function collectBugReportDiagnostics(
 	sessionManager: ReadonlySessionManager,
 	crashes: readonly CrashRecord[] = [],
@@ -200,6 +278,7 @@ export function collectBugReportDiagnostics(
 		) {
 			continue;
 		}
+		const rawStopReason = exportableCode(message.rawStopReason);
 		assistant.push({
 			entryId: entry.id,
 			timestamp: entry.timestamp,
@@ -207,9 +286,9 @@ export function collectBugReportDiagnostics(
 			model: message.model,
 			api: message.api,
 			stopReason: message.stopReason,
-			...(message.rawStopReason === undefined ? {} : { rawStopReason: message.rawStopReason }),
-			...(message.errorMessage === undefined ? {} : { errorMessage: message.errorMessage }),
-			diagnostics,
+			...(rawStopReason === undefined ? {} : { rawStopReason }),
+			hasErrorMessage: typeof message.errorMessage === "string" && message.errorMessage.length > 0,
+			diagnostics: diagnostics.map(exportableDiagnostic),
 		});
 	}
 	return {
@@ -218,7 +297,12 @@ export function collectBugReportDiagnostics(
 		entryCount: entries.length,
 		assistantMessageCount,
 		assistant,
-		crashes: crashes.map(({ notified: _notified, ...record }) => record),
+		crashes: crashes.map(({ timestamp, version, kind, stack }) => ({
+			timestamp,
+			version,
+			kind,
+			hasStack: typeof stack === "string" && stack.length > 0,
+		})),
 	};
 }
 

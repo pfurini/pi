@@ -1144,10 +1144,9 @@ export class ExtensionRunner {
 		return this.runScoped(async () => {
 			const ctx = this.createContext();
 
-			for (const ext of this.extensions) {
-				const handlers = ext.handlers.get("tool_result");
-				if (!handlers || handlers.length === 0) continue;
-
+			// Same snapshot rule as emitToolResult: an unsubscribe or a new registration made
+			// by a handler must not change the dispatch already in progress.
+			for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "tool_result")) {
 				for (const handler of handlers) {
 					try {
 						const snapshot = {

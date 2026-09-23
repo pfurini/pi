@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -16,6 +16,7 @@ import { describe, expect, test } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import {
 	buildSystemPromptSections,
 	buildSystemPromptState,
@@ -23,6 +24,7 @@ import {
 } from "../src/core/system-prompt.ts";
 import type { ExtensionFactory } from "../src/index.ts";
 import { createHarness } from "./suite/harness.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
 
 describe("system prompt updates", () => {
 	test("declares the prompt and tools once and reuses them across resume", async () => {
@@ -299,5 +301,144 @@ describe("system prompt updates", () => {
 		} finally {
 			harness.cleanup();
 		}
+	});
+
+	describe("skill activation keeps the effective run prompt", () => {
+		const RULE = "UNIQUE_HOOK_CONSTRAINT_7263";
+		const constraintExtension: ExtensionFactory = (pi) => {
+			pi.on("before_agent_start", (event) => {
+				event.systemPromptOptions.sections.task_constraint = RULE;
+			});
+		};
+
+		function createSkillLoader(tempDir: string, frontmatter?: Record<string, unknown>) {
+			const skillPath = join(tempDir, "SKILL.md");
+			writeFileSync(skillPath, "# Probe\n\nUNIQUE_SKILL_BODY_7263");
+			return {
+				getSkills: () => ({
+					skills: [
+						{
+							name: "probe",
+							description: "Probe skill",
+							filePath: skillPath,
+							disableModelInvocation: false,
+							baseDir: tempDir,
+							sourceInfo: createSyntheticSourceInfo(skillPath, {
+								source: "local" as const,
+								scope: "project" as const,
+								origin: "top-level" as const,
+								baseDir: tempDir,
+							}),
+							...(frontmatter && { frontmatter }),
+						},
+					],
+					diagnostics: [],
+				}),
+			};
+		}
+
+		async function createConstraintHarness(
+			options: { tools?: AgentTool[]; frontmatter?: Record<string, unknown> } = {},
+		) {
+			const tempDir = mkdtempSync(join(tmpdir(), "pi-prompt-skill-"));
+			const extensionsResult = await createTestExtensionsResult([constraintExtension], tempDir);
+			const resourceLoader = {
+				...createTestResourceLoader({ extensionsResult }),
+				...createSkillLoader(tempDir, options.frontmatter),
+			};
+			const harness = await createHarness({ resourceLoader, tools: options.tools });
+			return {
+				harness,
+				cleanup: () => {
+					harness.cleanup();
+					rmSync(tempDir, { recursive: true, force: true });
+				},
+			};
+		}
+
+		function captureSystemPrompts(sink: string[], replies: string[]) {
+			return replies.map((reply) => (providerContext: TranscriptContext) => {
+				sink.push(getCurrentSystemPrompt(providerContext.messages) ?? "");
+				return fauxAssistantMessage(reply);
+			});
+		}
+
+		test("a direct skill-bearing request keeps the handler section, as does the next plain turn", async () => {
+			const { harness, cleanup } = await createConstraintHarness();
+			try {
+				const prompts: string[] = [];
+				harness.setResponses(captureSystemPrompts(prompts, ["one", "two"]));
+				await harness.session.prompt("Please follow /skill:probe");
+				await harness.session.prompt("plain follow-up");
+
+				expect(prompts).toHaveLength(2);
+				expect(prompts[0]).toContain(RULE);
+				expect(prompts[1]).toContain(RULE);
+				expect(getCurrentSystemPrompt(harness.session.messages)).toContain(RULE);
+				// No transcript patch ever removed the section.
+				const patches = harness.session.messages.flatMap((message) =>
+					message.role === "system" ? [message.sections ?? {}] : [],
+				);
+				expect(patches.some((sections) => sections.task_constraint === null)).toBe(false);
+			} finally {
+				cleanup();
+			}
+		});
+
+		test("a plain request keeps the handler section (control)", async () => {
+			const { harness, cleanup } = await createConstraintHarness();
+			try {
+				const prompts: string[] = [];
+				harness.setResponses(captureSystemPrompts(prompts, ["one"]));
+				await harness.session.prompt("Plain prompt");
+				expect(prompts[0]).toContain(RULE);
+			} finally {
+				cleanup();
+			}
+		});
+
+		test("a queued skill activation keeps the handler section on the consuming request", async () => {
+			let release: (() => void) | undefined;
+			const gate = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const waitTool: AgentTool = {
+				name: "wait",
+				label: "Wait",
+				description: "Wait for release",
+				parameters: Type.Object({}),
+				execute: async () => {
+					await gate;
+					return { content: [{ type: "text", text: "released" }], details: {} };
+				},
+			};
+			const { harness, cleanup } = await createConstraintHarness({ tools: [waitTool] });
+			try {
+				const prompts: string[] = [];
+				harness.setResponses([
+					fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+					...captureSystemPrompts(prompts, ["consumed"]),
+				]);
+				const started = new Promise<void>((resolve) => {
+					const unsubscribe = harness.session.subscribe((event) => {
+						if (event.type === "tool_execution_start" && event.toolName === "wait") {
+							unsubscribe();
+							resolve();
+						}
+					});
+				});
+				const run = harness.session.prompt("start");
+				await started;
+				await harness.session.steer("/skill:probe queued");
+				release?.();
+				await run;
+
+				expect(prompts).toHaveLength(1);
+				expect(prompts[0]).toContain(RULE);
+				expect(getCurrentSystemPrompt(harness.session.messages)).toContain(RULE);
+			} finally {
+				cleanup();
+			}
+		});
 	});
 });

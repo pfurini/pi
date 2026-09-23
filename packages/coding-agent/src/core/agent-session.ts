@@ -149,11 +149,12 @@ import type {
 import { getLatestCompactionEntry, SessionManager, SKILL_FORK_NOTICE_TYPE } from "./session-manager.ts";
 import type { CacheWarmingMode, SettingsManager, SettingsScope } from "./settings-manager.ts";
 import { deriveCarriedSkills } from "./skills/carry-forward.ts";
-import { findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
+import { type BranchEntryLike, entryMessageLike, findLastFullInlineDelivery, isDedupHit } from "./skills/dedup.ts";
 import {
 	buildAlreadyLoadedNote,
 	buildCarriedSkillBlock,
 	buildSkillDelivery,
+	recoverDeliveredBody,
 	SKILL_TOOL_NAME,
 	type SkillDelivery,
 	type SkillToolResultDetails,
@@ -653,6 +654,8 @@ export class AgentSession {
 	private _pendingSkillListingDiagnostics: ResourceDiagnostic[] = [];
 	private _fallbackCommandDiagnostics: ResourceDiagnostic[] = [];
 	private _carriedForward: Map<string, { args: string; body: string }> = new Map();
+	/** Ephemeral A.6 carry-forward messages re-attached after the compaction summary; never persisted. */
+	private _carriedSkillMessages: AgentMessage[] = [];
 	private _currentRequestDisallowedUnion: Set<string> = new Set();
 	private _currentRequestDisallowedRedirects: Record<string, string> = {};
 	private _overrideDiagnosedInvocations: Set<string> = new Set();
@@ -1152,7 +1155,9 @@ export class AgentSession {
 		this.agent.prepareRequest = async (request, signal) => {
 			const canonicalContext = {
 				...request.context,
-				messages: this.sessionManager.buildSessionProjection().messages,
+				// The persisted projection plus the ephemeral carried skill bodies (A.6): the
+				// request must carry the same instructions the local finalized state shows.
+				messages: this._withCarriedSkills(this.sessionManager.buildSessionProjection().messages),
 				// Messages declare the provider-visible loadout; context.tools keeps executable implementations.
 				tools: request.context.tools?.slice() ?? this.agent.state.tools.slice(),
 			};
@@ -1281,7 +1286,7 @@ export class AgentSession {
 		for (const entry of projection.entries) {
 			for (const message of entry.messages) this._entryIdsByMessage.set(message, entry.sourceEntry.id);
 		}
-		this.agent.state.messages = projection.messages;
+		this.agent.state.messages = this._withCarriedSkills(projection.messages);
 	}
 
 	private _applyBoundaryDrafts(manager: SessionManager, drafts: SessionBoundaryDraft[]): SessionEntry[] {
@@ -3262,41 +3267,112 @@ export class AgentSession {
 	}
 
 	/**
+	 * Edit-aware view of the persisted branch for the A.6 skill scans (dedup and
+	 * carry-forward). Append-only `context_edit` entries change what an earlier
+	 * entry contributes to model context, but the raw branch still holds the
+	 * original delivery. Scanning the raw branch would dedup against, or carry
+	 * forward, instructions the edit removed. An omitted entry contributes no
+	 * invocation; a replaced entry keeps only the invocations whose block survives
+	 * byte-for-byte in the replacement content, so a body the edit changed can
+	 * never anchor a dedup note or be revived by a later compaction. Anything
+	 * ambiguous is conservatively treated as "not delivered" (full re-delivery).
+	 */
+	private _skillScanEntries(): BranchEntryLike[] {
+		const branch = this.sessionManager.getBranch();
+		const edits = new Map<string, ContextEditEntry>();
+		for (const entry of branch) {
+			if (entry.type === "context_edit") edits.set(entry.targetId, entry);
+		}
+		if (edits.size === 0) return branch;
+		return branch.map((entry): BranchEntryLike => {
+			const edit = edits.get(entry.id);
+			if (!edit || (entry.type !== "message" && entry.type !== "custom_message")) return entry;
+			if (edit.replacement === null) return { id: entry.id, type: entry.type };
+			const original = entryMessageLike(entry);
+			const projected = { role: original.role, content: edit.replacement.content };
+			const invocations = (entry.invocations ?? []).filter((invocation) => {
+				if (
+					!invocation ||
+					typeof invocation !== "object" ||
+					typeof invocation.blockStart !== "number" ||
+					typeof invocation.blockEnd !== "number"
+				) {
+					return false;
+				}
+				const offsets = { blockStart: invocation.blockStart, blockEnd: invocation.blockEnd };
+				const before = recoverDeliveredBody(original, offsets);
+				const after = recoverDeliveredBody(projected, offsets);
+				return before.kind === "body" && after.kind === "body" && before.body === after.body;
+			});
+			return {
+				id: entry.id,
+				type: entry.type,
+				pairId: entry.type === "message" ? entry.pairId : undefined,
+				invocations,
+				message: projected,
+			};
+		});
+	}
+
+	/**
+	 * Insert the ephemeral carried skill bodies (A.6) into a projected message
+	 * list, right after the compaction summary (after the leading system
+	 * checkpoint when the compaction entry carries one). Idempotent: a previous
+	 * re-attachment is dropped first, so rebuilding from the projection never
+	 * duplicates a carried body. Used for both `agent.state.messages` and the
+	 * provider request projection so local state and requests agree.
+	 */
+	private _withCarriedSkills(messages: AgentMessage[]): AgentMessage[] {
+		const carried = this._carriedSkillMessages;
+		const stripped = messages.filter((message) => !carried.includes(message));
+		if (carried.length === 0) return stripped;
+		const summaryIndex = stripped.findIndex((message) => message.role === "compactionSummary");
+		const firstConversational = stripped.findIndex((message) => message.role !== "system");
+		const insertAt =
+			summaryIndex >= 0 ? summaryIndex + 1 : firstConversational >= 0 ? firstConversational : stripped.length;
+		return [...stripped.slice(0, insertAt), ...carried, ...stripped.slice(insertAt)];
+	}
+
+	/**
 	 * A.6 compaction carry-forward (c4b): recompute `deriveCarriedSkills` from
-	 * the persisted branch and inject the re-wrapped, most-recent inline body
-	 * of each carried skill into `agent.state.messages`, MRU-first, right after
-	 * the compaction summary message (`buildContextEntries` always puts the
-	 * compaction entry first, so `messages[0]` is that summary whenever there
-	 * is anything to carry). Ephemeral: never persisted, so `prepareCompaction`
+	 * the edit-aware persisted branch and re-attach the re-wrapped, most-recent
+	 * inline body of each carried skill, MRU-first, right after the compaction
+	 * summary message. Ephemeral: never persisted, so `prepareCompaction`
 	 * (which reads the persisted branch) never re-compacts or double-carries
 	 * them; `_carriedForward` is reset (including to empty on a no-boundary
 	 * rebuild, clearing stale keys after a compacted→non-compacted switch).
-	 * Called after every `agent.state.messages` rebuild from the branch:
-	 * `compact()`, `_runAutoCompaction`, `navigateTree`, and the public
+	 * The carried messages are kept on the session and re-inserted by
+	 * `_withCarriedSkills` on every projection rebuild (finalized-state refresh
+	 * after each turn and the per-request canonical projection), so they reach
+	 * the provider and not only local state. Called after every
+	 * `agent.state.messages` rebuild from the branch: `compact()`,
+	 * `_runAutoCompaction`, `navigateTree`, and the public
 	 * `reattachCarriedSkills()` resume/switchSession seam (`sdk.ts`).
 	 */
 	private _reattachCarriedSkills(): void {
 		const branch = this.sessionManager.getBranch();
 		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
-		const { entries, diagnostics } = deriveCarriedSkills(branch, boundary);
+		const { entries, diagnostics } = deriveCarriedSkills(this._skillScanEntries(), boundary);
 		this._carriedForward = new Map(entries.map((entry) => [entry.skillId, { args: entry.args, body: entry.body }]));
 		this._deliverSkillListingDiagnostics(diagnostics);
-		if (entries.length === 0) {
-			return;
-		}
 		const skillNames = new Map(
 			this.resourceLoader.getSkills().skills.map((skill) => {
 				const normalized = normalizeSkillInput(skill).skill;
 				return [normalized.id, normalized.name] as const;
 			}),
 		);
-		const carriedMessages: AgentMessage[] = entries.map((entry) => {
+		const previous = this._carriedSkillMessages;
+		this._carriedSkillMessages = entries.map((entry) => {
 			const name = skillNames.get(entry.skillId) ?? entry.skillId;
 			const block = buildCarriedSkillBlock(name, entry.args, entry.body);
 			return { role: "user", content: [{ type: "text", text: block.text }], timestamp: Date.now() };
 		});
-		const messages = this.agent.state.messages;
-		this.agent.state.messages = [messages[0]!, ...carriedMessages, ...messages.slice(1)];
+		// Rebuild from the current state minus the previous re-attachment (rebuild
+		// callers already replaced the state from the projection, so this is a no-op
+		// strip in the common case).
+		this.agent.state.messages = this._withCarriedSkills(
+			this.agent.state.messages.filter((message) => !previous.includes(message)),
+		);
 	}
 
 	/**
@@ -3324,10 +3400,9 @@ export class AgentSession {
 	 * Fork paths never call this (A.5 exemption).
 	 */
 	private _checkDedup(rendered: RenderedSkillInvocation): { note: string } | undefined {
-		const branch = this.sessionManager.getBranch();
-		const boundary = getLatestCompactionEntry(branch)?.firstKeptEntryId;
+		const boundary = getLatestCompactionEntry(this.sessionManager.getBranch())?.firstKeptEntryId;
 		const skillId = rendered.invocation.skillId;
-		const result = findLastFullInlineDelivery(branch, boundary, skillId, (diagnostic) =>
+		const result = findLastFullInlineDelivery(this._skillScanEntries(), boundary, skillId, (diagnostic) =>
 			this._deliverSkillListingDiagnostics([diagnostic]),
 		);
 		const anchor =
@@ -3459,11 +3534,36 @@ export class AgentSession {
 		if (!active) {
 			return undefined;
 		}
+		const previousBasePrompt = this._baseSystemPrompt;
 		this._refreshSkillListingIfDirty();
+		const listingRefreshed = this._baseSystemPrompt !== previousBasePrompt;
+		// Patch from the effective run options, not the unmodified base: a
+		// `before_agent_start` handler's sections, tool guidance, selected tools, or
+		// forced prompt must survive the activation. Only the listing inputs a
+		// refresh just rebuilt are taken from the base; everything else stays owned
+		// by the run. The result becomes the run options so the next turn's
+		// preparation and `session.systemPrompt` agree with what was sent.
+		const runOptions = this._runSystemPromptOptions ?? this._baseSystemPromptOptions;
+		const base = this._baseSystemPromptOptions;
+		const options = normalizeBuildSystemPromptOptions({
+			...runOptions,
+			...(listingRefreshed
+				? {
+						skills: base.skills,
+						skillPathsBoost: base.skillPathsBoost,
+						skillListingBudget: base.skillListingBudget,
+						skillVisibility: base.skillVisibility,
+					}
+				: {}),
+			selectedTools: this.getActiveToolNames(),
+			toolSnippets: { ...base.toolSnippets, ...runOptions.toolSnippets },
+			toolGuidelines: { ...base.toolGuidelines, ...runOptions.toolGuidelines },
+		});
 		const sections = diffSystemPromptSections(
 			getCurrentSystemMessage(this.agent.state.messages)?.sections ?? {},
-			buildSystemPromptSections(this._baseSystemPromptOptions),
+			buildSystemPromptSections(options),
 		);
+		this._runSystemPromptOptions = options;
 		const updateMessage: SystemMessage | undefined = sections
 			? { role: "system", content: "", sections, timestamp: Date.now() }
 			: undefined;

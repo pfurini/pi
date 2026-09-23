@@ -1492,6 +1492,68 @@ describe("Agent C3a seams", () => {
 		expect(requests[0]).toEqual({ modelId: overrideModel.id, systemPrompt: "base" });
 		expect(requests[1]?.systemPrompt).toBe("base");
 	});
+
+	it("declares a tools-only refreshTurnAfterInjection change on the consuming request", async () => {
+		// A refresh that narrows `context.tools` without returning any message (a
+		// queued skill's disallowed-tools restriction) must still change the provider
+		// schema of the request that consumed the injection, not only execution.
+		const kept = toolNamed("kept");
+		const removed = toolNamed("removed");
+		const advertised: string[][] = [];
+		const agent = new Agent({
+			initialState: { systemPrompt: "base", tools: [kept, removed], thinkingLevel: "off" },
+			refreshTurnAfterInjection: () => ({ context: { messages: [], tools: [kept] } }),
+			streamFn: (_model, context, _options) => {
+				advertised.push(getCurrentTools(context.messages).map((tool) => tool.name));
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("start");
+
+		expect(advertised).toEqual([["kept"]]);
+		const declaration = getCurrentSystemMessage(agent.state.messages);
+		expect(declaration?.toolsAdded?.map((tool) => tool.name)).toEqual(["kept"]);
+	});
+
+	it("declares a tools-only refreshTurnAfterInjection addition on the consuming request", async () => {
+		const kept = toolNamed("kept");
+		const added = toolNamed("added");
+		const advertised: string[][] = [];
+		const agent = new Agent({
+			initialState: { systemPrompt: "base", tools: [kept], thinkingLevel: "off" },
+			refreshTurnAfterInjection: () => ({ context: { messages: [], tools: [kept, added] } }),
+			streamFn: (_model, context, _options) => {
+				advertised.push(getCurrentTools(context.messages).map((tool) => tool.name));
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("start");
+
+		expect(advertised).toEqual([["kept", "added"]]);
+	});
+
+	it("declares no extra system message when a refresh keeps the same tools", async () => {
+		const kept = toolNamed("kept");
+		const agent = new Agent({
+			initialState: { systemPrompt: "base", tools: [kept], thinkingLevel: "off" },
+			refreshTurnAfterInjection: () => ({ context: { messages: [], tools: [kept] } }),
+			streamFn: stopAfterMessage("done"),
+		});
+
+		await agent.prompt("start");
+
+		expect(agent.state.messages.filter((message) => message.role === "system")).toHaveLength(1);
+	});
 	it("blocks a disallowed tool call by name even when the tool is absent from the schema", async () => {
 		let requestCount = 0;
 		const agent = new Agent({

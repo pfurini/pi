@@ -549,4 +549,43 @@ describe("synthetic pair immutability (A.4)", () => {
 		const details = (resultEntry?.message as { details?: { invocation?: { name?: string } } }).details;
 		expect(details?.invocation?.name).toBe("test");
 	});
+
+	it("dispatches a synthetic tool_result to every subscribed handler even when one unsubscribes itself", async () => {
+		// Same snapshot contract as genuine tool results: a handler that removes its own
+		// registration or adds a new one must not change the dispatch in progress.
+		const calls: string[] = [];
+		const { harness } = await createSkillHarness({
+			extensionFactories: [
+				(pi: ExtensionAPI) => {
+					const stopA = pi.on("tool_result", (event) => {
+						if (!event.synthetic) return;
+						calls.push("A");
+						stopA();
+						pi.on("tool_result", (late) => {
+							if (late.synthetic) calls.push("C");
+						});
+					});
+					pi.on("tool_result", (event) => {
+						if (event.synthetic) calls.push("B");
+					});
+				},
+			],
+		});
+		flagModel(harness);
+		const errors: string[] = [];
+		await harness.session.bindExtensions({ onError: (e) => errors.push(e.error) });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+
+		await harness.session.prompt("/skill:test demonstrate notification");
+
+		const entries = messageEntries(harness).filter((entry) => entry.pairId);
+		expect(entries).toHaveLength(2);
+		expect(errors).toEqual([]);
+		expect(calls).toEqual(["A", "B"]);
+
+		// The next synthetic dispatch runs the remaining handlers plus the late registration.
+		harness.setResponses([fauxAssistantMessage("again")]);
+		await harness.session.prompt("/skill:test demonstrate notification again");
+		expect(calls).toEqual(["A", "B", "B", "C"]);
+	});
 });

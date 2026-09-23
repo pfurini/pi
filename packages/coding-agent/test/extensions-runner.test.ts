@@ -1555,6 +1555,39 @@ describe("ExtensionRunner", () => {
 			await runner.emit({ type: "agent_end", messages: [] });
 			expect(calls).toEqual(["A", "C", "B"]);
 		});
+
+		it("snapshots the handler list for notification-only synthetic tool results", async () => {
+			const calls: string[] = [];
+			const { runner } = await loadSubscriptionExtension((pi) => {
+				const stopA = pi.on("tool_result", () => {
+					calls.push("A");
+					stopA();
+					pi.on("tool_result", () => {
+						calls.push("C");
+					});
+				});
+				pi.on("tool_result", () => {
+					calls.push("B");
+				});
+			});
+			const event = {
+				type: "tool_result" as const,
+				toolName: "skill",
+				toolCallId: "synthetic-1",
+				input: {},
+				content: [{ type: "text" as const, text: "body" }],
+				isError: false,
+				synthetic: true,
+				details: undefined,
+			};
+
+			await runner.emitToolResultNotification(event);
+			// A unsubscribed itself and registered C: B still runs, C waits for the next dispatch.
+			expect(calls).toEqual(["A", "B"]);
+
+			await runner.emitToolResultNotification(event);
+			expect(calls).toEqual(["A", "B", "B", "C"]);
+		});
 	});
 
 	describe("hasHandlers", () => {

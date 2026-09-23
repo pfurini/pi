@@ -220,26 +220,15 @@ async function runLoop(
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
 			let preparedMessages: AgentMessage[] = [];
 			if (lastCompletedTurn) {
-				const { turn, requestModel, requestReasoning } = lastCompletedTurn;
-				const nextTurnSnapshot = await config.prepareNextTurn?.(turn);
+				const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn.turn);
 				if (nextTurnSnapshot) {
 					currentContext = nextTurnSnapshot.context ?? currentContext;
 					preparedMessages = nextTurnSnapshot.messages ?? [];
 					config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
 				}
-				if (
-					turn.toolResults.length > 0 &&
-					requestModel.toolResultContinuation === "originating-provider" &&
-					config.model.provider !== requestModel.provider
-				) {
-					const requestedModel = config.model;
-					config = { ...config, model: requestModel, reasoning: requestReasoning };
-					try {
-						config.onContinuationPinned?.(requestModel, requestedModel);
-					} catch {
-						// A faulty reporter must never interrupt the loop.
-					}
-				}
+				// The originating-provider pin is applied after prepareRequest below, once every
+				// request-time model update (this turn update, the injection refresh, and the
+				// request hook) has been merged, so a later hook cannot undo the pin.
 				// Preparation can be long-running (for example, compaction). Pick up steering
 				// queued while it ran. Only poll again if the earlier poll returned nothing;
 				// otherwise one-at-a-time mode would deliver two messages in this turn.
@@ -276,14 +265,15 @@ async function runLoop(
 					if (injectionSnapshot.context !== undefined) {
 						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
 					}
-					if (injectionSnapshot.messages?.length) {
-						const refreshedMessages = declareToolChanges(currentContext, injectionSnapshot.messages);
-						for (const message of refreshedMessages) {
-							await emit({ type: "message_start", message });
-							await emit({ type: "message_end", message });
-							currentContext.messages.push(message);
-							newMessages.push(message);
-						}
+					// Always reconcile declarations: a refresh that changes only `context.tools`
+					// (no accompanying message) must still announce the new loadout, otherwise
+					// the consuming request advertises tools the runtime refuses to execute.
+					const refreshedMessages = declareToolChanges(currentContext, injectionSnapshot.messages ?? []);
+					for (const message of refreshedMessages) {
+						await emit({ type: "message_start", message });
+						await emit({ type: "message_end", message });
+						currentContext.messages.push(message);
+						newMessages.push(message);
 					}
 					config = applyTurnUpdateToConfig(config, injectionSnapshot);
 				}
@@ -300,6 +290,28 @@ async function runLoop(
 			if (requestUpdate) {
 				currentContext = requestUpdate.context ?? currentContext;
 				config = applyTurnUpdateToConfig(config, requestUpdate);
+			}
+
+			// Final boundary for the originating-provider pin: an opted-in tool-result
+			// continuation must reach the provider whose request issued the tool calls,
+			// whatever prepareNextTurn, the injection refresh, or prepareRequest selected.
+			// Same-provider model changes stay visible; only a cross-provider switch is
+			// deferred, and the deferral is reported once per request.
+			if (lastCompletedTurn) {
+				const { turn, requestModel, requestReasoning } = lastCompletedTurn;
+				if (
+					turn.toolResults.length > 0 &&
+					requestModel.toolResultContinuation === "originating-provider" &&
+					config.model.provider !== requestModel.provider
+				) {
+					const requestedModel = config.model;
+					config = { ...config, model: requestModel, reasoning: requestReasoning };
+					try {
+						config.onContinuationPinned?.(requestModel, requestedModel);
+					} catch {
+						// A faulty reporter must never interrupt the loop.
+					}
+				}
 			}
 
 			// Stream assistant response

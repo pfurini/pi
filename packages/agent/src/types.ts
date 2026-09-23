@@ -277,6 +277,9 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Called immediately before every conversational provider request, including the first.
 	 * Pending messages have already been appended. The returned context, model, and thinking level
 	 * replace the runtime values for this and later requests in the run. This hook does not poll queues.
+	 * A model whose provider differs from the one that issued outstanding tool calls is still
+	 * deferred when that model opted into `toolResultContinuation: "originating-provider"`: the
+	 * pin is applied after this hook, so no request-time update can reroute a tool-result continuation.
 	 */
 	prepareRequest?: PrepareRequest;
 

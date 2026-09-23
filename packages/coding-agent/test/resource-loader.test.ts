@@ -90,6 +90,45 @@ describe("DefaultResourceLoader", () => {
 			]);
 		});
 
+		it("should report a host-dependency warning exactly once across the pre-trust load", async () => {
+			// Regression for #9863 on the two-phase trust path: the warning is produced both by
+			// the pre-trust loadCurrentExtensionSet pass and again by reload(), so it reaches
+			// mergeExtensionWarnings twice. Dedup by manifest path is what keeps it single.
+			const packageRoot = join(tempDir, "trust-extension-package");
+			const extensionsDir = join(packageRoot, "extensions");
+			mkdirSync(extensionsDir, { recursive: true });
+			writeFileSync(
+				join(packageRoot, "package.json"),
+				JSON.stringify({ dependencies: { "@earendil-works/pi-coding-agent": "1.0.0" } }),
+			);
+			writeFileSync(join(extensionsDir, "package-extension.ts"), "export default function() {}");
+
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager: SettingsManager.inMemory({ packages: [packageRoot] }),
+			});
+
+			const expected = [
+				{
+					path: join(packageRoot, "package.json"),
+					warning:
+						'Host-provided extension packages must be declared in peerDependencies with a "*" range, not dependencies: @earendil-works/pi-coding-agent. Installed copies can bypass the extension loader and create duplicate runtime modules.',
+				},
+			];
+
+			let preTrustWarnings: typeof expected | undefined;
+			await loader.reload({
+				resolveProjectTrust: async ({ extensionsResult }) => {
+					preTrustWarnings = extensionsResult.warnings;
+					return true;
+				},
+			});
+
+			expect(preTrustWarnings).toEqual(expected);
+			expect(loader.getExtensions().warnings).toEqual(expected);
+		});
+
 		it("should fail when an extension package manifest cannot be parsed", async () => {
 			const packageRoot = join(tempDir, "invalid-extension-package");
 			const extensionsDir = join(packageRoot, "extensions");

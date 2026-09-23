@@ -401,6 +401,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			headers: response.headers,
 		});
 	};
+	const handleProviderStreamEvent: NonNullable<ModelsSimpleStreamOptions["onProviderStreamEvent"]> = async (
+		data,
+		model,
+	) => {
+		const runner = extensionRunnerRef.current;
+		if (!runner?.hasHandlers("provider_stream_event")) return;
+		await runner.emit({
+			data,
+			type: "provider_stream_event",
+			provider: model.provider,
+			api: model.api,
+			model: model.id,
+		});
+	};
 
 	const sessionStreamFn: StreamFn = async (model, context, options) => {
 		const requestOptions = buildRequestOptions(model, options);
@@ -422,6 +436,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		streamFn: sessionStreamFn,
 		onPayload: onProviderPayload,
 		onResponse: onProviderResponse,
+		onProviderStreamEvent: handleProviderStreamEvent,
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;

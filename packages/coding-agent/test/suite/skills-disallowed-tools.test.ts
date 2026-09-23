@@ -17,6 +17,7 @@ import {
 	type FauxResponseFactory,
 	fauxAssistantMessage,
 	fauxToolCall,
+	getCurrentTools,
 	type Model,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
@@ -113,7 +114,7 @@ interface CapturedRequest {
 
 function captureRequest(sink: CapturedRequest[], text = "ok"): FauxResponseFactory {
 	return (context: Context, _options: SimpleStreamOptions | undefined, _state, _model: Model<string>) => {
-		sink.push({ toolNames: (context.tools ?? []).map((tool) => tool.name) });
+		sink.push({ toolNames: getCurrentTools(context.messages).map((tool) => tool.name) });
 		return fauxAssistantMessage(text);
 	};
 }

@@ -2,9 +2,34 @@
 
 ## [Unreleased]
 
+
 ### Added
 
 - Mid-prompt `/` autocomplete with per-source badges: the slash menu triggers and applies at the cursor for command runs at message start or after whitespace on any editor line, renders a `builtin`/`extension`/`command`/`prompt`/`skill` badge per candidate, and keeps control commands (both `builtin` and `extension`) and argument completion whole-message-initial. Suggestions carry a `kind` discriminant (`command`/`argument`/`file`/`symbol`, exported as `AutocompleteSuggestionKind`) so the editor submits on Enter only for a completed slash command and never for a `/`-prefixed file or argument completion.
+
+## [0.87.1] - 2026-09-22
+
+## [0.87.0] - 2026-09-21
+
+## [0.86.1] - 2026-09-20
+
+## [0.86.0] - 2026-09-19
+
+### Added
+
+- Added bundled asynchronous native clipboard readers for macOS, Windows, and X11 through the exported `getNativeClipboard()` API, replacing the external native clipboard dependency in consumers ([#9163](https://github.com/earendil-works/pi/pull/9163)).
+
+### Changed
+
+- Reduced fuzzy search latency for long texts by using native substring search instead of scanning each character in JavaScript ([#9267](https://github.com/earendil-works/pi/issues/9267)).
+
+### Fixed
+
+- Fixed LaTeX legacy font switches falling back to raw source, centered `cases` layouts around surrounding equations, and vertically laid out unsupported and nested display scripts ([#8827](https://github.com/earendil-works/pi/issues/8827), [#9564](https://github.com/earendil-works/pi/issues/9564), [#7929](https://github.com/earendil-works/pi/issues/7929)).
+- Fixed fullscreen clipboard failures hiding actionable backend error messages behind a generic notice, and extended failure notices to five seconds ([#9618](https://github.com/earendil-works/pi/issues/9618)).
+- Fixed fullscreen Kitty images being erased by later row clears in WezTerm ([#9169](https://github.com/earendil-works/pi/issues/9169)).
+- Fixed skill slash-command autocomplete ranking the `skill:` prefix instead of the bare skill name ([#9120](https://github.com/earendil-works/pi/pull/9120) by [@yearth](https://github.com/yearth)).
+- Fixed file autocomplete boundaries and path quoting around CJK punctuation ([#9746](https://github.com/earendil-works/pi/pull/9746) by [@haoqixu](https://github.com/haoqixu)).
 
 ## [0.85.1] - 2026-09-05
 
@@ -93,7 +118,6 @@
 - Added unbound half-page transcript scrolling actions, `tui.altScreen.halfPageUp` and `tui.altScreen.halfPageDown`, for fullscreen TUI keybindings ([#7735](https://github.com/earendil-works/pi/issues/7735)).
 - Added double-click word and whitespace selection, granularity-aware drag selection, and triple-click paragraph selection in the fullscreen TUI ([#7725](https://github.com/earendil-works/pi/issues/7725), [#7733](https://github.com/earendil-works/pi/pull/7733) by [@volsa](https://github.com/volsa)).
 - Added an optional right-click paste handler to the alternate-screen TUI, currently enabled on Windows.
-- `Editor` prompt history now supports a configurable entry limit (`EditorOptions.historyMaxEntries`, `0` for unlimited) and bulk replacement via `setHistory()`/`setHistoryMaxEntries()`, in addition to the existing `addToHistory()`. `EditorComponent` exposes both as optional methods for custom editors.
 
 ### Fixed
 

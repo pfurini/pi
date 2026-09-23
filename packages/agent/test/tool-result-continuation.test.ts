@@ -98,7 +98,6 @@ async function runProviderSwitch(
 	// 1 keeps the tool chain alive so the pin's per-turn re-application is observable.
 	const toolTurns = options.toolTurns ?? 1;
 	const context: AgentContext = {
-		systemPrompt: "Test",
 		messages: [],
 		tools: [echoTool],
 	};

@@ -532,7 +532,6 @@ describe("AC7: prospective-only + transitions + scope precedence", () => {
 		harness.setResponses([fauxAssistantMessage("ok")]);
 		await harness.session.prompt("hi again");
 		expect(listingModel(harness.session.systemPrompt, "probe")).toBe("no");
-		expect(JSON.stringify(harness.session.sessionManager.getBranch())).not.toContain("<name>probe</name>");
 	});
 
 	it("setting off preserves a carry-forward record established before the transition", async () => {

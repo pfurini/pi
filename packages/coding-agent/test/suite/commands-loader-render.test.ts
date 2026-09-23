@@ -389,11 +389,12 @@ describe("prompt-template arguments: declaration (A.3.2 tier parity)", () => {
 		});
 		// Malformed frontmatter drops the whole template at load (parse throws → null),
 		// so a broken file can never reach adaptation with a half-applied declaration.
-		expect(loaded.map((template) => template.name)).toEqual(["good"]);
-		expect(loaded[0].arguments).toBe("alpha beta gamma");
+		const { templates, diagnostics } = loaded;
+		expect(templates.map((template) => template.name)).toEqual(["good"]);
+		expect(templates[0].arguments).toBe("alpha beta gamma");
 
-		const adapted = adaptPromptTemplates(loaded);
-		expect(adapted.diagnostics).toEqual([]);
+		const adapted = adaptPromptTemplates(templates);
+		expect(diagnostics).toHaveLength(1);
 		expect(adapted.commands[0].frontmatter).toEqual({ arguments: "alpha beta gamma" });
 	});
 });

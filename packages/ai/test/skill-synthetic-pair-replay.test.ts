@@ -131,8 +131,9 @@ import { convertResponsesMessages } from "../src/api/openai-responses-shared.ts"
 import { stream as streamPiMessages } from "../src/api/pi-messages.ts";
 import { getModel } from "../src/compat.ts";
 import { MODELS } from "../src/models.generated.ts";
-import type { Api, AssistantMessage, Context, FetchFunction, Model, ToolResultMessage } from "../src/types.ts";
+import type { Api, AssistantMessage, FetchFunction, Model, ToolResultMessage } from "../src/types.ts";
 import { matchesSkillSyntheticReplayClass, SKILL_SYNTHETIC_REPLAY_CLASSES } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const SKILL_TOOL_CALL_ID = "skill_00000000-0000-4000-8000-000000000001";
 // XML-ish and shell-ish text: proves the rendered result is carried verbatim, not interpreted.
@@ -214,7 +215,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 8192,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		await streamOpenAICompletions(model, context, { apiKey: "test" }).result();
 
 		const params = openAICompletionsMock.lastParams as {
@@ -258,7 +259,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			},
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		await streamOpenAICompletions(model, context, { apiKey: "test" }).result();
 
 		const params = openAICompletionsMock.lastParams as {
@@ -294,7 +295,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 128000,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const items = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS);
 
 		const call = items.find((item) => item.type === "function_call") as {
@@ -330,7 +331,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 128000,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const items = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
 
 		const call = items.find((item) => item.type === "function_call") as {
@@ -365,7 +366,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 128000,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const items = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
 			includeSystemPrompt: false,
 		});
@@ -402,7 +403,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 8192,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		await streamAnthropic(model, context, { apiKey: "test" }).result();
 
 		const params = anthropicMock.lastParams as {
@@ -427,7 +428,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 	it("bedrock-converse-stream: replays skill call/result via ConverseStreamCommand", async () => {
 		const model = getModel("amazon-bedrock", "us.anthropic.claude-sonnet-4-5-20250929-v1:0");
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		await streamBedrock(model, context, { cacheRetention: "none" }).result();
 
 		const input = bedrockMock.lastInput as {
@@ -463,7 +464,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 65536,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const contents = convertGoogleMessages(model, context);
 
 		const modelTurn = contents.find((c) => c.role === "model");
@@ -493,7 +494,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 65536,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const contents = convertGoogleMessages(model, context);
 
 		const modelTurn = contents.find((c) => c.role === "model");
@@ -523,7 +524,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 65536,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		const contents = convertGoogleMessages(model, context);
 
 		const modelTurn = contents.find((c) => c.role === "model");
@@ -541,7 +542,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 	it("mistral-conversations: replays skill call/result via the chat completions wire format", async () => {
 		const model = getModel("mistral", "mistral-large-latest");
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		let requestInit: RequestInit | undefined;
 		const fetchMock: FetchFunction = async (_input, init) => {
 			requestInit = init;
@@ -586,7 +587,7 @@ describe("skill synthetic pair replay — A.4 fixture matrix", () => {
 			maxTokens: 16384,
 		};
 		const { assistant, result } = buildSyntheticPair(model);
-		const context: Context = { messages: [assistant, result] };
+		const context = normalizeContext({ messages: [assistant, result] });
 		let capturedContext: unknown;
 		const fetchMock: FetchFunction = async (_input, init) => {
 			capturedContext = (JSON.parse(String(init?.body)) as { context: unknown }).context;

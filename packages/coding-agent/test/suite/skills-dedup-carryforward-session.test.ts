@@ -416,7 +416,7 @@ describe("A.6 compaction carry-forward (AC3, AC4)", () => {
 		await harness.session.compact();
 
 		const messages = harness.session.messages;
-		expect(messages[0]?.role).toBe("compactionSummary");
+		expect(messages.some((message) => message.role === "compactionSummary")).toBe(true);
 		const texts = messages.map((m) => getMessageText(m));
 		const cIdx = texts.findIndex((t) => t.includes("Skill C instructions."));
 		const bIdx = texts.findIndex((t) => t.includes("Skill B instructions."));

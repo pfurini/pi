@@ -6,12 +6,13 @@ import {
 	setDefaultStreamFn,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { ModelsRequestTransforms, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { ModelsRequestTransforms, ModelsSimpleStreamOptions, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
+import { CacheWarmer } from "./cache-warmer.ts";
 import { composedDefaultStreamFn, type DefaultStreamTarget, installDefaultStreamTarget } from "./default-stream-fn.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
@@ -290,8 +291,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				? configuredDefaultToolNames.filter((name) => !excludedToolNameSet?.has(name))
 				: undefined;
 
-	let agent: Agent;
-
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
 		const converted = convertToLlm(messages);
@@ -330,22 +329,71 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	};
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
+	const cacheWarmer = new CacheWarmer(
+		modelRuntime,
+		sessionManager,
+		() => settingsManager.getCacheWarmingMode(),
+		async (event) => extensionRunnerRef.current?.emitCacheWarmingDecision(event) ?? event.action,
+	);
+	const sessionAbortController = new AbortController();
+	const buildRequestOptions = (
+		requestModel: Model<any>,
+		options: ModelsSimpleStreamOptions = {},
+	): ModelsSimpleStreamOptions => {
+		const providerRetrySettings = settingsManager.getProviderRetrySettings();
+		const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
+		const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
+		const headerRunner = extensionRunnerRef.current;
+		const callerTransformHeaders = (options as ModelsRequestTransforms).transformHeaders;
+		const signal = options.signal
+			? AbortSignal.any([options.signal, sessionAbortController.signal])
+			: sessionAbortController.signal;
+		return {
+			...options,
+			signal,
+			timeoutMs: options.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs,
+			websocketConnectTimeoutMs: options.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs(),
+			maxRetries: options.maxRetries ?? providerRetrySettings.maxRetries,
+			maxRetryDelayMs: options.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+			transformHeaders:
+				callerTransformHeaders ??
+				(async (requestHeaders) => {
+					const headers = mergeProviderAttributionHeaders(
+						requestModel,
+						settingsManager,
+						options.sessionId,
+						requestHeaders,
+					);
+					return headerRunner?.hasHandlers("before_provider_headers")
+						? headerRunner.emitBeforeProviderHeaders(headers ?? {}, requestModel)
+						: (headers ?? {});
+				}),
+		};
+	};
+	const cacheContextIsCurrent = (requestModel: Model<any>) => {
+		const messages = agent.state.messages;
+		return () => {
+			const currentModel = agent.state.model;
+			const currentMessages = agent.state.messages;
+			return (
+				currentModel.provider === requestModel.provider &&
+				currentModel.id === requestModel.id &&
+				messages.length <= currentMessages.length &&
+				messages.every((message, index) => currentMessages[index] === message)
+			);
+		};
+	};
 
-	// The model pi-ai hands these hooks is the request's model — for bare Agents and
-	// subagents it can differ from the session's selected model, so it (and never
-	// ctx.model) is what reaches the provider events for handler scoping.
+	// Provider hooks receive the request model, which can differ from the owning session model.
 	const onProviderPayload: SimpleStreamOptions["onPayload"] = async (payload, model) => {
 		const runner = extensionRunnerRef.current;
-		if (!runner?.hasHandlers("before_provider_request")) {
-			return payload;
-		}
-		return runner.emitBeforeProviderRequest(payload, model);
+		return runner?.hasHandlers("before_provider_request")
+			? runner.emitBeforeProviderRequest(payload, model)
+			: payload;
 	};
 	const onProviderResponse: SimpleStreamOptions["onResponse"] = async (response, model) => {
 		const runner = extensionRunnerRef.current;
-		if (!runner?.hasHandlers("after_provider_response")) {
-			return;
-		}
+		if (!runner?.hasHandlers("after_provider_response")) return;
 		await runner.emit({
 			type: "after_provider_response",
 			model,
@@ -354,71 +402,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		});
 	};
 
-	// Session-scoped abort controller. Its signal is combined into every stream this
-	// session issues (below), so AgentSession.dispose() can abort an in-flight model
-	// stream even after the run that started it has settled — agent.abort() only fires
-	// the active run's controller, so a subagent parked at a tool boundary under a
-	// settled run would otherwise never see an abort and its provider child would leak.
-	const sessionAbortController = new AbortController();
-
-	// The single definition of how this session streams: used by the session's Agent below
-	// and installed as the process-default stream target for bare Agent/loop callers, so
-	// both get retry settings, timeouts, attribution headers, and the before_provider_headers
-	// hook. Extension payload/response hooks are NOT injected here: the session's Agent
-	// carries them itself (they arrive via options), direct callers like compaction and
-	// branch summarization must stay hook-free, and bare callers get them from the
-	// default-stream target's dispatch.
 	const sessionStreamFn: StreamFn = async (model, context, options) => {
-		const providerRetrySettings = settingsManager.getProviderRetrySettings();
-		const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
-		// SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
-		// Use max int32 to effectively disable the timeout.
-		const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
-		const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
-		const websocketConnectTimeoutMs =
-			options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
-		const headerRunner = extensionRunnerRef.current;
-		// Callers that pass their own transformHeaders (only possible untyped; the runtime
-		// honors it) keep it, matching the pre-wrapper composed-default behavior.
-		const callerTransformHeaders = (options as ModelsRequestTransforms | undefined)?.transformHeaders;
-		// Combine the caller's signal with the session signal so dispose() aborts this
-		// stream regardless of the run's state. AbortSignal.any retains references to its
-		// sources; the combined signal is per-call, so nothing here accumulates it — but a
-		// provider may retain the signal it was handed beyond stream completion, so its
-		// lifetime is bounded by the provider, not guaranteed by this wrapper.
-		// (Node engine is >=22.19, so AbortSignal.any is available.)
-		const signal = options?.signal
-			? AbortSignal.any([options.signal, sessionAbortController.signal])
-			: sessionAbortController.signal;
-		return modelRuntime.streamSimple(model, context, {
-			...options,
-			signal,
-			timeoutMs,
-			websocketConnectTimeoutMs,
-			maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-			maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-			transformHeaders:
-				callerTransformHeaders ??
-				(async (requestHeaders) => {
-					const headers = mergeProviderAttributionHeaders(
-						model,
-						settingsManager,
-						options?.sessionId,
-						requestHeaders,
-					);
-					return headerRunner?.hasHandlers("before_provider_headers")
-						? headerRunner.emitBeforeProviderHeaders(headers ?? {}, model)
-						: (headers ?? {});
-				}),
-		});
+		const requestOptions = buildRequestOptions(model, options);
+		if (options?.sessionId === sessionManager.getSessionId()) {
+			cacheWarmer.start({ model, context, options: requestOptions }, cacheContextIsCurrent(model));
+		}
+		return modelRuntime.streamSimple(model, context, requestOptions);
 	};
 
-	agent = new Agent({
+	const agent = new Agent({
 		initialState: {
 			systemPrompt: "",
 			model,
 			thinkingLevel,
 			tools: [],
+			messages: existingSession.messages,
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		streamFn: sessionStreamFn,
@@ -437,9 +435,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
 	});
 
-	// Restore messages if session has existing data
+	// Restore missing settings metadata for older sessions.
 	if (hasExistingSession) {
-		agent.state.messages = existingSession.messages;
 		if (!hasThinkingEntry) {
 			sessionManager.appendThinkingLevelChange(thinkingLevel);
 		}
@@ -451,10 +448,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	// Make this session the process-default stream target for bare Agent/loop callers
-	// (last-created session wins). The session releases the installation on dispose;
-	// if construction fails before the caller ever receives the session, release here
-	// so the failed session's runtime does not stay the process default.
+	// Make this session the process-default stream target for bare Agent/loop callers.
 	const defaultStreamTarget: DefaultStreamTarget = {
 		runtime: modelRuntime,
 		streamFn: sessionStreamFn,
@@ -474,6 +468,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			customTools: options.customTools,
 			modelRuntime,
 			initialActiveToolNames,
+			cacheWarmer,
 			allowedToolNames,
 			excludedToolNames,
 			extensionRunnerRef,

@@ -342,9 +342,9 @@ describe("skill delivery through AgentSession", () => {
 
 		await harness.session.prompt("/skill:test do it");
 
-		const roles = harness.session.messages.map((message) => message.role);
-		expect(roles).toEqual(["assistant", "toolResult", "assistant"]);
-		const [pairAssistant, pairResult] = harness.session.messages;
+		const messages = harness.session.messages.filter((message) => message.role !== "system");
+		expect(messages.map((message) => message.role)).toEqual(["assistant", "toolResult", "assistant"]);
+		const [pairAssistant, pairResult] = messages;
 		expect(pairAssistant).toMatchObject({ role: "assistant", stopReason: "toolUse" });
 		expect(pairResult).toMatchObject({ role: "toolResult", toolName: "skill", isError: false });
 		expect(getMessageText(pairResult)).toContain("Use the skill body.");
@@ -381,8 +381,9 @@ describe("skill delivery through AgentSession", () => {
 
 		await harness.session.prompt("/skill:test go");
 
-		expect(harness.session.messages[0]?.role).toBe("user");
-		expect(getMessageText(harness.session.messages[0]!)).toContain('<skill name="test" args="go">');
+		const userMessage = harness.session.messages.find((message) => message.role === "user");
+		expect(userMessage?.role).toBe("user");
+		expect(getMessageText(userMessage!)).toContain('<skill name="test" args="go">');
 		expect(messageEntries(harness).every((e) => e.pairId === undefined)).toBe(true);
 	});
 
@@ -514,7 +515,9 @@ describe("synthetic pair immutability (A.4)", () => {
 		const pairResult = harness.session.messages.find((message) => message.role === "toolResult");
 		expect(getMessageText(pairResult!)).toContain("Use the skill body.");
 		expect(getMessageText(pairResult!)).not.toContain("MUTATED");
-		const pairAssistant = harness.session.messages[0];
+		const pairAssistant = harness.session.messages.find(
+			(message) => message.role === "assistant" && message.stopReason === "toolUse",
+		);
 		expect(pairAssistant?.role).toBe("assistant");
 		expect(JSON.stringify(pairAssistant)).not.toContain("REPLACED");
 

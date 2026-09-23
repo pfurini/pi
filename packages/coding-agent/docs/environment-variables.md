@@ -6,7 +6,7 @@ Pi uses environment variables in three ways:
 - Pi sets process markers so child processes can identify Pi as the launching agent.
 - Commands run by the LLM-callable shell tools receive `PI_*` variables describing the current session.
 
-Provider API-key variables are documented separately in [Providers](providers.md#environment-variables-or-auth-file).
+Provider API-key variables are documented separately in [Provider Authentication](providers.md#use-an-api-key-from-the-environment).
 
 ## Process Marker
 
@@ -72,21 +72,6 @@ const powershellTool = createPowerShellTool(cwd, {
 
 When disabled, Pi removes inherited values for these variables so nested Pi processes do not expose stale parent-session metadata.
 
-## Skill Execution Environment
-
-While a skill invocation is active, bash tool executions receive an additional turn-scoped overlay of the skill's variables (see [skills.md](skills.md#skill-variables)):
-
-| Variable | Claude Code alias | Value |
-|----------|-------------------|-------|
-| `PI_SKILL_DIR` | `CLAUDE_SKILL_DIR` | The skill's base directory |
-| `PI_PROJECT_DIR` | `CLAUDE_PROJECT_DIR` | Project root (nearest `.git` ancestor), else `cwd` |
-| `PI_SESSION_ID` | `CLAUDE_SESSION_ID` | Current session ID (same value as the session variable above) |
-| `PI_EFFORT` | `CLAUDE_EFFORT` | Effective thinking level: the invocation's `effort` (else the session level), clamped to the invocation's effective (possibly `model`-overridden) model's supported levels — the same level the provider request runs with |
-
-Scope and lifetime: the overlay activates when the message carrying the invocation is consumed (a direct `/skill:name` prompt, a queued steer/follow-up at consumption, or a genuine `skill` tool call) and expires when the logical turn settles. It applies to every bash execution in that window, including extension/SDK replacement bash tools, because injection happens in the shared bash spawn path. The overlay is copied per execution; `process.env` and the user's shell environment are never mutated. The `CLAUDE_*` aliases are included only while `skillInterop` is on.
-
-Set `disableSkillEnvInjection: true` to bypass this overlay entirely. The switch gates only the bash spawn seam: `` !` `` shell injection inside a rendering skill (see [skills.md](skills.md#shell-command-injection)) always carries the rendering skill's own variables regardless of this setting.
-
 ## Pi Process Configuration
 
 These variables are read by Pi itself:
@@ -96,11 +81,12 @@ These variables are read by Pi itself:
 | `PI_CODING_AGENT_DIR` | Override the config directory; default is `~/.pi/agent` |
 | `PI_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
 | `PI_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
-| `PI_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry |
+| `PI_OFFLINE` | Disable automatic network activity, including model catalog refreshes |
 | `PI_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
 | `PI_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no` |
 | `PI_CACHE_RETENTION` | Set to `long` for extended provider prompt caching where supported |
 | `PI_SHARE_VIEWER_URL` | Override the base URL used by `/share` |
+| `PI_RADIUS_GATEWAY` | Override the Radius gateway origin used by `/bug` uploads and Radius relay connections |
 | `PI_HARDWARE_CURSOR` | Set to `1` to show the hardware cursor; see [Terminal setup](terminal-setup.md) |
 | `PI_HYPERLINKS` | Override OSC 8 hyperlink detection with `1`, `0`, or `auto` |
 | `PI_IMAGE_PROTOCOL` | Override inline image detection with `kitty`, `iterm2`, `none`, or `auto` |
@@ -109,8 +95,7 @@ These variables are read by Pi itself:
 | `VISUAL`, `EDITOR` | External editor fallback when `externalEditor` is unset |
 | `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests |
 
-`HTTP_PROXY` and `HTTPS_PROXY` take effect because the `pi` CLI installs a proxy-aware HTTP dispatcher at startup; Node's built-in `fetch` ignores them on its own. A process that embeds the SDK instead of running the CLI must install that dispatcher itself, or the variables are ignored. See [SDK: HTTP proxy support](sdk.md#http-proxy-support).
 
-Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Providers](providers.md#environment-variables-or-auth-file).
+`HTTP_PROXY` and `HTTPS_PROXY` work in the CLI because Pi installs a proxy-aware dispatcher at startup. Node's built-in `fetch` ignores these variables. SDK hosts must call `configureHttpDispatcher()` themselves.
 
-`PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.
+Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Provider Authentication](providers.md#use-an-api-key-from-the-environment).

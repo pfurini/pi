@@ -579,7 +579,12 @@ describe("AgentSession queue characterization", () => {
 		await harness.session.prompt("normal prompt");
 
 		expect(sawCustomMessage).toBe(true);
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+		expect(harness.session.messages.map((message) => message.role)).toEqual([
+			"system",
+			"user",
+			"custom",
+			"assistant",
+		]);
 	});
 
 	it("updates pendingMessageCount and removes queued text before message_start is emitted", async () => {
@@ -908,10 +913,17 @@ describe("AgentSession skill invocation queueing (C1c)", () => {
 		releaseToolExecution();
 		await promptPromise;
 
-		const roles = harness.session.messages.map((message) => message.role);
-		expect(roles).toEqual(["user", "assistant", "toolResult", "assistant", "toolResult", "assistant"]);
-		const pairAssistant = harness.session.messages[3];
-		const pairResult = harness.session.messages[4];
+		const messages = harness.session.messages.filter((message) => message.role !== "system");
+		expect(messages.map((message) => message.role)).toEqual([
+			"user",
+			"assistant",
+			"toolResult",
+			"assistant",
+			"toolResult",
+			"assistant",
+		]);
+		const pairAssistant = messages[3];
+		const pairResult = messages[4];
 		expect(pairAssistant).toMatchObject({ role: "assistant", stopReason: "toolUse" });
 		expect(pairResult).toMatchObject({ role: "toolResult", toolName: "skill" });
 		expect(getMessageText(pairResult!)).toContain("Queued skill body.");

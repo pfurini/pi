@@ -19,6 +19,7 @@ import {
 	type FauxResponseFactory,
 	fauxAssistantMessage,
 	fauxToolCall,
+	type JsonObject,
 	type Model,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
@@ -134,11 +135,7 @@ function captureRequestThenError(sink: CapturedRequest[]): FauxResponseFactory {
 }
 
 /** A faux response that records the request, then replies with a single tool call. */
-function captureToolCall(
-	sink: CapturedRequest[],
-	toolName: string,
-	args: Record<string, unknown>,
-): FauxResponseFactory {
+function captureToolCall(sink: CapturedRequest[], toolName: string, args: JsonObject): FauxResponseFactory {
 	return (context: Context, options: SimpleStreamOptions | undefined, _state, model: Model<string>) => {
 		sink.push({
 			modelId: model.id,

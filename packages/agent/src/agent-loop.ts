@@ -5,9 +5,14 @@
 
 import {
 	type AssistantMessage,
-	type Context,
 	EventStream,
+	getCurrentTools,
+	getToolStateChanges,
+	normalizeContext,
+	type SystemMessage,
 	type ToolResultMessage,
+	type ToolStateChanges,
+	toToolDeclaration,
 	validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { getDefaultStreamFn } from "./stream-fn.ts";
@@ -105,16 +110,17 @@ export async function runAgentLoop(
 	const deliveredPrompts = config.transformInjectedMessages
 		? await config.transformInjectedMessages(prompts, signal)
 		: prompts;
-	const newMessages: AgentMessage[] = [...deliveredPrompts];
+	const initialMessages = declareToolChanges(context, deliveredPrompts);
+	const newMessages: AgentMessage[] = [...initialMessages];
 	const currentContext: AgentContext = {
 		...context,
-		messages: [...context.messages, ...deliveredPrompts],
+		messages: [...context.messages, ...initialMessages],
 	};
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
-	for (const prompt of deliveredPrompts) {
-		await emit({ type: "message_start", message: prompt });
-		await emit({ type: "message_end", message: prompt });
+	for (const message of initialMessages) {
+		await emit({ type: "message_start", message });
+		await emit({ type: "message_end", message });
 	}
 
 	await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn(), true);
@@ -193,9 +199,8 @@ async function runLoop(
 	// Fires refreshTurnAfterInjection before the next stream when set: seeded by
 	// the top-level injection and re-set after every inner-loop injection.
 	let injectionPending = initialInjected;
-	// Set at every turn_end, so it doubles as the "this is not the first turn" marker.
-	// It carries the request binding of the turn that produced `turn.toolResults`, which
-	// the originating-provider pin below needs after prepareNextTurn has moved config on.
+	// Preserve the request binding that produced tool results. A later turn update
+	// may switch providers before those results are sent.
 	let lastCompletedTurn:
 		| {
 				turn: PrepareNextTurnContext;
@@ -203,6 +208,7 @@ async function runLoop(
 				requestReasoning: AgentLoopConfig["reasoning"];
 		  }
 		| undefined;
+	let explicitContinuation = false;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -212,11 +218,13 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
+			let preparedMessages: AgentMessage[] = [];
 			if (lastCompletedTurn) {
 				const { turn, requestModel, requestReasoning } = lastCompletedTurn;
 				const nextTurnSnapshot = await config.prepareNextTurn?.(turn);
 				if (nextTurnSnapshot) {
 					currentContext = nextTurnSnapshot.context ?? currentContext;
+					preparedMessages = nextTurnSnapshot.messages ?? [];
 					config = applyTurnUpdateToConfig(config, nextTurnSnapshot);
 				}
 				if (
@@ -224,17 +232,8 @@ async function runLoop(
 					requestModel.toolResultContinuation === "originating-provider" &&
 					config.model.provider !== requestModel.provider
 				) {
-					// Only pin a cross-provider switch. A model or reasoning change inside
-					// the same provider must still reach that provider so it can decide
-					// whether to apply, defer, or reject the new binding.
-					//
-					// Reasoning is restored with the model: applyTurnUpdateToConfig set it
-					// from the incoming model's binding, and sending that to the originating
-					// provider is the mid-run rebinding this pin exists to prevent.
 					const requestedModel = config.model;
 					config = { ...config, model: requestModel, reasoning: requestReasoning };
-					// Advisory: session state has already moved to requestedModel, so the
-					// owner needs this to explain why the run stays on requestModel.
 					try {
 						config.onContinuationPinned?.(requestModel, requestedModel);
 					} catch {
@@ -250,30 +249,23 @@ async function runLoop(
 				await emit({ type: "turn_start" });
 			}
 
-			// Process pending messages (inject before next assistant response)
-			if (pendingMessages.length > 0) {
-				if (config.transformInjectedMessages) {
-					pendingMessages = await config.transformInjectedMessages(pendingMessages, signal);
-				}
-				for (const message of pendingMessages) {
-					await emit({ type: "message_start", message });
-					await emit({ type: "message_end", message });
-					currentContext.messages.push(message);
-					newMessages.push(message);
-				}
-				pendingMessages = [];
-				injectionPending = true;
+			const hadInjectedMessages = pendingMessages.length > 0;
+			let injectedMessages = pendingMessages;
+			if (hadInjectedMessages && config.transformInjectedMessages) {
+				injectedMessages = await config.transformInjectedMessages(injectedMessages, signal);
 			}
+			const messagesToAppend = declareToolChanges(currentContext, [...preparedMessages, ...injectedMessages]);
+			for (const message of messagesToAppend) {
+				await emit({ type: "message_start", message });
+				await emit({ type: "message_end", message });
+				currentContext.messages.push(message);
+				newMessages.push(message);
+			}
+			pendingMessages = [];
+			injectionPending ||= hadInjectedMessages;
 
-			// A just-injected request may activate an override (e.g. a queued
-			// skill) only now, after the loop config was already built. Re-resolve
-			// model, reasoning, tools, and the system prompt for the consuming request.
-			// Skipped for retries.
 			if (injectionPending) {
 				injectionPending = false;
-				// The callback is contracted not to throw, but it is application
-				// supplied; contain a faulty implementation so it degrades to "no
-				// override" instead of rejecting the whole loop.
 				let injectionSnapshot: AgentLoopTurnUpdate | undefined;
 				try {
 					injectionSnapshot = await config.refreshTurnAfterInjection?.(signal);
@@ -282,14 +274,32 @@ async function runLoop(
 				}
 				if (injectionSnapshot) {
 					if (injectionSnapshot.context !== undefined) {
-						currentContext = {
-							...currentContext,
-							systemPrompt: injectionSnapshot.context.systemPrompt,
-							tools: injectionSnapshot.context.tools,
-						};
+						currentContext = { ...currentContext, tools: injectionSnapshot.context.tools };
+					}
+					if (injectionSnapshot.messages?.length) {
+						const refreshedMessages = declareToolChanges(currentContext, injectionSnapshot.messages);
+						for (const message of refreshedMessages) {
+							await emit({ type: "message_start", message });
+							await emit({ type: "message_end", message });
+							currentContext.messages.push(message);
+							newMessages.push(message);
+						}
 					}
 					config = applyTurnUpdateToConfig(config, injectionSnapshot);
 				}
+			}
+
+			const requestUpdate = await config.prepareRequest?.(
+				{
+					context: currentContext,
+					model: config.model,
+					thinkingLevel: config.reasoning ?? "off",
+				},
+				signal,
+			);
+			if (requestUpdate) {
+				currentContext = requestUpdate.context ?? currentContext;
+				config = applyTurnUpdateToConfig(config, requestUpdate);
 			}
 
 			// Stream assistant response
@@ -303,6 +313,13 @@ async function runLoop(
 			newMessages.push(message);
 
 			if (message.stopReason === "error" || message.stopReason === "aborted") {
+				const failedTurn: PrepareNextTurnContext = {
+					message,
+					toolResults: [],
+					context: currentContext,
+					newMessages,
+				};
+				await config.finishTurn?.(failedTurn, signal);
 				await emit({ type: "turn_end", message, toolResults: [] });
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
@@ -330,8 +347,6 @@ async function runLoop(
 				}
 			}
 
-			await emit({ type: "turn_end", message, toolResults });
-
 			lastCompletedTurn = {
 				turn: {
 					message,
@@ -342,20 +357,33 @@ async function runLoop(
 				requestModel,
 				requestReasoning,
 			};
+			const decision = await config.finishTurn?.(lastCompletedTurn.turn, signal);
+			await emit({ type: "turn_end", message, toolResults });
 
-			if (await config.shouldStopAfterTurn?.(lastCompletedTurn.turn)) {
+			if (decision?.action === "end" || (await config.shouldStopAfterTurn?.(lastCompletedTurn.turn))) {
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
 			}
 
+			explicitContinuation = decision?.action === "continue";
 			pendingMessages = (await config.getSteeringMessages?.()) || [];
+			if (hasMoreToolCalls || pendingMessages.length > 0) {
+				explicitContinuation = false;
+			}
 		}
 
 		// Agent would stop here. Check for follow-up messages.
 		const followUpMessages = (await config.getFollowUpMessages?.()) || [];
 		if (followUpMessages.length > 0) {
 			// Set as pending so inner loop processes them
+			explicitContinuation = false;
 			pendingMessages = followUpMessages;
+			continue;
+		}
+
+		// No natural request was selected, so fulfill the continuation decision with one context-only turn.
+		if (explicitContinuation) {
+			explicitContinuation = false;
 			continue;
 		}
 
@@ -364,6 +392,60 @@ async function runLoop(
 	}
 
 	await emit({ type: "agent_end", messages: newMessages });
+}
+
+/**
+ * Declare tool loadout changes to the model.
+ *
+ * `context.tools` is what the runtime can execute; the transcript's system messages declare
+ * what the model may call. Before each request the difference becomes `toolsAdded` and
+ * `toolsRemoved` on a system message. When a pending system message exists, its tool fields
+ * are treated as intent and replaced with the delta between the committed transcript and
+ * the executable set, so replay always yields exactly `context.tools`. Otherwise a new
+ * system message is inserted before the first non-system pending message.
+ */
+function declareToolChanges(context: AgentContext, pendingMessages: AgentMessage[]): AgentMessage[] {
+	let systemIndex = -1;
+	for (let i = pendingMessages.length - 1; i >= 0; i--) {
+		if (pendingMessages[i].role === "system") {
+			systemIndex = i;
+			break;
+		}
+	}
+	const pending = pendingMessages[systemIndex] as SystemMessage | undefined;
+	const baseline = pending
+		? pendingMessages.map((message, index) =>
+				index === systemIndex ? withToolChanges(pending, NO_CHANGES) : message,
+			)
+		: pendingMessages;
+	const changes = getToolStateChanges(
+		getCurrentTools([...context.messages, ...baseline]),
+		(context.tools ?? []).map(toToolDeclaration),
+	);
+	const unchanged = changes.toolsAdded.length === 0 && changes.toolsRemoved.length === 0;
+
+	if (pending) {
+		// Keep the caller's message object when it already declares no tool changes.
+		if (unchanged && !pending.toolsAdded?.length && !pending.toolsRemoved?.length) return pendingMessages;
+		return baseline.map((message, index) => (index === systemIndex ? withToolChanges(pending, changes) : message));
+	}
+	if (unchanged) return pendingMessages;
+	const update = withToolChanges({ role: "system", content: "", timestamp: Date.now() }, changes);
+	const insertIndex = pendingMessages.findIndex((message) => message.role !== "system");
+	const index = insertIndex === -1 ? pendingMessages.length : insertIndex;
+	return [...pendingMessages.slice(0, index), update, ...pendingMessages.slice(index)];
+}
+
+const NO_CHANGES: ToolStateChanges = { toolsAdded: [], toolsRemoved: [] };
+
+/** Copy a system message with its tool fields replaced by `changes`; empty lists omit the field. */
+function withToolChanges(message: SystemMessage, { toolsAdded, toolsRemoved }: ToolStateChanges): SystemMessage {
+	const { toolsAdded: _added, toolsRemoved: _removed, ...rest } = message;
+	return {
+		...rest,
+		...(toolsAdded.length > 0 ? { toolsAdded } : {}),
+		...(toolsRemoved.length > 0 ? { toolsRemoved } : {}),
+	};
 }
 
 /**
@@ -386,12 +468,7 @@ async function streamAssistantResponse(
 	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
 	const llmMessages = await config.convertToLlm(messages);
 
-	// Build LLM context
-	const llmContext: Context = {
-		systemPrompt: context.systemPrompt,
-		messages: llmMessages,
-		tools: context.tools,
-	};
+	const llmContext = normalizeContext({ messages: llmMessages });
 
 	// Resolve API key (important for expiring tokens)
 	const resolvedApiKey =
@@ -917,7 +994,6 @@ function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResul
 		content: finalized.result.content ?? [],
 		details: finalized.result.details,
 		usage: finalized.result.usage,
-		...(finalized.result.addedToolNames?.length ? { addedToolNames: finalized.result.addedToolNames } : {}),
 		isError: finalized.isError,
 		timestamp: Date.now(),
 	};

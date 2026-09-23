@@ -401,9 +401,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			headers: response.headers,
 		});
 	};
+	const handleProviderStreamEvent: NonNullable<ModelsSimpleStreamOptions["onProviderStreamEvent"]> = async (
+		data,
+		model,
+	) => {
+		const runner = extensionRunnerRef.current;
+		if (!runner?.hasHandlers("provider_stream_event")) return;
+		await runner.emit({
+			data,
+			type: "provider_stream_event",
+			provider: model.provider,
+			api: model.api,
+			model: model.id,
+		});
+	};
 
 	const sessionStreamFn: StreamFn = async (model, context, options) => {
 		const requestOptions = buildRequestOptions(model, options);
+		// Compaction and summaries use their own routing ids; only session requests
+		// replace the cache entry, so warming restarts from them. Keep warming while
+		// the current transcript still extends the request's prefix. Agent state may
+		// shallow-copy the messages array or refresh the model object without changing
+		// the provider request, so top-level object identity is not a valid cache key.
 		if (options?.sessionId === sessionManager.getSessionId()) {
 			cacheWarmer.start({ model, context, options: requestOptions }, cacheContextIsCurrent(model));
 		}
@@ -422,6 +441,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		streamFn: sessionStreamFn,
 		onPayload: onProviderPayload,
 		onResponse: onProviderResponse,
+		onProviderStreamEvent: handleProviderStreamEvent,
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;

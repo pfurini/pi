@@ -2,7 +2,6 @@
 
 ## [Unreleased]
 
-
 ### Breaking Changes
 
 - Skill, `commands/`, and grandfathered prompt-template argument substitution is now Claude Code-exact and **0-based**. `$0` / `$ARGUMENTS[0]` is the first argument (previously 1-based); `$ARGUMENTS[N]` is now a supported placeholder; declared `arguments:` names are positional aliases in declaration order (a digit-like declared name is dropped from the mapping, shifting later names down one slot, now with a load warning). `$@`, the braced slice/default forms, and `name=value` binding with positional compaction are no longer placeholders and render literally, so shell snippets in bodies are now safe. Existing user templates and commands shift by one position or stop expanding **silently, with no runtime warning** — old and new readings are both valid, so the break cannot be detected at render time. `substituteSkillArguments` returns a plain `string` (the `SkillArgumentSubstitution` type is removed from the package exports). Migration, before → after:
@@ -37,6 +36,7 @@
 - Added C4 (c4e) registry-routed built-in control-command dispatch in the interactive TUI (ADR-0005). Submitting a message-initial `/name` now resolves through the same `CommandRegistry.resolve(name, { messageInitial: true })` that autocomplete and listing consult, via the new `AgentSession.resolveControlCommand()` seam, so a built-in provably wins its bare name over a colliding extension command (which stays reachable via `/ext:name`) and the dispatch list can no longer drift from `BUILTIN_SLASH_COMMANDS` undetected: the handler table is typed `Record<BuiltinCommandName, …>` over a name union derived from that array, so a missing handler is a compile-time error. Each built-in keeps its exact pre-registry argument semantics (no-argument commands like `/quit` still reject trailing text and fall through to normal submission), and the hidden `/debug`, `/arminsayshi`, and `/dementedelves` easter-eggs keep exact-match dispatch ahead of the registry, unlisted and unshadowable.
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
 - Added per-model `reserveTokens` and `keepRecentTokens` settings through `compaction.modelOverrides`, with ordinary compaction settings as fallback ([#8133](https://github.com/earendil-works/pi-mono/issues/8133)).
+- Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 
 ### Changed
 
@@ -66,6 +66,7 @@
 - Fixed premature missing-model errors after login by waiting for catalog discovery. Radius now defaults to `balanced`, falling back to the first available Radius model when needed.
 - Fixed fullscreen mode reserving a blank row for custom footers that render zero rows ([#8919](https://github.com/earendil-works/pi/issues/8919)).
 - Fixed extension tools without parameter schemas to be rejected during registration instead of breaking provider requests ([#9300](https://github.com/earendil-works/pi/issues/9300)).
+- Prevented managed git packages from automatically installing Pi peer dependencies and added warnings for extension packages that list host-provided modules in `dependencies` ([#9863](https://github.com/earendil-works/pi/issues/9863)).
 
 ## [0.87.1] - 2026-09-22
 

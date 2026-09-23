@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-
 ### Added
 
 - Added an optional `Model.syntheticToolResultReplay` capability, generated from a verified converter matrix, marking built-in models whose API path correctly replays a synthetic assistant tool-call/tool-result pair.
 - Enabled native deferred tool loading for Fireworks Messages models. Use `ToolSearch` or `tool_search` as the loader name for prompt-prefix deferral ([#9323](https://github.com/earendil-works/pi/issues/9323)).
+- Added `onProviderStreamEvent` to observe parsed provider stream events before normalization, including provider-specific fields not retained in assistant messages ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 
 ### Changed
 

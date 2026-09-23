@@ -147,7 +147,7 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 	});
 
 	it("refreshTurnAfterInjection: the session's override wins over the embedder's when a skill is active", async () => {
-		const embedderUpdate = { context: { systemPrompt: "PREVIOUS_MARKER", messages: [], tools: [] } };
+		const embedderUpdate = { context: { messages: [], tools: [] } };
 		const embedderRefresh = vi.fn().mockResolvedValue(embedderUpdate);
 		const { session, cleanup } = await createTestSession({
 			inMemory: true,
@@ -158,7 +158,7 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 			const result = await session.agent.refreshTurnAfterInjection?.(undefined);
 			expect(embedderRefresh).toHaveBeenCalled();
 			expect(result).toBeDefined();
-			expect(result?.context?.systemPrompt).not.toBe("PREVIOUS_MARKER");
+			expect(result?.context).not.toBe(embedderUpdate.context);
 		} finally {
 			cleanup();
 		}

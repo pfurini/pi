@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+
 ### Added
 
 - Added the optional `transformInjectedMessages` hook (`Agent` property, `AgentOptions` option, and `AgentLoopConfig` callback): application-supplied messages — the initial prompt batch and each drained steering/follow-up batch — may be rewritten, expanded, or split immediately before they are emitted and appended to the transcript. It is now settable through `AgentOptions` (mirroring `resolveToolRedirect`); because it is a plain field, an assigner that also needs it (e.g. an external post-construction assignment) must capture and chain the previous transform.
@@ -13,6 +14,42 @@
 - Added `CustomMessage.excludeFromContext` (`harness/messages.ts` twin included): a persisted custom message flagged this way is display-only and excluded from the messages sent to the provider on reload/reconstruction.
 - Added `harness/listing-budget.ts`, the new home of the A.6 skill listing-budget oracle (`buildBudgetedListingBlock`, `estimateListingEntryCost`, `skillListingBudgetCodeUnits`, `est`, `escapeXml`, the v2 delimiters, and the entry/diagnostic types) relocated from pi-coding-agent so the harness can apply the byte-identical algorithm; pi-coding-agent re-exports it unchanged.
 - Added the optional `{ contextWindow, budgetFraction }` second parameter to `formatSkillsForSystemPrompt()`: with a positive context window the listing block is the byte-exact A.6 budgeted v2 oracle (name-sorted emission, 1,536-code-unit description cap, skeleton floor), while omitted/non-positive windows keep the previous unbudgeted v1 output byte-for-byte.
+
+## [0.87.1] - 2026-09-22
+
+## [0.87.0] - 2026-09-21
+
+### Breaking Changes
+
+- Removed `AgentOptions.shouldStopAfterTurn` and `AgentLoopConfig.shouldStopAfterTurn`. Use `finishTurn` and return `{ action: "end" }` to stop after the completed turn:
+
+  ```ts
+  // Before
+  shouldStopAfterTurn: async (turn, signal) => await shouldStop(turn, signal),
+
+  // After
+  finishTurn: async (turn, signal) => {
+    // shouldStopAfterTurn previously ran only for normal responses.
+    if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return;
+    return (await shouldStop(turn, signal)) ? { action: "end" } : undefined;
+  },
+  ```
+
+  `finishTurn` runs after the assistant and all tool results are finalized but before `turn_end`; its decision is applied after `turn_end`. It also runs for error and aborted responses, whose decisions are ignored because those responses remain hard exits. The guard in the migration preserves the old hook's normal-response-only invocation, including avoiding predicate side effects on hard exits. Returning `{ action: "end" }` leaves steering and follow-up queues untouched and skips `prepareNextTurn`.
+
+### Added
+
+- Added `prepareRequest`, which runs before every provider request, including the first. For example, return `{ context: { ...context, messages: persistedMessages } }` to install canonical context after already-selected input is emitted without introducing another queue poll.
+- Added `finishTurn`, which runs after assistant/tool-result finalization and before `turn_end` for normal, error, and aborted responses. Return `{ action: "end" }` to end a normal run after `turn_end`, or `undefined` to preserve normal scheduling. `{ action: "continue" }` ensures one next provider request: existing tool-result, steering, or follow-up scheduling can satisfy that request without adding another one; otherwise the loop makes one context-only request. Error and aborted responses remain hard exits.
+- Added `Agent.peekQueuedMessages()` to preview the next queue-selected batch without consuming it.
+
+### Fixed
+
+- Fixed harness reads misclassifying text files beginning with `GIF` as images ([#9755](https://github.com/earendil-works/pi/issues/9755)).
+
+## [0.86.1] - 2026-09-20
+
+## [0.86.0] - 2026-09-19
 
 ## [0.85.1] - 2026-09-05
 

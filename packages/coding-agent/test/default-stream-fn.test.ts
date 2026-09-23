@@ -7,6 +7,7 @@ import {
 	type AssistantMessage,
 	createAssistantMessageEventStream,
 	type Model,
+	normalizeContext,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
@@ -145,7 +146,7 @@ describe("composed default stream function", () => {
 		// The raw compat path resolves the global API registry and throws for unknown
 		// API ids (proof the call did not route through any ModelRuntime).
 		await expect(async () => {
-			const stream = await agent.streamFunction(model, { messages: [] }, {});
+			const stream = await agent.streamFunction(model, normalizeContext({ messages: [] }), {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
 	});
@@ -156,7 +157,7 @@ describe("composed default stream function", () => {
 		const marker = { calls: 0 };
 		const { model } = await createSessionWithOverlayProvider("capture-provider", marker);
 
-		const stream = await agent.streamFunction(model, { messages: [] }, {});
+		const stream = await agent.streamFunction(model, normalizeContext({ messages: [] }), {});
 		const message = await stream.result();
 
 		expect(marker.calls).toBe(1);
@@ -170,7 +171,7 @@ describe("composed default stream function", () => {
 		const agent = bareAgent();
 		const unknownModel = createModel("unrelated-provider", "test-unregistered-api");
 		await expect(async () => {
-			const stream = await agent.streamFunction(unknownModel, { messages: [] }, {});
+			const stream = await agent.streamFunction(unknownModel, normalizeContext({ messages: [] }), {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
 		expect(marker.calls).toBe(0);
@@ -186,20 +187,20 @@ describe("composed default stream function", () => {
 		// Two live sessions can serve the model and no scope applies: never guess which
 		// session's settings, auth, hooks, and abort signal the caller meant.
 		await expect(async () => {
-			await (await agent.streamFunction(model, { messages: [] }, {})).result();
+			await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		}).rejects.toThrow(/Ambiguous default-stream dispatch/);
 		expect(markerA.calls).toBe(0);
 		expect(markerB.calls).toBe(0);
 
 		sessionB.dispose();
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		expect(markerA.calls).toBe(1);
 		expect(markerB.calls).toBe(0);
 
 		sessionA.dispose();
 		const unknownModel = createModel("capture-provider", "test-unregistered-api");
 		await expect(async () => {
-			const stream = await agent.streamFunction(unknownModel, { messages: [] }, {});
+			const stream = await agent.streamFunction(unknownModel, normalizeContext({ messages: [] }), {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
 	});
@@ -241,7 +242,7 @@ describe("composed default stream function", () => {
 		sessions.push(session);
 
 		const agent = bareAgent();
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 
 		expect(captured?.timeoutMs).toBe(1234);
 		expect(captured?.headers).toMatchObject({ "x-hook": "on" });
@@ -253,13 +254,13 @@ describe("composed default stream function", () => {
 
 		// Direct calls to the session stream function (how compaction and branch
 		// summarization invoke it) must stay extension-hook-free.
-		await (await session.agent.streamFunction(model, { messages: [] }, {})).result();
+		await (await session.agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		expect(captured?.onPayload).toBeUndefined();
 
 		// An untyped caller-supplied transformHeaders wins over the session transform.
 		const customTransform = async () => ({ "x-custom": "1" });
 		await (
-			await agent.streamFunction(model, { messages: [] }, {
+			await agent.streamFunction(model, normalizeContext({ messages: [] }), {
 				transformHeaders: customTransform,
 			} as SimpleStreamOptions)
 		).result();
@@ -316,7 +317,7 @@ describe("composed default stream function", () => {
 		// A bare Agent streams a different provider's model through this session's pipeline:
 		// the events must scope to the request's model, never the session's selected one.
 		const agent = bareAgent();
-		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+		await (await agent.streamFunction(otherModel, normalizeContext({ messages: [] }), {})).result();
 
 		expect(captured?.headers).toMatchObject({ "x-event-model": "other-provider/other-model" });
 		expect(captured?.headers?.["x-event-model"]).not.toContain(sessionProvider);
@@ -379,7 +380,7 @@ describe("composed default stream function", () => {
 		});
 		sessions.push(kimiSession);
 		const agent = bareAgent();
-		await (await agent.streamFunction(otherModel, { messages: [] }, {})).result();
+		await (await agent.streamFunction(otherModel, normalizeContext({ messages: [] }), {})).result();
 		await expect(capturedOther?.onPayload?.({ base: true }, otherModel)).resolves.toEqual({ base: true });
 
 		// Direction 2: non-Kimi session, bare Agent streams the Kimi model → mutation applies.
@@ -393,7 +394,7 @@ describe("composed default stream function", () => {
 			sessionManager: SessionManager.inMemory(cwd),
 		});
 		sessions.push(otherSession);
-		await (await agent.streamFunction(kimiModel, { messages: [] }, {})).result();
+		await (await agent.streamFunction(kimiModel, normalizeContext({ messages: [] }), {})).result();
 		await expect(capturedKimi?.onPayload?.({ base: true }, kimiModel)).resolves.toMatchObject({
 			base: true,
 			kimiMutated: true,
@@ -428,7 +429,7 @@ describe("composed default stream function", () => {
 		const agent = bareAgent();
 		const adHocModel = createModel("openai", "test-unregistered-api");
 		await expect(async () => {
-			const stream = await agent.streamFunction(adHocModel, { messages: [] }, {});
+			const stream = await agent.streamFunction(adHocModel, normalizeContext({ messages: [] }), {});
 			await stream.result();
 		}).rejects.toThrow(/No API provider registered/);
 		expect(marker.calls).toBe(0);
@@ -453,7 +454,7 @@ describe("composed default stream function", () => {
 		sessionA.dispose();
 		session2.dispose();
 
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		expect(markerR1.calls).toBe(1);
 		expect(markerR2.calls).toBe(0);
 	});
@@ -471,7 +472,7 @@ describe("composed default stream function", () => {
 		sessionA.dispose();
 		sessionA.dispose();
 
-		await (await agent.streamFunction(model, { messages: [] }, {})).result();
+		await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		expect(marker.calls).toBe(1);
 	});
 
@@ -490,7 +491,7 @@ describe("composed default stream function", () => {
 		await createSessionWithOverlayProvider("capture-provider", markerB);
 
 		runInHandler = async () => {
-			await (await agent.streamFunction(model, { messages: [] }, {})).result();
+			await (await agent.streamFunction(model, normalizeContext({ messages: [] }), {})).result();
 		};
 		await sessionA.extensionRunner.emit({ type: "agent_settled" });
 
@@ -517,7 +518,7 @@ describe("composed default stream function", () => {
 				pi.on("agent_settled", () => {
 					// Started inside the scope, resumed after disposal.
 					detached = gate
-						.then(() => agent.streamFunction(model, { messages: [] }, {}))
+						.then(() => agent.streamFunction(model, normalizeContext({ messages: [] }), {}))
 						.then((stream) => stream.result());
 				});
 			},
@@ -548,7 +549,7 @@ describe("composed default stream function", () => {
 		const { model: modelB } = await createSessionWithOverlayProvider("b-only-provider", markerB);
 
 		runInHandler = async () => {
-			await (await agent.streamFunction(modelB, { messages: [] }, {})).result();
+			await (await agent.streamFunction(modelB, normalizeContext({ messages: [] }), {})).result();
 		};
 		await sessionA.extensionRunner.emit({ type: "agent_settled" });
 
@@ -612,7 +613,7 @@ describe("composed default stream function", () => {
 							description: "spawns a bare agent",
 							parameters: { type: "object", properties: {} },
 							execute: async () => {
-								await (await agent.streamFunction(bareModel, { messages: [] }, {})).result();
+								await (await agent.streamFunction(bareModel, normalizeContext({ messages: [] }), {})).result();
 								return { content: [{ type: "text", text: "spawned" }], details: {} };
 							},
 						} as never);

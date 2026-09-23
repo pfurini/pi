@@ -132,6 +132,33 @@ describe("command loader", () => {
 		expect(command.userInvocable).toBe(true);
 		expect(command.disableModelInvocation).toBe(false);
 	});
+
+	it("renders the documented prompt-template example through the command path", async () => {
+		// docs/prompt-templates.md "Create a template": the example must use the retained
+		// grammar, so `$ARGUMENTS` expands and no `${1:-default}` literal survives.
+		const dir = makeTempDir();
+		const template: PromptTemplate = {
+			name: "review",
+			description: "Review staged git changes",
+			argumentHint: "[focus]",
+			content:
+				"Review the staged changes. Focus: $ARGUMENTS\nWhen no focus is given, cover correctness, security, and error handling.",
+			sourceInfo: sourceInfo(join(dir, "review.md")),
+			filePath: join(dir, "review.md"),
+		};
+		const command = adaptPromptTemplate(template);
+
+		const focused = await renderCommand(command, "concurrency", renderContext({ activeToolNames: [] }));
+		expect(focused.text).toBe(
+			"Review the staged changes. Focus: concurrency\nWhen no focus is given, cover correctness, security, and error handling.",
+		);
+		expect(focused.text).not.toContain("ARGUMENTS:");
+
+		const unfocused = await renderCommand(command, "", renderContext({ activeToolNames: [] }));
+		expect(unfocused.text).toBe(
+			"Review the staged changes. Focus: \nWhen no focus is given, cover correctness, security, and error handling.",
+		);
+	});
 });
 
 describe("A.7.1 include inlining", () => {
@@ -389,11 +416,12 @@ describe("prompt-template arguments: declaration (A.3.2 tier parity)", () => {
 		});
 		// Malformed frontmatter drops the whole template at load (parse throws → null),
 		// so a broken file can never reach adaptation with a half-applied declaration.
-		expect(loaded.map((template) => template.name)).toEqual(["good"]);
-		expect(loaded[0].arguments).toBe("alpha beta gamma");
+		const { templates, diagnostics } = loaded;
+		expect(templates.map((template) => template.name)).toEqual(["good"]);
+		expect(templates[0].arguments).toBe("alpha beta gamma");
 
-		const adapted = adaptPromptTemplates(loaded);
-		expect(adapted.diagnostics).toEqual([]);
+		const adapted = adaptPromptTemplates(templates);
+		expect(diagnostics).toHaveLength(1);
 		expect(adapted.commands[0].frontmatter).toEqual({ arguments: "alpha beta gamma" });
 	});
 });

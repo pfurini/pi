@@ -1,6 +1,6 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import { streamSimple } from "@earendil-works/pi-ai/compat";
+import { getCurrentTools, streamSimple } from "@earendil-works/pi-ai/compat";
 import { OPENAI_CODEX_AMBIENT_TOKEN_ENV } from "@earendil-works/pi-ai/providers/openai-codex";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession, AgentSessionEvent } from "../../src/core/agent-session.ts";
@@ -258,6 +258,7 @@ describe("session summary authentication ownership", () => {
 			faux.setResponses([
 				fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long" }),
 				fauxAssistantMessage("overflow summary"),
+				fauxAssistantMessage("turn prefix"),
 				(context) => {
 					expect(JSON.stringify(context.messages)).toContain("overflow summary");
 					expect(context.messages.at(-1)?.role).toBe("user");
@@ -273,13 +274,13 @@ describe("session summary authentication ownership", () => {
 
 			await session.prompt("continue");
 
-			expect(faux.state.callCount).toBe(3);
+			expect(faux.state.callCount).toBe(4);
 			expect(events.filter((event) => event.type === "compaction_start")).toHaveLength(1);
 			expect(events.find((event) => event.type === "compaction_end")).toMatchObject({
 				reason: "overflow",
 				aborted: false,
 				willRetry: true,
-				result: expect.objectContaining({ summary: "overflow summary" }),
+				result: expect.objectContaining({ summary: expect.stringContaining("overflow summary") }),
 			});
 			if (repeated) {
 				expect(events.filter((event) => event.type === "compaction_end").at(-1)).toMatchObject({
@@ -329,7 +330,7 @@ describe("session summary authentication ownership", () => {
 		expect(transport).toHaveBeenCalledTimes(1);
 		const [requestModel, context, options] = transport.mock.calls[0];
 		expect(requestModel.baseUrl).toBe("https://summary-routing.invalid/v1");
-		expect(context.tools).toBeUndefined();
+		expect(getCurrentTools(context.messages)).toEqual([]);
 		expect(options).toMatchObject({
 			apiKey: oauthToken,
 			headers: { "x-configured": "provider-header", "x-summary-hook": "present" },

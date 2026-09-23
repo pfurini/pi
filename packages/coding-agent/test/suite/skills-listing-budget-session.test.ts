@@ -11,7 +11,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, streamSimple } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, streamSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../../src/core/agent-session.ts";
@@ -292,12 +292,12 @@ describe("C4a listing budget: invocation-count reorder", () => {
 						(message) => message.role === "user" && JSON.stringify(message.content).includes("check listing"),
 					)
 				) {
-					laterPromptSystemPrompt = context.systemPrompt ?? "";
+					laterPromptSystemPrompt = getCurrentSystemPrompt(context.messages);
 				}
 				return fauxAssistantMessage("skill follow-up done");
 			},
 			(context) => {
-				laterPromptSystemPrompt = context.systemPrompt ?? "";
+				laterPromptSystemPrompt = getCurrentSystemPrompt(context.messages);
 				return fauxAssistantMessage("plain follow-up done");
 			},
 		]);

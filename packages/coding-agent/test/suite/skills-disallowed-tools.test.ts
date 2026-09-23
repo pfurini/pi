@@ -17,6 +17,7 @@ import {
 	type FauxResponseFactory,
 	fauxAssistantMessage,
 	fauxToolCall,
+	getCurrentTools,
 	type Model,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
@@ -113,7 +114,7 @@ interface CapturedRequest {
 
 function captureRequest(sink: CapturedRequest[], text = "ok"): FauxResponseFactory {
 	return (context: Context, _options: SimpleStreamOptions | undefined, _state, _model: Model<string>) => {
-		sink.push({ toolNames: (context.tools ?? []).map((tool) => tool.name) });
+		sink.push({ toolNames: getCurrentTools(context.messages).map((tool) => tool.name) });
 		return fauxAssistantMessage(text);
 	};
 }
@@ -156,6 +157,69 @@ describe("C3a disallowed-tools: schema removal", () => {
 
 		expect(requests[0].toolNames).not.toContain("bash");
 		expect(requests[0].toolNames).toContain("keep");
+	});
+});
+
+describe("C3a disallowed-tools: queued activation", () => {
+	function waitTool(): { tool: AgentTool; release: () => void } {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		return {
+			tool: {
+				name: "wait",
+				label: "Wait",
+				description: "Wait for release",
+				parameters: Type.Object({}),
+				execute: async () => {
+					await gate;
+					return { content: [{ type: "text", text: "released" }], details: {} };
+				},
+			},
+			release: () => release?.(),
+		};
+	}
+
+	it("removes the disallowed tool from the schema of the request that consumes a queued skill", async () => {
+		// The queued activation returns refreshed executable tools and no prompt
+		// message; the consuming request's declarations must still drop `bash`.
+		const { tool, release } = waitTool();
+		const harness = await createDisallowHarness(
+			[{ name: "nobash", frontmatter: { "disallowed-tools": ["bash"] }, body: "body" }],
+			[tool, passthroughTool("bash"), passthroughTool("keep")],
+		);
+		const requests: CapturedRequest[] = [];
+		let bashExecutions = 0;
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			(context: Context) => {
+				requests.push({ toolNames: getCurrentTools(context.messages).map((t) => t.name) });
+				return fauxAssistantMessage([fauxToolCall("bash", {})], { stopReason: "toolUse" });
+			},
+			captureRequest(requests, "done"),
+		]);
+		const started = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "tool_execution_end" && event.toolName === "bash" && !event.isError) bashExecutions++;
+				if (event.type === "tool_execution_start" && event.toolName === "wait") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+		const run = harness.session.prompt("start");
+		await started;
+		await harness.session.steer("/skill:nobash");
+		release();
+		await run;
+
+		expect(requests).toHaveLength(2);
+		expect(requests[0].toolNames).toContain("keep");
+		expect(requests[0].toolNames).not.toContain("bash");
+		expect(requests[1].toolNames).not.toContain("bash");
+		expect(bashExecutions).toBe(0);
+		expect(toolResultFor(harness, "bash")?.isError).toBe(true);
 	});
 });
 

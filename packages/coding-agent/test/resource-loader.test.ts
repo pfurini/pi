@@ -119,7 +119,7 @@ Prompt content.`,
 			await loader.reload();
 
 			// Exercises the real updateCommands() composition of native-command and
-			// adapted-template diagnostics — not a mocked getCommands().
+			// adapted-template diagnostics, not a mocked getCommands().
 			const digitWarnings = loader.getCommands().diagnostics.filter((d) => d.message.includes("digit-like"));
 			const forName = (name: string) => digitWarnings.filter((d) => d.message.includes(`"${name}"`));
 			expect(forName("1")).toHaveLength(1);
@@ -129,6 +129,28 @@ Prompt content.`,
 			expect(digitWarnings).toHaveLength(4);
 			expect(forName("1")[0].path?.endsWith("native.md")).toBe(true);
 			expect(forName("3")[0].path?.endsWith("tpl.md")).toBe(true);
+		});
+
+		// Regression test for #9354.
+		it("should report invalid prompt frontmatter while loading valid siblings", async () => {
+			const promptsDir = join(agentDir, "prompts");
+			const invalidPromptPath = join(promptsDir, "invalid.md");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(invalidPromptPath, "---\ndescription: Broken: unquoted colon\n---\nDo something.\n");
+			writeFileSync(join(promptsDir, "valid.md"), "Valid prompt content.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { prompts, diagnostics } = loader.getPrompts();
+			expect(prompts.map((prompt) => prompt.name)).toEqual(["valid"]);
+			expect(diagnostics).toEqual([
+				expect.objectContaining({
+					type: "warning",
+					path: invalidPromptPath,
+					message: expect.stringContaining("line 1, column 14"),
+				}),
+			]);
 		});
 
 		it("should prefer project resources over user on name collisions", async () => {

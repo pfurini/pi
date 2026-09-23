@@ -51,6 +51,39 @@ Arguments after an invocation use the same zero-based grammar as commands and pr
 ```
 Set `disable-model-invocation: true` in frontmatter when a skill should be available only through its explicit command. The `enableSkillCommands` [setting](settings.md) controls whether skill commands appear in interactive command discovery; manually entered `/skill:name` commands still work.
 
+## Render a skill
+
+Every invocation path (direct `/skill:name`, queued steer or follow-up, and the `skill` tool) renders the body once, in this order:
+
+1. A `Base directory for this skill: <dir>` preamble is prepended.
+2. Arguments are substituted with the grammar above. `$@` and braced forms such as `${1:-default}` stay literal.
+3. Skill variables are substituted; see [Skill variables](#skill-variables).
+4. `!`command`` shell injections run; see [Shell command injection](#shell-command-injection).
+5. A tool-name note is appended when the body references Claude Code tool names.
+
+Skills never inline file contents and there is no `@path` stage, so an argument that looks like a path is never resolved against the skill directory. Write a skill-local reference as `@${PI_SKILL_DIR}/references/x.md` when the model should read that file.
+
+## Skill variables
+
+Rendering substitutes these braced variables. The same values are set in the environment of shell injections and, while the invocation is active, of `bash` tool executions (`disableSkillEnvInjection: true` turns the tool overlay off).
+
+| Pi variable | Claude Code alias | Value |
+|---|---|---|
+| `${PI_SKILL_DIR}` | `${CLAUDE_SKILL_DIR}` | The skill's base directory |
+| `${PI_PROJECT_DIR}` | `${CLAUDE_PROJECT_DIR}` | Nearest ancestor with a `.git` entry, else the working directory |
+| `${PI_SESSION_ID}` | `${CLAUDE_SESSION_ID}` | Current session id |
+| `${PI_EFFORT}` | `${CLAUDE_EFFORT}` | The invocation's `effort` frontmatter, else the session thinking level, clamped to the effective model |
+
+The `CLAUDE_*` aliases are accepted only while the `skillInterop` setting is on (the default); with `skillInterop: false` they stay literal. An integer `effort` budget maps to a level with a diagnostic (2048 or less to `low`, 8192 or less to `medium`, 24576 or less to `high`, above to `xhigh`). Unknown `${...}` text is left untouched.
+
+## Shell command injection
+
+A body segment `` !`command` `` runs `command` at render time and is replaced by its output. A skill author can run anything the user can, so load only skills you trust. Trusting a project authorizes its skills' shell blocks, including blocks added by a later `git pull`.
+
+Execution is gated by tool policy. Injection runs only when the session's active tool set includes `bash` and the invocation's `disallowed-tools` does not block it (`Bash` and `bash` both match after redirect canonicalization). Blocked segments render as `[shell command execution disabled by tool policy]`. The `disableSkillShellExecution` setting disables injection everywhere and renders `[shell command execution disabled by policy]`. A timed-out or aborted command, a non-zero exit code, and truncated output are each marked inline in brackets.
+
+Per-command limits come from `skillShellTimeoutMs` (default 30000) and `skillShellOutputLimitBytes` (default 16384). The `shell` frontmatter field selects the interpreter, `bash` (default) or `powershell`; it does not list the injections, which live in the body.
+
 <a id="choose-where-it-loads"></a>
 
 ## Add it to Pi
@@ -82,7 +115,7 @@ The Agent Skills specification defines these fields:
 | `model` and `effort` | Ephemeral model and reasoning overrides for the invocation turn |
 | `context`, `agent`, and `background` | Inline or subagent execution policy |
 | `paths` | Recent-path listing boost patterns |
-| `shell` | Ordered pre-delivery shell injections |
+| `shell` | Interpreter for shell injection: `bash` (default) or `powershell` |
 
 Names use lowercase letters, numbers, and hyphens, with no leading, trailing, or consecutive hyphens. They can contain at most 64 characters; descriptions can contain at most 1024.
 

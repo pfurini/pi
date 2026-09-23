@@ -132,6 +132,33 @@ describe("command loader", () => {
 		expect(command.userInvocable).toBe(true);
 		expect(command.disableModelInvocation).toBe(false);
 	});
+
+	it("renders the documented prompt-template example through the command path", async () => {
+		// docs/prompt-templates.md "Create a template": the example must use the retained
+		// grammar, so `$ARGUMENTS` expands and no `${1:-default}` literal survives.
+		const dir = makeTempDir();
+		const template: PromptTemplate = {
+			name: "review",
+			description: "Review staged git changes",
+			argumentHint: "[focus]",
+			content:
+				"Review the staged changes. Focus: $ARGUMENTS\nWhen no focus is given, cover correctness, security, and error handling.",
+			sourceInfo: sourceInfo(join(dir, "review.md")),
+			filePath: join(dir, "review.md"),
+		};
+		const command = adaptPromptTemplate(template);
+
+		const focused = await renderCommand(command, "concurrency", renderContext({ activeToolNames: [] }));
+		expect(focused.text).toBe(
+			"Review the staged changes. Focus: concurrency\nWhen no focus is given, cover correctness, security, and error handling.",
+		);
+		expect(focused.text).not.toContain("ARGUMENTS:");
+
+		const unfocused = await renderCommand(command, "", renderContext({ activeToolNames: [] }));
+		expect(unfocused.text).toBe(
+			"Review the staged changes. Focus: \nWhen no focus is given, cover correctness, security, and error handling.",
+		);
+	});
 });
 
 describe("A.7.1 include inlining", () => {

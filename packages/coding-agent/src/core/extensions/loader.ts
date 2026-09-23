@@ -687,6 +687,15 @@ async function loadExtensionsInternal(
 	};
 }
 
+/**
+ * Load extensions from paths.
+ *
+ * `agentDir` is the agent configuration directory reported through
+ * `ExtensionContext.agentDir`; it defaults to `cwd` only for callers that have no
+ * separate configuration directory. This is the explicit-directory signature:
+ * the event bus and runtime always follow `agentDir`. The older
+ * `(paths, cwd, eventBus?, runtime?)` shape is not accepted.
+ */
 export async function loadExtensions(
 	paths: string[],
 	cwd: string,
@@ -697,6 +706,7 @@ export async function loadExtensions(
 	return loadExtensionsInternal(paths, cwd, agentDir, eventBus, runtime);
 }
 
+/** Cached variant of {@link loadExtensions} with the same explicit-directory signature. */
 export async function loadExtensionsCached(
 	paths: string[],
 	cwd: string,

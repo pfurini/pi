@@ -20,6 +20,7 @@ The agent directory is shown as `<agent-dir>` below. Set its location with the `
 | `<agent-dir>/extensions/` | User [extensions](extensions.md). |
 | `<agent-dir>/skills/` | User [skills](skills.md) and supporting files. |
 | `<agent-dir>/prompts/` | User [prompt templates](prompt-templates.md) exposed as slash commands. |
+| `<agent-dir>/commands/` | User [native commands](prompt-templates.md#native-commands), which share the template format and renderer. |
 | `<agent-dir>/themes/` | User [theme](themes.md) files. |
 
 ## Project `.pi` directory
@@ -32,6 +33,7 @@ The agent directory is shown as `<agent-dir>` below. Set its location with the `
 | `.pi/extensions/` | Project extensions. |
 | `.pi/skills/` | Project skills and supporting files. |
 | `.pi/prompts/` | Project prompt templates exposed as slash commands. |
+| `.pi/commands/` | Project native commands. |
 | `.pi/themes/` | Project theme files. |
 
 For `SYSTEM.md` and `APPEND_SYSTEM.md`, the trusted project file takes precedence over the corresponding agent-directory file. Files with the same name are not combined.

@@ -100,6 +100,8 @@ Events cover resource discovery, sessions, agent and message lifecycle, provider
 
 `before_agent_start` exposes both the current prompt and its structured `systemPromptOptions`. Prefer changing prompt sections, selected tools, or guidelines so Pi can append a transcript delta. Returning `systemPrompt`, or setting `forceSystemPrompt`, replaces the whole prompt for that run while the transcript continues recording the structured sections. Providers receive the forced text as their leading system prompt.
 
+`before_agent_start` fires for every run a prompt or a message starts: a typed prompt, `sendUserMessage()`, and a custom message sent with `sendMessage(..., { triggerTurn: true })` on an idle session. For that custom message, `prompt` is the message's text, and the session already counts as busy while the handlers run, so a message another extension sends meanwhile is queued into the same run.
+
 `message_end` can replace a finalized message while preserving its role. `tool_call` can mutate input or block execution. `tool_result` handlers compose, with each handler seeing prior changes.
 
 <a id="provider_stream_event"></a>

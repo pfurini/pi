@@ -768,10 +768,13 @@ export interface ProviderStreamEvent {
 	data: unknown;
 }
 
-/** Fired after user submits prompt but before agent loop. */
+/** Fired before the agent loop of a run that a prompt, or a custom message sent with `triggerTurn`, starts. */
 export interface BeforeAgentStartEvent {
 	type: "before_agent_start";
-	/** The raw user prompt text (after expansion). */
+	/**
+	 * The raw user prompt text (after expansion). For a run an extension starts with
+	 * `sendMessage(..., { triggerTurn: true })` on an idle session, the text of that message.
+	 */
 	prompt: string;
 	/** Images attached to the user prompt, if any. */
 	images?: ImageContent[];

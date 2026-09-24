@@ -2268,13 +2268,47 @@ export class AgentSession {
 		return target ? runWithDefaultStreamTarget(target, fn) : fn();
 	}
 
-	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
+	/**
+	 * Run the agent over `messages`.
+	 *
+	 * `preparePrompt` is for a run that did not come through `prompt()`, such as a custom
+	 * message an extension sends with `triggerTurn` on an idle session. It is the text
+	 * `before_agent_start` reports as the prompt, and the run's prompt state is prepared
+	 * here as `prompt()` prepares it. Without that preparation the first request replays
+	 * the transcript's prompt, which is empty in a new session, and every later turn of
+	 * the run drops the sections extensions set (upstream issue 5581).
+	 *
+	 * Preparation runs after the run is claimed, so a message that arrives while
+	 * `before_agent_start` handlers run is queued into this run instead of starting a
+	 * second one, which the agent would refuse. A run that never starts, because
+	 * preparation failed or the run was aborted meanwhile, still records its custom
+	 * messages.
+	 */
+	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[], preparePrompt?: string): Promise<void> {
 		return this.runInDefaultStreamScope(async () => {
 			this._agentRunAbortRequested = false;
 			this._isAgentRunActive = true;
 			try {
+				let runMessages = messages;
+				if (preparePrompt !== undefined) {
+					const prepared = Array.isArray(messages) ? [...messages] : [messages];
+					let started = false;
+					try {
+						this._refreshSkillListingIfDirty();
+						await this._prepareRunPrompt(prepared, preparePrompt, undefined);
+						started = !this._agentRunAbortRequested;
+					} finally {
+						if (!started) {
+							for (const message of prepared) {
+								if (message.role === "custom") this._appendCustomMessage(message);
+							}
+						}
+					}
+					if (!started) return;
+					runMessages = prepared;
+				}
 				this._syncPendingTurnOverride();
-				await this.agent.prompt(messages);
+				await this.agent.prompt(runMessages);
 				while (!this._agentRunAbortRequested) {
 					if (await this._handlePostAgentRun()) {
 						if (this._agentRunAbortRequested) break;
@@ -2298,6 +2332,44 @@ export class AgentSession {
 				await this._emitAgentSettled();
 			}
 		});
+	}
+
+	/**
+	 * Prepare a run's prompt state: fire `before_agent_start`, apply what its handlers
+	 * changed, add the custom messages they returned to `messages`, and put the system
+	 * prompt and tool delta first. Shared by `prompt()` and by runs that did not come
+	 * through it, so both kinds of run send the same prompt.
+	 */
+	private async _prepareRunPrompt(
+		messages: AgentMessage[],
+		promptText: string,
+		images: ImageContent[] | undefined,
+	): Promise<void> {
+		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
+		const result = await this._extensionRunner.emitBeforeAgentStart(
+			promptText,
+			images,
+			this._baseSystemPromptOptions,
+		);
+		const handlerEditedTools =
+			result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
+			result.systemPromptOptions.selectedTools.some((name, index) => name !== selectedToolsBefore[index]);
+		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
+		await this._normalizePreparedPromptImages(messages, images);
+
+		for (const msg of result.messages) {
+			messages.push({
+				role: "custom",
+				customType: msg.customType,
+				content: msg.content ?? [],
+				display: msg.display,
+				details: msg.details,
+				timestamp: Date.now(),
+			});
+		}
+		const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
+		this._runSystemPromptOptions = result.systemPromptOptions;
+		if (updateMessage) messages.unshift(updateMessage);
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
@@ -2639,31 +2711,7 @@ export class AgentSession {
 			}
 			this._pendingNextTurnMessages = [];
 
-			const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
-			const result = await this._extensionRunner.emitBeforeAgentStart(
-				promptText,
-				currentImages,
-				this._baseSystemPromptOptions,
-			);
-			const handlerEditedTools =
-				result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
-				result.systemPromptOptions.selectedTools.some((name, index) => name !== selectedToolsBefore[index]);
-			if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
-			await this._normalizePreparedPromptImages(messages, currentImages);
-
-			for (const msg of result.messages) {
-				messages.push({
-					role: "custom",
-					customType: msg.customType,
-					content: msg.content ?? [],
-					display: msg.display,
-					details: msg.details,
-					timestamp: Date.now(),
-				});
-			}
-			const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
-			this._runSystemPromptOptions = result.systemPromptOptions;
-			if (updateMessage) messages.unshift(updateMessage);
+			await this._prepareRunPrompt(messages, promptText, currentImages);
 		} catch (error) {
 			preflightResult?.(false);
 			// Pre-run rollback (fork #5): a throw after a skill activated (e.g. in
@@ -4216,7 +4264,7 @@ export class AgentSession {
 	 * Handles four cases:
 	 * - Streaming: queues message, processed when loop pulls from queue
 	 * - Streaming + triggerTurn false: appended to state/session once the current turn ends
-	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
+	 * - Not streaming + triggerTurn: appends to state/session, starts new turn prepared like a typed prompt (fires `before_agent_start`)
 	 * - Not streaming + no trigger: appends to state/session, no turn
 	 *
 	 * @param message Custom message with customType, content, display, details
@@ -4263,11 +4311,14 @@ export class AgentSession {
 				this.agent.steer(appMessage);
 			}
 		} else if (options?.triggerTurn) {
+			// The run is prepared like a typed prompt; `before_agent_start` reports the
+			// message's text as the prompt.
+			const promptText = contentText(appMessage.content);
 			if (this._isEmittingAgentSettled) {
-				this._deferredSettledActions.push(async () => await this._runAgentPrompt(appMessage));
+				this._deferredSettledActions.push(async () => await this._runAgentPrompt(appMessage, promptText));
 				return;
 			}
-			await this._runAgentPrompt(appMessage);
+			await this._runAgentPrompt(appMessage, promptText);
 		} else if (this.isStreaming) {
 			// Appending now would put the message between an assistant tool call and its
 			// result, which providers that validate message order reject on replay. Defer

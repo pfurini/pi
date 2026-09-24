@@ -386,15 +386,10 @@ const OPENAI_CODEX_ADDITIONAL_TOOLS_MODEL_IDS = new Set([
 	"gpt-6-luna",
 ]);
 const OPENAI_LONG_CONTEXT_INPUT_THRESHOLD = 272000;
+const OPENAI_GPT_5_6_AND_6_CONTEXT_WINDOW = 890000;
 const OPENAI_SHORT_CONTEXT_CAPPED_MODEL_IDS = new Set([
 	"gpt-5.4",
 	"gpt-5.5",
-	"gpt-5.6-sol",
-	"gpt-5.6-terra",
-	"gpt-5.6-luna",
-	"gpt-6-astra",
-	"gpt-6-sol",
-	"gpt-6-luna",
 ]);
 const OPENAI_LONG_CONTEXT_PRICING_MODEL_IDS = new Set([
 	"gpt-5.4",
@@ -3089,13 +3084,14 @@ async function generateModels() {
 
 	// OpenAI Codex (ChatGPT OAuth) models
 	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
-	// Older model limits are based on observed server behavior. GPT-5.6 and GPT-6 use an
-	// 875k window so Pi compacts below the observed Codex subscription overflow point. Both
-	// families document a 1.05M physical window; a live probe accepted 890k input tokens for
-	// gpt-6-astra and recalled a needle placed near the start of that payload.
+	// Older model limits are based on observed server behavior.
+	// GPT-5.6 and GPT-6 use an 890k window, so Pi compacts below the observed
+	// Codex subscription overflow point. Both families document a 1.05M physical window.
+	// A live probe accepted 890k input tokens for gpt-6-astra and recalled a needle
+	// placed near the start of that payload.
 	const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 	const CODEX_CONTEXT = 272000;
-	const CODEX_LONG_CONTEXT = 875000;
+	const CODEX_LONG_CONTEXT = OPENAI_GPT_5_6_AND_6_CONTEXT_WINDOW;
 	const CODEX_SPARK_CONTEXT = 128000;
 	const CODEX_MAX_TOKENS = 128000;
 	const codexModels: Model<"openai-codex-responses">[] = [
@@ -3273,9 +3269,6 @@ async function generateModels() {
 	const AZURE_CONTEXT_WINDOW_OVERRIDES: Record<string, number> = {
 		"gpt-5.4": 1050000,
 		"gpt-5.5": 1050000,
-		"gpt-5.6-luna": 1050000,
-		"gpt-5.6-sol": 1050000,
-		"gpt-5.6-terra": 1050000,
 	};
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
@@ -3296,6 +3289,9 @@ async function generateModels() {
 
 	for (const model of allModels) {
 		applyOpenAICompletionsCompatMetadata(model);
+		if (model.id.startsWith("gpt-5.6") || model.id.startsWith("gpt-6")) {
+			model.contextWindow = OPENAI_GPT_5_6_AND_6_CONTEXT_WINDOW;
+		}
 		applyAnthropicMessagesCompatMetadata(model);
 		applyModelsDevReasoningOptionMetadata(model);
 		applyThinkingLevelMetadata(model);

@@ -11,8 +11,13 @@ function mergeModels(baseline: readonly Model<Api>[], dynamic: readonly Model<Ap
 	const merged = [...baseline];
 	for (const model of dynamic) {
 		const index = merged.findIndex((entry) => entry.id === model.id);
-		if (index >= 0) merged[index] = model;
-		else merged.push(model);
+		if (index >= 0) {
+			// A remote catalog may lag a generated correction, so it can raise but not lower a known context limit.
+			const staticModel = merged[index]!;
+			merged[index] = { ...model, contextWindow: Math.max(staticModel.contextWindow, model.contextWindow) };
+		} else {
+			merged.push(model);
+		}
 	}
 	return merged;
 }

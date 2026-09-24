@@ -111,7 +111,7 @@ describe("getSupportedThinkingLevels", () => {
 						},
 					],
 				},
-				contextWindow: provider === "openai-codex" ? 875000 : 272000,
+				contextWindow: 890000,
 				maxTokens: 128000,
 				compat: {
 					supportsAdditionalTools: true,

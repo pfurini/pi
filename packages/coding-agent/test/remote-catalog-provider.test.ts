@@ -117,6 +117,14 @@ describe("remote catalog provider", () => {
 		expect(await store.read(provider.id)).toMatchObject({ lastModified: Date.parse(newerHeader) });
 	});
 
+	it("does not let a remote catalog lower a static context limit", async () => {
+		const provider = testProvider();
+		const store = new InMemoryModelsStore();
+		const remoteModel = { ...model("static"), contextWindow: 500 };
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ static: remoteModel })));
+		await refreshProvider(provider, store);
+		expect(provider.getModels()).toMatchObject([{ id: "static", contextWindow: 1000 }]);
+	});
 	it("revalidates a stored catalog with its etag and keeps the overlay on 304", async () => {
 		const responses = [
 			new Response(JSON.stringify({ dynamic: model("dynamic") }), {

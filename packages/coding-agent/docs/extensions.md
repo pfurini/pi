@@ -153,6 +153,8 @@ See [`hello.ts`](../examples/extensions/hello.ts), [`todo.ts`](../examples/exten
 
 Register every tool first, keep optional tools inactive, and use `pi.setActiveTools()` from a loader tool to select the desired active tools. Names must already be registered; unknown names are ignored.
 
+`pi.getActiveTools()` returns the active set. `pi.getCallableTools()` returns the subset the model can call in the current request: while a skill with `disallowed-tools` runs, its disallowed tools stay active but are removed from requests and blocked. Check `pi.getCallableTools()` before a `tool_call` block reason or notice tells the model to call another tool.
+
 Pi records the initial prompt and tool set in the transcript's first system message, then appends tool and prompt changes before the next model request. Providers that cannot represent the transition receive a complete transcript checkpoint, which can invalidate the cached prefix.
 
 <a id="extensioncontext"></a>

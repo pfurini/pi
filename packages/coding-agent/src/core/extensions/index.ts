@@ -99,6 +99,7 @@ export type {
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetCallableToolsHandler,
 	GetCommandsHandler,
 	GetThinkingLevelHandler,
 	GrepToolCallEvent,

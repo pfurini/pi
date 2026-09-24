@@ -245,6 +245,42 @@ describe("C3a disallowed-tools: pre-lookup policy block", () => {
 	});
 });
 
+describe("C3a disallowed-tools: callable tools for extensions", () => {
+	it("pi.getCallableTools() leaves out a tool the active skill disallows; pi.getActiveTools() keeps it", async () => {
+		const seen: Array<{ active: string[]; callable: string[] }> = [];
+		const harness = await createDisallowHarness(
+			[{ name: "nobash", frontmatter: { "disallowed-tools": ["bash"] }, body: "body" }],
+			[passthroughTool("bash"), passthroughTool("keep")],
+			{
+				extensionFactories: [
+					(pi) => {
+						pi.on("tool_call", () => {
+							seen.push({ active: pi.getActiveTools(), callable: pi.getCallableTools() });
+						});
+					},
+				],
+			},
+		);
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("keep", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+			fauxAssistantMessage([fauxToolCall("keep", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done again"),
+		]);
+
+		await harness.session.prompt("/skill:nobash");
+		await harness.session.prompt("plain prompt");
+
+		expect(seen).toHaveLength(2);
+		// While the skill is active, bash stays active but cannot be called.
+		expect(seen[0].active).toEqual(expect.arrayContaining(["bash", "keep"]));
+		expect(seen[0].callable).toContain("keep");
+		expect(seen[0].callable).not.toContain("bash");
+		// The restriction expires with the skill's run.
+		expect(seen[1].callable).toEqual(expect.arrayContaining(["bash", "keep"]));
+	});
+});
+
 describe("C3a disallowed-tools: stacked union", () => {
 	it("unions disallowed tools across two stacked invocations", async () => {
 		const harness = await createDisallowHarness(

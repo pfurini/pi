@@ -1628,6 +1628,14 @@ export interface ExtensionAPI {
 	/** Get the list of currently active tool names. */
 	getActiveTools(): string[];
 
+	/**
+	 * Get the active tool names the model can call right now. While a skill with
+	 * `disallowed-tools` is active, those tools stay in {@link getActiveTools} but
+	 * are removed from requests and blocked; this list leaves them out. Use it before
+	 * pointing the model at a tool, e.g. in a `tool_call` block reason.
+	 */
+	getCallableTools(): string[];
+
 	/** Get all configured tools with parameter schema, prompt guidelines, and source metadata. */
 	getAllTools(): ToolInfo[];
 
@@ -1892,6 +1900,8 @@ export type GetSessionNameHandler = () => string | undefined;
 
 export type GetActiveToolsHandler = () => string[];
 
+export type GetCallableToolsHandler = () => string[];
+
 /** Tool info with name, description, parameter schema, prompt guidelines, and source metadata. */
 export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines"> & {
 	sourceInfo: SourceInfo;
@@ -1953,6 +1963,7 @@ export interface ExtensionActions {
 	getSessionName: GetSessionNameHandler;
 	setLabel: SetLabelHandler;
 	getActiveTools: GetActiveToolsHandler;
+	getCallableTools: GetCallableToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
 	refreshTools: RefreshToolsHandler;

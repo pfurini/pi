@@ -16,7 +16,7 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
 | Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. |
-| Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence does not forward it, so fenced sessions always load the built-ins. |
+| Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence forwards it to the fenced child since pi-fence commit `83fa852`, so fenced sessions honor it too. |
 | Failure | A listed package that cannot be resolved appears by name in `getExtensions().errors`; the session starts and the other built-ins load. |
 
 The upstream-owned footprint is 9 added lines and 1 changed line, in six files, with no removed line:

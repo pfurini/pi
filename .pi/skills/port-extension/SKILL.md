@@ -161,13 +161,13 @@ Other Pi sessions share the main checkout. Every step there needs the owner's ap
 
 Step 3 precedes step 4 on purpose. New sessions lack the tool until the build finishes, but they never load two copies.
 
-**Rollback.** pi-fence does not forward `PI_FORK_BUILTINS`, so the rollback disables the built-in in code first. Every step needs the owner's approval.
+**Rollback.** The rollback disables the built-in in code, so it covers every session, including those started without the switch. Every step needs the owner's approval.
 
 1. Run `git revert --no-edit` on each port commit, newest first. The lockfile change needs `PI_ALLOW_LOCKFILE_CHANGE=1`.
 2. Run `npm install --ignore-scripts` and `npm run build:offline`.
 3. Restore the entry in `settings.json`. Copy the backup back when the file's hash still equals the post-edit hash. Otherwise re-add the one entry by hand.
 
-Unfenced sessions may use `PI_FORK_BUILTINS=off` as a stopgap. Never use `git reset --hard`.
+Before step 1, any new session may start with `PI_FORK_BUILTINS=off` as a stopgap, fenced or unfenced. pi-fence forwards the name since pi-fence commit `83fa852`. The switch disables every built-in, not only the one being rolled back. Never use `git reset --hard`.
 
 ## Record the results
 

@@ -1,6 +1,6 @@
-import { type Dirent, existsSync, type FSWatcher, readdirSync, statSync } from "node:fs";
+import { type Dirent, existsSync, type FSWatcher, readdirSync, statSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { closeWatcher, FS_WATCH_RETRY_DELAY_MS, watchWithErrorHandler } from "../../utils/fs-watch.ts";
+import { closeWatcher, FS_WATCH_RETRY_DELAY_MS } from "../../utils/fs-watch.ts";
 import { canonicalizePath } from "../../utils/paths.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 
@@ -26,6 +26,11 @@ export interface WatchTimers {
 	clear(handle: unknown): void;
 }
 
+/**
+ * Attaches one directory watcher. Returning `null` or throwing reports a failed attach.
+ * A thrown `EPERM`/`EACCES` error reports a permission denial, which the watcher
+ * tolerates for fallback-ancestor directories (see `WatchTarget.fallbackOnly`).
+ */
 export type ResourceWatchFactory = (
 	path: string,
 	listener: (eventType: string, filename: string | null) => void,
@@ -45,11 +50,18 @@ export interface ResourceWatcherOptions {
 
 const DEFAULT_DEBOUNCE_MS = 100;
 
+/** Throws on attach failure so the watcher can tell a permission denial from other errors. */
 const defaultWatchFactory: ResourceWatchFactory = (path, listener, onError) => {
-	const watcher = watchWithErrorHandler(path, listener, onError);
-	watcher?.unref();
+	const watcher = watch(path, listener);
+	watcher.on("error", onError);
+	watcher.unref();
 	return watcher;
 };
+
+function isPermissionError(error: unknown): boolean {
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	return code === "EPERM" || code === "EACCES";
+}
 
 /** Default timers: unref'd so a pending debounce/retry never keeps a headless process alive. */
 export function createUnrefWatchTimers(): WatchTimers {
@@ -72,6 +84,22 @@ interface DirWatch {
 	fileFilters?: Set<string>;
 }
 
+/** One directory in the derived watch plan. */
+interface WatchTarget {
+	dir: string;
+	/** Canonical file filter; undefined watches the whole directory. */
+	fileFilters?: Set<string>;
+	/**
+	 * Set when the directory is planned only as the nearest existing ancestor of a
+	 * not-yet-existing root. A permission denial on such a directory does not degrade
+	 * health: the root under it could not be read either (e.g. a sandbox that grants
+	 * a project directory but not its parent).
+	 */
+	fallbackOnly?: boolean;
+}
+
+type AttachResult = "attached" | "permission-denied" | "failed";
+
 export class ResourceWatcher {
 	private readonly options: ResourceWatcherOptions;
 	private readonly watchFactory: ResourceWatchFactory;
@@ -81,7 +109,7 @@ export class ResourceWatcher {
 
 	private roots: WatchedResourceRoot[] = [];
 	private readonly watched = new Map<string, DirWatch>();
-	private readonly failedDirs = new Map<string, { dir: string; fileFilters?: Set<string> }>();
+	private readonly failedDirs = new Map<string, WatchTarget>();
 	private refreshFailed = false;
 	private debounceTimer: unknown;
 	private retryTimer: unknown;
@@ -108,6 +136,10 @@ export class ResourceWatcher {
 		});
 		this.resyncDirs();
 		this.evaluateHealth();
+		// An attach failure here has no fs event to drive a cycle, so start the retry now.
+		if (this.degraded) {
+			this.scheduleRetry();
+		}
 	}
 
 	/** Idempotent: closes every watcher and clears every pending timer. */
@@ -132,15 +164,16 @@ export class ResourceWatcher {
 	// Watch-plan derivation
 	// ------------------------------------------------------------------
 
-	private deriveWatchPlan(): Map<string, { dir: string; fileFilters?: Set<string> }> {
-		const plan = new Map<string, { dir: string; fileFilters?: Set<string> }>();
-		const addWholeDir = (dir: string): void => {
+	private deriveWatchPlan(): Map<string, WatchTarget> {
+		const plan = new Map<string, WatchTarget>();
+		const addWholeDir = (dir: string, fallbackOnly = false): void => {
 			const key = canonicalizePath(dir);
 			const existing = plan.get(key);
 			if (existing) {
 				existing.fileFilters = undefined;
+				if (!fallbackOnly) existing.fallbackOnly = undefined;
 			} else {
-				plan.set(key, { dir });
+				plan.set(key, fallbackOnly ? { dir, fallbackOnly } : { dir });
 			}
 		};
 		const addFileWatch = (dir: string, file: string): void => {
@@ -149,6 +182,7 @@ export class ResourceWatcher {
 			// resolve (not realpath): a direct skill file may not exist yet.
 			const resolvedFile = resolve(file);
 			if (existing) {
+				existing.fallbackOnly = undefined;
 				if (existing.fileFilters) existing.fileFilters.add(resolvedFile);
 			} else {
 				plan.set(key, { dir, fileFilters: new Set([resolvedFile]) });
@@ -165,7 +199,7 @@ export class ResourceWatcher {
 			} else {
 				// A not-yet-existing root is covered by its nearest existing ancestor
 				// until it appears; the event → refresh → re-sync cycle then walks it.
-				addWholeDir(this.nearestExistingAncestor(root.dir));
+				addWholeDir(this.nearestExistingAncestor(root.dir), true);
 			}
 		}
 		return plan;
@@ -221,21 +255,26 @@ export class ResourceWatcher {
 	// Watcher lifecycle
 	// ------------------------------------------------------------------
 
-	private attachWatch(dir: string, fileFilters: Set<string> | undefined): DirWatch | undefined {
-		const watcher = this.watchFactory(
-			dir,
-			(eventType, filename) => this.handleFsEvent(dir, eventType, filename),
-			() => this.handleWatchError(dir),
-		);
+	private attachWatch(dir: string, fileFilters: Set<string> | undefined): AttachResult {
+		let watcher: FSWatcher | null;
+		try {
+			watcher = this.watchFactory(
+				dir,
+				(eventType, filename) => this.handleFsEvent(dir, eventType, filename),
+				() => this.handleWatchError(dir),
+			);
+		} catch (error) {
+			return isPermissionError(error) ? "permission-denied" : "failed";
+		}
 		if (!watcher) {
-			return undefined;
+			return "failed";
 		}
 		// Liveness (c4d): no watcher handle may keep a headless/print process alive.
 		// Idempotent belt-and-braces over the default factory's own unref.
 		watcher.unref?.();
 		const dirWatch: DirWatch = { dir, watcher, ...(fileFilters && { fileFilters }) };
 		this.watched.set(canonicalizePath(dir), dirWatch);
-		return dirWatch;
+		return "attached";
 	}
 
 	private handleFsEvent(dir: string, _eventType: string, filename: string | null): void {
@@ -299,10 +338,14 @@ export class ResourceWatcher {
 		// write landing between the refresh scan and this attach is otherwise never seen.
 		let attachedNew = false;
 		for (const [key, target] of plan) {
-			const dirWatch = this.attachWatch(target.dir, target.fileFilters);
-			if (dirWatch) {
+			const result = this.attachWatch(target.dir, target.fileFilters);
+			if (result === "attached") {
 				this.failedDirs.delete(key);
 				attachedNew = true;
+			} else if (result === "permission-denied" && target.fallbackOnly) {
+				// Not degraded and no retry timer: the directory stays unwatched in the plan,
+				// so the next event-driven re-sync attempts it again.
+				this.failedDirs.delete(key);
 			} else {
 				this.failedDirs.set(key, target);
 			}

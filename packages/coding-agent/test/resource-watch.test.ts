@@ -40,10 +40,16 @@ class FakeWatch {
 class FakeWatchFactory {
 	readonly watches: FakeWatch[] = [];
 	readonly failDirs = new Set<string>();
+	/** Directories whose attach throws an error carrying this errno code. */
+	readonly throwDirs = new Map<string, string>();
 
 	readonly factory: ResourceWatchFactory = (dir, listener, onError) => {
 		if (this.failDirs.has(dir)) {
 			return null;
+		}
+		const code = this.throwDirs.get(dir);
+		if (code !== undefined) {
+			throw Object.assign(new Error(`${code}: watch '${dir}'`), { code });
 		}
 		const fake = new FakeWatch(dir, listener, onError);
 		this.watches.push(fake);
@@ -356,6 +362,108 @@ describe("ResourceWatcher", () => {
 		factory.failDirs.delete(bad);
 		timers.flush(); // retry reattaches the failed dir
 		expect(factory.live().some((w) => w.dir === bad)).toBe(true);
+		expect(health[health.length - 1]).toBeUndefined();
+		watcher.dispose();
+	});
+
+	it("schedules a retry for an attach failure at setRoots without waiting for an fs event", () => {
+		const bad = tempDir();
+		const { watcher, factory, timers, health } = makeWatcher();
+		factory.failDirs.add(bad);
+		watcher.setRoots([{ dir: bad }]);
+		expect(health).toHaveLength(1);
+		expect(timers.pendingCount).toBe(1);
+
+		factory.failDirs.delete(bad);
+		timers.flush();
+		expect(factory.live().map((w) => w.dir)).toEqual([bad]);
+		expect(health[health.length - 1]).toBeUndefined();
+		watcher.dispose();
+	});
+
+	it.each(["EPERM", "EACCES"])(
+		"tolerates a %s denial on a missing root's fallback ancestor and re-attempts it on the next re-sync",
+		(code) => {
+			// A sandbox that grants the project directory but not its parent: the ancestor
+			// standing in for a missing root cannot be watched, and the root could not be read either.
+			const base = tempDir();
+			const good = tempDir();
+			const missing = join(base, "missing", ".agents", "skills");
+			const { watcher, factory, timers, refreshes, health } = makeWatcher();
+			factory.throwDirs.set(base, code);
+			watcher.setRoots([{ dir: good }, { dir: missing }]);
+			expect(health).toEqual([]);
+			expect(timers.pendingCount).toBe(0);
+			expect(factory.live().map((w) => w.dir)).toEqual([good]);
+
+			// An unrelated event drives a re-sync, which attempts the ancestor again.
+			factory.throwDirs.delete(base);
+			factory.emit(good, "x.md");
+			timers.flush();
+			expect(refreshes.length).toBeGreaterThanOrEqual(1);
+			expect(factory.live().some((w) => w.dir === base)).toBe(true);
+			expect(health).toEqual([]);
+			watcher.dispose();
+		},
+	);
+
+	it("degrades and retries on a permission denial for a configured root", () => {
+		const root = tempDir();
+		const { watcher, factory, timers, health } = makeWatcher();
+		factory.throwDirs.set(root, "EPERM");
+		watcher.setRoots([{ dir: root }]);
+		expect(health).toHaveLength(1);
+		expect(health[0]?.type).toBe("warning");
+		expect(timers.pendingCount).toBe(1);
+
+		factory.throwDirs.delete(root);
+		timers.flush();
+		expect(factory.live().map((w) => w.dir)).toEqual([root]);
+		expect(health[health.length - 1]).toBeUndefined();
+		watcher.dispose();
+	});
+
+	it("degrades on a permission denial for a directory that is both a configured root and a fallback ancestor", () => {
+		const base = tempDir();
+		const missing = join(base, "missing", "skills");
+		const { watcher, factory, timers, health } = makeWatcher();
+		factory.throwDirs.set(base, "EPERM");
+		// Both orders: the configured root must win whichever root registers the directory first.
+		watcher.setRoots([{ dir: missing }, { dir: base }]);
+		expect(health).toHaveLength(1);
+		expect(timers.pendingCount).toBe(1);
+		watcher.dispose();
+
+		const second = makeWatcher();
+		second.factory.throwDirs.set(base, "EPERM");
+		second.watcher.setRoots([{ dir: base }, { dir: missing }]);
+		expect(second.health).toHaveLength(1);
+		expect(second.timers.pendingCount).toBe(1);
+		second.watcher.dispose();
+	});
+
+	it("degrades on a permission denial for a fallback ancestor that also holds a direct skill file", () => {
+		const base = tempDir();
+		const missing = join(base, "missing", "skills");
+		const { watcher, factory, health } = makeWatcher();
+		factory.throwDirs.set(base, "EACCES");
+		watcher.setRoots([{ dir: missing }, { dir: base, file: join(base, "solo.md") }]);
+		expect(health).toHaveLength(1);
+		watcher.dispose();
+	});
+
+	it("degrades and retries on a non-permission attach error for a fallback ancestor", () => {
+		const base = tempDir();
+		const missing = join(base, "missing", "skills");
+		const { watcher, factory, timers, health } = makeWatcher();
+		factory.throwDirs.set(base, "ENOSPC");
+		watcher.setRoots([{ dir: missing }]);
+		expect(health).toHaveLength(1);
+		expect(timers.pendingCount).toBe(1);
+
+		factory.throwDirs.delete(base);
+		timers.flush();
+		expect(factory.live().map((w) => w.dir)).toEqual([base]);
 		expect(health[health.length - 1]).toBeUndefined();
 		watcher.dispose();
 	});

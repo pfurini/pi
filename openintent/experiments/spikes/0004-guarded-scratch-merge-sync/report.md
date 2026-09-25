@@ -1,10 +1,11 @@
 ---
 id: SPIKE-0004
 title: Can a guarded scratch-merge sync reproduce a fork's real upstream syncs for a ported package, report four distinct outcomes, and refuse an unverified or rewritten base?
-status: open
+status: settled
 kind: spike
 date: 2026-09-25
-verdict: null
+verdict: PROVEN
+settled: 2026-09-25
 frozen-at: de669e504d0cf32a40f6941d95c7742fcb073057
 unblocks:
   - .pi/skills/sync-upstream/SKILL.md
@@ -16,9 +17,37 @@ unblocks:
 
 ## Verdict
 
-_Pending. Written in pass 2, after the evidence. Everything between the frozen markers below is fixed once `run` stamps `frozen-at`; this section and everything after the end marker is pass 2._
+`PROVEN`. The guarded scratch-merge sync reproduced Git's automatic result on the fork's five real pi-claude-bridge syncs in order (`spike/runs/R1.txt` to `spike/runs/R5.txt`). Every recorded base equalled Git's merge base. All ten claims are proved. The sync reported four distinct outcomes, and refused every unverified, rewritten, missing or dirty case without changing anything. No restriction from the frozen list applies.
 
-<!-- opin-spike: pass 2. First paragraph, at most 100 words: the verdict token in backticks and the single piece of evidence that decided it. Then, as needed: the restrictions as a table (restriction, cost, claim); what survives or is unblocked, naming which unblocks entries the routing will edit and why any will not; why this verdict and not its neighbour, quoting the frozen sentences that decided it. No sentence over 25 words. Replace the pending line above as well. -->
+**Why `PROVEN` and not `CONDITIONAL`.**
+
+The frozen `PROVEN` row reads: "C1 to C10 are all proved on the frozen replay set."
+Every claim is marked proved in the Claims table, from the run files it names.
+The conflict markers never mattered: every conflicted set equals Git's, and every other file is byte-identical.
+
+**What the verdict establishes for the sync skill.**
+
+| Rule | Evidence |
+| --- | --- |
+| The upstream record is `UPSTREAM.json` with `repository`, `path` and `base`, and every commit that changes it carries `Upstream-Base: <base>`. | `spike/runs/G2a.txt`, `spike/runs/G2b.txt` |
+| A sync refuses before merging when the record is unverified, the package directory is dirty, or the base is not an ancestor of the new commit. | `spike/runs/G1.txt` to `spike/runs/G4.txt` |
+| A sync reports up to date itself when the upstream subtree is unchanged, and advances only the base. | `spike/runs/U1.txt`, `spike/runs/U2.txt` |
+| The merge runs in a scratch repository with Git's own rename and conflict handling, and its result replaces the package directory. | `spike/runs/R1.txt` to `spike/runs/R6.txt`, `spike/runs/K1.txt` |
+| The sync stages its result with `git add -A -f`, so files Pi's `.gitignore` matches survive. | `spike/runs/R1.txt`, `spike/runs/K1.txt` |
+| Exit 0, 1, 2 and 3 and their status lines are enough for an unattended caller to route the outcome. | Every run file's `SYNC OUTCOME` and `sync-exit` lines |
+
+**Limits the verdict carries forward.**
+
+| Limit | Where it belongs |
+| --- | --- |
+| SPIKE-0002's other failure mode, a verified ancestral base while the Pi side comes from another line, stays untested; no guard here detects it. | The sync skill's rules: only the sync and the port write the record. |
+| The sync never fetches; a scheduled run must refresh the upstream clone first. | The sync skill. |
+| Conflicts are left in the files for a person or an agent; resolution is outside this spike. | The sync skill and, later, the workflow. |
+
+**Routing.**
+
+The routing adds an upstream-sync section to `docs/adr/ADR-0009-built-in-extensions.md`, citing this report.
+It creates `.pi/skills/sync-upstream/SKILL.md` and `.pi/skills/port-extension/SKILL.md`, both citing this report and SPIKE-0003.
 
 <!-- OPENINTENT:FROZEN:START -->
 
@@ -193,42 +222,86 @@ Every conclusion is marked **proved** (observed running here) or **inferred** (r
 
 ### Harness
 
-<!-- opin-spike: each harness in evidence.patch: file, what it does, its command; where raw output lives (spike/runs/); how the thing under test was reached (absolute path, built from which commit) so there is no doubt what answered -->
+The spike worktree was `~/.openintent/workspaces/pfurini/pi/worktrees/spike-0004`, branched from `frozen-at` `de669e5`.
+The thing under test is `spike/sync-upstream.sh`. Every case ran it against a disposable worktree of the Pi repository created from `de669e5`, never against the spike branch.
+The sources were the local fork repositories at the versions table's commits, reached by absolute path and read by hash.
+
+| File | What it does | Command |
+| --- | --- | --- |
+| `spike/sync-upstream.sh` | The guarded scratch-merge sync, steps (1) to (6) of the frozen definition. | Called by the drivers through `run_sync`. |
+| `spike/lib.sh` | Disposable worktrees, the port step, Git's automatic result, directory comparison, containment and index checks, and the run wrapper with its own process group, closed stdin and a 60-second alarm. | Sourced. |
+| `spike/chain.sh` | C1: R1 to R5 in order. | `spike/chain.sh` |
+| `spike/single.sh` | C2 and C3: R6 and K1. | `spike/single.sh <case> <repo> <subdir> <merge> <base> <name>` |
+| `spike/uptodate-u2.sh` | C4, case U2. | `spike/uptodate-u2.sh` |
+| `spike/guards.sh` | U1, G1, G2a, G2b, G3 and G4. | `spike/guards.sh` |
+| `spike/all.sh` | Every case, with the fork working trees' status before and after. | `spike/all.sh` |
+
+Raw output lives in `spike/runs/`, one file per case.
 
 ### Harness versions
 
-<!-- opin-spike: everything the harness installed or linked, with exact versions -->
+| Thing | Version |
+| --- | --- |
+| Git | 2.55.0, `/opt/homebrew/bin/git` |
+| Node.js | 26.10.0, for reading and writing `UPSTREAM.json` |
+| bash, perl | GNU bash 5.3.20, perl 5.34.1 |
 
 ### Budget spent
 
-<!-- opin-spike: turns spent of the cap, per harness, and where the ledger is; or "no model was called" -->
+No model was called.
+The whole run took 28 seconds, within the one-session time box.
 
 ### Claims
 
 | Claim | Result | Status | What showed it |
 | --- | --- | --- | --- |
-| C1, <!-- opin-spike: name --> | <!-- opin-spike: holds, fails or partly --> | **<!-- opin-spike: proved or inferred -->** | <!-- opin-spike: the run file and the exact observation --> |
+| C1, the fork's real sync chain | Holds: five base matches; conflicted sets of 11, 14, 11, 4 and 13 files equal Git's; every other file identical; exit 1 each time. | **proved** | `spike/runs/R1.txt` to `spike/runs/R5.txt` |
+| C2, monorepo sub-folder source | Holds: one conflicted file, `CHANGELOG.md`, equal to Git's; comparison identical; exit 1. | **proved** | `spike/runs/R6.txt` |
+| C3, clean merge | Holds: no conflicted file, comparison identical, exit 0 with `SYNC OUTCOME: clean`. | **proved** | `spike/runs/K1.txt` |
+| C4, up to date | Holds: U1 exits 3 with an empty status; U2 exits 3 with only the base line changed. | **proved** | `spike/runs/U1.txt`, `spike/runs/U2.txt` |
+| C5, rewritten base | Holds: G1 and G4 exit 2 with the ancestry refusal; status empty; `HEAD` unchanged. | **proved** | `spike/runs/G1.txt`, `spike/runs/G4.txt` |
+| C6, unverified record | Holds: G2a and G2b exit 2 naming the trailer mismatch; status empty; `HEAD` unchanged. | **proved** | `spike/runs/G2a.txt`, `spike/runs/G2b.txt` |
+| C7, uncommitted edits | Holds: G3 exits 2 naming the uncommitted changes; `README.md` and `HEAD` unchanged. | **proved** | `spike/runs/G3.txt` |
+| C8, unattended outcomes | Holds: exit codes 0, 1, 2 and 3 with four status lines; every run under 1 second; no survivor in any process group. | **proved** | The `sync-exit` and `survivors` lines of every run file |
+| C9, containment | Holds: no status entry outside the package directory in any run; both fork working trees unchanged. | **proved** | The containment lines of every run file; `spike/runs/00-fork-status.txt` |
+| C10, files Pi's `.gitignore` matches | Holds: no result path missing from the index after R1 to R5 and K1; `TODO.md` tracked. | **proved** | `spike/runs/R1.txt` to `spike/runs/R5.txt`, `spike/runs/K1.txt` |
 
 ### Supporting conclusions
 
 | Conclusion | Status | What showed it |
 | --- | --- | --- |
-| <!-- opin-spike: a fact learned on the way, marked proved or inferred; delete the table when there is none --> | | |
+| Before each chain step, the Pi side equals the fork state before the sync, so the chain replays the fork's real line. | **proved** | `spike/runs/R1.txt` to `spike/runs/R5.txt` |
+| A base missing from the clone makes `git merge-base --is-ancestor` exit 128, which the sync treats as a refusal. | **proved** | `spike/runs/G4.txt` |
+| Every disposable Pi worktree was removed and pruned. | **proved** | `spike/runs/00-fork-status.txt` |
 
 ### Re-verified by the coordinator
 
-<!-- opin-spike: when subagents ran harnesses: each claim re-read from the raw runs and the source, not from the subagent's report; or "no subagent ran a harness" -->
+No subagent ran a harness.
+The pre-freeze reviewer read the frozen block and re-derived the replay table only.
+The coordinator read every claim from the raw run files that the Claims table names.
 
 ### What this spike did not test
 
-<!-- opin-spike: the nearest things a reader might assume were covered, and where they belong -->
+| Not tested | Where it belongs |
+| --- | --- |
+| A verified ancestral base while the Pi side comes from another line | The sync skill's rule that only the sync and the port write the record. |
+| Fetching upstream before a sync | The sync skill. |
+| Resolving conflicts after a conflicted sync | The sync skill, later the workflow. |
+| Binary-file conflicts, submodules and symlinks | A later spike, if a ported package carries them. |
+| Git versions other than 2.55.0, and Linux | A release qualification. |
 
 ## Cleanup
 
-<!-- opin-spike: every write outside the worktree the harnesses made, by path, so the human can remove it; or "nothing outside the worktree" -->
+| Path | What it holds | State |
+| --- | --- | --- |
+| `/tmp/spike-0004-scratch.*` | Seven scratch repositories and their merge logs | Present; safe to delete. |
+| `/tmp/spike-0004-syncs.sh` | The coordinator's pre-freeze script that listed the real syncs | Present; safe to delete. |
+| `/Users/paolof/Developer/ai/pi/.git/objects` | Commits from the disposable worktrees, now unreferenced | Present; `git gc` prunes them. |
+| The disposable Pi worktrees under `/tmp/spike-0004-pi-*` | Removed and pruned | Gone. |
 
 ## Spike code
 
 `evidence.patch`, beside this file: one squashed commit of the worktree branch. Built in an isolated worktree, never merged, never pushed as a branch, never opened as a pull request. To re-check a decayed verdict, run `/skill:opin-spike re-check` on this spike; it applies the patch into a fresh worktree.
 
-<!-- opin-spike: how to run it from the applied patch. If the template had to be worked around, add a "## Template gaps" section above this one saying what and why. -->
+Apply the patch onto `frozen-at` in a fresh worktree and run `spike/all.sh` from its root, with both fork repositories at the versions table's commits.
+`spike/README.md` describes every script.

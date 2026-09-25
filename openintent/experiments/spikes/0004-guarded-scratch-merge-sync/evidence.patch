@@ -1,0 +1,1012 @@
+From dbaa754f89331eab681ce1db4c3e396e700c7ea7 Mon Sep 17 00:00:00 2001
+From: Paolo Furini <paolo.furini@gmail.com>
+Date: Fri, 25 Sep 2026 12:06:42 +0000
+Subject: [PATCH] spike(0004): guarded-scratch-merge-sync
+
+---
+ spike/README.md               |  27 +++++++
+ spike/all.sh                  |  19 +++++
+ spike/chain.sh                |  51 +++++++++++++
+ spike/findings/sync.md        |  22 ++++++
+ spike/guards.sh               |  64 ++++++++++++++++
+ spike/lib.sh                  | 138 ++++++++++++++++++++++++++++++++++
+ spike/runs/00-fork-status.txt |   3 +
+ spike/runs/G1.txt             |  14 ++++
+ spike/runs/G2a.txt            |  14 ++++
+ spike/runs/G2b.txt            |  14 ++++
+ spike/runs/G3.txt             |  14 ++++
+ spike/runs/G4.txt             |  14 ++++
+ spike/runs/K1.txt             |  18 +++++
+ spike/runs/R1.txt             |  31 ++++++++
+ spike/runs/R2.txt             |  34 +++++++++
+ spike/runs/R3.txt             |  31 ++++++++
+ spike/runs/R4.txt             |  24 ++++++
+ spike/runs/R5.txt             |  33 ++++++++
+ spike/runs/R6.txt             |  18 +++++
+ spike/runs/U1.txt             |  14 ++++
+ spike/runs/U2.txt             |  16 ++++
+ spike/runs/chain-worktree.txt |   1 +
+ spike/runs/state-after-R5.txt |   1 +
+ spike/single.sh               |  36 +++++++++
+ spike/sync-upstream.sh        | 112 +++++++++++++++++++++++++++
+ spike/uptodate-u2.sh          |  30 ++++++++
+ 26 files changed, 793 insertions(+)
+ create mode 100644 spike/README.md
+ create mode 100755 spike/all.sh
+ create mode 100755 spike/chain.sh
+ create mode 100644 spike/findings/sync.md
+ create mode 100755 spike/guards.sh
+ create mode 100755 spike/lib.sh
+ create mode 100644 spike/runs/00-fork-status.txt
+ create mode 100644 spike/runs/G1.txt
+ create mode 100644 spike/runs/G2a.txt
+ create mode 100644 spike/runs/G2b.txt
+ create mode 100644 spike/runs/G3.txt
+ create mode 100644 spike/runs/G4.txt
+ create mode 100644 spike/runs/K1.txt
+ create mode 100644 spike/runs/R1.txt
+ create mode 100644 spike/runs/R2.txt
+ create mode 100644 spike/runs/R3.txt
+ create mode 100644 spike/runs/R4.txt
+ create mode 100644 spike/runs/R5.txt
+ create mode 100644 spike/runs/R6.txt
+ create mode 100644 spike/runs/U1.txt
+ create mode 100644 spike/runs/U2.txt
+ create mode 100644 spike/runs/chain-worktree.txt
+ create mode 100644 spike/runs/state-after-R5.txt
+ create mode 100755 spike/single.sh
+ create mode 100755 spike/sync-upstream.sh
+ create mode 100755 spike/uptodate-u2.sh
+
+diff --git a/spike/README.md b/spike/README.md
+new file mode 100644
+index 000000000..e74265fd5
+--- /dev/null
++++ b/spike/README.md
+@@ -0,0 +1,27 @@
++# Spike 0004 code
++
++Harness for `openintent/experiments/spikes/0004-guarded-scratch-merge-sync/report.md`. None of this is product code, and it is never merged: it exists only to answer that report's question and it lands beside the report as `evidence.patch`.
++
++## Files
++
++| Path | What it is |
++| --- | --- |
++| `sync-upstream.sh` | The thing under test: the guarded scratch-merge sync, steps (1) to (6) of the frozen definition. |
++| `lib.sh` | Disposable Pi worktrees from `frozen-at`, the port step, Git's automatic result, directory comparison, and the run wrapper (own process group, closed stdin, 60-second alarm). |
++| `chain.sh` | C1: R1 to R5 in order; records the state after R5. |
++| `single.sh` | C2 and C3: R6 and K1. |
++| `uptodate-u2.sh` | C4, case U2. |
++| `guards.sh` | C4 (U1), C5 (G1, G4), C6 (G2a, G2b) and C7 (G3), each from a fresh worktree at the state after R5. |
++| `all.sh` | Every case, with the fork working trees' status before and after. |
++| `runs/` | Raw output, one file per case. |
++| `findings/sync.md` | Per-claim conclusions. |
++
++## Running it
++
++From the worktree root, with pi-claude-bridge at `edf19ed` and rpiv-mono at `8403bb09`, each with the `upstream/main` the report's versions table names:
++
++```
++spike/all.sh
++```
++
++The harness writes only under `/tmp`, in disposable worktrees of the Pi repository, and in `spike/runs/`. No harness calls a model or fetches.
+diff --git a/spike/all.sh b/spike/all.sh
+new file mode 100755
+index 000000000..24e572d07
+--- /dev/null
++++ b/spike/all.sh
+@@ -0,0 +1,19 @@
++#!/usr/bin/env bash
++# Every frozen case, with the fork working trees' status recorded before and after (C9).
++set -u
++. spike/lib.sh
++{
++	echo "before: bridge [$(git -C "$BRIDGE" status --porcelain | tr '\n' ';')] rpiv [$(git -C "$RPIV" status --porcelain | tr '\n' ';')]"
++} >spike/runs/00-fork-status.txt
++spike/chain.sh
++spike/single.sh R6 "$RPIV" packages/rpiv-ask-user-question ce35c164 0fdf4f8 rpiv-ask-user-question
++spike/single.sh K1 "$BRIDGE" "" 402fa8d 4a7920a pi-claude-bridge
++spike/uptodate-u2.sh
++spike/guards.sh
++drop_pi_worktree "$(cat spike/runs/chain-worktree.txt)"
++git -C "$MAIN_REPO" worktree prune
++{
++	echo "after: bridge [$(git -C "$BRIDGE" status --porcelain | tr '\n' ';')] rpiv [$(git -C "$RPIV" status --porcelain | tr '\n' ';')]"
++	echo "remaining spike-0004-pi worktrees: $(git -C "$MAIN_REPO" worktree list | grep -c spike-0004-pi)"
++} >>spike/runs/00-fork-status.txt
++cat spike/runs/00-fork-status.txt
+diff --git a/spike/chain.sh b/spike/chain.sh
+new file mode 100755
+index 000000000..86bf13fa5
+--- /dev/null
++++ b/spike/chain.sh
+@@ -0,0 +1,51 @@
++#!/usr/bin/env bash
++# C1 (with C8, C9 and C10 facets): the five pi-claude-bridge sync merges R1 to R5 in order.
++# Writes spike/runs/R1.txt ... R5.txt and spike/runs/state-after-R5.txt.
++set -u
++. spike/lib.sh
++merges=(c4b759f 60efeb9 6feed8f 64e3c25 d233e0a)
++dir=packages/builtins/pi-claude-bridge
++pi=$(pi_worktree chain) || { echo "worktree creation failed"; exit 1; }
++echo "$pi" >spike/runs/chain-worktree.txt
++first=$(git -C "$BRIDGE" rev-parse "${merges[0]}")
++port "$pi" "$dir" "$BRIDGE" "" "$first^1" 7e41218
++work=$(mktemp -d /tmp/spike-0004-work.XXXXXX)
++: >"$work/none"
++for k in 0 1 2 3 4; do
++	m=$(git -C "$BRIDGE" rev-parse "${merges[$k]}")
++	p1=$(git -C "$BRIDGE" rev-parse "$m^1")
++	p2=$(git -C "$BRIDGE" rev-parse "$m^2")
++	out="spike/runs/R$((k + 1)).txt"
++	{
++		echo "case R$((k + 1)): sync merge ${merges[$k]} = $m, first parent $p1, second parent $p2"
++		recorded=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).upstream.base)' "$pi/$dir/UPSTREAM.json")
++		gitbase=$(git -C "$BRIDGE" merge-base "$p1" "$p2")
++		echo "recorded-base=$recorded git-merge-base=$gitbase $([ "$recorded" = "$gitbase" ] && echo BASE-MATCH || echo BASE-DIFFERENT)"
++		rm -rf "$work/p1" && extract "$BRIDGE" "$p1^{tree}" "$work/p1"
++		echo "pi side before sync equals the fork state: $(compare "$work/p1" "$pi/$dir" "$work/none" | tr '\n' ' ')"
++		echo "===== sync"
++	} >"$out"
++	code=$(run_sync "$out" "$pi" "$dir" "$p2")
++	{
++		echo "===== Git's automatic result"
++		rm -rf "$work/auto"
++		echo "merge-tree: $(oracle "$BRIDGE" "$p1" "$p2" "" "$work/auto" "$work/conf")"
++		candidate_conflicts "$out" >"$work/cand"
++		echo "git conflicted ($(grep -c . "$work/conf")): $(tr '\n' ' ' <"$work/conf")"
++		echo "sync conflicted ($(grep -c . "$work/cand")): $(tr '\n' ' ' <"$work/cand")"
++		cmp -s "$work/conf" "$work/cand" && echo "CONFLICT-SET: EQUAL" || echo "CONFLICT-SET: DIFFERENT"
++		echo "comparison (UPSTREAM.json excluded): $(compare "$work/auto" "$pi/$dir" "$work/conf" | tr '\n' ' ')"
++		echo "containment, status outside $dir: $(containment "$pi" "$dir" | tr '\n' ' ')"
++		echo "index, result paths missing from the index: $(index_missing "$pi" "$dir" | tr '\n' ' ')"
++		echo "TODO.md in the index: $(git -C "$pi" ls-files -- "$dir/TODO.md" | grep -c .)"
++	} >>"$out"
++	if [ "$k" -lt 4 ]; then next="${merges[$((k + 1))]}^1"; else next=$m; fi
++	replace_dir "$pi" "$dir" "$BRIDGE" "" "$next"
++	git -C "$pi" add -A -f -- "$dir"
++	pi_commit "$pi" "fork state $(git -C "$BRIDGE" rev-parse --short "$next") after R$((k + 1))" "$p2"
++	echo "between steps: directory replaced with $(git -C "$BRIDGE" rev-parse --short "$next"), committed with Upstream-Base $p2" >>"$out"
++	echo "R$((k + 1)) exit=$code"
++done
++git -C "$pi" rev-parse HEAD >spike/runs/state-after-R5.txt
++echo "state after R5: $(cat spike/runs/state-after-R5.txt)"
++rm -rf "$work"
+diff --git a/spike/findings/sync.md b/spike/findings/sync.md
+new file mode 100644
+index 000000000..6106f4ef9
+--- /dev/null
++++ b/spike/findings/sync.md
+@@ -0,0 +1,22 @@
++# Guarded scratch-merge sync findings
++
++No subagent ran a harness; the coordinator read every claim from the run files below. Every sync ran with stdin from `/dev/null`, no terminal, its own process group and a 60-second alarm.
++
++| Claim | Result | Status | Run files |
++| --- | --- | --- | --- |
++| C1 | R1 to R5: five base matches; conflicted sets of 11, 14, 11, 4 and 13 files equal Git's; every comparison identical; exit 1 each time. | proved | `runs/R1.txt` to `runs/R5.txt` |
++| C2 | R6: base match, one conflicted file (`CHANGELOG.md`) equal to Git's, comparison identical, exit 1. | proved | `runs/R6.txt` |
++| C3 | K1: no conflicted file, comparison identical, exit 0 with `SYNC OUTCOME: clean`. | proved | `runs/K1.txt` |
++| C4 | U1: exit 3, `git status --porcelain --ignored` empty, `HEAD` unchanged. U2: exit 3, only `UPSTREAM.json`'s base line differs. | proved | `runs/U1.txt`, `runs/U2.txt` |
++| C5 | G1 and G4: exit 2 with the ancestry refusal (Git exits 1 and 128), status empty, `HEAD` unchanged. | proved | `runs/G1.txt`, `runs/G4.txt` |
++| C6 | G2a and G2b: exit 2 naming the trailer mismatch (none, then the stale `0750748`), status empty, `HEAD` unchanged. | proved | `runs/G2a.txt`, `runs/G2b.txt` |
++| C7 | G3: exit 2 naming the uncommitted changes; `README.md` unchanged; `HEAD` unchanged. | proved | `runs/G3.txt` |
++| C8 | Exit codes 0, 1, 2 and 3 with the status lines "clean", "conflicts (n files)", "refused (…)" and "up to date"; every run under 1 second; no survivor in any process group. | proved | the `sync-exit` and `survivors` lines of every run file |
++| C9 | Every run lists no status entry outside its package directory; both fork working trees show the same status before and after. | proved | the containment lines of every run file, `runs/00-fork-status.txt` |
++| C10 | After R1 to R5 and K1, no result path is missing from the index, and `TODO.md` is tracked. | proved | `runs/R1.txt` to `runs/R5.txt`, `runs/K1.txt` |
++
++Supporting, proved by the named runs:
++
++- Before each chain step, the Pi side equals the fork state before the sync (`runs/R1.txt` to `runs/R5.txt`).
++- The state after R5 is commit `d966ade3fab29644ce5f0ccc90cb8b6566d1a444` in the object store the disposable worktrees share (`runs/state-after-R5.txt`).
++- All disposable Pi worktrees are removed and pruned (`runs/00-fork-status.txt`).
+diff --git a/spike/guards.sh b/spike/guards.sh
+new file mode 100755
+index 000000000..255960428
+--- /dev/null
++++ b/spike/guards.sh
+@@ -0,0 +1,64 @@
++#!/usr/bin/env bash
++# C4 (U1), C5 (G1, G4), C6 (G2a, G2b) and C7 (G3). Each case starts from a fresh Pi worktree
++# at the state after R5 that spike/chain.sh recorded.
++set -u
++. spike/lib.sh
++dir=packages/builtins/pi-claude-bridge
++state=$(cat spike/runs/state-after-R5.txt)
++full() { git -C "$BRIDGE" rev-parse "$1"; }
++set_base() { # <pi> <base>
++	node -e 'const fs=require("fs");const p=process.argv[1];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/("base":\s*")[0-9a-fA-F]*(")/,"$1"+process.argv[2]+"$2"))' "$1/$dir/UPSTREAM.json" "$2"
++}
++
++# guard_case <case> <new> <setup function name>
++guard_case() {
++	local case=$1 new=$2 setup=$3 out="spike/runs/$1.txt" pi head_before code readme_before
++	pi=$(pi_worktree "$case" "$state") || { echo "worktree creation failed"; return 1; }
++	"$setup" "$pi"
++	head_before=$(git -C "$pi" rev-parse HEAD)
++	readme_before=$(shasum -a 256 "$pi/$dir/README.md" | cut -d' ' -f1)
++	{
++		echo "case $case: from state $state, new $new"
++		echo "record before: $(tr -d '\n\t' <"$pi/$dir/UPSTREAM.json")"
++		echo "trailer before: $(git -C "$pi" log -1 --format='%(trailers:key=Upstream-Base,valueonly)' -- "$dir/UPSTREAM.json" | tr -d '\n')"
++		echo "status before: $(git -C "$pi" status --porcelain --ignored | tr '\n' ' ')"
++		echo "===== sync"
++	} >"$out"
++	code=$(run_sync "$out" "$pi" "$dir" "$new")
++	{
++		echo "===== after"
++		echo "status after (--ignored): $(git -C "$pi" status --porcelain --ignored | tr '\n' ' ')"
++		echo "HEAD unchanged: $([ "$(git -C "$pi" rev-parse HEAD)" = "$head_before" ] && echo yes || echo NO)"
++		echo "README.md unchanged: $([ "$(shasum -a 256 "$pi/$dir/README.md" | cut -d' ' -f1)" = "$readme_before" ] && echo yes || echo NO)"
++		echo "containment, status outside $dir: $(containment "$pi" "$dir" | tr '\n' ' ')"
++	} >>"$out"
++	drop_pi_worktree "$pi"
++	echo "$case exit=$code"
++}
++
++no_setup() { :; }
++g2a_setup() {
++	set_base "$1" "$(full 44fe582)"
++	git -C "$1" add -- "$dir/UPSTREAM.json"
++	pi_commit "$1" "hand edit of the base without a trailer"
++}
++g2b_setup() {
++	set_base "$1" "$(full 44fe582)"
++	git -C "$1" add -- "$dir/UPSTREAM.json"
++	pi_commit "$1" "hand edit of the base with a stale trailer" "$(full 0750748)"
++}
++g3_setup() {
++	printf '\nSPIKE-0004 uncommitted edit.\n' >>"$1/$dir/README.md"
++}
++g4_setup() {
++	set_base "$1" 1111111111111111111111111111111111111111
++	git -C "$1" add -- "$dir/UPSTREAM.json"
++	pi_commit "$1" "base absent from the clone, matching trailer" 1111111111111111111111111111111111111111
++}
++
++guard_case U1 "$(full 0750748)" no_setup
++guard_case G1 "$(full 44fe582)" no_setup
++guard_case G2a "$(full 0750748)" g2a_setup
++guard_case G2b "$(full 0750748)" g2b_setup
++guard_case G3 "$(full 227f5eb)" g3_setup
++guard_case G4 "$(full 0750748)" g4_setup
+diff --git a/spike/lib.sh b/spike/lib.sh
+new file mode 100755
+index 000000000..4b1c87b80
+--- /dev/null
++++ b/spike/lib.sh
+@@ -0,0 +1,138 @@
++#!/usr/bin/env bash
++# SPIKE-0004 harness helpers. Source from the worktree root.
++MAIN_REPO=/Users/paolof/Developer/ai/pi
++FROZEN_AT=de669e504d0cf32a40f6941d95c7742fcb073057
++BRIDGE=/Users/paolof/Developer/ai/pi-claude-bridge
++RPIV=/Users/paolof/Developer/ai/rpiv-mono
++SPIKE_ROOT=$(pwd)
++SYNC="$SPIKE_ROOT/spike/sync-upstream.sh"
++
++# pi_worktree <name> [commit] -> prints the path of a disposable Pi worktree under test.
++pi_worktree() {
++	local path
++	path=$(mktemp -d "/tmp/spike-0004-pi-$1.XXXXXX")
++	rmdir "$path"
++	git -C "$MAIN_REPO" worktree add -q --detach "$path" "${2:-$FROZEN_AT}" >/dev/null 2>&1 || return 1
++	echo "$path"
++}
++
++drop_pi_worktree() {
++	git -C "$MAIN_REPO" worktree remove --force "$1" >/dev/null 2>&1
++}
++
++# extract <repo> <tree-ish> <outdir>: files of a tree through a private index.
++extract() {
++	local idx out=$3
++	case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
++	idx=$(mktemp /tmp/spike-0004-idx.XXXXXX)
++	rm -f "$idx"
++	mkdir -p "$out"
++	GIT_INDEX_FILE="$idx" git -C "$1" read-tree "$2"
++	GIT_INDEX_FILE="$idx" git -C "$1" checkout-index -a -f --prefix="$out/"
++	rm -f "$idx"
++}
++
++treeish() { # <commit> <subdir or "">
++	if [ -n "$2" ]; then echo "$1:$2"; else echo "$1^{tree}"; fi
++}
++
++pi_commit() { # <pi> <subject> [trailer base]
++	local msg=$2
++	[ -n "${3:-}" ] && msg="$msg
++
++Upstream-Base: $3"
++	git -C "$1" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --no-verify -m "$msg"
++}
++
++write_record() { # <pi> <dir> <repo> <subdir> <base>
++	printf '{\n\t"upstream": {\n\t\t"repository": "%s",\n\t\t"path": "%s",\n\t\t"base": "%s"\n\t}\n}\n' "$3" "$4" "$5" >"$1/$2/UPSTREAM.json"
++}
++
++# port <pi> <dir> <repo> <subdir> <fork state> <base>: the frozen port step.
++port() {
++	local pi=$1 dir=$2 repo=$3 sub=$4 state=$5 base
++	base=$(git -C "$repo" rev-parse "$6")
++	extract "$repo" "$(treeish "$state" "$sub")" "$pi/$dir"
++	write_record "$pi" "$dir" "$repo" "$sub" "$base"
++	git -C "$pi" add -A -f -- "$dir"
++	pi_commit "$pi" "port $dir from $(git -C "$repo" rev-parse --short "$state")" "$base"
++}
++
++# replace_dir <pi> <dir> <repo> <subdir> <commit>: new tree, UPSTREAM.json kept.
++replace_dir() {
++	local keep
++	keep=$(mktemp /tmp/spike-0004-record.XXXXXX)
++	cp "$1/$2/UPSTREAM.json" "$keep"
++	find "$1/$2" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
++	extract "$3" "$(treeish "$5" "$4")" "$1/$2"
++	cp "$keep" "$1/$2/UPSTREAM.json"
++	rm -f "$keep"
++}
++
++# run_sync <outfile> <pi> <dir> <new>: own process group, stdin closed, 60-second alarm.
++# Prints the exit code; appends the sync's output and the process facts to <outfile>.
++run_sync() {
++	local out=$1 start end code pgid survivors
++	start=$(perl -MTime::HiRes=time -e 'printf "%.2f", time')
++	perl -e 'setpgrp(0,0); alarm 60; exec @ARGV' -- "$SYNC" "$2" "$3" "$4" </dev/null >"$out.sync" 2>&1 &
++	pgid=$!
++	wait "$pgid"
++	code=$?
++	end=$(perl -MTime::HiRes=time -e 'printf "%.2f", time')
++	survivors=$(ps -o pid=,command= -g "$pgid" 2>/dev/null | grep -v '^ *$' || true)
++	{
++		cat "$out.sync"
++		echo "sync-exit=$code seconds=$(perl -e "printf '%.2f', $end - $start") stdin=/dev/null tty=$([ -t 1 ] && echo yes || echo no)"
++		echo "survivors-in-process-group: ${survivors:-none}"
++	} >>"$out"
++	rm -f "$out.sync"
++	echo "$code"
++}
++
++# oracle <repo> <p1> <p2> <subdir> <outdir> <conflicts-file>: Git's automatic result.
++oracle() {
++	local raw tree
++	raw=$(git -C "$1" merge-tree --write-tree --name-only "$2" "$3")
++	tree=$(printf '%s\n' "$raw" | head -1)
++	printf '%s\n' "$raw" | sed -n '2,/^$/p' | sed '/^$/d' >"$6.all"
++	if [ -n "$4" ]; then
++		{ grep "^$4/" "$6.all" || true; } | sed "s|^$4/||" | sort >"$6"
++	else
++		sort "$6.all" >"$6"
++	fi
++	rm -f "$6.all"
++	extract "$1" "$(treeish "$tree" "$4")" "$5"
++	echo "$tree"
++}
++
++# compare <expected dir> <actual dir> <conflicted list>: excludes UPSTREAM.json.
++compare() {
++	local diffs=0 f list
++	list=$( { (cd "$1" && find . -type f -o -type l); (cd "$2" && find . -type f -o -type l); } | sed 's|^\./||' | grep -v '^UPSTREAM.json$' | sort -u)
++	while IFS= read -r f; do
++		[ -z "$f" ] && continue
++		if [ ! -e "$1/$f" ] && [ ! -L "$1/$f" ]; then echo "ONLY-IN-RESULT $f"; diffs=$((diffs + 1)); continue; fi
++		if [ ! -e "$2/$f" ] && [ ! -L "$2/$f" ]; then echo "ONLY-IN-GIT $f"; diffs=$((diffs + 1)); continue; fi
++		if [ "$(stat -f '%Lp' "$1/$f")" != "$(stat -f '%Lp' "$2/$f")" ]; then echo "MODE $f"; diffs=$((diffs + 1)); fi
++		grep -qxF "$f" "$3" && continue
++		cmp -s "$1/$f" "$2/$f" || { echo "CONTENT $f"; diffs=$((diffs + 1)); }
++	done <<<"$list"
++	[ "$diffs" -eq 0 ] && echo "IDENTICAL"
++	return 0
++}
++
++candidate_conflicts() { # <run file> -> sorted conflicted list from the sync's output
++	sed -n '/^conflicted:$/,/^SYNC OUTCOME/p' "$1" | sed '1d;$d' | sed '/^$/d' | sort
++}
++
++containment() { # <pi> <dir>: status entries outside the package directory, or (none)
++	local outside
++	outside=$(git -C "$1" status --porcelain --ignored --untracked-files=all | awk -v d="$2/" '{p=substr($0,4); if (index(p,d)!=1) print}')
++	if [ -z "$outside" ]; then echo "(none)"; else echo "$outside"; fi
++}
++
++index_missing() { # <pi> <dir>: result paths absent from the index, or (none)
++	local missing
++	missing=$(comm -23 <(cd "$1/$2" && find . -type f -o -type l | sed 's|^\./||' | sort) <(git -C "$1" ls-files -- "$2" | sed "s|^$2/||" | sort))
++	if [ -z "$missing" ]; then echo "(none)"; else echo "$missing"; fi
++}
+diff --git a/spike/runs/00-fork-status.txt b/spike/runs/00-fork-status.txt
+new file mode 100644
+index 000000000..980afb476
+--- /dev/null
++++ b/spike/runs/00-fork-status.txt
+@@ -0,0 +1,3 @@
++before: bridge [] rpiv [?? docs/rpiv-mono-overview.md;?? docs/rpiv-mono-overview.pdf;]
++after: bridge [] rpiv [?? docs/rpiv-mono-overview.md;?? docs/rpiv-mono-overview.pdf;]
++remaining spike-0004-pi worktrees: 0
+diff --git a/spike/runs/G1.txt b/spike/runs/G1.txt
+new file mode 100644
+index 000000000..e1b7d8d4d
+--- /dev/null
++++ b/spike/runs/G1.txt
+@@ -0,0 +1,14 @@
++case G1: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 44fe582193c0451c4210555451788a82ac134c93
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "07507489c0c54f7f978ab752eb9beb5cc0960f24"}}
++trailer before: 07507489c0c54f7f978ab752eb9beb5cc0960f24
++status before: 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=07507489c0c54f7f978ab752eb9beb5cc0960f24 new=44fe582193c0451c4210555451788a82ac134c93
++SYNC OUTCOME: refused (ancestry: 07507489c0c54f7f978ab752eb9beb5cc0960f24 is not an ancestor of 44fe582193c0451c4210555451788a82ac134c93 in /Users/paolof/Developer/ai/pi-claude-bridge (exit 1))
++sync-exit=2 seconds=0.33 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored): 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/G2a.txt b/spike/runs/G2a.txt
+new file mode 100644
+index 000000000..3b503a150
+--- /dev/null
++++ b/spike/runs/G2a.txt
+@@ -0,0 +1,14 @@
++case G2a: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 07507489c0c54f7f978ab752eb9beb5cc0960f24
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "44fe582193c0451c4210555451788a82ac134c93"}}
++trailer before: 
++status before: 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=44fe582193c0451c4210555451788a82ac134c93 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++SYNC OUTCOME: refused (record: the latest commit of UPSTREAM.json carries Upstream-Base 'none', not '44fe582193c0451c4210555451788a82ac134c93')
++sync-exit=2 seconds=0.14 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored): 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/G2b.txt b/spike/runs/G2b.txt
+new file mode 100644
+index 000000000..2676c4ae3
+--- /dev/null
++++ b/spike/runs/G2b.txt
+@@ -0,0 +1,14 @@
++case G2b: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 07507489c0c54f7f978ab752eb9beb5cc0960f24
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "44fe582193c0451c4210555451788a82ac134c93"}}
++trailer before: 07507489c0c54f7f978ab752eb9beb5cc0960f24
++status before: 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=44fe582193c0451c4210555451788a82ac134c93 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++SYNC OUTCOME: refused (record: the latest commit of UPSTREAM.json carries Upstream-Base '07507489c0c54f7f978ab752eb9beb5cc0960f24', not '44fe582193c0451c4210555451788a82ac134c93')
++sync-exit=2 seconds=0.14 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored): 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/G3.txt b/spike/runs/G3.txt
+new file mode 100644
+index 000000000..b2df492d0
+--- /dev/null
++++ b/spike/runs/G3.txt
+@@ -0,0 +1,14 @@
++case G3: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 227f5eb4450a070dfbc083a7fe75b8b35366b941
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "07507489c0c54f7f978ab752eb9beb5cc0960f24"}}
++trailer before: 07507489c0c54f7f978ab752eb9beb5cc0960f24
++status before:  M packages/builtins/pi-claude-bridge/README.md 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=07507489c0c54f7f978ab752eb9beb5cc0960f24 new=227f5eb4450a070dfbc083a7fe75b8b35366b941
++SYNC OUTCOME: refused (uncommitted changes in packages/builtins/pi-claude-bridge)
++sync-exit=2 seconds=0.31 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored):  M packages/builtins/pi-claude-bridge/README.md 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/G4.txt b/spike/runs/G4.txt
+new file mode 100644
+index 000000000..cdd5486a4
+--- /dev/null
++++ b/spike/runs/G4.txt
+@@ -0,0 +1,14 @@
++case G4: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 07507489c0c54f7f978ab752eb9beb5cc0960f24
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "1111111111111111111111111111111111111111"}}
++trailer before: 1111111111111111111111111111111111111111
++status before: 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=1111111111111111111111111111111111111111 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++SYNC OUTCOME: refused (ancestry: 1111111111111111111111111111111111111111 is not an ancestor of 07507489c0c54f7f978ab752eb9beb5cc0960f24 in /Users/paolof/Developer/ai/pi-claude-bridge (exit 128))
++sync-exit=2 seconds=0.16 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored): 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/K1.txt b/spike/runs/K1.txt
+new file mode 100644
+index 000000000..308459000
+--- /dev/null
++++ b/spike/runs/K1.txt
+@@ -0,0 +1,18 @@
++case K1: merge 402fa8d = 402fa8db19ee4928ea87db47ef9cc20decc60758, first parent 7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed, second parent 920396548e19c6caa0203e28f45921910ff358ce, subdir <root>
++recorded-base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 git-merge-base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=920396548e19c6caa0203e28f45921910ff358ce
++scratch: /tmp/spike-0004-scratch.5WiDHx (merge exit 0)
++conflicted:
++SYNC OUTCOME: clean
++sync-exit=0 seconds=0.67 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 8bde13d1af359269e8f7930ce022443d698efd98
++git conflicted (0): 
++sync conflicted (0): 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
+diff --git a/spike/runs/R1.txt b/spike/runs/R1.txt
+new file mode 100644
+index 000000000..ee52dac18
+--- /dev/null
++++ b/spike/runs/R1.txt
+@@ -0,0 +1,31 @@
++case R1: sync merge c4b759f = c4b759ff5081675bc47b7c4e8fe9e8eb174e337a, first parent 7260d8588d5cc40e29a2f4614e7abe877077a14d, second parent 066767393a0efe4be09632f63dc046c2190231b7
++recorded-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 git-merge-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 BASE-MATCH
++pi side before sync equals the fork state: IDENTICAL 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=7e412185a62c2cdbbaee020de9e01e94e11d8851 new=066767393a0efe4be09632f63dc046c2190231b7
++scratch: /tmp/spike-0004-scratch.feiWpa (merge exit 1)
++conflicted:
++CHANGELOG.md
++README.md
++diag/CONTEXT-SIZE.md
++package-lock.json
++package.json
++src/config.ts
++src/models.ts
++tests/int-subagent-rpiv-codebase-locator.mjs
++tests/lib/rpc-harness.mjs
++tests/unit-config.mjs
++tests/unit-models.mjs
++SYNC OUTCOME: conflicts (11 files)
++sync-exit=1 seconds=0.81 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 309eba229afde45209b9f85b34000cb5435a7486
++git conflicted (11): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/models.ts tests/int-subagent-rpiv-codebase-locator.mjs tests/lib/rpc-harness.mjs tests/unit-config.mjs tests/unit-models.mjs 
++sync conflicted (11): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/models.ts tests/int-subagent-rpiv-codebase-locator.mjs tests/lib/rpc-harness.mjs tests/unit-config.mjs tests/unit-models.mjs 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
++between steps: directory replaced with 6d09f9e, committed with Upstream-Base 066767393a0efe4be09632f63dc046c2190231b7
+diff --git a/spike/runs/R2.txt b/spike/runs/R2.txt
+new file mode 100644
+index 000000000..d3cfcc47e
+--- /dev/null
++++ b/spike/runs/R2.txt
+@@ -0,0 +1,34 @@
++case R2: sync merge 60efeb9 = 60efeb943186c8bda1e81e6b152c2eb5d2f28ebd, first parent 6d09f9e88368d6d50e794a93e5d7e1d743e917df, second parent fac372c4fedabc247eda48ddec2363a52dc8c4d8
++recorded-base=066767393a0efe4be09632f63dc046c2190231b7 git-merge-base=066767393a0efe4be09632f63dc046c2190231b7 BASE-MATCH
++pi side before sync equals the fork state: IDENTICAL 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=066767393a0efe4be09632f63dc046c2190231b7 new=fac372c4fedabc247eda48ddec2363a52dc8c4d8
++scratch: /tmp/spike-0004-scratch.uILHgM (merge exit 1)
++conflicted:
++.env.test
++CHANGELOG.md
++README.md
++package-lock.json
++package.json
++src/agents-md.ts
++src/config.ts
++src/index.ts
++src/query-state.ts
++src/typebox-to-zod.ts
++tests/int-cache.sh
++tests/int-smoke.sh
++tests/lib/rpc-harness.mjs
++tests/unit-config.mjs
++SYNC OUTCOME: conflicts (14 files)
++sync-exit=1 seconds=0.76 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: b32408df051e68b7824a624d575c3f5b612e7f2c
++git conflicted (14): .env.test CHANGELOG.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts src/query-state.ts src/typebox-to-zod.ts tests/int-cache.sh tests/int-smoke.sh tests/lib/rpc-harness.mjs tests/unit-config.mjs 
++sync conflicted (14): .env.test CHANGELOG.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts src/query-state.ts src/typebox-to-zod.ts tests/int-cache.sh tests/int-smoke.sh tests/lib/rpc-harness.mjs tests/unit-config.mjs 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
++between steps: directory replaced with e87c1c3, committed with Upstream-Base fac372c4fedabc247eda48ddec2363a52dc8c4d8
+diff --git a/spike/runs/R3.txt b/spike/runs/R3.txt
+new file mode 100644
+index 000000000..453ad3662
+--- /dev/null
++++ b/spike/runs/R3.txt
+@@ -0,0 +1,31 @@
++case R3: sync merge 6feed8f = 6feed8f5424ebe523b1ed0ab357d2727941a15be, first parent e87c1c35cc1e2254c2eeb06d74a1cef75d5da71a, second parent 500eea19eab818d81fbfabfcb65a718bebaa8540
++recorded-base=fac372c4fedabc247eda48ddec2363a52dc8c4d8 git-merge-base=fac372c4fedabc247eda48ddec2363a52dc8c4d8 BASE-MATCH
++pi side before sync equals the fork state: IDENTICAL 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=fac372c4fedabc247eda48ddec2363a52dc8c4d8 new=500eea19eab818d81fbfabfcb65a718bebaa8540
++scratch: /tmp/spike-0004-scratch.8xWZ53 (merge exit 1)
++conflicted:
++CHANGELOG.md
++README.md
++diag/CONTEXT-SIZE.md
++package-lock.json
++package.json
++src/agents-md.ts
++src/config.ts
++src/index.ts
++tests/int-smoke.sh
++tests/unit-agents-md.mjs
++tests/unit-sync-shared-session.mjs
++SYNC OUTCOME: conflicts (11 files)
++sync-exit=1 seconds=0.82 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 3ba9d25b0d3e8d0b7f3d7aea6e5a4f7a888045be
++git conflicted (11): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts tests/int-smoke.sh tests/unit-agents-md.mjs tests/unit-sync-shared-session.mjs 
++sync conflicted (11): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts tests/int-smoke.sh tests/unit-agents-md.mjs tests/unit-sync-shared-session.mjs 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
++between steps: directory replaced with fcfe846, committed with Upstream-Base 500eea19eab818d81fbfabfcb65a718bebaa8540
+diff --git a/spike/runs/R4.txt b/spike/runs/R4.txt
+new file mode 100644
+index 000000000..96f7ea05c
+--- /dev/null
++++ b/spike/runs/R4.txt
+@@ -0,0 +1,24 @@
++case R4: sync merge 64e3c25 = 64e3c251988f56094652a22381a2c78fb8d3ec58, first parent fcfe846570ae0b290d4b628e8b19f8068611e9af, second parent 44fe582193c0451c4210555451788a82ac134c93
++recorded-base=500eea19eab818d81fbfabfcb65a718bebaa8540 git-merge-base=500eea19eab818d81fbfabfcb65a718bebaa8540 BASE-MATCH
++pi side before sync equals the fork state: IDENTICAL 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=500eea19eab818d81fbfabfcb65a718bebaa8540 new=44fe582193c0451c4210555451788a82ac134c93
++scratch: /tmp/spike-0004-scratch.faNwQt (merge exit 1)
++conflicted:
++CHANGELOG.md
++src/index.ts
++src/prompt-capture.ts
++tests/unit-prompt-capture.mjs
++SYNC OUTCOME: conflicts (4 files)
++sync-exit=1 seconds=0.84 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 0d9fe8618e515d929be33f721911b34e7371bc24
++git conflicted (4): CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs 
++sync conflicted (4): CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
++between steps: directory replaced with 3a83275, committed with Upstream-Base 44fe582193c0451c4210555451788a82ac134c93
+diff --git a/spike/runs/R5.txt b/spike/runs/R5.txt
+new file mode 100644
+index 000000000..df128366a
+--- /dev/null
++++ b/spike/runs/R5.txt
+@@ -0,0 +1,33 @@
++case R5: sync merge d233e0a = d233e0a981bbffacb444d0c31a466f4ace20f1ae, first parent 3a83275c7426a1fcce830160d23f95e33e84adc6, second parent 07507489c0c54f7f978ab752eb9beb5cc0960f24
++recorded-base=44fe582193c0451c4210555451788a82ac134c93 git-merge-base=44fe582193c0451c4210555451788a82ac134c93 BASE-MATCH
++pi side before sync equals the fork state: IDENTICAL 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=44fe582193c0451c4210555451788a82ac134c93 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++scratch: /tmp/spike-0004-scratch.Ld82ww (merge exit 1)
++conflicted:
++CHANGELOG.md
++README.md
++diag/CONTEXT-SIZE.md
++package-lock.json
++package.json
++src/config.ts
++src/index.ts
++src/models.ts
++src/prompt-capture.ts
++src/query-state.ts
++tests/unit-models.mjs
++tests/unit-pi-streamfn-inventory.mjs
++tests/unit-prompt-capture.mjs
++SYNC OUTCOME: conflicts (13 files)
++sync-exit=1 seconds=0.89 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 63d9a42132616fbb92881a25004a507ef5268a9f
++git conflicted (13): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/index.ts src/models.ts src/prompt-capture.ts src/query-state.ts tests/unit-models.mjs tests/unit-pi-streamfn-inventory.mjs tests/unit-prompt-capture.mjs 
++sync conflicted (13): CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/index.ts src/models.ts src/prompt-capture.ts src/query-state.ts tests/unit-models.mjs tests/unit-pi-streamfn-inventory.mjs tests/unit-prompt-capture.mjs 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
++index, result paths missing from the index: (none) 
++TODO.md in the index: 1
++between steps: directory replaced with d233e0a, committed with Upstream-Base 07507489c0c54f7f978ab752eb9beb5cc0960f24
+diff --git a/spike/runs/R6.txt b/spike/runs/R6.txt
+new file mode 100644
+index 000000000..ed64a2886
+--- /dev/null
++++ b/spike/runs/R6.txt
+@@ -0,0 +1,18 @@
++case R6: merge ce35c164 = ce35c16469dee42ce9c343a50969b82027b7e5f9, first parent 777beb8ac788d89ded8d785b95d00d131535394a, second parent d74b1c99830a565f3df3f37e0a36616d17ffc574, subdir packages/rpiv-ask-user-question
++recorded-base=0fdf4f813980d380e826b84d1280a4960e5d088e git-merge-base=0fdf4f813980d380e826b84d1280a4960e5d088e
++===== sync
++record: repository=/Users/paolof/Developer/ai/rpiv-mono path=packages/rpiv-ask-user-question base=0fdf4f813980d380e826b84d1280a4960e5d088e new=d74b1c99830a565f3df3f37e0a36616d17ffc574
++scratch: /tmp/spike-0004-scratch.sQsoEt (merge exit 1)
++conflicted:
++CHANGELOG.md
++SYNC OUTCOME: conflicts (1 files)
++sync-exit=1 seconds=0.94 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== Git's automatic result
++merge-tree: 259306a430fdaed10003921611569c3fa837d5d7
++git conflicted (1): CHANGELOG.md 
++sync conflicted (1): CHANGELOG.md 
++CONFLICT-SET: EQUAL
++comparison (UPSTREAM.json excluded): IDENTICAL 
++containment, status outside packages/builtins/rpiv-ask-user-question: (none) 
++index, result paths missing from the index: (none) 
+diff --git a/spike/runs/U1.txt b/spike/runs/U1.txt
+new file mode 100644
+index 000000000..bf571c121
+--- /dev/null
++++ b/spike/runs/U1.txt
+@@ -0,0 +1,14 @@
++case U1: from state d966ade3fab29644ce5f0ccc90cb8b6566d1a444, new 07507489c0c54f7f978ab752eb9beb5cc0960f24
++record before: {"upstream": {"repository": "/Users/paolof/Developer/ai/pi-claude-bridge","path": "","base": "07507489c0c54f7f978ab752eb9beb5cc0960f24"}}
++trailer before: 07507489c0c54f7f978ab752eb9beb5cc0960f24
++status before: 
++===== sync
++record: repository=/Users/paolof/Developer/ai/pi-claude-bridge path=<root> base=07507489c0c54f7f978ab752eb9beb5cc0960f24 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++SYNC OUTCOME: up to date
++sync-exit=3 seconds=0.21 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++status after (--ignored): 
++HEAD unchanged: yes
++README.md unchanged: yes
++containment, status outside packages/builtins/pi-claude-bridge: (none) 
+diff --git a/spike/runs/U2.txt b/spike/runs/U2.txt
+new file mode 100644
+index 000000000..1be713cda
+--- /dev/null
++++ b/spike/runs/U2.txt
+@@ -0,0 +1,16 @@
++case U2: subtree at cb1ee6e e0f4a139050543009434d1cf3267adb1fdcf05dd and at 7392135 e0f4a139050543009434d1cf3267adb1fdcf05dd
++===== sync
++record: repository=/Users/paolof/Developer/ai/rpiv-mono path=packages/rpiv-ask-user-question base=cb1ee6e85a64e50b99501ee2f9efc78a84b7aee1 new=7392135
++SYNC OUTCOME: up to date
++sync-exit=3 seconds=0.22 stdin=/dev/null tty=no
++survivors-in-process-group: none
++===== after
++paths that differ from before:
++Files /tmp/spike-0004-snap.PvvIPZ/UPSTREAM.json and /tmp/spike-0004-pi-U2.XnLbZL/packages/builtins/rpiv-ask-user-question/UPSTREAM.json differ
++UPSTREAM.json diff:
++5c5
++< 		"base": "cb1ee6e85a64e50b99501ee2f9efc78a84b7aee1"
++---
++> 		"base": "7392135d4d1aecb4584285725b6f3ab9bcecf955"
++HEAD unchanged: yes
++containment, status outside packages/builtins/rpiv-ask-user-question: (none) 
+diff --git a/spike/runs/chain-worktree.txt b/spike/runs/chain-worktree.txt
+new file mode 100644
+index 000000000..f5a08bc07
+--- /dev/null
++++ b/spike/runs/chain-worktree.txt
+@@ -0,0 +1 @@
++/tmp/spike-0004-pi-chain.11RxZI
+diff --git a/spike/runs/state-after-R5.txt b/spike/runs/state-after-R5.txt
+new file mode 100644
+index 000000000..c3ab8d437
+--- /dev/null
++++ b/spike/runs/state-after-R5.txt
+@@ -0,0 +1 @@
++d966ade3fab29644ce5f0ccc90cb8b6566d1a444
+diff --git a/spike/single.sh b/spike/single.sh
+new file mode 100755
+index 000000000..91d259bac
+--- /dev/null
++++ b/spike/single.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++# C2 and C3: one merge, ported from its first parent with the recorded base, synced to its
++# second parent, compared with Git's automatic result.
++# Usage: spike/single.sh <case> <repo> <subdir or ""> <merge> <recorded base> <package dir name>
++set -u
++. spike/lib.sh
++case=$1 repo=$2 sub=$3 merge=$4 recorded=$5
++dir=packages/builtins/$6
++out="spike/runs/$case.txt"
++pi=$(pi_worktree "$case") || { echo "worktree creation failed"; exit 1; }
++work=$(mktemp -d /tmp/spike-0004-work.XXXXXX)
++m=$(git -C "$repo" rev-parse "$merge")
++p1=$(git -C "$repo" rev-parse "$m^1")
++p2=$(git -C "$repo" rev-parse "$m^2")
++port "$pi" "$dir" "$repo" "$sub" "$p1" "$recorded"
++{
++	echo "case $case: merge $merge = $m, first parent $p1, second parent $p2, subdir ${sub:-<root>}"
++	echo "recorded-base=$(git -C "$repo" rev-parse "$recorded") git-merge-base=$(git -C "$repo" merge-base "$p1" "$p2")"
++	echo "===== sync"
++} >"$out"
++code=$(run_sync "$out" "$pi" "$dir" "$p2")
++{
++	echo "===== Git's automatic result"
++	echo "merge-tree: $(oracle "$repo" "$p1" "$p2" "$sub" "$work/auto" "$work/conf")"
++	candidate_conflicts "$out" >"$work/cand"
++	echo "git conflicted ($(grep -c . "$work/conf")): $(tr '\n' ' ' <"$work/conf")"
++	echo "sync conflicted ($(grep -c . "$work/cand")): $(tr '\n' ' ' <"$work/cand")"
++	cmp -s "$work/conf" "$work/cand" && echo "CONFLICT-SET: EQUAL" || echo "CONFLICT-SET: DIFFERENT"
++	echo "comparison (UPSTREAM.json excluded): $(compare "$work/auto" "$pi/$dir" "$work/conf" | tr '\n' ' ')"
++	echo "containment, status outside $dir: $(containment "$pi" "$dir" | tr '\n' ' ')"
++	echo "index, result paths missing from the index: $(index_missing "$pi" "$dir" | tr '\n' ' ')"
++	[ -e "$pi/$dir/TODO.md" ] && echo "TODO.md in the index: $(git -C "$pi" ls-files -- "$dir/TODO.md" | grep -c .)"
++} >>"$out"
++drop_pi_worktree "$pi"
++rm -rf "$work"
++echo "$case exit=$code"
+diff --git a/spike/sync-upstream.sh b/spike/sync-upstream.sh
+new file mode 100755
+index 000000000..e6937f89a
+--- /dev/null
++++ b/spike/sync-upstream.sh
+@@ -0,0 +1,112 @@
++#!/usr/bin/env bash
++# The guarded scratch-merge sync under test in SPIKE-0004.
++# Usage: sync-upstream.sh <pi worktree> <package directory, relative> <new upstream commit>
++#
++# Steps, in the frozen order:
++#   (1) read repository, path and base from <dir>/UPSTREAM.json;
++#   (2) refuse unless the latest commit touching UPSTREAM.json carries Upstream-Base: <base>;
++#   (3) refuse when the package directory has uncommitted changes (ignored files excluded);
++#   (4) refuse when <base> is not an ancestor of <new> in the upstream clone;
++#   (5) report up to date when the upstream subtree is unchanged, rewriting only the base value;
++#   (6) otherwise merge base, ours (HEAD) and theirs in a scratch repository, copy the result
++#       back, write the new base and stage the directory with `git add -A -f`.
++# Exit codes: 0 clean merge, 1 merge with conflicts, 2 refusal, 3 up to date.
++# It never commits and never fetches.
++set -u
++pi=$1
++dir=$2
++new=$3
++record="$pi/$dir/UPSTREAM.json"
++
++refuse() {
++	echo "SYNC OUTCOME: refused ($1)"
++	exit 2
++}
++
++# (1)
++read_field() {
++	node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).upstream;process.stdout.write(String(r[process.argv[2]]??""))' "$record" "$1"
++}
++repo=$(read_field repository) || refuse "record unreadable"
++path=$(read_field path)
++base=$(read_field base)
++echo "record: repository=$repo path=${path:-<root>} base=$base new=$new"
++
++# (2)
++trailer=$(git -C "$pi" log -1 --format='%(trailers:key=Upstream-Base,valueonly)' -- "$dir/UPSTREAM.json" | tr -d '[:space:]')
++if ! [[ "$base" =~ ^[0-9a-f]{40}$ ]] || [ "$trailer" != "$base" ]; then
++	refuse "record: the latest commit of UPSTREAM.json carries Upstream-Base '${trailer:-none}', not '$base'"
++fi
++
++# (3)
++if [ -n "$(git -C "$pi" status --porcelain -- "$dir")" ]; then
++	refuse "uncommitted changes in $dir"
++fi
++
++# (4)
++git -C "$repo" merge-base --is-ancestor "$base" "$new" 2>/dev/null
++ancestry=$?
++if [ "$ancestry" -ne 0 ]; then
++	refuse "ancestry: $base is not an ancestor of $new in $repo (exit $ancestry)"
++fi
++
++subtree() {
++	if [ -n "$path" ]; then git -C "$repo" rev-parse "$1:$path"; else git -C "$repo" rev-parse "$1^{tree}"; fi
++}
++write_base() {
++	node -e 'const fs=require("fs");const p=process.argv[1];const s=fs.readFileSync(p,"utf8");const t=s.replace(/("base":\s*")[0-9a-fA-F]*(")/,"$1"+process.argv[2]+"$2");if(t===s&&!s.includes(process.argv[2]))throw new Error("base not found");fs.writeFileSync(p,t)' "$record" "$1"
++}
++
++# (5)
++if [ "$(subtree "$base")" = "$(subtree "$new")" ]; then
++	write_base "$(git -C "$repo" rev-parse "$new")"
++	echo "SYNC OUTCOME: up to date"
++	exit 3
++fi
++
++# (6)
++extract() { # <repo> <tree-ish> <outdir>
++	local idx
++	idx=$(mktemp /tmp/spike-0004-idx.XXXXXX)
++	rm -f "$idx"
++	mkdir -p "$3"
++	GIT_INDEX_FILE="$idx" git -C "$1" read-tree "$2"
++	GIT_INDEX_FILE="$idx" git -C "$1" checkout-index -a -f --prefix="$3/"
++	rm -f "$idx"
++}
++treeish() { if [ -n "$path" ]; then echo "$1:$path"; else echo "$1^{tree}"; fi; }
++scratch=$(mktemp -d /tmp/spike-0004-scratch.XXXXXX)
++G=(git -C "$scratch" -c user.name=sync -c user.email=sync@local -c commit.gpgsign=false -c core.hooksPath=/dev/null)
++git init -q -b ours "$scratch"
++clear_tree() { find "$scratch" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +; }
++extract "$repo" "$(treeish "$base")" "$scratch"
++"${G[@]}" add -A && "${G[@]}" commit -q --allow-empty -m base
++"${G[@]}" branch -q theirs
++clear_tree
++extract "$pi" "HEAD:$dir" "$scratch"
++"${G[@]}" add -A && "${G[@]}" commit -q --allow-empty -m ours
++"${G[@]}" switch -q theirs
++clear_tree
++extract "$repo" "$(treeish "$new")" "$scratch"
++"${G[@]}" add -A && "${G[@]}" commit -q --allow-empty -m theirs
++"${G[@]}" switch -q ours
++"${G[@]}" merge --no-edit theirs >"$scratch.merge.log" 2>&1
++merge_exit=$?
++conflicted=$("${G[@]}" diff --name-only --diff-filter=U)
++find "$pi/$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
++(cd "$scratch" && tar -cf - --exclude=./.git .) | (cd "$pi/$dir" && tar -xf -)
++write_base "$(git -C "$repo" rev-parse "$new")"
++git -C "$pi" add -A -f -- "$dir"
++echo "scratch: $scratch (merge exit $merge_exit)"
++echo "conflicted:"
++[ -n "$conflicted" ] && printf '%s\n' "$conflicted"
++if [ -n "$conflicted" ]; then
++	echo "SYNC OUTCOME: conflicts ($(printf '%s\n' "$conflicted" | grep -c .) files)"
++	exit 1
++fi
++if [ "$merge_exit" -ne 0 ]; then
++	echo "SYNC OUTCOME: refused (scratch merge failed without conflicts, exit $merge_exit)"
++	exit 2
++fi
++echo "SYNC OUTCOME: clean"
++exit 0
+diff --git a/spike/uptodate-u2.sh b/spike/uptodate-u2.sh
+new file mode 100755
+index 000000000..82783fea2
+--- /dev/null
++++ b/spike/uptodate-u2.sh
+@@ -0,0 +1,30 @@
++#!/usr/bin/env bash
++# C4, case U2: rpiv-mono's package directory ported at cb1ee6e, synced to 7392135, whose
++# subtree is unchanged. Expect exit 3 and a directory that differs only in the base value.
++set -u
++. spike/lib.sh
++dir=packages/builtins/rpiv-ask-user-question
++sub=packages/rpiv-ask-user-question
++out=spike/runs/U2.txt
++pi=$(pi_worktree U2) || { echo "worktree creation failed"; exit 1; }
++port "$pi" "$dir" "$RPIV" "$sub" cb1ee6e cb1ee6e
++snap=$(mktemp -d /tmp/spike-0004-snap.XXXXXX)
++cp -Rp "$pi/$dir/." "$snap/"
++head_before=$(git -C "$pi" rev-parse HEAD)
++{
++	echo "case U2: subtree at cb1ee6e $(git -C "$RPIV" rev-parse "cb1ee6e:$sub") and at 7392135 $(git -C "$RPIV" rev-parse "7392135:$sub")"
++	echo "===== sync"
++} >"$out"
++code=$(run_sync "$out" "$pi" "$dir" 7392135)
++{
++	echo "===== after"
++	echo "paths that differ from before:"
++	diff -rq "$snap" "$pi/$dir" || true
++	echo "UPSTREAM.json diff:"
++	diff "$snap/UPSTREAM.json" "$pi/$dir/UPSTREAM.json" || true
++	echo "HEAD unchanged: $([ "$(git -C "$pi" rev-parse HEAD)" = "$head_before" ] && echo yes || echo NO)"
++	echo "containment, status outside $dir: $(containment "$pi" "$dir" | tr '\n' ' ')"
++} >>"$out"
++drop_pi_worktree "$pi"
++rm -rf "$snap"
++echo "U2 exit=$code"
+-- 
+2.55.0
+

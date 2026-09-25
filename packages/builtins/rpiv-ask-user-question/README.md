@@ -47,7 +47,7 @@ When the model asks several things at once, `Tab` moves between them and a Submi
 
 ## Configuration
 
-Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the file is read, never written.
+Optional. In this Pi fork, settings live in `~/.pi/agent/settings.json` under `forkBuiltins.rpiv-ask-user-question`; see [docs/configuration.md](./docs/configuration.md). The file is read, never written.
 
 | Setting | What it does | Default |
 | --- | --- | --- |

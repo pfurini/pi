@@ -1,5 +1,5 @@
 // Fork-owned: guards the built-in extension mechanism (ADR-0009) across upstream merges.
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,42 @@ describe("fork built-in extensions", () => {
 			.getExtensions()
 			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>");
 		expect(builtIn?.tools.has("ask_user_question")).toBe(true);
+	});
+
+	function rpivDescription(subject: DefaultResourceLoader): string | undefined {
+		return subject
+			.getExtensions()
+			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>")
+			?.tools.get("ask_user_question")?.definition.description;
+	}
+
+	function writeSettings(directory: string, description: string): void {
+		mkdirSync(directory, { recursive: true });
+		const settings = { forkBuiltins: { "rpiv-ask-user-question": { guidance: { description } } } };
+		writeFileSync(join(directory, "settings.json"), JSON.stringify(settings));
+	}
+
+	it("configures rpiv-ask-user-question from forkBuiltins in the global settings file", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+		writeSettings(agentDir, "global description");
+		writeSettings(join(cwd, ".pi"), "project description");
+		const subject = loader([]);
+		await subject.reload();
+
+		expect(rpivDescription(subject)).toBe("global description");
+	});
+
+	it("never configures rpiv-ask-user-question from a project settings file", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+		writeSettings(join(cwd, ".pi"), "project description");
+		const subject = loader([]);
+		await subject.reload();
+
+		const description = rpivDescription(subject);
+		expect(description).toBeDefined();
+		expect(description).not.toBe("project description");
 	});
 
 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {

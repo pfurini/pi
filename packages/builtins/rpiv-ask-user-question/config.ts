@@ -1,5 +1,33 @@
-import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import { loadForkBuiltinSettings } from "./fork-settings.js";
+
+// Fork-owned: the guidance type and validator, copied from @juicesharp/rpiv-config 2.11.0,
+// so the package no longer depends on it. Settings come only from Pi's settings file.
+export interface GuidanceFields {
+	promptSnippet?: string;
+	promptGuidelines?: string[];
+	description?: string;
+}
+
+/** Keeps only the non-empty string fields and a non-empty all-string guideline list. */
+export function validateGuidanceFields(fields: unknown): GuidanceFields {
+	if (!fields || typeof fields !== "object") return {};
+	const g = fields as Record<string, unknown>;
+	const result: GuidanceFields = {};
+	if (typeof g.promptSnippet === "string" && g.promptSnippet.length > 0) {
+		result.promptSnippet = g.promptSnippet;
+	}
+	if (
+		Array.isArray(g.promptGuidelines) &&
+		g.promptGuidelines.length > 0 &&
+		g.promptGuidelines.every((s) => typeof s === "string" && s.length > 0)
+	) {
+		result.promptGuidelines = g.promptGuidelines;
+	}
+	if (typeof g.description === "string" && g.description.length > 0) {
+		result.description = g.description;
+	}
+	return result;
+}
 
 /** Key spec for the overlay collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 export type CollapseKeySpec = string;
@@ -99,7 +127,5 @@ export function setAsideKey(collapseKey: string): "a" | "ctrl+a" {
 }
 
 export function loadConfig(): AskUserQuestionConfig {
-	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
+	return loadForkBuiltinSettings<AskUserQuestionConfig>("rpiv-ask-user-question") ?? {};
 }
-
-export { validateGuidanceFields };

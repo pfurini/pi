@@ -30,6 +30,7 @@
 		"ask-user-question.ts",
 		"rpc-fallback.ts",
 		"config.ts",
+		"fork-settings.ts",
 		"events.ts",
 		"index.ts",
 		"reconcile.ts",
@@ -92,8 +93,5 @@
 		"@juicesharp/rpiv-i18n": {
 			"optional": true
 		}
-	},
-	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.11.0"
 	}
 }

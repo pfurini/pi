@@ -3,56 +3,53 @@
 Every setting the package reads, where the file lives, and what happens when a value is
 wrong.
 
-## The config file
+## Where the settings live
+
+In this Pi fork, the settings live in Pi's global settings file, under
+`forkBuiltins.rpiv-ask-user-question`:
 
 ```
-~/.config/rpiv-ask-user-question/config.json
+~/.pi/agent/settings.json
 ```
 
-The file is optional — with no config at all, every setting takes its default. This
-package only ever *reads* the file; it never creates, writes or chmods it, so its
-permissions are whatever you give it.
+This replaces upstream's `~/.config/rpiv-ask-user-question/config.json`, which the fork
+no longer reads. The fork keeps every built-in's settings in one file that fenced sessions
+can already read. `packages/builtins/rpiv-ask-user-question/fork-settings.ts` reads it.
 
-A complete example:
+The entry is optional. Without it, every setting takes its default. The package only
+reads the file; it never writes it.
+
+A complete example, merged into your existing `settings.json`:
 
 ```json
 {
-  "collapseKey": "alt+o",
-  "guidance": {
-    "description": "Ask the user structured questions whenever requirements are ambiguous.",
-    "promptSnippet": "Ask me before guessing on anything ambiguous",
-    "promptGuidelines": [
-      "Batch every clarifying question into one ask_user_question call.",
-      "Put your recommended option first and suffix it with (Recommended)."
-    ]
+  "forkBuiltins": {
+    "rpiv-ask-user-question": {
+      "collapseKey": "alt+o",
+      "guidance": {
+        "description": "Ask the user structured questions whenever requirements are ambiguous.",
+        "promptSnippet": "Ask me before guessing on anything ambiguous",
+        "promptGuidelines": [
+          "Batch every clarifying question into one ask_user_question call.",
+          "Put your recommended option first and suffix it with (Recommended)."
+        ]
+      }
+    }
   }
 }
 ```
 
-### Where the file is looked up
+### Which file is read
 
-1. `$XDG_CONFIG_HOME/rpiv-ask-user-question/config.json`, if `XDG_CONFIG_HOME` is set,
-   non-empty and absolute. A leading `~` is expanded first; a relative value is ignored.
-   Unset or ignored, the directory falls back to `~/.config`.
-2. If that file does not exist, the legacy path `~/.config/rpiv-ask-user-question/config.json`
-   is read. This path deliberately ignores `XDG_CONFIG_HOME`, so an existing config keeps
-   working after you set the variable.
-3. Neither present: all defaults.
+Only the global file is read: `$PI_CODING_AGENT_DIR/settings.json` when that variable is
+set, else `~/.pi/agent/settings.json`. A project's `.pi/settings.json` is never read,
+because the guidance text reaches the model's prompt.
 
-If the XDG-path file exists, its result wins even when it is malformed — there is no
-second chance at the legacy path.
+### When the entry is invalid
 
-### When the file is invalid
-
-Malformed JSON is not fatal. The loader warns on stderr and continues with defaults:
-
-```
-rpiv-config: invalid JSON at <path>, using default ({}) — <parser message>
-```
-
-Valid JSON that is not an object (a string, number, `null`, or an array) is rejected too,
-falling back to defaults — but silently, with no warning. Individual keys with the wrong
-type are likewise dropped back to their default without a warning.
+A missing or malformed settings file, or an entry that is not an object, means defaults,
+silently. Individual keys with the wrong type also fall back to their default without a
+warning.
 
 ## Settings
 
@@ -111,7 +108,7 @@ tool, so changes take effect on the next Pi restart.
 
 | Variable | Effect |
 | --- | --- |
-| `XDG_CONFIG_HOME` | Relocates the config directory, as described above. Must be absolute. |
+| `PI_CODING_AGENT_DIR` | Pi's own variable. It relocates the settings file, as described above. |
 
 `LANG` and `LC_ALL` influence the dialog language, but they are read by
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) rather than

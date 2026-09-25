@@ -1,10 +1,14 @@
 ---
 id: SPIKE-0002
 title: Can a merge scoped to one package directory, from a recorded upstream base, reproduce the result of a full Git merge in the fork repository?
-status: open
+status: settled
 kind: spike
 date: 2026-09-25
-verdict: null
+verdict: DISPROVEN
+verdicts:
+  A: DISPROVEN
+  B: DISPROVEN
+settled: 2026-09-25
 frozen-at: c2864a41e70924d9d7d885388aadd82c2b6fc0fd
 unblocks:
   - .pi/skills/sync-upstream/SKILL.md
@@ -16,9 +20,42 @@ unblocks:
 
 ## Verdict
 
-_Pending. Written in pass 2, after the evidence. Everything between the frozen markers below is fixed once `run` stamps `frozen-at`; this section and everything after the end marker is pass 2._
+`DISPROVEN` for both candidates, and C4 decided it for both. The frozen chain R8 is not one downstream sync sequence: two of its three links do not descend from the previous merge (`spike/runs/00-replay-provenance.txt`). Under R8, the recorded base misdescribes the Pi side. Candidate B then exits 0 while dropping upstream changes, and candidate A exits 128 (`spike/runs/b-C4-chain.txt`, `spike/runs/a-C4-chain.txt`). Candidate A also fails C2 on its own: `git apply -3` aborts the whole patch on a modify/delete conflict (`spike/runs/a-R6.txt`, `spike/runs/a-R7.txt`).
 
-<!-- opin-spike: pass 2. First paragraph, at most 100 words: the verdict token in backticks and the single piece of evidence that decided it. Then, as needed: the restrictions as a table (restriction, cost, claim); what survives or is unblocked, naming which unblocks entries the routing will edit and why any will not; why this verdict and not its neighbour, quoting the frozen sentences that decided it. No sentence over 25 words. Replace the pending line above as well. -->
+**What blocked it, and what unblocks it.**
+
+| Blocker | Evidence | Unblocking |
+| --- | --- | --- |
+| R8 mixes merges from different lines. The replay selection took every merge reachable from `personal`, not the fork's own syncs. | Only `64e3c25` of the frozen merges lies on the first-parent line of `personal` (`spike/runs/00-replay-provenance.txt`). | A new spike with the fork's real syncs in order, including syncs made through pull-request merges, and the fork's full committed resolution applied between steps. |
+| `git apply -3` cannot apply a patch across a modify/delete conflict. | R6 and R7 leave the Pi directory unchanged and exit 1, the same code as an applied patch with conflicts. | None within candidate A. Candidate A leaves the method set. |
+
+**Why `DISPROVEN` and not `CONDITIONAL`.**
+
+The frozen kill criteria read: "A candidate that fails any one of those five claims is `DISPROVEN` in the per-candidate verdicts."
+C4 is one of the five, and it fails for both candidates as run.
+The frozen `CONDITIONAL` row requires C1, C2, C4, C5 and C7 proved.
+The non-kill list names unreachable replay commits, not a replay case whose provenance differs from its label.
+
+**What survives for the follow-up spike and the sync skill.**
+
+| Observed fact | Candidate A, three-way apply | Candidate B, scratch merge |
+| --- | --- | --- |
+| Single clean merges (C1) | Identical to Git. | Identical to Git. |
+| Conflicted merges (C2) | Aborts on modify/delete. | Identical to Git in all four, including 13 conflicted files and modify/delete. |
+| Upstream rename with a Pi-side edit (C3) | Kept. | Kept. |
+| Containment (C5) and monorepo sub-folder source (C7) | Hold. | Hold. |
+| Distinct outcomes without a terminal (C6) | Exit codes 128, 0 and 1, each also used by a failure. | Up to date and clean are identical: exit 0, "Merge made by the 'ort' strategy." |
+| A recorded base that misdescribes the Pi side | Fails loudly with exit 128. | Exits 0 and silently drops upstream changes. |
+
+Candidate B is the only method the evidence leaves standing.
+The evidence adds two requirements for any unattended sync built on candidate B.
+The sync must verify that the recorded base describes the Pi side before merging, because candidate B cannot detect it.
+The sync must detect an unchanged upstream itself, because candidate B reports it as a clean merge.
+
+**Routing.**
+
+`.pi/skills/sync-upstream/SKILL.md`, `.pi/skills/port-extension/SKILL.md` and `docs/adr/ADR-0009-built-in-extensions.md` do not exist yet.
+Each will cite this report and the follow-up spike when it is written.
 
 <!-- OPENINTENT:FROZEN:START -->
 
@@ -180,42 +217,93 @@ Every conclusion is marked **proved** (observed running here) or **inferred** (r
 
 ### Harness
 
-<!-- opin-spike: each harness in evidence.patch: file, what it does, its command; where raw output lives (spike/runs/); how the thing under test was reached (absolute path, built from which commit) so there is no doubt what answered -->
+The worktree was `~/.openintent/workspaces/pfurini/pi/worktrees/spike-0002`, branched from `frozen-at` `c2864a4`.
+Every harness reached the three source checkouts by absolute path and read commits by hash, never through a branch name that could move.
+The Pi side of every case lived under `packages/builtins/` in the worktree and was committed, measured and removed per case.
+
+| File | What it does | Command, from the worktree root |
+| --- | --- | --- |
+| `spike/lib.sh` | Extracts trees through a private index, computes Git's automatic result with `git merge-tree --write-tree`, compares directories, writes the upstream record. | Sourced by the other scripts. |
+| `spike/sync-a.sh` | Candidate A: fetch without refs, `git diff --binary -M` in the source, `git apply -3 --directory` in Pi. Passes Git's exit code through. | Called by the drivers. |
+| `spike/sync-b.sh` | Candidate B: base, ours and theirs commits in a scratch repository under `/tmp`, `git merge`, files copied back. Passes Git's exit code through. | Called by the drivers. |
+| `spike/replay.sh` | C1, C2, C5, C6 and C7: ports a merge's first parent, syncs to its second parent, and compares with the automatic result. | `spike/replay.sh <a\|b> <case> <repo> <subdir> <merge> [uptodate]` |
+| `spike/rename.sh` | C3: the pi-hashline-edit-pro rename with one synthetic Pi-side line. | `spike/rename.sh <a\|b>` |
+| `spike/chain.sh` | C4: chained syncs that read and update the recorded base. | `spike/chain.sh <a\|b> [label merge...]` |
+| `spike/run-all.sh` | Every frozen case for one candidate. | `spike/run-all.sh <a\|b>` |
+
+Raw output lives in `spike/runs/`, one file per run and never overwritten.
+Files named `*-attempt*` record runs that exposed a harness defect, each fixed before the counted run.
 
 ### Harness versions
 
-<!-- opin-spike: everything the harness installed or linked, with exact versions -->
+| Thing | Version |
+| --- | --- |
+| Git | 2.55.0, `/opt/homebrew/bin/git` |
+| bash | GNU bash 5.3.20 |
+| perl | 5.34.1 |
+| tar | bsdtar 3.5.3 |
 
 ### Budget spent
 
-<!-- opin-spike: turns spent of the cap, per harness, and where the ledger is; or "no model was called" -->
+No model was called.
+The run stayed within the one-session time box.
 
 ### Claims
 
 | Claim | Result | Status | What showed it |
 | --- | --- | --- | --- |
-| C1, <!-- opin-spike: name --> | <!-- opin-spike: holds, fails or partly --> | **<!-- opin-spike: proved or inferred -->** | <!-- opin-spike: the run file and the exact observation --> |
+| C1, clean merges | Holds for A and B: R1, R2 and R3 are identical to the automatic result. | **proved** | `spike/runs/a-R1.txt` to `a-R3.txt`, `spike/runs/b-R1.txt` to `b-R3.txt` |
+| C2, conflicted merges | Fails for A: R6 and R7 abort on modify/delete conflicts. Holds for B: R4 to R7 flag the same files and match elsewhere. | **proved** | `spike/runs/a-R4.txt` to `a-R7.txt`, `spike/runs/b-R4.txt` to `b-R7.txt` |
+| C3, upstream rename with a Pi-side edit | Holds for A and B: the old path is gone, and `prompts/replace.md` equals upstream's file plus the synthetic line. | **proved** | `spike/runs/a-C3-rename.txt`, `spike/runs/b-C3-rename.txt` |
+| C4, chained syncs | Fails for A and B: bases differ at steps 2 and 3, and step 3 differs from the automatic result. | **proved** | `spike/runs/a-C4-chain.txt`, `spike/runs/b-C4-chain.txt`, `spike/runs/00-replay-provenance.txt` |
+| C5, containment | Holds for A and B: no run changes a path outside its package directory. | **proved** | The containment section of every `spike/runs/a-*.txt` and `b-*.txt` |
+| C6, unattended outcome | Holds for A: exit codes 128, 0 and 1. Fails for B: up to date and clean both exit 0 with the same status line. | **proved** | `spike/runs/a-C6-uptodate.txt`, `spike/runs/b-C6-uptodate.txt`, the R1 and R4 runs |
+| C7, subdirectory source | Holds for A and B: both rpiv merges match, clean and conflicted. | **proved** | `spike/runs/a-R10-*.txt`, `spike/runs/b-R10-*.txt` |
 
 ### Supporting conclusions
 
 | Conclusion | Status | What showed it |
 | --- | --- | --- |
-| <!-- opin-spike: a fact learned on the way, marked proved or inferred; delete the table when there is none --> | | |
+| Candidate A exits 1 both for an applied patch with conflicts and for a patch it did not apply at all. | **proved** | `spike/runs/a-R4.txt`, `spike/runs/a-R6.txt` |
+| Candidate A's fetches created no ref: the count stayed at 471 in all twelve runs. | **proved** | The `refs:` lines in `spike/runs/a-*.txt` |
+| Every run had no terminal and finished within 2 seconds, and no Git process waited afterwards. | **proved** | The `tty:` and `seconds=` lines in the run files |
+| On the first-parent chain `c4b759f`, `60efeb9`, `64e3c25`, the fork also synced through pull-request merges off that line. The step-3 recorded base is an ancestor of Git's base, 26 commits older. | **proved** | `spike/runs/00-genuine-chain-ancestry.txt` |
+| The supporting chain runs are inconclusive, because the harness copies only conflicted files, while `c4b759f`'s resolution also adds a path. | **proved** | `spike/runs/a-S-genuine-chain.txt`, `spike/runs/b-S-genuine-chain.txt`, `spike/runs/00-genuine-chain-ancestry.txt` |
+| Pi's `.gitignore` entry `todo.md` matches pi-claude-bridge's `TODO.md` under `core.ignorecase=true`, so an unforced `git add` of a port drops it. | **proved** | `spike/runs/00-gitignore-probe.txt` |
+| SPIKE-0001's versions table attributes two untracked documents to pi-fence. They are `docs/rpiv-mono-overview.md` and `.pdf` in rpiv-mono, created 2026-09-04; pi-fence was clean. | **proved** | `git status` of both checkouts on 2026-09-25 |
 
 ### Re-verified by the coordinator
 
-<!-- opin-spike: when subagents ran harnesses: each claim re-read from the raw runs and the source, not from the subagent's report; or "no subagent ran a harness" -->
+No subagent ran a harness.
+The coordinator read every claim from the raw run files that the Claims table names.
 
 ### What this spike did not test
 
-<!-- opin-spike: the nearest things a reader might assume were covered, and where they belong -->
+| Not tested | Where it belongs |
+| --- | --- |
+| A chain of the fork's real syncs, including those made through pull-request merges | The follow-up spike. |
+| A guard that verifies the recorded base against the Pi side | The follow-up spike. |
+| Conflict resolution by a person or an agent after a conflicted sync | The sync skill's design. |
+| Binary-file conflicts, submodules and symlinks | The follow-up spike, if a ported package carries them. |
+| Git versions other than 2.55.0, and Linux | A release qualification. |
 
 ## Cleanup
 
-<!-- opin-spike: every write outside the worktree the harnesses made, by path, so the human can remove it; or "nothing outside the worktree" -->
+| Path | What it holds | State |
+| --- | --- | --- |
+| `/Users/paolof/Developer/ai/pi-claude-bridge/packages/` | 100 files the first R1 attempt extracted there at 10:40:04 UTC, because `checkout-index --prefix` resolved inside the source repository | Removed at once; the checkout's status is clean and HEAD is still `edf19ed`. |
+| `/tmp/spike-0002-scratch.*` | 18 scratch repositories from candidate B | Present; safe to delete. |
+| `/Users/paolof/Developer/ai/pi/.git/objects` | Objects fetched from the three source checkouts by candidate A, with no ref | Present; `git gc` prunes them once they are unreferenced. |
+
+## Template gaps
+
+| Gap | What the run did |
+| --- | --- |
+| The freeze step does not check that a replay case is what its label claims. | R8's provenance decided this verdict; the Verdict and `spike/runs/00-replay-provenance.txt` record it. |
 
 ## Spike code
 
 `evidence.patch`, beside this file: one squashed commit of the worktree branch. Built in an isolated worktree, never merged, never pushed as a branch, never opened as a pull request. To re-check a decayed verdict, run `/skill:opin-spike re-check` on this spike; it applies the patch into a fresh worktree.
 
-<!-- opin-spike: how to run it from the applied patch. If the template had to be worked around, add a "## Template gaps" section above this one saying what and why. -->
+Apply the patch onto `frozen-at` in a fresh worktree, check out the three source repositories at the commits the versions table names, and run `spike/run-all.sh a` and `spike/run-all.sh b` from the worktree root.
+`spike/README.md` lists every command.

@@ -4,4 +4,4 @@
 | ID | Kind | Status | Verdict | Title | Date | Settled | Re-checks |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [SPIKE-0001](./spikes/0001-built-in-extension-injection/report.md) | spike | settled | DISPROVEN | Can the Pi fork ship an extension as a built-in that every session path loads, within 15 added lines in upstream-owned files and without rewriting the ported files? | 2026-09-25 | 2026-09-25 | — |
-| [SPIKE-0002](./spikes/0002-scoped-upstream-sync/report.md) | spike | open | — | Can a merge scoped to one package directory, from a recorded upstream base, reproduce the result of a full Git merge in the fork repository? | 2026-09-25 | — | — |
+| [SPIKE-0002](./spikes/0002-scoped-upstream-sync/report.md) | spike | settled | DISPROVEN | Can a merge scoped to one package directory, from a recorded upstream base, reproduce the result of a full Git merge in the fork repository? | 2026-09-25 | 2026-09-25 | — |

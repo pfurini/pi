@@ -1,0 +1,2047 @@
+From affeff43751a02a239a0466ac9f962ad4addaa10 Mon Sep 17 00:00:00 2001
+From: Paolo Furini <paolo.furini@gmail.com>
+Date: Fri, 25 Sep 2026 10:53:47 +0000
+Subject: [PATCH] spike(0002): scoped-upstream-sync
+
+---
+ spike/README.md                               |  29 +++++
+ spike/chain.sh                                |  79 ++++++++++++
+ spike/findings/a.md                           |  13 ++
+ spike/findings/b.md                           |  20 +++
+ spike/lib.sh                                  |  69 ++++++++++
+ spike/rename.sh                               |  47 +++++++
+ spike/replay.sh                               |  54 ++++++++
+ spike/run-all.sh                              |  17 +++
+ spike/runs/00-compare-selftest.txt            |   1 +
+ spike/runs/00-genuine-chain-ancestry.txt      |  17 +++
+ spike/runs/00-gitignore-probe.txt             |   3 +
+ spike/runs/00-replay-provenance.txt           |  16 +++
+ .../a-C3-rename-attempt1-grep-newline.txt     |  57 +++++++++
+ spike/runs/a-C3-rename.txt                    |  52 ++++++++
+ spike/runs/a-C4-chain.txt                     |  39 ++++++
+ spike/runs/a-C6-uptodate.txt                  |  14 ++
+ spike/runs/a-R1-attempt1-relative-prefix.txt  | 121 ++++++++++++++++++
+ spike/runs/a-R1-attempt2-compare-listing.txt  |  22 ++++
+ spike/runs/a-R1.txt                           |  21 +++
+ spike/runs/a-R10-ce35c164.txt                 |  24 ++++
+ spike/runs/a-R10-e04fe7a4.txt                 |  26 ++++
+ spike/runs/a-R2.txt                           |  22 ++++
+ spike/runs/a-R3.txt                           |  67 ++++++++++
+ spike/runs/a-R4.txt                           |  32 +++++
+ spike/runs/a-R5.txt                           |  29 +++++
+ spike/runs/a-R6.txt                           |  37 ++++++
+ spike/runs/a-R7.txt                           |  72 +++++++++++
+ spike/runs/a-S-genuine-chain.txt              |  99 ++++++++++++++
+ spike/runs/b-C3-rename.txt                    |  68 ++++++++++
+ spike/runs/b-C4-chain.txt                     |  39 ++++++
+ spike/runs/b-C6-uptodate.txt                  |  14 ++
+ spike/runs/b-R1.txt                           |  23 ++++
+ spike/runs/b-R10-ce35c164.txt                 |  25 ++++
+ spike/runs/b-R10-e04fe7a4.txt                 |  28 ++++
+ spike/runs/b-R2.txt                           |  24 ++++
+ spike/runs/b-R3.txt                           |  92 +++++++++++++
+ spike/runs/b-R4.txt                           |  25 ++++
+ spike/runs/b-R5.txt                           |  30 +++++
+ spike/runs/b-R6.txt                           |  32 +++++
+ spike/runs/b-R7.txt                           |  62 +++++++++
+ spike/runs/b-S-genuine-chain.txt              |  71 ++++++++++
+ spike/sync-a.sh                               |  22 ++++
+ spike/sync-b.sh                               |  38 ++++++
+ 43 files changed, 1692 insertions(+)
+ create mode 100644 spike/README.md
+ create mode 100755 spike/chain.sh
+ create mode 100644 spike/findings/a.md
+ create mode 100644 spike/findings/b.md
+ create mode 100755 spike/lib.sh
+ create mode 100755 spike/rename.sh
+ create mode 100755 spike/replay.sh
+ create mode 100755 spike/run-all.sh
+ create mode 100644 spike/runs/00-compare-selftest.txt
+ create mode 100644 spike/runs/00-genuine-chain-ancestry.txt
+ create mode 100644 spike/runs/00-gitignore-probe.txt
+ create mode 100644 spike/runs/00-replay-provenance.txt
+ create mode 100644 spike/runs/a-C3-rename-attempt1-grep-newline.txt
+ create mode 100644 spike/runs/a-C3-rename.txt
+ create mode 100644 spike/runs/a-C4-chain.txt
+ create mode 100644 spike/runs/a-C6-uptodate.txt
+ create mode 100644 spike/runs/a-R1-attempt1-relative-prefix.txt
+ create mode 100644 spike/runs/a-R1-attempt2-compare-listing.txt
+ create mode 100644 spike/runs/a-R1.txt
+ create mode 100644 spike/runs/a-R10-ce35c164.txt
+ create mode 100644 spike/runs/a-R10-e04fe7a4.txt
+ create mode 100644 spike/runs/a-R2.txt
+ create mode 100644 spike/runs/a-R3.txt
+ create mode 100644 spike/runs/a-R4.txt
+ create mode 100644 spike/runs/a-R5.txt
+ create mode 100644 spike/runs/a-R6.txt
+ create mode 100644 spike/runs/a-R7.txt
+ create mode 100644 spike/runs/a-S-genuine-chain.txt
+ create mode 100644 spike/runs/b-C3-rename.txt
+ create mode 100644 spike/runs/b-C4-chain.txt
+ create mode 100644 spike/runs/b-C6-uptodate.txt
+ create mode 100644 spike/runs/b-R1.txt
+ create mode 100644 spike/runs/b-R10-ce35c164.txt
+ create mode 100644 spike/runs/b-R10-e04fe7a4.txt
+ create mode 100644 spike/runs/b-R2.txt
+ create mode 100644 spike/runs/b-R3.txt
+ create mode 100644 spike/runs/b-R4.txt
+ create mode 100644 spike/runs/b-R5.txt
+ create mode 100644 spike/runs/b-R6.txt
+ create mode 100644 spike/runs/b-R7.txt
+ create mode 100644 spike/runs/b-S-genuine-chain.txt
+ create mode 100755 spike/sync-a.sh
+ create mode 100755 spike/sync-b.sh
+
+diff --git a/spike/README.md b/spike/README.md
+new file mode 100644
+index 000000000..cb25db088
+--- /dev/null
++++ b/spike/README.md
+@@ -0,0 +1,29 @@
++# Spike 0002 code
++
++Harness for `openintent/experiments/spikes/0002-scoped-upstream-sync/report.md`. None of this is product code, and it is never merged: it exists only to answer that report's question and it lands beside the report as `evidence.patch`.
++
++## Files
++
++| Path | What it is |
++| --- | --- |
++| `runs/` | Raw output of every run, one file per run. `a-*` is candidate A, `b-*` candidate B, `00-*` shared probes, `*-attempt*` runs that exposed a harness defect. |
++| `findings/a.md`, `findings/b.md` | Per-candidate conclusions, each marked proved or inferred. |
++| `lib.sh` | Shared helpers: tree extraction through a private index, Git's automatic result through `git merge-tree --write-tree`, directory comparison, the upstream record. |
++| `sync-a.sh` | Candidate A: fetch without refs, `git diff --binary -M` in the source, `git apply -3 --directory` in Pi. Passes Git's exit code through. |
++| `sync-b.sh` | Candidate B: base, ours and theirs commits in a scratch repository under `/tmp`, `git merge`, files copied back. Passes Git's exit code through. |
++| `replay.sh` | C1, C2, C5, C6 and C7: ports a merge's first parent into Pi, syncs to its second parent, compares with the automatic result. |
++| `rename.sh` | C3: the pi-hashline-edit-pro rename with one synthetic Pi-side line. |
++| `chain.sh` | C4: chained syncs, reading and updating the recorded base. An optional label and merge list run a supporting chain. |
++| `run-all.sh` | Every frozen case for one candidate. |
++
++## Running it
++
++From the worktree root, with the three source checkouts at the commits the report's versions table names:
++
++```
++spike/run-all.sh a
++spike/run-all.sh b
++spike/chain.sh b S-genuine-chain c4b759f 60efeb9 64e3c25
++```
++
++No harness calls a model. Candidate A fetches objects into the Pi object store without creating a ref.
+diff --git a/spike/chain.sh b/spike/chain.sh
+new file mode 100755
+index 000000000..1073aa7d0
+--- /dev/null
++++ b/spike/chain.sh
+@@ -0,0 +1,79 @@
++#!/usr/bin/env bash
++# C4: four chained syncs of pi-claude-bridge through one candidate, reading and updating the
++# recorded base each time. Between syncs the Pi side receives the fork's committed resolution
++# (for a conflicted step) and the fork's own commits up to the next merge's first parent.
++# Usage: spike/chain.sh <a|b> [label merge...]
++# With no label, the chain is the frozen R8 list and the run file is <cand>-C4-chain.txt.
++set -u
++. "$(dirname "$0")/lib.sh"
++cand=$1
++src=/Users/paolof/Developer/ai/pi-claude-bridge
++if [ $# -gt 1 ]; then
++	label=$2
++	shift 2
++	merges=("$@")
++else
++	label=C4-chain
++	merges=(1149b63 7edc676 efff473 cd64b9f)
++fi
++last=$((${#merges[@]} - 1))
++dir=packages/builtins/chain-$cand
++out=spike/runs/$cand-$label.txt
++work=$(mktemp -d /tmp/spike-0002-work.XXXXXX)
++{
++	first=$(git -C "$src" rev-parse "${merges[0]}")
++	p1=$(git -C "$src" rev-parse "$first^1")
++	p2=$(git -C "$src" rev-parse "$first^2")
++	extract "$src" "$p1" "" "$dir"
++	write_upstream_record "$dir" "$src" "" "$(git -C "$src" merge-base "$p1" "$p2")"
++	git add -A -f -- "$dir"
++	pi_commit "spike 0002: chain port for candidate $cand"
++	for k in $(seq 0 "$last"); do
++		m=$(git -C "$src" rev-parse "${merges[$k]}")
++		p1=$(git -C "$src" rev-parse "$m^1")
++		p2=$(git -C "$src" rev-parse "$m^2")
++		recorded=$(recorded_base "$dir")
++		gitbase=$(git -C "$src" merge-base "$p1" "$p2")
++		echo "===== step $((k + 1)): merge ${merges[$k]}"
++		echo "recorded-base=$recorded git-merge-base=$gitbase $([ "$recorded" = "$gitbase" ] && echo BASE-MATCH || echo BASE-DIFFERENT)"
++		rm -rf "$work/p1" && extract "$src" "$p1" "" "$work/p1" && : >"$work/none"
++		echo "pi side before sync equals the fork's first parent: $(compare_dirs "$work/p1" "$dir" "$work/none" | tr '\n' ' ')"
++		"spike/sync-$cand.sh" "$src" "" "$recorded" "$p2" "$dir" </dev/null >"$work/sync.out" 2>&1
++		echo "sync-exit=$?"
++		rm -rf "$work/auto"
++		tree=$(automatic_result "$src" "$p1" "$p2" "" "$work/auto" "$work/auto-conflicts")
++		sed -n '/^unmerged:/,/^scratch:/p' "$work/sync.out" | sed '1d;/^scratch:/d;/^$/d' | sort >"$work/cand-conflicts"
++		echo "merge-tree=$tree expected-conflicted=[$(tr '\n' ' ' <"$work/auto-conflicts")] candidate-conflicted=[$(tr '\n' ' ' <"$work/cand-conflicts")]"
++		if cmp -s "$work/auto-conflicts" "$work/cand-conflicts"; then echo "CONFLICT-SET: EQUAL"; else echo "CONFLICT-SET: DIFFERENT"; fi
++		echo "comparison: $(compare_dirs "$work/auto" "$dir" "$work/auto-conflicts" | tr '\n' ' ')"
++		# The fork's committed resolution replaces each conflicted file, as a person would.
++		while IFS= read -r f; do
++			[ -z "$f" ] && continue
++			git -C "$src" show "$m:$f" >"$dir/$f"
++			echo "resolved $f from the fork's merge commit"
++		done <"$work/auto-conflicts"
++		write_upstream_record "$dir" "$src" "" "$p2"
++		git add -A -f -- "$dir"
++		pi_commit "spike 0002: chain step $((k + 1)) for candidate $cand"
++		rm -rf "$work/m" && extract "$src" "$m" "" "$work/m"
++		echo "pi side after resolution equals the fork's merge commit: $(compare_dirs "$work/m" "$dir" "$work/none" | tr '\n' ' ')"
++		if [ "$k" -lt "$last" ]; then
++			nextp1=$(git -C "$src" rev-parse "${merges[$((k + 1))]}^1")
++			own=$(git -C "$src" rev-list --count "$m..$nextp1")
++			echo "fork commits between this merge and the next first parent: $own"
++			if [ "$own" -gt 0 ]; then
++				git -C "$src" diff --binary "$m" "$nextp1" | git apply --index --directory="$dir"
++				pi_commit "spike 0002: chain fork commits after step $((k + 1)) for candidate $cand"
++			fi
++		fi
++	done
++	echo "===== containment: status entries outside $dir"
++	outside=$(git status --porcelain | awk -v d="$dir/" '{p=substr($0,4); if (index(p,d)!=1 && index(p,"spike/")!=1) print}')
++	if [ -z "$outside" ]; then echo "(none)"; else echo "$outside"; fi
++	echo "===== cleanup"
++	git rm -r -q -f -- "$dir" >/dev/null 2>&1
++	rm -rf "$dir"
++	pi_commit "spike 0002: drop chain for candidate $cand" 2>/dev/null || true
++} >"$out" 2>&1
++rm -rf "$work"
++echo "$out"
+diff --git a/spike/findings/a.md b/spike/findings/a.md
+new file mode 100644
+index 000000000..31cc5746c
+--- /dev/null
++++ b/spike/findings/a.md
+@@ -0,0 +1,13 @@
++# Candidate A findings (three-way apply)
++
++| Claim | Result | Status | Run files |
++| --- | --- | --- | --- |
++| C1 | Holds. R1, R2 and R3 are identical to the automatic result. | proved | `runs/a-R1.txt`, `runs/a-R2.txt`, `runs/a-R3.txt` |
++| C2 | Fails. R4 and R5 match. R6 and R7 abort: upstream modified files the fork deleted, `git apply -3` rejects those paths, and the whole patch is not applied. | proved | `runs/a-R4.txt` to `runs/a-R7.txt` |
++| C3 | Holds. The old path is gone, `prompts/replace.md` carries the synthetic line, and the rest equals upstream's file byte for byte. | proved | `runs/a-C3-rename.txt`; artifact run `runs/a-C3-rename-attempt1-grep-newline.txt` |
++| C4 | Fails. Recorded and Git bases differ at steps 2 and 3; step 3 exits 128 and later steps diverge. | proved | `runs/a-C4-chain.txt` |
++| C5 | Holds. No run changes a path outside its package directory. | proved | every `runs/a-*.txt` |
++| C6 | Holds as frozen: up to date exits 128, clean 0, conflicted 1. Exit 1 also means the atomic abort of R6 and R7, and 128 also means the failed apply of C4 step 3. | proved | `runs/a-C6-uptodate.txt`, `runs/a-R1.txt`, `runs/a-R4.txt` |
++| C7 | Holds. Both rpiv merges scoped to `packages/rpiv-ask-user-question` reproduce the automatic result. | proved | `runs/a-R10-e04fe7a4.txt`, `runs/a-R10-ce35c164.txt` |
++
++Supporting: every fetch left the ref count at 471 (`refs:` lines in the run files).
+diff --git a/spike/findings/b.md b/spike/findings/b.md
+new file mode 100644
+index 000000000..f0dc08045
+--- /dev/null
++++ b/spike/findings/b.md
+@@ -0,0 +1,20 @@
++# Candidate B findings (scratch merge)
++
++| Claim | Result | Status | Run files |
++| --- | --- | --- | --- |
++| C1 | Holds. R1, R2 and R3 are identical to the automatic result. | proved | `runs/b-R1.txt`, `runs/b-R2.txt`, `runs/b-R3.txt` |
++| C2 | Holds. R4 to R7 flag the same conflicted files and match elsewhere, including R6 and R7's modify/delete conflicts and R7's 13 conflicted files. | proved | `runs/b-R4.txt` to `runs/b-R7.txt` |
++| C3 | Holds. The old path is gone, `prompts/replace.md` carries the synthetic line, and the rest equals upstream's file. | proved | `runs/b-C3-rename.txt` |
++| C4 | Fails. Recorded and Git bases differ at steps 2 and 3; step 3 exits 0 while its content differs from the automatic result. | proved | `runs/b-C4-chain.txt` |
++| C5 | Holds. No run changes a path outside its package directory. | proved | every `runs/b-*.txt` |
++| C6 | Fails. The up-to-date run prints "Merge made by the 'ort' strategy." and exits 0, the same as a clean run. | proved | `runs/b-C6-uptodate.txt`, `runs/b-R1.txt`, `runs/b-R4.txt` |
++| C7 | Holds for both rpiv merges. | proved | `runs/b-R10-e04fe7a4.txt`, `runs/b-R10-ce35c164.txt` |
++
++Supporting conclusions, shared by both candidates:
++
++- Only `64e3c25` among the frozen replay merges lies on the first-parent line of `personal`. The rest are upstream pull-request merges or side-branch merges reachable from `personal` (`runs/00-replay-provenance.txt`).
++- In R8, the first parents of `efff473` and `cd64b9f` do not descend from the previous chain merge, so R8 is not one downstream sync sequence (`runs/00-replay-provenance.txt`).
++- On the first-parent chain `c4b759f`, `60efeb9`, `64e3c25`, the step-3 recorded base is an ancestor of Git's base, 26 upstream commits older. Syncs through pull-request merges, such as `b0db315`, sit off the first-parent line. `c4b759f`'s committed resolution also adds a path outside its conflict set, which the harness does not copy (`runs/00-genuine-chain-ancestry.txt`, `runs/a-S-genuine-chain.txt`, `runs/b-S-genuine-chain.txt`). These runs are inconclusive about the method.
++- Pi's `.gitignore` entry `todo.md` matches `TODO.md` under `core.ignorecase=true`, so an unforced `git add` of a pi-claude-bridge port drops that file (`runs/00-gitignore-probe.txt`). The harness adds with `-f`.
++- Every run had no terminal and finished within 2 seconds; no Git process waited afterwards.
++- No subagent ran a harness. The coordinator read every claim from the run files named above.
+diff --git a/spike/lib.sh b/spike/lib.sh
+new file mode 100755
+index 000000000..22e0de4a0
+--- /dev/null
++++ b/spike/lib.sh
+@@ -0,0 +1,69 @@
++#!/usr/bin/env bash
++# Spike 0002 shared helpers. Source from the worktree root.
++
++# extract <repo> <treeish> <subdir or ""> <outdir>
++# Writes the tree's files into <outdir> through a private index and checkout-index, so
++# export-ignore attributes that `git archive` honours cannot drop files.
++extract() {
++	local repo=$1 treeish=$2 sub=$3 out=$4 idx spec
++	# checkout-index resolves --prefix inside <repo>, so a relative <outdir> must become absolute.
++	case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
++	idx=$(mktemp /tmp/spike-0002-idx.XXXXXX)
++	rm -f "$idx"
++	if [ -n "$sub" ]; then spec="$treeish:$sub"; else spec="$treeish^{tree}"; fi
++	mkdir -p "$out"
++	GIT_INDEX_FILE="$idx" git -C "$repo" read-tree "$spec"
++	GIT_INDEX_FILE="$idx" git -C "$repo" checkout-index -a -f --prefix="$out/"
++	rm -f "$idx"
++}
++
++# automatic_result <repo> <p1> <p2> <subdir or ""> <outdir> <conflicts-file>
++# Writes the tree `git merge-tree --write-tree` produces for the fork's merge, restricted to
++# <subdir>, and the conflicted paths relative to <subdir>.
++automatic_result() {
++	local repo=$1 p1=$2 p2=$3 sub=$4 out=$5 conflicts=$6 raw tree
++	raw=$(git -C "$repo" merge-tree --write-tree --name-only "$p1" "$p2")
++	tree=$(printf '%s\n' "$raw" | head -1)
++	printf '%s\n' "$raw" | sed -n '2,/^$/p' | sed '/^$/d' >"$conflicts.all"
++	if [ -n "$sub" ]; then
++		grep "^$sub/" "$conflicts.all" | sed "s|^$sub/||" | sort >"$conflicts" || true
++	else
++		sort "$conflicts.all" >"$conflicts"
++	fi
++	rm -f "$conflicts.all"
++	extract "$repo" "$tree" "$sub" "$out"
++	echo "$tree"
++}
++
++# compare_dirs <expected dir> <actual dir> <conflicted-list file>
++# Prints every difference in content, presence or mode, skipping content for conflicted paths
++# and ignoring UPSTREAM.json. Prints "IDENTICAL" when nothing differs.
++compare_dirs() {
++	local exp=$1 act=$2 conflicted=$3 diffs=0 f
++	local list
++	list=$( { (cd "$exp" && find . -type f -o -type l); (cd "$act" && find . -type f -o -type l); } | sed 's|^\./||' | grep -v '^UPSTREAM.json$' | sort -u)
++	while IFS= read -r f; do
++		[ -z "$f" ] && continue
++		if [ ! -e "$exp/$f" ] && [ ! -L "$exp/$f" ]; then echo "ONLY-IN-ACTUAL $f"; diffs=$((diffs + 1)); continue; fi
++		if [ ! -e "$act/$f" ] && [ ! -L "$act/$f" ]; then echo "ONLY-IN-EXPECTED $f"; diffs=$((diffs + 1)); continue; fi
++		if [ "$(stat -f '%Lp' "$exp/$f")" != "$(stat -f '%Lp' "$act/$f")" ]; then echo "MODE $f"; diffs=$((diffs + 1)); fi
++		if grep -qxF "$f" "$conflicted"; then continue; fi
++		if ! cmp -s "$exp/$f" "$act/$f"; then echo "CONTENT $f"; diffs=$((diffs + 1)); fi
++	done <<<"$list"
++	[ "$diffs" -eq 0 ] && echo "IDENTICAL"
++	return 0
++}
++
++# write_upstream_record <dir> <repo> <subdir> <base>
++write_upstream_record() {
++	printf '{\n\t"upstream": {\n\t\t"repository": "%s",\n\t\t"path": "%s",\n\t\t"base": "%s"\n\t}\n}\n' "$2" "$3" "$4" >"$1/UPSTREAM.json"
++}
++
++# recorded_base <dir>
++recorded_base() {
++	sed -n 's/.*"base": "\([0-9a-f]*\)".*/\1/p' "$1/UPSTREAM.json"
++}
++
++pi_commit() {
++	git -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --no-verify -m "$1"
++}
+diff --git a/spike/rename.sh b/spike/rename.sh
+new file mode 100755
+index 000000000..9e7f2d02f
+--- /dev/null
++++ b/spike/rename.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env bash
++# C3: pi-hashline-edit-pro renames prompts/replace-flat.md to prompts/replace.md in cbd5fce.
++# The Pi side carries one synthetic line in prompts/replace-flat.md, placed after a line
++# upstream leaves unchanged, two lines clear of upstream's nearest edit.
++# Usage: spike/rename.sh <a|b>
++set -u
++. "$(dirname "$0")/lib.sh"
++cand=$1
++src=/Users/paolof/Developer/ai/pi-hashline-edit-pro
++new=$(git -C "$src" rev-parse cbd5fce)
++base=$(git -C "$src" rev-parse "cbd5fce^")
++dir=packages/builtins/rename-$cand
++out=spike/runs/$cand-C3-rename.txt
++line="SPIKE-0002 synthetic Pi-side edit: this line must survive the upstream rename."
++work=$(mktemp -d /tmp/spike-0002-work.XXXXXX)
++{
++	echo "candidate=$cand base=$base new=$new"
++	extract "$src" "$base" "" "$dir"
++	write_upstream_record "$dir" "$src" "" "$base"
++	awk -v l="$line" '{print} /^⚠️ Common mistake/ && !done {print l; done=1}' "$dir/prompts/replace-flat.md" >"$work/edited"
++	cp "$work/edited" "$dir/prompts/replace-flat.md"
++	echo "synthetic line inserted: $(grep -c "$line" "$dir/prompts/replace-flat.md")"
++	git add -A -f -- "$dir"
++	pi_commit "spike 0002: rename port with a Pi-side edit for candidate $cand"
++	"spike/sync-$cand.sh" "$src" "" "$base" "$new" "$dir" </dev/null >"$work/sync.out" 2>&1
++	echo "sync-exit=$?"
++	cat "$work/sync.out"
++	echo "===== checks"
++	if [ -e "$dir/prompts/replace-flat.md" ]; then echo "OLD-PATH: PRESENT"; else echo "OLD-PATH: ABSENT"; fi
++	if [ -e "$dir/prompts/replace.md" ]; then echo "NEW-PATH: PRESENT"; else echo "NEW-PATH: ABSENT"; fi
++	echo "synthetic line in prompts/replace.md: $(grep -c "$line" "$dir/prompts/replace.md" 2>/dev/null || echo 0)"
++	git -C "$src" show "$new:prompts/replace.md" >"$work/upstream-replace.md"
++	# perl removes exactly the synthetic line and keeps the file's final-newline state, which grep would change.
++	SPIKE_LINE="$line" perl -0pe 's/^\Q$ENV{SPIKE_LINE}\E\n//m' "$dir/prompts/replace.md" >"$work/without-line" 2>/dev/null
++	if cmp -s "$work/upstream-replace.md" "$work/without-line"; then echo "UPSTREAM-CHANGE: KEPT (replace.md minus the synthetic line equals upstream's replace.md)"; else echo "UPSTREAM-CHANGE: DIFFERENT"; diff "$work/upstream-replace.md" "$work/without-line" | head -20; fi
++	echo "git status for the two paths:"
++	git status --porcelain -- "$dir/prompts/replace-flat.md" "$dir/prompts/replace.md"
++	echo "===== containment: status entries outside $dir"
++	outside=$(git status --porcelain | awk -v d="$dir/" '{p=substr($0,4); if (index(p,d)!=1 && index(p,"spike/")!=1) print}')
++	if [ -z "$outside" ]; then echo "(none)"; else echo "$outside"; fi
++	echo "===== cleanup"
++	git rm -r -q -f -- "$dir" >/dev/null 2>&1
++	rm -rf "$dir"
++	pi_commit "spike 0002: drop rename for candidate $cand" 2>/dev/null || true
++} >"$out" 2>&1
++rm -rf "$work"
++echo "$out"
+diff --git a/spike/replay.sh b/spike/replay.sh
+new file mode 100755
+index 000000000..1c7171156
+--- /dev/null
++++ b/spike/replay.sh
+@@ -0,0 +1,54 @@
++#!/usr/bin/env bash
++# Replays one fork merge through one candidate and compares with Git's automatic result.
++# Usage: spike/replay.sh <a|b> <case> <source repo> <subdir or ""> <merge commit> [uptodate]
++# The Pi side starts as the merge's first parent; the sync goes from the merge base to the
++# merge's second parent. With "uptodate", the sync targets the base itself.
++set -u
++. "$(dirname "$0")/lib.sh"
++cand=$1 case=$2 src=$3 sub=$4 merge=$5 mode=${6:-}
++p1=$(git -C "$src" rev-parse "$merge^1")
++p2=$(git -C "$src" rev-parse "$merge^2")
++base=$(git -C "$src" merge-base "$p1" "$p2")
++new=$p2
++[ "$mode" = "uptodate" ] && new=$base
++dir=packages/builtins/replay-$case-$cand
++out=spike/runs/$cand-$case.txt
++work=$(mktemp -d /tmp/spike-0002-work.XXXXXX)
++{
++	echo "candidate=$cand case=$case source=$src subdir=${sub:-<root>} merge=$merge"
++	echo "p1=$p1 p2=$p2 base=$base new=$new"
++	echo "tty: stdin=$([ -t 0 ] && echo yes || echo no) stdout=$([ -t 1 ] && echo yes || echo no)"
++	refs_before=$(git for-each-ref | wc -l | tr -d ' ')
++	extract "$src" "$p1" "$sub" "$dir"
++	write_upstream_record "$dir" "$src" "$sub" "$base"
++	git add -A -f -- "$dir"
++	pi_commit "spike 0002: port $case for candidate $cand"
++	echo "===== sync"
++	start=$(date +%s)
++	"spike/sync-$cand.sh" "$src" "$sub" "$base" "$new" "$dir" </dev/null >"$work/sync.out" 2>&1
++	code=$?
++	cat "$work/sync.out"
++	echo "sync-exit=$code seconds=$(($(date +%s) - start))"
++	echo "refs: before=$refs_before after=$(git for-each-ref | wc -l | tr -d ' ')"
++	echo "===== containment: status entries outside $dir"
++	outside=$(git status --porcelain | awk -v d="$dir/" '{p=substr($0,4); if (index(p,d)!=1 && index(p,"spike/")!=1) print}')
++	if [ -z "$outside" ]; then echo "(none)"; else echo "$outside"; fi
++	if [ "$mode" != "uptodate" ]; then
++		echo "===== automatic result"
++		tree=$(automatic_result "$src" "$p1" "$p2" "$sub" "$work/auto" "$work/auto-conflicts")
++		echo "merge-tree: $tree"
++		sed -n '/^unmerged:/,/^scratch:/p' "$work/sync.out" | sed '1d;/^scratch:/d;/^$/d' | sort >"$work/cand-conflicts"
++		echo "expected conflicted: $(tr '\n' ' ' <"$work/auto-conflicts")"
++		echo "candidate conflicted: $(tr '\n' ' ' <"$work/cand-conflicts")"
++		if cmp -s "$work/auto-conflicts" "$work/cand-conflicts"; then echo "CONFLICT-SET: EQUAL"; else echo "CONFLICT-SET: DIFFERENT"; fi
++		echo "===== comparison against the automatic result (conflicted paths: presence and mode only)"
++		compare_dirs "$work/auto" "$dir" "$work/auto-conflicts"
++	fi
++	echo "===== cleanup"
++	git rm -r -q -f -- "$dir" >/dev/null 2>&1
++	rm -rf "$dir"
++	pi_commit "spike 0002: drop $case for candidate $cand" 2>/dev/null || true
++	echo "status after cleanup: $(git status --porcelain -- packages | wc -l | tr -d ' ') entries under packages/"
++} >"$out" 2>&1
++rm -rf "$work"
++echo "$out"
+diff --git a/spike/run-all.sh b/spike/run-all.sh
+new file mode 100755
+index 000000000..4db8c172a
+--- /dev/null
++++ b/spike/run-all.sh
+@@ -0,0 +1,17 @@
++#!/usr/bin/env bash
++# Runs every frozen replay case for one candidate, sequentially, from the worktree root.
++# Usage: spike/run-all.sh <a|b>
++set -u
++cand=$1
++bridge=/Users/paolof/Developer/ai/pi-claude-bridge
++rpiv=/Users/paolof/Developer/ai/rpiv-mono
++for c in "R1 402fa8d" "R2 4a7920a" "R3 a41b434" "R4 efff473" "R5 7100c15" "R6 64e3c25" "R7 d233e0a"; do
++	set -- $c
++	[ "$cand" = a ] && [ "$1" = R1 ] && [ -e spike/runs/a-R1.txt ] && continue
++	spike/replay.sh "$cand" "$1" "$bridge" "" "$2"
++done
++spike/replay.sh "$cand" R10-e04fe7a4 "$rpiv" packages/rpiv-ask-user-question e04fe7a4
++spike/replay.sh "$cand" R10-ce35c164 "$rpiv" packages/rpiv-ask-user-question ce35c164
++spike/replay.sh "$cand" C6-uptodate "$bridge" "" 402fa8d uptodate
++spike/rename.sh "$cand"
++spike/chain.sh "$cand"
+diff --git a/spike/runs/00-compare-selftest.txt b/spike/runs/00-compare-selftest.txt
+new file mode 100644
+index 000000000..81bdc9763
+--- /dev/null
++++ b/spike/runs/00-compare-selftest.txt
+@@ -0,0 +1 @@
++self-test (expect ONLY-IN-ACTUAL g): ONLY-IN-ACTUAL g 
+diff --git a/spike/runs/00-genuine-chain-ancestry.txt b/spike/runs/00-genuine-chain-ancestry.txt
+new file mode 100644
+index 000000000..f5dee41af
+--- /dev/null
++++ b/spike/runs/00-genuine-chain-ancestry.txt
+@@ -0,0 +1,17 @@
++Supporting chain c4b759f -> 60efeb9 -> 64e3c25 (first-parent fork syncs):
++c4b759f -> 60efeb9^1: descends
++60efeb9 -> 64e3c25^1: descends
++step 3 recorded base fac372c (60efeb9^2) ancestor of git merge base 500eea1: yes; upstream commits between them: 26
++merges on the ancestry path 60efeb9..64e3c25^1 that integrate upstream off the first-parent line:
++  b0db315 Merge #4: integrate upstream main into personal
++  6feed8f Merge main into personal
++  c0877b8 Merge fable-h09-rule: irreversibility rule validated for Fable 5
++c4b759f's committed resolution adds a path outside its conflict set:
++M	CHANGELOG.md
++M	README.md
++M	diag/CONTEXT-SIZE.md
++M	package-lock.json
++M	package.json
++M	src/config.ts
++M	src/models.ts
++A	tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md
+diff --git a/spike/runs/00-gitignore-probe.txt b/spike/runs/00-gitignore-probe.txt
+new file mode 100644
+index 000000000..30308c302
+--- /dev/null
++++ b/spike/runs/00-gitignore-probe.txt
+@@ -0,0 +1,3 @@
++Paths in pi-claude-bridge edf19ed that the Pi worktree's .gitignore ignores under packages/builtins/probe-bridge/:
++.gitignore:40:todo.md	packages/builtins/probe-bridge/TODO.md
++core.ignorecase=true
+diff --git a/spike/runs/00-replay-provenance.txt b/spike/runs/00-replay-provenance.txt
+new file mode 100644
+index 000000000..e55af65d6
+--- /dev/null
++++ b/spike/runs/00-replay-provenance.txt
+@@ -0,0 +1,16 @@
++R8 chain: does each next merge's first parent descend from the previous merge?
++1149b63 -> 7edc676^1: descends
++7edc676 -> efff473^1: DOES-NOT-DESCEND
++efff473 -> cd64b9f^1: DOES-NOT-DESCEND
++
++Frozen replay merges on the first-parent line of personal:
++402fa8d not-first-parent  Merge pull request #95 from schuettc/upstream/fix-branch-summary-mock
++4a7920a not-first-parent  Merge pull request #80 from phsb5321/fable-5-1
++a41b434 not-first-parent  Merge pull request #54 from elidickinson/correctness
++efff473 not-first-parent  Merge origin/main: AskClaude defaults (#65), pi floor >=0.86.1 (#119)
++7100c15 not-first-parent  Merge origin/main: adopt PR #94 SDK bump (0.3.267), keep session-resume 
++64e3c25 fork-sync  Merge main into personal
++d233e0a not-first-parent  Merge main into personal
++1149b63 not-first-parent  Merge pull request #69 from fmguerreiro/fmguerreiro/fix-askclaude-defaul
++7edc676 not-first-parent  Merge pull request #119 from elidickinson/pi-087-deps
++cd64b9f not-first-parent  Merge pull request #122 from elidickinson/harness-leak-guard
+diff --git a/spike/runs/a-C3-rename-attempt1-grep-newline.txt b/spike/runs/a-C3-rename-attempt1-grep-newline.txt
+new file mode 100644
+index 000000000..0a5182547
+--- /dev/null
++++ b/spike/runs/a-C3-rename-attempt1-grep-newline.txt
+@@ -0,0 +1,57 @@
++candidate=a base=89a1dce4599756a409d9a29d3602af380f942a89 new=cbd5fce6992d62ca5a160df22c7ade26f6b08929
++synthetic line inserted: 1
++sync-exit=0
++patch-bytes: 57320
++Applied patch to 'packages/builtins/rename-a/index.ts' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/prompts/replace-guidelines.md' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/prompts/replace.md' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/config.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/file-reader.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/fs-write.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hash-store.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/apply.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/hash.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/resolve.ts' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/paths.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/read.ts' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/replace-undo.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/replace.ts' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/utils.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/validation.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/auto-read-guidance.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/path-utils.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/runtime.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/snapshot.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/undo-store.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/validation.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/extension/prompts.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/extension/register.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/support/fixtures.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/tools/replace-flat.test.ts' cleanly.
++git-apply-exit: 0
++unmerged:
++===== checks
++OLD-PATH: ABSENT
++NEW-PATH: PRESENT
++synthetic line in prompts/replace.md: 1
++UPSTREAM-CHANGE: DIFFERENT
++72c72
++< **Undo:** If a replace produced incorrect results, call `undo_last_replace` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.
++\ No newline at end of file
++---
++> **Undo:** If a replace produced incorrect results, call `undo_last_replace` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.
++git status for the two paths:
++R  packages/builtins/rename-a/prompts/replace-flat.md -> packages/builtins/rename-a/prompts/replace.md
++===== containment: status entries outside packages/builtins/rename-a
++(none)
++===== cleanup
+diff --git a/spike/runs/a-C3-rename.txt b/spike/runs/a-C3-rename.txt
+new file mode 100644
+index 000000000..b93e2d3b4
+--- /dev/null
++++ b/spike/runs/a-C3-rename.txt
+@@ -0,0 +1,52 @@
++candidate=a base=89a1dce4599756a409d9a29d3602af380f942a89 new=cbd5fce6992d62ca5a160df22c7ade26f6b08929
++synthetic line inserted: 1
++sync-exit=0
++patch-bytes: 57320
++Applied patch to 'packages/builtins/rename-a/index.ts' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/prompts/replace-guidelines.md' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/prompts/replace.md' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/config.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/file-reader.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/fs-write.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hash-store.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/apply.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/hash.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/hashline/resolve.ts' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/paths.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/read.ts' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/replace-undo.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/replace.ts' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/rename-a/src/utils.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/src/validation.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/auto-read-guidance.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/path-utils.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/runtime.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/snapshot.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/undo-store.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/core/validation.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/extension/prompts.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/extension/register.test.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/support/fixtures.ts' cleanly.
++Applied patch to 'packages/builtins/rename-a/test/tools/replace-flat.test.ts' cleanly.
++git-apply-exit: 0
++unmerged:
++===== checks
++OLD-PATH: ABSENT
++NEW-PATH: PRESENT
++synthetic line in prompts/replace.md: 1
++UPSTREAM-CHANGE: KEPT (replace.md minus the synthetic line equals upstream's replace.md)
++git status for the two paths:
++R  packages/builtins/rename-a/prompts/replace-flat.md -> packages/builtins/rename-a/prompts/replace.md
++===== containment: status entries outside packages/builtins/rename-a
++(none)
++===== cleanup
+diff --git a/spike/runs/a-C4-chain.txt b/spike/runs/a-C4-chain.txt
+new file mode 100644
+index 000000000..b3f0595b8
+--- /dev/null
++++ b/spike/runs/a-C4-chain.txt
+@@ -0,0 +1,39 @@
++===== step 1: merge 1149b63
++recorded-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef git-merge-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef BASE-MATCH
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=0
++merge-tree=8d0a2d83a0fa2395947dc980a0e9f56c42677637 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: IDENTICAL 
++pi side after resolution equals the fork's merge commit: IDENTICAL 
++fork commits between this merge and the next first parent: 0
++===== step 2: merge 7edc676
++recorded-base=c9f8c42a46413b887dcaea20afef61c91a63f63e git-merge-base=1149b63acc679057ea6e6fa7b69d67c06d92a892 BASE-DIFFERENT
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=0
++merge-tree=b8bfc047eec70495251eb08edbdbdc17fa36a512 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: IDENTICAL 
++pi side after resolution equals the fork's merge commit: IDENTICAL 
++fork commits between this merge and the next first parent: 1
++===== step 3: merge efff473
++recorded-base=e3cd9358600b21bbcdd5ffd3fc10baa35fe8443b git-merge-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef BASE-DIFFERENT
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=128
++merge-tree=6e53419853cc9994673460b804406be6fc133d5a expected-conflicted=[CHANGELOG.md ] candidate-conflicted=[]
++CONFLICT-SET: DIFFERENT
++comparison: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++resolved CHANGELOG.md from the fork's merge commit
++pi side after resolution equals the fork's merge commit: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++fork commits between this merge and the next first parent: 0
++===== step 4: merge cd64b9f
++recorded-base=7edc6761fbd0711c008afe0e7be4569b117754c1 git-merge-base=7edc6761fbd0711c008afe0e7be4569b117754c1 BASE-MATCH
++pi side before sync equals the fork's first parent: CONTENT CHANGELOG.md CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/prompt-capture.ts CONTENT src/transcript.ts CONTENT tests/unit-agent-start-capture-gaps.mjs ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs ONLY-IN-ACTUAL tests/unit-prompt-guard.mjs CONTENT TODO.md 
++sync-exit=0
++merge-tree=d5c802037efb932bb70ad0fe36ba96a6b54b8d23 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++pi side after resolution equals the fork's merge commit: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++===== containment: status entries outside packages/builtins/chain-a
++(none)
++===== cleanup
+diff --git a/spike/runs/a-C6-uptodate.txt b/spike/runs/a-C6-uptodate.txt
+new file mode 100644
+index 000000000..1e450bb90
+--- /dev/null
++++ b/spike/runs/a-C6-uptodate.txt
+@@ -0,0 +1,14 @@
++candidate=a case=C6-uptodate source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 0
++error: No valid patches in input (allow with "--allow-empty")
++git-apply-exit: 128
++unmerged:
++sync-exit=128 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-C6-uptodate-a
++(none)
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R1-attempt1-relative-prefix.txt b/spike/runs/a-R1-attempt1-relative-prefix.txt
+new file mode 100644
+index 000000000..1fae0278d
+--- /dev/null
++++ b/spike/runs/a-R1-attempt1-relative-prefix.txt
+@@ -0,0 +1,121 @@
++candidate=a case=R1 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=920396548e19c6caa0203e28f45921910ff358ce
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 885
++error: packages/builtins/replay-R1-a/tests/unit-branch-summary.mjs: does not exist in index
++git-apply-exit: 1
++unmerged:
++sync-exit=1 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R1-a
++(none)
++===== automatic result
++merge-tree: 8bde13d1af359269e8f7930ce022443d698efd98
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++spike/lib.sh: line 42: cd: packages/builtins/replay-R1-a: No such file or directory
++ONLY-IN-EXPECTED .env.test
++ONLY-IN-EXPECTED .github/ISSUE_TEMPLATE/bug_report.md
++ONLY-IN-EXPECTED .gitignore
++ONLY-IN-EXPECTED AGENTS.md
++ONLY-IN-EXPECTED assets/claude-bridge1.png
++ONLY-IN-EXPECTED assets/claude-bridge2.png
++ONLY-IN-EXPECTED CHANGELOG.md
++ONLY-IN-EXPECTED diag/attachment-coverage.mjs
++ONLY-IN-EXPECTED diag/attrib.py
++ONLY-IN-EXPECTED diag/audit-cache.mjs
++ONLY-IN-EXPECTED diag/audit-transcripts.mjs
++ONLY-IN-EXPECTED diag/audit-warnings.mjs
++ONLY-IN-EXPECTED diag/AUDIT.md
++ONLY-IN-EXPECTED diag/capture-proxy.mjs
++ONLY-IN-EXPECTED diag/CONTEXT-SIZE.md
++ONLY-IN-EXPECTED diag/context-size.mjs
++ONLY-IN-EXPECTED diag/diff-captures.mjs
++ONLY-IN-EXPECTED diag/EXTRA-USAGE-400.md
++ONLY-IN-EXPECTED diag/lib/write-path.mjs
++ONLY-IN-EXPECTED diag/probe-dynamic-sections.mjs
++ONLY-IN-EXPECTED diag/probe-git-cache.mjs
++ONLY-IN-EXPECTED diag/replay-write-path.mjs
++ONLY-IN-EXPECTED LICENSE
++ONLY-IN-EXPECTED package-lock.json
++ONLY-IN-EXPECTED package.json
++ONLY-IN-EXPECTED README.md
++ONLY-IN-EXPECTED src/agents-md.ts
++ONLY-IN-EXPECTED src/askclaude-ui.ts
++ONLY-IN-EXPECTED src/attachments.ts
++ONLY-IN-EXPECTED src/config.ts
++ONLY-IN-EXPECTED src/convert.ts
++ONLY-IN-EXPECTED src/extract-tool-results.ts
++ONLY-IN-EXPECTED src/index.ts
++ONLY-IN-EXPECTED src/mcp-server.ts
++ONLY-IN-EXPECTED src/models.ts
++ONLY-IN-EXPECTED src/prompt-capture.ts
++ONLY-IN-EXPECTED src/prompt-stream.ts
++ONLY-IN-EXPECTED src/query-state.ts
++ONLY-IN-EXPECTED src/session-verify.ts
++ONLY-IN-EXPECTED src/skills.ts
++ONLY-IN-EXPECTED tests/fixtures/compact-file-a.txt
++ONLY-IN-EXPECTED tests/fixtures/compact-file-b.txt
++ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl
++ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md
++ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl
++ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl
++ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl
++ONLY-IN-EXPECTED tests/fixtures/slow-tool-extension.ts
++ONLY-IN-EXPECTED tests/fixtures/tree-nav-extension.ts
++ONLY-IN-EXPECTED tests/int-attachment-rebuild.mjs
++ONLY-IN-EXPECTED tests/int-branch-summary.mjs
++ONLY-IN-EXPECTED tests/int-cache.sh
++ONLY-IN-EXPECTED tests/int-cc-contracts.mjs
++ONLY-IN-EXPECTED tests/int-compact-auto-threshold.mjs
++ONLY-IN-EXPECTED tests/int-compact-baseline.mjs
++ONLY-IN-EXPECTED tests/int-compact-second-compact.mjs
++ONLY-IN-EXPECTED tests/int-compact-splitturn.mjs
++ONLY-IN-EXPECTED tests/int-cursor-after-tools.mjs
++ONLY-IN-EXPECTED tests/int-image-session.mjs
++ONLY-IN-EXPECTED tests/int-multi-turn.sh
++ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs
++ONLY-IN-EXPECTED tests/int-served-window.mjs
++ONLY-IN-EXPECTED tests/int-session-compact.mjs
++ONLY-IN-EXPECTED tests/int-session-new.mjs
++ONLY-IN-EXPECTED tests/int-session-rebuild.mjs
++ONLY-IN-EXPECTED tests/int-session-resume.mjs
++ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs
++ONLY-IN-EXPECTED tests/int-smoke.sh
++ONLY-IN-EXPECTED tests/int-subagent-rpiv-codebase-locator.mjs
++ONLY-IN-EXPECTED tests/int-tool-message.mjs
++ONLY-IN-EXPECTED tests/lib/bash-setup.sh
++ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs
++ONLY-IN-EXPECTED tests/lib/rpc-harness.mjs
++ONLY-IN-EXPECTED tests/lib/setup.mjs
++ONLY-IN-EXPECTED tests/unit-agents-md.mjs
++ONLY-IN-EXPECTED tests/unit-attachments.mjs
++ONLY-IN-EXPECTED tests/unit-branch-summary.mjs
++ONLY-IN-EXPECTED tests/unit-child-env.mjs
++ONLY-IN-EXPECTED tests/unit-config.mjs
++ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs
++ONLY-IN-EXPECTED tests/unit-debug-path.mjs
++ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs
++ONLY-IN-EXPECTED tests/unit-error-result.mjs
++ONLY-IN-EXPECTED tests/unit-import.mjs
++ONLY-IN-EXPECTED tests/unit-mcp-server.mjs
++ONLY-IN-EXPECTED tests/unit-models.mjs
++ONLY-IN-EXPECTED tests/unit-pi-streamfn-inventory.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-capture.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs
++ONLY-IN-EXPECTED tests/unit-querycontext.mjs
++ONLY-IN-EXPECTED tests/unit-queue.mjs
++ONLY-IN-EXPECTED tests/unit-session-integrity.mjs
++ONLY-IN-EXPECTED tests/unit-skills.mjs
++ONLY-IN-EXPECTED tests/unit-stream-replay.mjs
++ONLY-IN-EXPECTED tests/unit-sync-shared-session.mjs
++ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs
++ONLY-IN-EXPECTED tests/usage-test.sh
++ONLY-IN-EXPECTED TODO.md
++ONLY-IN-EXPECTED tsconfig.json
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R1-attempt2-compare-listing.txt b/spike/runs/a-R1-attempt2-compare-listing.txt
+new file mode 100644
+index 000000000..9555e0d31
+--- /dev/null
++++ b/spike/runs/a-R1-attempt2-compare-listing.txt
+@@ -0,0 +1,22 @@
++candidate=a case=R1 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=920396548e19c6caa0203e28f45921910ff358ce
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 885
++Applied patch to 'packages/builtins/replay-R1-a/tests/unit-branch-summary.mjs' cleanly.
++git-apply-exit: 0
++unmerged:
++sync-exit=0 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R1-a
++(none)
++===== automatic result
++merge-tree: 8bde13d1af359269e8f7930ce022443d698efd98
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++spike/lib.sh: line 44: cd: packages/builtins/replay-R1-a: No such file or directory
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R1.txt b/spike/runs/a-R1.txt
+new file mode 100644
+index 000000000..1b907eed5
+--- /dev/null
++++ b/spike/runs/a-R1.txt
+@@ -0,0 +1,21 @@
++candidate=a case=R1 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=920396548e19c6caa0203e28f45921910ff358ce
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 885
++Applied patch to 'packages/builtins/replay-R1-a/tests/unit-branch-summary.mjs' cleanly.
++git-apply-exit: 0
++unmerged:
++sync-exit=0 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R1-a
++(none)
++===== automatic result
++merge-tree: 8bde13d1af359269e8f7930ce022443d698efd98
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R10-ce35c164.txt b/spike/runs/a-R10-ce35c164.txt
+new file mode 100644
+index 000000000..8146fcaca
+--- /dev/null
++++ b/spike/runs/a-R10-ce35c164.txt
+@@ -0,0 +1,24 @@
++candidate=a case=R10-ce35c164 source=/Users/paolof/Developer/ai/rpiv-mono subdir=packages/rpiv-ask-user-question merge=ce35c164
++p1=777beb8ac788d89ded8d785b95d00d131535394a p2=d74b1c99830a565f3df3f37e0a36616d17ffc574 base=0fdf4f813980d380e826b84d1280a4960e5d088e new=d74b1c99830a565f3df3f37e0a36616d17ffc574
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 886
++Applied patch to 'packages/builtins/replay-R10-ce35c164-a/CHANGELOG.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R10-ce35c164-a/package.json' cleanly.
++U packages/builtins/replay-R10-ce35c164-a/CHANGELOG.md
++git-apply-exit: 1
++unmerged:
++CHANGELOG.md
++sync-exit=1 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R10-ce35c164-a
++(none)
++===== automatic result
++merge-tree: 259306a430fdaed10003921611569c3fa837d5d7
++expected conflicted: CHANGELOG.md 
++candidate conflicted: CHANGELOG.md 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R10-e04fe7a4.txt b/spike/runs/a-R10-e04fe7a4.txt
+new file mode 100644
+index 000000000..68271d368
+--- /dev/null
++++ b/spike/runs/a-R10-e04fe7a4.txt
+@@ -0,0 +1,26 @@
++candidate=a case=R10-e04fe7a4 source=/Users/paolof/Developer/ai/rpiv-mono subdir=packages/rpiv-ask-user-question merge=e04fe7a4
++p1=050a546d9f01f207a2cb72e16782a63d28c62b67 p2=4e2b3a51927c9b40e75001e4edc63e7335426880 base=7a1daf87bf34ba15e09dc1374b3b79f19f5e387c new=4e2b3a51927c9b40e75001e4edc63e7335426880
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 15771
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/README.md' cleanly.
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/ask-user-question.execute.test.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/ask-user-question.session-load.test.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/ask-user-question.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/docs/hosts.md' cleanly.
++Applied patch to 'packages/builtins/replay-R10-e04fe7a4-a/rpc-fallback.test.ts' cleanly.
++git-apply-exit: 0
++unmerged:
++sync-exit=0 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R10-e04fe7a4-a
++(none)
++===== automatic result
++merge-tree: ed21c4009b8105117e14ebb80074e8d72294706e
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R2.txt b/spike/runs/a-R2.txt
+new file mode 100644
+index 000000000..47ba9319b
+--- /dev/null
++++ b/spike/runs/a-R2.txt
+@@ -0,0 +1,22 @@
++candidate=a case=R2 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=4a7920a
++p1=44fe582193c0451c4210555451788a82ac134c93 p2=6977a40dcbd4c0c128f676efa331f5c04557ff18 base=9e3fee560fb9577d819052b9a10dbcc2eacd858a new=6977a40dcbd4c0c128f676efa331f5c04557ff18
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 4585
++Applied patch to 'packages/builtins/replay-R2-a/src/models.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R2-a/tests/unit-models.mjs' cleanly.
++git-apply-exit: 0
++unmerged:
++sync-exit=0 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R2-a
++(none)
++===== automatic result
++merge-tree: 352d894853a32b8456ea7a0bfdc052539f695e2d
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R3.txt b/spike/runs/a-R3.txt
+new file mode 100644
+index 000000000..faadf8924
+--- /dev/null
++++ b/spike/runs/a-R3.txt
+@@ -0,0 +1,67 @@
++candidate=a case=R3 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=a41b434
++p1=2bc9a7e43f8c3e3ec1ce10eb0f456eae1d610333 p2=a0c09c97a4f681b93928e3b35ecbeed0d9697815 base=fc2efeb66ed609e260a14b014a1eedeea3f47547 new=a0c09c97a4f681b93928e3b35ecbeed0d9697815
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 388620
++Applied patch to 'packages/builtins/replay-R3-a/AGENTS.md' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/CHANGELOG.md' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/TODO.md' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/package-lock.json' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/package.json' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/src/convert.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/src/index.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/src/mcp-server.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/src/prompt-stream.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/src/query-state.ts' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-cache.sh' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-compact-baseline.mjs' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-session-compact.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-session-new.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-session-resume.mjs' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-smoke.sh' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/int-tool-message.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/lib/bash-setup.sh' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/lib/rpc-harness.mjs' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/unit-import.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/unit-mcp-server.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/unit-prompt-stream.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R3-a/tests/unit-queue.mjs' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R3-a/tests/unit-sync-shared-session.mjs' cleanly.
++Falling back to direct application...
++git-apply-exit: 0
++unmerged:
++sync-exit=0 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R3-a
++(none)
++===== automatic result
++merge-tree: 372b055d8e224edcc2b1d08cfbb5822c5d1a471f
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R4.txt b/spike/runs/a-R4.txt
+new file mode 100644
+index 000000000..5c1de38e7
+--- /dev/null
++++ b/spike/runs/a-R4.txt
+@@ -0,0 +1,32 @@
++candidate=a case=R4 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=efff473
++p1=daaa47900ed361f72753625c143e2d01158a20e7 p2=7edc6761fbd0711c008afe0e7be4569b117754c1 base=d3cb25e96742c47e77675ba7ff50e181ebb476ef new=7edc6761fbd0711c008afe0e7be4569b117754c1
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 36594
++Applied patch to 'packages/builtins/replay-R4-a/CHANGELOG.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R4-a/README.md' cleanly.
++Applied patch to 'packages/builtins/replay-R4-a/TODO.md' cleanly.
++Applied patch to 'packages/builtins/replay-R4-a/package-lock.json' cleanly.
++Applied patch to 'packages/builtins/replay-R4-a/package.json' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R4-a/src/index.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R4-a/src/transcript.ts' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R4-a/tests/unit-models.mjs' cleanly.
++U packages/builtins/replay-R4-a/CHANGELOG.md
++git-apply-exit: 1
++unmerged:
++CHANGELOG.md
++sync-exit=1 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R4-a
++(none)
++===== automatic result
++merge-tree: 6e53419853cc9994673460b804406be6fc133d5a
++expected conflicted: CHANGELOG.md 
++candidate conflicted: CHANGELOG.md 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R5.txt b/spike/runs/a-R5.txt
+new file mode 100644
+index 000000000..afa43cb3e
+--- /dev/null
++++ b/spike/runs/a-R5.txt
+@@ -0,0 +1,29 @@
++candidate=a case=R5 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=7100c15
++p1=4f37bd2d5eb31663732b7c8b2cc2c4c8aac5bae0 p2=1601656e80224db3e727d87da9e5ed97a67979cb base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=1601656e80224db3e727d87da9e5ed97a67979cb
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 14373
++Applied patch to 'packages/builtins/replay-R5-a/CHANGELOG.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R5-a/package-lock.json' with conflicts.
++Applied patch to 'packages/builtins/replay-R5-a/package.json' with conflicts.
++U packages/builtins/replay-R5-a/CHANGELOG.md
++U packages/builtins/replay-R5-a/package-lock.json
++U packages/builtins/replay-R5-a/package.json
++git-apply-exit: 1
++unmerged:
++CHANGELOG.md
++package-lock.json
++package.json
++sync-exit=1 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R5-a
++(none)
++===== automatic result
++merge-tree: da8852768ae16d68903805a499b659c4d4c0cffe
++expected conflicted: CHANGELOG.md package-lock.json package.json 
++candidate conflicted: CHANGELOG.md package-lock.json package.json 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R6.txt b/spike/runs/a-R6.txt
+new file mode 100644
+index 000000000..3680c6f5b
+--- /dev/null
++++ b/spike/runs/a-R6.txt
+@@ -0,0 +1,37 @@
++candidate=a case=R6 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=64e3c25
++p1=fcfe846570ae0b290d4b628e8b19f8068611e9af p2=44fe582193c0451c4210555451788a82ac134c93 base=500eea19eab818d81fbfabfcb65a718bebaa8540 new=44fe582193c0451c4210555451788a82ac134c93
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 46519
++Applied patch to 'packages/builtins/replay-R6-a/CHANGELOG.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R6-a/diag/AUDIT.md' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R6-a/src/index.ts' with conflicts.
++error: packages/builtins/replay-R6-a/src/prompt-capture.ts: does not exist in index
++Applied patch to 'packages/builtins/replay-R6-a/src/query-state.ts' cleanly.
++Applied patch to 'packages/builtins/replay-R6-a/tests/int-cc-contracts.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R6-a/tests/unit-error-result.mjs' cleanly.
++error: packages/builtins/replay-R6-a/tests/unit-prompt-capture.mjs: does not exist in index
++git-apply-exit: 1
++unmerged:
++sync-exit=1 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R6-a
++(none)
++===== automatic result
++merge-tree: 0d9fe8618e515d929be33f721911b34e7371bc24
++expected conflicted: CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs 
++candidate conflicted: 
++CONFLICT-SET: DIFFERENT
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++CONTENT diag/AUDIT.md
++ONLY-IN-EXPECTED diag/probe-dynamic-sections.mjs
++ONLY-IN-EXPECTED diag/probe-git-cache.mjs
++ONLY-IN-EXPECTED src/prompt-capture.ts
++CONTENT src/query-state.ts
++CONTENT tests/int-cc-contracts.mjs
++CONTENT tests/unit-error-result.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-capture.mjs
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-R7.txt b/spike/runs/a-R7.txt
+new file mode 100644
+index 000000000..80bf8ee41
+--- /dev/null
++++ b/spike/runs/a-R7.txt
+@@ -0,0 +1,72 @@
++candidate=a case=R7 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=d233e0a
++p1=3a83275c7426a1fcce830160d23f95e33e84adc6 p2=07507489c0c54f7f978ab752eb9beb5cc0960f24 base=44fe582193c0451c4210555451788a82ac134c93 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++tty: stdin=no stdout=no
++===== sync
++patch-bytes: 490210
++Applied patch to 'packages/builtins/replay-R7-a/CHANGELOG.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/README.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/TODO.md' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/diag/CONTEXT-SIZE.md' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/package-lock.json' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/package.json' with conflicts.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/src/config.ts' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/src/index.ts' with conflicts.
++Applied patch to 'packages/builtins/replay-R7-a/src/models.ts' with conflicts.
++error: packages/builtins/replay-R7-a/src/prompt-capture.ts: does not exist in index
++Applied patch to 'packages/builtins/replay-R7-a/src/query-state.ts' with conflicts.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/tests/fixtures/sdk-streams/parallel-tools.jsonl' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/tests/fixtures/sdk-streams/single-tool.jsonl' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/tests/fixtures/sdk-streams/text.jsonl' cleanly.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/tests/int-cc-contracts.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/tests/int-session-resume.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/tests/int-tool-message.mjs' cleanly.
++Falling back to direct application...
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/tests/unit-branch-summary.mjs' cleanly.
++Applied patch to 'packages/builtins/replay-R7-a/tests/unit-models.mjs' with conflicts.
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/tests/unit-pi-streamfn-inventory.mjs' with conflicts.
++error: packages/builtins/replay-R7-a/tests/unit-prompt-capture.mjs: does not exist in index
++Falling back to direct application...
++Falling back to direct application...
++Applied patch to 'packages/builtins/replay-R7-a/tests/unit-sync-shared-session.mjs' cleanly.
++Falling back to direct application...
++git-apply-exit: 1
++unmerged:
++sync-exit=1 seconds=2
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R7-a
++(none)
++===== automatic result
++merge-tree: 63d9a42132616fbb92881a25004a507ef5268a9f
++expected conflicted: CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/index.ts src/models.ts src/prompt-capture.ts src/query-state.ts tests/unit-models.mjs tests/unit-pi-streamfn-inventory.mjs tests/unit-prompt-capture.mjs 
++candidate conflicted: 
++CONFLICT-SET: DIFFERENT
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++ONLY-IN-EXPECTED src/askclaude-schema.ts
++ONLY-IN-EXPECTED src/prompt-capture.ts
++ONLY-IN-EXPECTED src/transcript.ts
++CONTENT tests/fixtures/sdk-streams/parallel-tools.jsonl
++CONTENT tests/fixtures/sdk-streams/single-tool.jsonl
++CONTENT tests/fixtures/sdk-streams/text.jsonl
++ONLY-IN-EXPECTED tests/int-cache-git.sh
++CONTENT tests/int-cc-contracts.mjs
++CONTENT tests/int-session-resume.mjs
++CONTENT tests/int-tool-message.mjs
++ONLY-IN-EXPECTED tests/unit-agent-start-capture-gaps.mjs
++ONLY-IN-EXPECTED tests/unit-agent-start-capture.mjs
++ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs
++CONTENT tests/unit-branch-summary.mjs
++ONLY-IN-EXPECTED tests/unit-nonstreaming-fallback.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-capture.mjs
++ONLY-IN-EXPECTED tests/unit-prompt-guard.mjs
++ONLY-IN-EXPECTED tests/unit-provider-registration.mjs
++CONTENT tests/unit-sync-shared-session.mjs
++ONLY-IN-EXPECTED tests/unit-transcript-replay-order.mjs
++CONTENT TODO.md
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/a-S-genuine-chain.txt b/spike/runs/a-S-genuine-chain.txt
+new file mode 100644
+index 000000000..2f4893748
+--- /dev/null
++++ b/spike/runs/a-S-genuine-chain.txt
+@@ -0,0 +1,99 @@
++===== step 1: merge c4b759f
++recorded-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 git-merge-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 BASE-MATCH
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=1
++merge-tree=309eba229afde45209b9f85b34000cb5435a7486 expected-conflicted=[CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/models.ts tests/int-subagent-rpiv-codebase-locator.mjs tests/lib/rpc-harness.mjs tests/unit-config.mjs tests/unit-models.mjs ] candidate-conflicted=[]
++CONFLICT-SET: DIFFERENT
++comparison: CONTENT AGENTS.md CONTENT src/index.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/unit-querycontext.mjs 
++resolved CHANGELOG.md from the fork's merge commit
++resolved diag/CONTEXT-SIZE.md from the fork's merge commit
++resolved package-lock.json from the fork's merge commit
++resolved package.json from the fork's merge commit
++resolved README.md from the fork's merge commit
++resolved src/config.ts from the fork's merge commit
++resolved src/models.ts from the fork's merge commit
++resolved tests/int-subagent-rpiv-codebase-locator.mjs from the fork's merge commit
++resolved tests/lib/rpc-harness.mjs from the fork's merge commit
++resolved tests/unit-config.mjs from the fork's merge commit
++resolved tests/unit-models.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: CONTENT AGENTS.md CONTENT src/index.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/unit-querycontext.mjs 
++fork commits between this merge and the next first parent: 11
++error: patch failed: packages/builtins/chain-a/AGENTS.md:29
++error: packages/builtins/chain-a/AGENTS.md: patch does not apply
++On branch spike/0002
++Untracked files:
++  (use "git add <file>..." to include in what will be committed)
++	spike/runs/a-S-genuine-chain.txt
++
++nothing added to commit but untracked files present (use "git add" to track)
++===== step 2: merge 60efeb9
++recorded-base=066767393a0efe4be09632f63dc046c2190231b7 git-merge-base=066767393a0efe4be09632f63dc046c2190231b7 BASE-MATCH
++pi side before sync equals the fork's first parent: ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md CONTENT CHANGELOG.md CONTENT diag/CONTEXT-SIZE.md CONTENT package-lock.json CONTENT package.json ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/config.ts CONTENT src/index.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md CONTENT tests/int-askclaude-upgrade.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs CONTENT tests/unit-querycontext.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs 
++sync-exit=1
++merge-tree=b32408df051e68b7824a624d575c3f5b612e7f2c expected-conflicted=[.env.test CHANGELOG.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts src/query-state.ts src/typebox-to-zod.ts tests/int-cache.sh tests/int-smoke.sh tests/lib/rpc-harness.mjs tests/unit-config.mjs ] candidate-conflicted=[]
++CONFLICT-SET: DIFFERENT
++comparison: ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md ONLY-IN-EXPECTED diag/audit-cache.mjs ONLY-IN-EXPECTED diag/audit-transcripts.mjs ONLY-IN-EXPECTED diag/audit-warnings.mjs ONLY-IN-EXPECTED diag/AUDIT.md ONLY-IN-EXPECTED diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/diff-captures.mjs ONLY-IN-EXPECTED diag/lib/write-path.mjs ONLY-IN-EXPECTED diag/replay-write-path.mjs CONTENT src/convert.ts ONLY-IN-EXPECTED src/mcp-server.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts ONLY-IN-EXPECTED src/prompt-stream.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl CONTENT tests/int-askclaude-upgrade.mjs ONLY-IN-EXPECTED tests/int-cc-contracts.mjs CONTENT tests/int-compact-baseline.mjs ONLY-IN-EXPECTED tests/int-image-session.mjs ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs CONTENT tests/int-session-compact.mjs CONTENT tests/int-session-new.mjs CONTENT tests/int-session-resume.mjs ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/int-tool-message.mjs CONTENT tests/lib/bash-setup.sh ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs ONLY-IN-EXPECTED tests/lib/setup.mjs CONTENT tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs ONLY-IN-EXPECTED tests/unit-debug-path.mjs ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs ONLY-IN-EXPECTED tests/unit-error-result.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-mcp-server.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs CONTENT tests/unit-querycontext.mjs CONTENT tests/unit-queue.mjs CONTENT tests/unit-session-integrity.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs CONTENT TODO.md 
++resolved .env.test from the fork's merge commit
++resolved CHANGELOG.md from the fork's merge commit
++resolved package-lock.json from the fork's merge commit
++resolved package.json from the fork's merge commit
++resolved README.md from the fork's merge commit
++fatal: path 'src/agents-md.ts' does not exist in '60efeb943186c8bda1e81e6b152c2eb5d2f28ebd'
++resolved src/agents-md.ts from the fork's merge commit
++resolved src/config.ts from the fork's merge commit
++resolved src/index.ts from the fork's merge commit
++resolved src/query-state.ts from the fork's merge commit
++fatal: path 'src/typebox-to-zod.ts' does not exist in '60efeb943186c8bda1e81e6b152c2eb5d2f28ebd'
++resolved src/typebox-to-zod.ts from the fork's merge commit
++resolved tests/int-cache.sh from the fork's merge commit
++resolved tests/int-smoke.sh from the fork's merge commit
++resolved tests/lib/rpc-harness.mjs from the fork's merge commit
++resolved tests/unit-config.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md ONLY-IN-EXPECTED diag/audit-cache.mjs ONLY-IN-EXPECTED diag/audit-transcripts.mjs ONLY-IN-EXPECTED diag/audit-warnings.mjs ONLY-IN-EXPECTED diag/AUDIT.md ONLY-IN-EXPECTED diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/diff-captures.mjs ONLY-IN-EXPECTED diag/lib/write-path.mjs ONLY-IN-EXPECTED diag/replay-write-path.mjs ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/convert.ts ONLY-IN-EXPECTED src/mcp-server.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts ONLY-IN-EXPECTED src/prompt-stream.ts CONTENT src/sdk-options.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl CONTENT tests/int-askclaude-upgrade.mjs ONLY-IN-EXPECTED tests/int-cc-contracts.mjs CONTENT tests/int-compact-baseline.mjs ONLY-IN-EXPECTED tests/int-image-session.mjs ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs CONTENT tests/int-session-compact.mjs CONTENT tests/int-session-new.mjs CONTENT tests/int-session-resume.mjs ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/int-tool-message.mjs CONTENT tests/lib/bash-setup.sh ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs ONLY-IN-EXPECTED tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs ONLY-IN-EXPECTED tests/unit-debug-path.mjs ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs ONLY-IN-EXPECTED tests/unit-error-result.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-mcp-server.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs CONTENT tests/unit-querycontext.mjs CONTENT tests/unit-queue.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-session-integrity.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs CONTENT TODO.md 
++fork commits between this merge and the next first parent: 56
++error: packages/builtins/chain-a/.github/workflows/ci.yml: does not exist in index
++error: patch failed: packages/builtins/chain-a/AGENTS.md:20
++error: packages/builtins/chain-a/AGENTS.md: patch does not apply
++error: patch failed: packages/builtins/chain-a/TODO.md:27
++error: packages/builtins/chain-a/TODO.md: patch does not apply
++error: packages/builtins/chain-a/diag/AUDIT.md: does not exist in index
++error: packages/builtins/chain-a/diag/audit-cache.mjs: does not exist in index
++error: packages/builtins/chain-a/diag/audit-warnings.mjs: does not exist in index
++error: packages/builtins/chain-a/diag/capture-proxy.mjs: does not exist in index
++error: patch failed: packages/builtins/chain-a/src/convert.ts:90
++error: packages/builtins/chain-a/src/convert.ts: patch does not apply
++error: patch failed: packages/builtins/chain-a/src/sdk-options.ts:124
++error: packages/builtins/chain-a/src/sdk-options.ts: patch does not apply
++error: packages/builtins/chain-a/src/steering.ts: does not exist in index
++error: packages/builtins/chain-a/tests/int-cc-contracts.mjs: does not exist in index
++error: packages/builtins/chain-a/tests/lib/setup.mjs: does not exist in index
++error: patch failed: packages/builtins/chain-a/tests/unit-import.mjs:427
++error: packages/builtins/chain-a/tests/unit-import.mjs: patch does not apply
++error: packages/builtins/chain-a/tests/unit-steering.mjs: does not exist in index
++error: packages/builtins/chain-a/tests/unit-stream-replay.mjs: does not exist in index
++error: patch failed: packages/builtins/chain-a/tests/unit-sync-shared-session.mjs:3
++error: packages/builtins/chain-a/tests/unit-sync-shared-session.mjs: patch does not apply
++error: packages/builtins/chain-a/tests/unit-usage-accumulation.mjs: does not exist in index
++On branch spike/0002
++Untracked files:
++  (use "git add <file>..." to include in what will be committed)
++	spike/runs/a-S-genuine-chain.txt
++
++nothing added to commit but untracked files present (use "git add" to track)
++===== step 3: merge 64e3c25
++recorded-base=fac372c4fedabc247eda48ddec2363a52dc8c4d8 git-merge-base=500eea19eab818d81fbfabfcb65a718bebaa8540 BASE-DIFFERENT
++pi side before sync equals the fork's first parent: CONTENT .env.test ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md CONTENT CHANGELOG.md ONLY-IN-EXPECTED diag/attachment-coverage.mjs ONLY-IN-EXPECTED diag/attrib.py ONLY-IN-EXPECTED diag/audit-cache.mjs ONLY-IN-EXPECTED diag/audit-transcripts.mjs ONLY-IN-EXPECTED diag/audit-warnings.mjs ONLY-IN-EXPECTED diag/AUDIT.md ONLY-IN-EXPECTED diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/diff-captures.mjs ONLY-IN-EXPECTED diag/EXTRA-USAGE-400.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/lib/write-path.mjs ONLY-IN-EXPECTED diag/replay-write-path.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/attachments.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/convert.ts CONTENT src/index.ts ONLY-IN-EXPECTED src/mcp-server.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts ONLY-IN-EXPECTED src/prompt-stream.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/fixtures/tree-nav-extension.ts CONTENT tests/int-askclaude-upgrade.mjs ONLY-IN-EXPECTED tests/int-attachment-rebuild.mjs ONLY-IN-EXPECTED tests/int-branch-summary.mjs ONLY-IN-EXPECTED tests/int-cc-contracts.mjs CONTENT tests/int-compact-baseline.mjs ONLY-IN-EXPECTED tests/int-image-session.mjs ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs CONTENT tests/int-session-compact.mjs CONTENT tests/int-session-new.mjs CONTENT tests/int-session-resume.mjs ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/int-tool-message.mjs CONTENT tests/lib/bash-setup.sh ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs ONLY-IN-EXPECTED tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-attachments.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs ONLY-IN-EXPECTED tests/unit-branch-summary.mjs ONLY-IN-EXPECTED tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs CONTENT tests/unit-config.mjs ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-debug-path.mjs ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs ONLY-IN-EXPECTED tests/unit-error-result.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-mcp-server.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs ONLY-IN-EXPECTED tests/unit-pi-streamfn-inventory.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs CONTENT tests/unit-querycontext.mjs CONTENT tests/unit-queue.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-session-integrity.mjs CONTENT tests/unit-skills.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs CONTENT TODO.md 
++sync-exit=1
++merge-tree=0d9fe8618e515d929be33f721911b34e7371bc24 expected-conflicted=[CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs ] candidate-conflicted=[]
++CONFLICT-SET: DIFFERENT
++comparison: CONTENT .env.test ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md ONLY-IN-EXPECTED diag/attachment-coverage.mjs ONLY-IN-EXPECTED diag/attrib.py ONLY-IN-EXPECTED diag/audit-cache.mjs ONLY-IN-EXPECTED diag/audit-transcripts.mjs ONLY-IN-EXPECTED diag/audit-warnings.mjs ONLY-IN-EXPECTED diag/AUDIT.md ONLY-IN-EXPECTED diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/diff-captures.mjs ONLY-IN-EXPECTED diag/EXTRA-USAGE-400.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/lib/write-path.mjs ONLY-IN-EXPECTED diag/probe-dynamic-sections.mjs ONLY-IN-EXPECTED diag/probe-git-cache.mjs ONLY-IN-EXPECTED diag/replay-write-path.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/attachments.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/convert.ts ONLY-IN-EXPECTED src/mcp-server.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts ONLY-IN-EXPECTED src/prompt-capture.ts ONLY-IN-EXPECTED src/prompt-stream.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/fixtures/tree-nav-extension.ts CONTENT tests/int-askclaude-upgrade.mjs ONLY-IN-EXPECTED tests/int-attachment-rebuild.mjs ONLY-IN-EXPECTED tests/int-branch-summary.mjs ONLY-IN-EXPECTED tests/int-cc-contracts.mjs CONTENT tests/int-compact-baseline.mjs ONLY-IN-EXPECTED tests/int-image-session.mjs ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs CONTENT tests/int-session-compact.mjs CONTENT tests/int-session-new.mjs CONTENT tests/int-session-resume.mjs ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/int-tool-message.mjs CONTENT tests/lib/bash-setup.sh ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs ONLY-IN-EXPECTED tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-attachments.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs ONLY-IN-EXPECTED tests/unit-branch-summary.mjs ONLY-IN-EXPECTED tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs CONTENT tests/unit-config.mjs ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-debug-path.mjs ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs ONLY-IN-EXPECTED tests/unit-error-result.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-mcp-server.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs ONLY-IN-EXPECTED tests/unit-pi-streamfn-inventory.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs ONLY-IN-EXPECTED tests/unit-prompt-capture.mjs ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs CONTENT tests/unit-querycontext.mjs CONTENT tests/unit-queue.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-session-integrity.mjs CONTENT tests/unit-skills.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs CONTENT TODO.md 
++resolved CHANGELOG.md from the fork's merge commit
++resolved src/index.ts from the fork's merge commit
++fatal: path 'src/prompt-capture.ts' does not exist in '64e3c251988f56094652a22381a2c78fb8d3ec58'
++resolved src/prompt-capture.ts from the fork's merge commit
++fatal: path 'tests/unit-prompt-capture.mjs' does not exist in '64e3c251988f56094652a22381a2c78fb8d3ec58'
++resolved tests/unit-prompt-capture.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: CONTENT .env.test ONLY-IN-EXPECTED .github/workflows/ci.yml CONTENT AGENTS.md ONLY-IN-EXPECTED diag/attachment-coverage.mjs ONLY-IN-EXPECTED diag/attrib.py ONLY-IN-EXPECTED diag/audit-cache.mjs ONLY-IN-EXPECTED diag/audit-transcripts.mjs ONLY-IN-EXPECTED diag/audit-warnings.mjs ONLY-IN-EXPECTED diag/AUDIT.md ONLY-IN-EXPECTED diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/diff-captures.mjs ONLY-IN-EXPECTED diag/EXTRA-USAGE-400.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/lib/write-path.mjs ONLY-IN-EXPECTED diag/probe-dynamic-sections.mjs ONLY-IN-EXPECTED diag/probe-git-cache.mjs ONLY-IN-EXPECTED diag/replay-write-path.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/attachments.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/convert.ts ONLY-IN-EXPECTED src/mcp-server.ts CONTENT src/models.ts ONLY-IN-EXPECTED src/project-context.ts ONLY-IN-ACTUAL src/prompt-capture.ts ONLY-IN-EXPECTED src/prompt-stream.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts ONLY-IN-EXPECTED src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/pi-history-310.jsonl ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/sdk-streams/parallel-tools.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/single-tool.jsonl ONLY-IN-EXPECTED tests/fixtures/sdk-streams/text.jsonl ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/fixtures/tree-nav-extension.ts CONTENT tests/int-askclaude-upgrade.mjs ONLY-IN-EXPECTED tests/int-attachment-rebuild.mjs ONLY-IN-EXPECTED tests/int-branch-summary.mjs ONLY-IN-EXPECTED tests/int-cc-contracts.mjs CONTENT tests/int-compact-baseline.mjs ONLY-IN-EXPECTED tests/int-image-session.mjs ONLY-IN-EXPECTED tests/int-parallel-tool-results.mjs CONTENT tests/int-session-compact.mjs CONTENT tests/int-session-new.mjs CONTENT tests/int-session-resume.mjs ONLY-IN-EXPECTED tests/int-shutdown-kills-cc.mjs ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs MODE tests/int-subagent-rpiv-codebase-locator.mjs CONTENT tests/int-tool-message.mjs CONTENT tests/lib/bash-setup.sh ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/record-sdk-streams.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs ONLY-IN-EXPECTED tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-attachments.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs ONLY-IN-EXPECTED tests/unit-branch-summary.mjs ONLY-IN-EXPECTED tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs CONTENT tests/unit-config.mjs ONLY-IN-EXPECTED tests/unit-convert-determinism.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-debug-path.mjs ONLY-IN-EXPECTED tests/unit-deliver-tool-results.mjs ONLY-IN-EXPECTED tests/unit-error-result.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-mcp-server.mjs CONTENT tests/unit-models.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs ONLY-IN-EXPECTED tests/unit-pi-streamfn-inventory.mjs ONLY-IN-EXPECTED tests/unit-project-context.mjs ONLY-IN-EXPECTED tests/unit-prompt-blocks.mjs ONLY-IN-ACTUAL tests/unit-prompt-capture.mjs ONLY-IN-EXPECTED tests/unit-prompt-stream.mjs CONTENT tests/unit-querycontext.mjs CONTENT tests/unit-queue.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-session-integrity.mjs CONTENT tests/unit-skills.mjs ONLY-IN-EXPECTED tests/unit-steering.mjs ONLY-IN-EXPECTED tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs ONLY-IN-EXPECTED tests/unit-unserved-tool-use.mjs ONLY-IN-EXPECTED tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs CONTENT TODO.md 
++===== containment: status entries outside packages/builtins/chain-a
++(none)
++===== cleanup
+diff --git a/spike/runs/b-C3-rename.txt b/spike/runs/b-C3-rename.txt
+new file mode 100644
+index 000000000..9887377a3
+--- /dev/null
++++ b/spike/runs/b-C3-rename.txt
+@@ -0,0 +1,68 @@
++candidate=b base=89a1dce4599756a409d9a29d3602af380f942a89 new=cbd5fce6992d62ca5a160df22c7ade26f6b08929
++synthetic line inserted: 1
++sync-exit=0
++Auto-merging prompts/replace.md
++Merge made by the 'ort' strategy.
++ index.ts                                           |  21 ++--
++ prompts/replace-bulk-guidelines.md                 |   6 -
++ prompts/replace-bulk-snippet.md                    |   1 -
++ prompts/replace-bulk.md                            | 105 ----------------
++ prompts/replace-flat-snippet.md                    |   1 -
++ ...ce-flat-guidelines.md => replace-guidelines.md} |   2 +-
++ prompts/replace-snippet.md                         |   1 +
++ prompts/{replace-flat.md => replace.md}            |  43 ++-----
++ src/config.ts                                      |  14 +--
++ src/file-reader.ts                                 |  29 ++++-
++ src/fs-write.ts                                    |   2 +-
++ src/hash-store.ts                                  |   2 +-
++ src/hashline/apply.ts                              |   2 +-
++ src/hashline/hash.ts                               |  15 +--
++ src/hashline/resolve.ts                            |   2 +-
++ src/path-utils.ts                                  |  13 --
++ src/paths.ts                                       |  13 +-
++ src/read.ts                                        |   6 +-
++ src/replace-flat.ts                                |   1 -
++ src/replace-undo.ts                                |  23 +++-
++ src/replace.ts                                     |  93 +++++++++++---
++ src/runtime.ts                                     |   3 -
++ src/snapshot.ts                                    |  22 ----
++ src/undo-store.ts                                  |  21 ----
++ src/utils.ts                                       |  11 ++
++ src/validation.ts                                  |   7 +-
++ test/core/auto-read-guidance.test.ts               |  85 ++++---------
++ test/core/path-utils.test.ts                       |   2 +-
++ test/core/runtime.test.ts                          |   2 +-
++ test/core/snapshot.test.ts                         |   2 +-
++ test/core/undo-store.test.ts                       |   2 +-
++ test/core/validation.test.ts                       |   3 +-
++ test/extension/prompts.test.ts                     | 134 ++++++---------------
++ test/extension/register.test.ts                    |  21 +---
++ test/support/fixtures.ts                           |   3 +-
++ test/tools/replace-flat.test.ts                    |   2 +-
++ 36 files changed, 256 insertions(+), 459 deletions(-)
++ delete mode 100644 prompts/replace-bulk-guidelines.md
++ delete mode 100644 prompts/replace-bulk-snippet.md
++ delete mode 100644 prompts/replace-bulk.md
++ delete mode 100644 prompts/replace-flat-snippet.md
++ rename prompts/{replace-flat-guidelines.md => replace-guidelines.md} (88%)
++ create mode 100644 prompts/replace-snippet.md
++ rename prompts/{replace-flat.md => replace.md} (60%)
++ delete mode 100644 src/path-utils.ts
++ delete mode 100644 src/replace-flat.ts
++ delete mode 100644 src/runtime.ts
++ delete mode 100644 src/snapshot.ts
++ delete mode 100644 src/undo-store.ts
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.SfrWVC
++===== checks
++OLD-PATH: ABSENT
++NEW-PATH: PRESENT
++synthetic line in prompts/replace.md: 1
++UPSTREAM-CHANGE: KEPT (replace.md minus the synthetic line equals upstream's replace.md)
++git status for the two paths:
++ D packages/builtins/rename-b/prompts/replace-flat.md
++?? packages/builtins/rename-b/prompts/replace.md
++===== containment: status entries outside packages/builtins/rename-b
++(none)
++===== cleanup
+diff --git a/spike/runs/b-C4-chain.txt b/spike/runs/b-C4-chain.txt
+new file mode 100644
+index 000000000..dc49afcd6
+--- /dev/null
++++ b/spike/runs/b-C4-chain.txt
+@@ -0,0 +1,39 @@
++===== step 1: merge 1149b63
++recorded-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef git-merge-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef BASE-MATCH
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=0
++merge-tree=8d0a2d83a0fa2395947dc980a0e9f56c42677637 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: IDENTICAL 
++pi side after resolution equals the fork's merge commit: IDENTICAL 
++fork commits between this merge and the next first parent: 0
++===== step 2: merge 7edc676
++recorded-base=c9f8c42a46413b887dcaea20afef61c91a63f63e git-merge-base=1149b63acc679057ea6e6fa7b69d67c06d92a892 BASE-DIFFERENT
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=0
++merge-tree=b8bfc047eec70495251eb08edbdbdc17fa36a512 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: IDENTICAL 
++pi side after resolution equals the fork's merge commit: IDENTICAL 
++fork commits between this merge and the next first parent: 1
++===== step 3: merge efff473
++recorded-base=e3cd9358600b21bbcdd5ffd3fc10baa35fe8443b git-merge-base=d3cb25e96742c47e77675ba7ff50e181ebb476ef BASE-DIFFERENT
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=0
++merge-tree=6e53419853cc9994673460b804406be6fc133d5a expected-conflicted=[CHANGELOG.md ] candidate-conflicted=[]
++CONFLICT-SET: DIFFERENT
++comparison: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++resolved CHANGELOG.md from the fork's merge commit
++pi side after resolution equals the fork's merge commit: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++fork commits between this merge and the next first parent: 0
++===== step 4: merge cd64b9f
++recorded-base=7edc6761fbd0711c008afe0e7be4569b117754c1 git-merge-base=7edc6761fbd0711c008afe0e7be4569b117754c1 BASE-MATCH
++pi side before sync equals the fork's first parent: CONTENT CHANGELOG.md CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/prompt-capture.ts CONTENT src/transcript.ts CONTENT tests/unit-agent-start-capture-gaps.mjs ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs ONLY-IN-ACTUAL tests/unit-prompt-guard.mjs CONTENT TODO.md 
++sync-exit=0
++merge-tree=d5c802037efb932bb70ad0fe36ba96a6b54b8d23 expected-conflicted=[] candidate-conflicted=[]
++CONFLICT-SET: EQUAL
++comparison: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++pi side after resolution equals the fork's merge commit: CONTENT package-lock.json CONTENT package.json CONTENT README.md ONLY-IN-EXPECTED src/askclaude-schema.ts CONTENT src/index.ts CONTENT src/transcript.ts ONLY-IN-EXPECTED tests/unit-askclaude-schema.mjs CONTENT tests/unit-models.mjs CONTENT TODO.md 
++===== containment: status entries outside packages/builtins/chain-b
++(none)
++===== cleanup
+diff --git a/spike/runs/b-C6-uptodate.txt b/spike/runs/b-C6-uptodate.txt
+new file mode 100644
+index 000000000..c5c70d178
+--- /dev/null
++++ b/spike/runs/b-C6-uptodate.txt
+@@ -0,0 +1,14 @@
++candidate=b case=C6-uptodate source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5
++tty: stdin=no stdout=no
++===== sync
++Merge made by the 'ort' strategy.
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.HTAs7q
++sync-exit=0 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-C6-uptodate-b
++(none)
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R1.txt b/spike/runs/b-R1.txt
+new file mode 100644
+index 000000000..993b543c8
+--- /dev/null
++++ b/spike/runs/b-R1.txt
+@@ -0,0 +1,23 @@
++candidate=b case=R1 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=402fa8d
++p1=7100c15bb1e397eb4b3ee6f643fabeab3bdf8fed p2=920396548e19c6caa0203e28f45921910ff358ce base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=920396548e19c6caa0203e28f45921910ff358ce
++tty: stdin=no stdout=no
++===== sync
++Merge made by the 'ort' strategy.
++ tests/unit-branch-summary.mjs | 6 +++++-
++ 1 file changed, 5 insertions(+), 1 deletion(-)
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.yJzh6Y
++sync-exit=0 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R1-b
++(none)
++===== automatic result
++merge-tree: 8bde13d1af359269e8f7930ce022443d698efd98
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R10-ce35c164.txt b/spike/runs/b-R10-ce35c164.txt
+new file mode 100644
+index 000000000..53d04fcd9
+--- /dev/null
++++ b/spike/runs/b-R10-ce35c164.txt
+@@ -0,0 +1,25 @@
++candidate=b case=R10-ce35c164 source=/Users/paolof/Developer/ai/rpiv-mono subdir=packages/rpiv-ask-user-question merge=ce35c164
++p1=777beb8ac788d89ded8d785b95d00d131535394a p2=d74b1c99830a565f3df3f37e0a36616d17ffc574 base=0fdf4f813980d380e826b84d1280a4960e5d088e new=d74b1c99830a565f3df3f37e0a36616d17ffc574
++tty: stdin=no stdout=no
++===== sync
++Auto-merging CHANGELOG.md
++CONFLICT (content): Merge conflict in CHANGELOG.md
++Auto-merging package.json
++Automatic merge failed; fix conflicts and then commit the result.
++git-merge-exit: 1
++unmerged:
++CHANGELOG.md
++scratch: /tmp/spike-0002-scratch.xcQC25
++sync-exit=1 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R10-ce35c164-b
++(none)
++===== automatic result
++merge-tree: 259306a430fdaed10003921611569c3fa837d5d7
++expected conflicted: CHANGELOG.md 
++candidate conflicted: CHANGELOG.md 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R10-e04fe7a4.txt b/spike/runs/b-R10-e04fe7a4.txt
+new file mode 100644
+index 000000000..028ea23f1
+--- /dev/null
++++ b/spike/runs/b-R10-e04fe7a4.txt
+@@ -0,0 +1,28 @@
++candidate=b case=R10-e04fe7a4 source=/Users/paolof/Developer/ai/rpiv-mono subdir=packages/rpiv-ask-user-question merge=e04fe7a4
++p1=050a546d9f01f207a2cb72e16782a63d28c62b67 p2=4e2b3a51927c9b40e75001e4edc63e7335426880 base=7a1daf87bf34ba15e09dc1374b3b79f19f5e387c new=4e2b3a51927c9b40e75001e4edc63e7335426880
++tty: stdin=no stdout=no
++===== sync
++Merge made by the 'ort' strategy.
++ README.md                              |   2 +
++ ask-user-question.execute.test.ts      | 131 +++++++++++++++++++++++++++++++++
++ ask-user-question.session-load.test.ts |  42 +++++++++--
++ ask-user-question.ts                   |  11 +++
++ docs/hosts.md                          |   6 ++
++ rpc-fallback.test.ts                   |  53 +++++++++++++
++ 6 files changed, 237 insertions(+), 8 deletions(-)
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.W7Su1a
++sync-exit=0 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R10-e04fe7a4-b
++(none)
++===== automatic result
++merge-tree: ed21c4009b8105117e14ebb80074e8d72294706e
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R2.txt b/spike/runs/b-R2.txt
+new file mode 100644
+index 000000000..b8b3cd1ee
+--- /dev/null
++++ b/spike/runs/b-R2.txt
+@@ -0,0 +1,24 @@
++candidate=b case=R2 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=4a7920a
++p1=44fe582193c0451c4210555451788a82ac134c93 p2=6977a40dcbd4c0c128f676efa331f5c04557ff18 base=9e3fee560fb9577d819052b9a10dbcc2eacd858a new=6977a40dcbd4c0c128f676efa331f5c04557ff18
++tty: stdin=no stdout=no
++===== sync
++Merge made by the 'ort' strategy.
++ src/models.ts         | 22 ++++++++++++++++++++--
++ tests/unit-models.mjs | 32 ++++++++++++++++++++++++++++++++
++ 2 files changed, 52 insertions(+), 2 deletions(-)
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.X2u07z
++sync-exit=0 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R2-b
++(none)
++===== automatic result
++merge-tree: 352d894853a32b8456ea7a0bfdc052539f695e2d
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R3.txt b/spike/runs/b-R3.txt
+new file mode 100644
+index 000000000..1ab65746a
+--- /dev/null
++++ b/spike/runs/b-R3.txt
+@@ -0,0 +1,92 @@
++candidate=b case=R3 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=a41b434
++p1=2bc9a7e43f8c3e3ec1ce10eb0f456eae1d610333 p2=a0c09c97a4f681b93928e3b35ecbeed0d9697815 base=fc2efeb66ed609e260a14b014a1eedeea3f47547 new=a0c09c97a4f681b93928e3b35ecbeed0d9697815
++tty: stdin=no stdout=no
++===== sync
++Merge made by the 'ort' strategy.
++ AGENTS.md                                       |  26 +
++ CHANGELOG.md                                    |  27 +-
++ TODO.md                                         | 128 ++++-
++ diag/AUDIT.md                                   | 533 +++++++++++++++++
++ diag/audit-cache.mjs                            | 200 +++++++
++ diag/audit-transcripts.mjs                      | 229 ++++++++
++ diag/audit-warnings.mjs                         | 123 ++++
++ diag/capture-proxy.mjs                          | 102 ++++
++ diag/diff-captures.mjs                          | 111 ++++
++ diag/lib/write-path.mjs                         |  58 ++
++ diag/replay-write-path.mjs                      | 133 +++++
++ package-lock.json                               |  15 +-
++ package.json                                    |   2 +-
++ src/convert.ts                                  | 110 +++-
++ src/index.ts                                    | 299 +++++++---
++ src/mcp-server.ts                               |  21 +-
++ src/prompt-stream.ts                            |  45 +-
++ src/query-state.ts                              |  11 +
++ tests/fixtures/pi-history-310.jsonl             | 310 ++++++++++
++ tests/fixtures/sdk-streams/parallel-tools.jsonl |  53 ++
++ tests/fixtures/sdk-streams/single-tool.jsonl    |  41 ++
++ tests/fixtures/sdk-streams/text.jsonl           |  18 +
++ tests/int-cache.sh                              |  12 +-
++ tests/int-cc-contracts.mjs                      | 477 ++++++++++++++++
++ tests/int-compact-baseline.mjs                  |   6 +-
++ tests/int-image-session.mjs                     |  99 ++++
++ tests/int-parallel-tool-results.mjs             |  85 +++
++ tests/int-session-compact.mjs                   |   6 +-
++ tests/int-session-new.mjs                       |   4 +-
++ tests/int-session-resume.mjs                    |  35 +-
++ tests/int-shutdown-kills-cc.mjs                 | 123 ++++
++ tests/int-smoke.sh                              |  23 +-
++ tests/int-tool-message.mjs                      |  11 +-
++ tests/lib/bash-setup.sh                         |  11 +
++ tests/lib/record-sdk-streams.mjs                | 113 ++++
++ tests/lib/rpc-harness.mjs                       |  17 +-
++ tests/unit-child-env.mjs                        |  26 +
++ tests/unit-convert-determinism.mjs              | 117 ++++
++ tests/unit-deliver-tool-results.mjs             | 136 +++++
++ tests/unit-error-result.mjs                     | 123 ++++
++ tests/unit-import.mjs                           | 178 +++++-
++ tests/unit-mcp-server.mjs                       |  12 +
++ tests/unit-prompt-stream.mjs                    |  37 +-
++ tests/unit-queue.mjs                            | 729 ++++++++----------------
++ tests/unit-stream-replay.mjs                    | 104 ++++
++ tests/unit-sync-shared-session.mjs              |  12 +-
++ tests/unit-unserved-tool-use.mjs                |  86 +++
++ 47 files changed, 4489 insertions(+), 688 deletions(-)
++ create mode 100644 diag/AUDIT.md
++ create mode 100644 diag/audit-cache.mjs
++ create mode 100644 diag/audit-transcripts.mjs
++ create mode 100644 diag/audit-warnings.mjs
++ create mode 100644 diag/capture-proxy.mjs
++ create mode 100644 diag/diff-captures.mjs
++ create mode 100644 diag/lib/write-path.mjs
++ create mode 100644 diag/replay-write-path.mjs
++ create mode 100644 tests/fixtures/pi-history-310.jsonl
++ create mode 100644 tests/fixtures/sdk-streams/parallel-tools.jsonl
++ create mode 100644 tests/fixtures/sdk-streams/single-tool.jsonl
++ create mode 100644 tests/fixtures/sdk-streams/text.jsonl
++ create mode 100644 tests/int-cc-contracts.mjs
++ create mode 100644 tests/int-image-session.mjs
++ create mode 100644 tests/int-parallel-tool-results.mjs
++ create mode 100644 tests/int-shutdown-kills-cc.mjs
++ create mode 100644 tests/lib/record-sdk-streams.mjs
++ create mode 100644 tests/unit-child-env.mjs
++ create mode 100644 tests/unit-convert-determinism.mjs
++ create mode 100644 tests/unit-deliver-tool-results.mjs
++ create mode 100644 tests/unit-error-result.mjs
++ create mode 100644 tests/unit-stream-replay.mjs
++ create mode 100644 tests/unit-unserved-tool-use.mjs
++git-merge-exit: 0
++unmerged:
++scratch: /tmp/spike-0002-scratch.2SBUuc
++sync-exit=0 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R3-b
++(none)
++===== automatic result
++merge-tree: 372b055d8e224edcc2b1d08cfbb5822c5d1a471f
++expected conflicted: 
++candidate conflicted: 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R4.txt b/spike/runs/b-R4.txt
+new file mode 100644
+index 000000000..366453cb4
+--- /dev/null
++++ b/spike/runs/b-R4.txt
+@@ -0,0 +1,25 @@
++candidate=b case=R4 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=efff473
++p1=daaa47900ed361f72753625c143e2d01158a20e7 p2=7edc6761fbd0711c008afe0e7be4569b117754c1 base=d3cb25e96742c47e77675ba7ff50e181ebb476ef new=7edc6761fbd0711c008afe0e7be4569b117754c1
++tty: stdin=no stdout=no
++===== sync
++Auto-merging CHANGELOG.md
++CONFLICT (content): Merge conflict in CHANGELOG.md
++Auto-merging README.md
++Automatic merge failed; fix conflicts and then commit the result.
++git-merge-exit: 1
++unmerged:
++CHANGELOG.md
++scratch: /tmp/spike-0002-scratch.y22uOp
++sync-exit=1 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R4-b
++(none)
++===== automatic result
++merge-tree: 6e53419853cc9994673460b804406be6fc133d5a
++expected conflicted: CHANGELOG.md 
++candidate conflicted: CHANGELOG.md 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R5.txt b/spike/runs/b-R5.txt
+new file mode 100644
+index 000000000..e7d2a4cad
+--- /dev/null
++++ b/spike/runs/b-R5.txt
+@@ -0,0 +1,30 @@
++candidate=b case=R5 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=7100c15
++p1=4f37bd2d5eb31663732b7c8b2cc2c4c8aac5bae0 p2=1601656e80224db3e727d87da9e5ed97a67979cb base=4a7920ac4f4449b546307b3a53d4a4867f8b6cb5 new=1601656e80224db3e727d87da9e5ed97a67979cb
++tty: stdin=no stdout=no
++===== sync
++Auto-merging CHANGELOG.md
++CONFLICT (content): Merge conflict in CHANGELOG.md
++Auto-merging package-lock.json
++CONFLICT (content): Merge conflict in package-lock.json
++Auto-merging package.json
++CONFLICT (content): Merge conflict in package.json
++Automatic merge failed; fix conflicts and then commit the result.
++git-merge-exit: 1
++unmerged:
++CHANGELOG.md
++package-lock.json
++package.json
++scratch: /tmp/spike-0002-scratch.JKqI8k
++sync-exit=1 seconds=0
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R5-b
++(none)
++===== automatic result
++merge-tree: da8852768ae16d68903805a499b659c4d4c0cffe
++expected conflicted: CHANGELOG.md package-lock.json package.json 
++candidate conflicted: CHANGELOG.md package-lock.json package.json 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R6.txt b/spike/runs/b-R6.txt
+new file mode 100644
+index 000000000..01b9584f9
+--- /dev/null
++++ b/spike/runs/b-R6.txt
+@@ -0,0 +1,32 @@
++candidate=b case=R6 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=64e3c25
++p1=fcfe846570ae0b290d4b628e8b19f8068611e9af p2=44fe582193c0451c4210555451788a82ac134c93 base=500eea19eab818d81fbfabfcb65a718bebaa8540 new=44fe582193c0451c4210555451788a82ac134c93
++tty: stdin=no stdout=no
++===== sync
++Auto-merging CHANGELOG.md
++CONFLICT (content): Merge conflict in CHANGELOG.md
++Auto-merging src/index.ts
++CONFLICT (content): Merge conflict in src/index.ts
++CONFLICT (modify/delete): src/prompt-capture.ts deleted in HEAD and modified in theirs.  Version theirs of src/prompt-capture.ts left in tree.
++Auto-merging src/query-state.ts
++CONFLICT (modify/delete): tests/unit-prompt-capture.mjs deleted in HEAD and modified in theirs.  Version theirs of tests/unit-prompt-capture.mjs left in tree.
++Automatic merge failed; fix conflicts and then commit the result.
++git-merge-exit: 1
++unmerged:
++CHANGELOG.md
++src/index.ts
++src/prompt-capture.ts
++tests/unit-prompt-capture.mjs
++scratch: /tmp/spike-0002-scratch.YsU18V
++sync-exit=1 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R6-b
++(none)
++===== automatic result
++merge-tree: 0d9fe8618e515d929be33f721911b34e7371bc24
++expected conflicted: CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs 
++candidate conflicted: CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-R7.txt b/spike/runs/b-R7.txt
+new file mode 100644
+index 000000000..8b59687d3
+--- /dev/null
++++ b/spike/runs/b-R7.txt
+@@ -0,0 +1,62 @@
++candidate=b case=R7 source=/Users/paolof/Developer/ai/pi-claude-bridge subdir=<root> merge=d233e0a
++p1=3a83275c7426a1fcce830160d23f95e33e84adc6 p2=07507489c0c54f7f978ab752eb9beb5cc0960f24 base=44fe582193c0451c4210555451788a82ac134c93 new=07507489c0c54f7f978ab752eb9beb5cc0960f24
++tty: stdin=no stdout=no
++===== sync
++Auto-merging CHANGELOG.md
++CONFLICT (content): Merge conflict in CHANGELOG.md
++Auto-merging README.md
++CONFLICT (content): Merge conflict in README.md
++Auto-merging diag/CONTEXT-SIZE.md
++CONFLICT (content): Merge conflict in diag/CONTEXT-SIZE.md
++Auto-merging package-lock.json
++CONFLICT (content): Merge conflict in package-lock.json
++Auto-merging package.json
++CONFLICT (content): Merge conflict in package.json
++Auto-merging src/config.ts
++CONFLICT (content): Merge conflict in src/config.ts
++Auto-merging src/index.ts
++CONFLICT (content): Merge conflict in src/index.ts
++Auto-merging src/models.ts
++CONFLICT (content): Merge conflict in src/models.ts
++CONFLICT (modify/delete): src/prompt-capture.ts deleted in HEAD and modified in theirs.  Version theirs of src/prompt-capture.ts left in tree.
++Auto-merging src/query-state.ts
++CONFLICT (content): Merge conflict in src/query-state.ts
++Auto-merging tests/int-cc-contracts.mjs
++Auto-merging tests/int-tool-message.mjs
++Auto-merging tests/unit-branch-summary.mjs
++Auto-merging tests/unit-models.mjs
++CONFLICT (content): Merge conflict in tests/unit-models.mjs
++Auto-merging tests/unit-pi-streamfn-inventory.mjs
++CONFLICT (content): Merge conflict in tests/unit-pi-streamfn-inventory.mjs
++CONFLICT (modify/delete): tests/unit-prompt-capture.mjs deleted in HEAD and modified in theirs.  Version theirs of tests/unit-prompt-capture.mjs left in tree.
++Auto-merging tests/unit-sync-shared-session.mjs
++Automatic merge failed; fix conflicts and then commit the result.
++git-merge-exit: 1
++unmerged:
++CHANGELOG.md
++README.md
++diag/CONTEXT-SIZE.md
++package-lock.json
++package.json
++src/config.ts
++src/index.ts
++src/models.ts
++src/prompt-capture.ts
++src/query-state.ts
++tests/unit-models.mjs
++tests/unit-pi-streamfn-inventory.mjs
++tests/unit-prompt-capture.mjs
++scratch: /tmp/spike-0002-scratch.cAZ4Kw
++sync-exit=1 seconds=1
++refs: before=471 after=471
++===== containment: status entries outside packages/builtins/replay-R7-b
++(none)
++===== automatic result
++merge-tree: 63d9a42132616fbb92881a25004a507ef5268a9f
++expected conflicted: CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/index.ts src/models.ts src/prompt-capture.ts src/query-state.ts tests/unit-models.mjs tests/unit-pi-streamfn-inventory.mjs tests/unit-prompt-capture.mjs 
++candidate conflicted: CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/index.ts src/models.ts src/prompt-capture.ts src/query-state.ts tests/unit-models.mjs tests/unit-pi-streamfn-inventory.mjs tests/unit-prompt-capture.mjs 
++CONFLICT-SET: EQUAL
++===== comparison against the automatic result (conflicted paths: presence and mode only)
++IDENTICAL
++===== cleanup
++status after cleanup: 0 entries under packages/
+diff --git a/spike/runs/b-S-genuine-chain.txt b/spike/runs/b-S-genuine-chain.txt
+new file mode 100644
+index 000000000..8fbacd34f
+--- /dev/null
++++ b/spike/runs/b-S-genuine-chain.txt
+@@ -0,0 +1,71 @@
++===== step 1: merge c4b759f
++recorded-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 git-merge-base=7e412185a62c2cdbbaee020de9e01e94e11d8851 BASE-MATCH
++pi side before sync equals the fork's first parent: IDENTICAL 
++sync-exit=1
++merge-tree=309eba229afde45209b9f85b34000cb5435a7486 expected-conflicted=[CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/models.ts tests/int-subagent-rpiv-codebase-locator.mjs tests/lib/rpc-harness.mjs tests/unit-config.mjs tests/unit-models.mjs ] candidate-conflicted=[CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/config.ts src/models.ts tests/int-subagent-rpiv-codebase-locator.mjs tests/lib/rpc-harness.mjs tests/unit-config.mjs tests/unit-models.mjs ]
++CONFLICT-SET: EQUAL
++comparison: IDENTICAL 
++resolved CHANGELOG.md from the fork's merge commit
++resolved diag/CONTEXT-SIZE.md from the fork's merge commit
++resolved package-lock.json from the fork's merge commit
++resolved package.json from the fork's merge commit
++resolved README.md from the fork's merge commit
++resolved src/config.ts from the fork's merge commit
++resolved src/models.ts from the fork's merge commit
++resolved tests/int-subagent-rpiv-codebase-locator.mjs from the fork's merge commit
++resolved tests/lib/rpc-harness.mjs from the fork's merge commit
++resolved tests/unit-config.mjs from the fork's merge commit
++resolved tests/unit-models.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md 
++fork commits between this merge and the next first parent: 11
++===== step 2: merge 60efeb9
++recorded-base=066767393a0efe4be09632f63dc046c2190231b7 git-merge-base=066767393a0efe4be09632f63dc046c2190231b7 BASE-MATCH
++pi side before sync equals the fork's first parent: ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md 
++sync-exit=1
++merge-tree=b32408df051e68b7824a624d575c3f5b612e7f2c expected-conflicted=[.env.test CHANGELOG.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts src/query-state.ts src/typebox-to-zod.ts tests/int-cache.sh tests/int-smoke.sh tests/lib/rpc-harness.mjs tests/unit-config.mjs ] candidate-conflicted=[.env.test CHANGELOG.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts src/query-state.ts src/typebox-to-zod.ts tests/int-cache.sh tests/int-smoke.sh tests/lib/rpc-harness.mjs tests/unit-config.mjs ]
++CONFLICT-SET: EQUAL
++comparison: ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md 
++resolved .env.test from the fork's merge commit
++resolved CHANGELOG.md from the fork's merge commit
++resolved package-lock.json from the fork's merge commit
++resolved package.json from the fork's merge commit
++resolved README.md from the fork's merge commit
++fatal: path 'src/agents-md.ts' does not exist in '60efeb943186c8bda1e81e6b152c2eb5d2f28ebd'
++resolved src/agents-md.ts from the fork's merge commit
++resolved src/config.ts from the fork's merge commit
++resolved src/index.ts from the fork's merge commit
++resolved src/query-state.ts from the fork's merge commit
++fatal: path 'src/typebox-to-zod.ts' does not exist in '60efeb943186c8bda1e81e6b152c2eb5d2f28ebd'
++resolved src/typebox-to-zod.ts from the fork's merge commit
++resolved tests/int-cache.sh from the fork's merge commit
++resolved tests/int-smoke.sh from the fork's merge commit
++resolved tests/lib/rpc-harness.mjs from the fork's merge commit
++resolved tests/unit-config.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/mcp-server.ts CONTENT src/sdk-options.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md CONTENT tests/int-tool-message.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs CONTENT tests/unit-child-env.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-sync-shared-session.mjs 
++fork commits between this merge and the next first parent: 56
++error: patch failed: packages/builtins/chain-b/src/sdk-options.ts:124
++error: packages/builtins/chain-b/src/sdk-options.ts: patch does not apply
++On branch spike/0002
++Untracked files:
++  (use "git add <file>..." to include in what will be committed)
++	spike/runs/a-S-genuine-chain.txt
++	spike/runs/b-S-genuine-chain.txt
++
++nothing added to commit but untracked files present (use "git add" to track)
++===== step 3: merge 64e3c25
++recorded-base=fac372c4fedabc247eda48ddec2363a52dc8c4d8 git-merge-base=500eea19eab818d81fbfabfcb65a718bebaa8540 BASE-DIFFERENT
++pi side before sync equals the fork's first parent: CONTENT .env.test CONTENT .github/workflows/ci.yml CONTENT AGENTS.md CONTENT CHANGELOG.md ONLY-IN-EXPECTED diag/attachment-coverage.mjs ONLY-IN-EXPECTED diag/attrib.py CONTENT diag/audit-cache.mjs CONTENT diag/audit-warnings.mjs CONTENT diag/AUDIT.md CONTENT diag/capture-proxy.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/EXTRA-USAGE-400.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/attachments.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/convert.ts CONTENT src/index.ts CONTENT src/mcp-server.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts CONTENT src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/fixtures/tree-nav-extension.ts ONLY-IN-EXPECTED tests/int-attachment-rebuild.mjs ONLY-IN-EXPECTED tests/int-branch-summary.mjs CONTENT tests/int-cc-contracts.mjs ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs CONTENT tests/int-tool-message.mjs ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs CONTENT tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-attachments.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs ONLY-IN-EXPECTED tests/unit-branch-summary.mjs CONTENT tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs CONTENT tests/unit-config.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs CONTENT tests/unit-import.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs ONLY-IN-EXPECTED tests/unit-pi-streamfn-inventory.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-skills.mjs CONTENT tests/unit-steering.mjs CONTENT tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs CONTENT tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs CONTENT TODO.md 
++sync-exit=1
++merge-tree=0d9fe8618e515d929be33f721911b34e7371bc24 expected-conflicted=[CHANGELOG.md src/index.ts src/prompt-capture.ts tests/unit-prompt-capture.mjs ] candidate-conflicted=[CHANGELOG.md diag/CONTEXT-SIZE.md package-lock.json package.json README.md src/agents-md.ts src/config.ts src/index.ts tests/int-smoke.sh tests/unit-sync-shared-session.mjs ]
++CONFLICT-SET: DIFFERENT
++comparison: CONTENT .env.test CONTENT .github/workflows/ci.yml CONTENT AGENTS.md CONTENT diag/audit-cache.mjs CONTENT diag/audit-warnings.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/mcp-server.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts CONTENT src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs CONTENT tests/int-tool-message.mjs ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs CONTENT tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs CONTENT tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs CONTENT tests/unit-pi-streamfn-inventory.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-skills.mjs CONTENT tests/unit-steering.mjs CONTENT tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs CONTENT tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs 
++resolved CHANGELOG.md from the fork's merge commit
++resolved src/index.ts from the fork's merge commit
++fatal: path 'src/prompt-capture.ts' does not exist in '64e3c251988f56094652a22381a2c78fb8d3ec58'
++resolved src/prompt-capture.ts from the fork's merge commit
++fatal: path 'tests/unit-prompt-capture.mjs' does not exist in '64e3c251988f56094652a22381a2c78fb8d3ec58'
++resolved tests/unit-prompt-capture.mjs from the fork's merge commit
++pi side after resolution equals the fork's merge commit: CONTENT .env.test CONTENT .github/workflows/ci.yml CONTENT AGENTS.md CONTENT diag/audit-cache.mjs CONTENT diag/audit-warnings.mjs CONTENT diag/CONTEXT-SIZE.md ONLY-IN-EXPECTED diag/gate-warnings.mjs ONLY-IN-EXPECTED diag/warning-allowlist.txt ONLY-IN-EXPECTED diag/warning-lines.mjs CONTENT package-lock.json CONTENT package.json ONLY-IN-EXPECTED plans/skill-listing-contract.md ONLY-IN-EXPECTED plans/subagent-prompt-sanitize.md ONLY-IN-EXPECTED plans/token-usage-truth.md CONTENT README.md ONLY-IN-ACTUAL src/agents-md.ts CONTENT src/askclaude-ui.ts ONLY-IN-EXPECTED src/claude-credentials.ts CONTENT src/config.ts CONTENT src/mcp-server.ts ONLY-IN-ACTUAL src/prompt-capture.ts CONTENT src/query-state.ts ONLY-IN-EXPECTED src/sanitize-prompt.ts CONTENT src/sdk-options.ts CONTENT src/skills.ts CONTENT src/steering.ts ONLY-IN-ACTUAL src/typebox-to-zod.ts ONLY-IN-EXPECTED src/usage-cache.ts ONLY-IN-EXPECTED src/usage-fetch.ts ONLY-IN-EXPECTED src/usage-publisher.ts CONTENT tests/fixtures/fake-claude-cli.mjs ONLY-IN-EXPECTED tests/fixtures/oauth-usage-200.json ONLY-IN-EXPECTED tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-effort/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-model/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-skill/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/probe-xprovider/SKILL.md ONLY-IN-EXPECTED tests/fixtures/skills/README.md ONLY-IN-EXPECTED tests/int-shutdown-reaps-parked-subagent.mjs ONLY-IN-EXPECTED tests/int-skill-listing.mjs CONTENT tests/int-smoke.sh ONLY-IN-EXPECTED tests/int-subagent-fable-plan.mjs CONTENT tests/int-tool-message.mjs ONLY-IN-EXPECTED tests/lib/populate-usage-cache.mjs ONLY-IN-EXPECTED tests/lib/replay.mjs CONTENT tests/lib/setup.mjs ONLY-IN-ACTUAL tests/unit-agents-md.mjs ONLY-IN-EXPECTED tests/unit-askclaude-usage.mjs ONLY-IN-EXPECTED tests/unit-audit-cache.mjs CONTENT tests/unit-child-env.mjs ONLY-IN-EXPECTED tests/unit-claude-credentials.mjs ONLY-IN-EXPECTED tests/unit-cost-adoption.mjs ONLY-IN-EXPECTED tests/unit-gate-warnings.mjs ONLY-IN-EXPECTED tests/unit-pi-ai-registry.mjs CONTENT tests/unit-pi-streamfn-inventory.mjs ONLY-IN-ACTUAL tests/unit-prompt-capture.mjs ONLY-IN-EXPECTED tests/unit-reap-live-queries.mjs ONLY-IN-EXPECTED tests/unit-reconcile.mjs ONLY-IN-EXPECTED tests/unit-sanitize-prompt.mjs CONTENT tests/unit-sdk-runtime-contract.mjs CONTENT tests/unit-skills.mjs CONTENT tests/unit-steering.mjs CONTENT tests/unit-stream-replay.mjs CONTENT tests/unit-sync-shared-session.mjs CONTENT tests/unit-usage-accumulation.mjs ONLY-IN-EXPECTED tests/unit-usage-cache.mjs ONLY-IN-EXPECTED tests/unit-usage-fetch.mjs ONLY-IN-EXPECTED tests/unit-usage-publisher.mjs 
++===== containment: status entries outside packages/builtins/chain-b
++(none)
++===== cleanup
+diff --git a/spike/sync-a.sh b/spike/sync-a.sh
+new file mode 100755
+index 000000000..3b70bd0b2
+--- /dev/null
++++ b/spike/sync-a.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++# Candidate A, three-way apply. Run from the Pi worktree root.
++# Usage: spike/sync-a.sh <source repo> <source subdir or ""> <recorded base> <new commit> <package dir>
++# Prints Git's own output and exits with `git apply`'s own exit code; it maps nothing.
++set -u
++src=$1 sub=$2 base=$3 new=$4 dir=$5
++patch=$(mktemp /tmp/spike-0002-patch.XXXXXX)
++# The new commit's objects, and with them the base blobs, enter the object store with no ref.
++git fetch --quiet --no-tags --no-write-fetch-head "$src" "$new" "$base"
++if [ -n "$sub" ]; then
++	git -C "$src" diff --binary -M --relative="$sub/" "$base" "$new" >"$patch"
++else
++	git -C "$src" diff --binary -M "$base" "$new" >"$patch"
++fi
++echo "patch-bytes: $(wc -c <"$patch" | tr -d ' ')"
++git apply -3 --directory="$dir" "$patch"
++code=$?
++echo "git-apply-exit: $code"
++echo "unmerged:"
++git diff --name-only --diff-filter=U -- "$dir" | sed "s|^$dir/||"
++rm -f "$patch"
++exit "$code"
+diff --git a/spike/sync-b.sh b/spike/sync-b.sh
+new file mode 100755
+index 000000000..5cc760d15
+--- /dev/null
++++ b/spike/sync-b.sh
+@@ -0,0 +1,38 @@
++#!/usr/bin/env bash
++# Candidate B, scratch merge. Run from the Pi worktree root.
++# Usage: spike/sync-b.sh <source repo> <source subdir or ""> <recorded base> <new commit> <package dir>
++# A temporary repository holds base, ours (the Pi directory) and theirs (the new upstream tree).
++# `git merge` runs there with default rename detection; its files replace the Pi directory.
++# Prints Git's own output and exits with `git merge`'s own exit code; it maps nothing.
++set -u
++. "$(dirname "$0")/lib.sh"
++src=$1 sub=$2 base=$3 new=$4 dir=$5
++scratch=$(mktemp -d /tmp/spike-0002-scratch.XXXXXX)
++G=(git -C "$scratch" -c user.name=spike -c user.email=spike@local -c commit.gpgsign=false -c core.hooksPath=/dev/null)
++git init -q -b ours "$scratch"
++clear_tree() { find "$scratch" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +; }
++
++extract "$src" "$base" "$sub" "$scratch"
++"${G[@]}" add -A && "${G[@]}" commit -q -m base
++"${G[@]}" branch -q theirs
++
++clear_tree
++(cd "$dir" && tar -cf - .) | (cd "$scratch" && tar -xf -)
++"${G[@]}" add -A && "${G[@]}" commit -q --allow-empty -m ours
++
++"${G[@]}" switch -q theirs
++clear_tree
++extract "$src" "$new" "$sub" "$scratch"
++"${G[@]}" add -A && "${G[@]}" commit -q --allow-empty -m theirs
++"${G[@]}" switch -q ours
++
++"${G[@]}" merge theirs
++code=$?
++echo "git-merge-exit: $code"
++echo "unmerged:"
++"${G[@]}" diff --name-only --diff-filter=U
++
++find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
++(cd "$scratch" && tar -cf - --exclude=./.git .) | (cd "$dir" && tar -xf -)
++echo "scratch: $scratch"
++exit "$code"
+-- 
+2.55.0
+

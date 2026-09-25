@@ -53,6 +53,17 @@ describe("fork built-in extensions", () => {
 		expect(extensions.slice(1).every((extension) => extension.hidden === true)).toBe(true);
 	});
 
+	it("registers the tools of rpiv-ask-user-question", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const subject = loader([]);
+		await subject.reload();
+
+		const builtIn = subject
+			.getExtensions()
+			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>");
+		expect(builtIn?.tools.has("ask_user_question")).toBe(true);
+	});
+
 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "off");
 		const subject = loader();

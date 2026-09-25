@@ -1,0 +1,14 @@
+{
+	"upstream": {
+		"repository": "/Users/paolof/Developer/ai/rpiv-mono",
+		"url": "https://github.com/juicesharp/rpiv-mono.git",
+		"path": "packages/rpiv-ask-user-question",
+		"base": "d74b1c99830a565f3df3f37e0a36616d17ffc574"
+	},
+	"fork": {
+		"repository": "https://github.com/pfurini/rpiv-mono.git",
+		"branch": "personal",
+		"commit": "8403bb09464e956d01cb4caf957980aba670b5f2"
+	},
+	"syncPolicy": "every-3-days"
+}

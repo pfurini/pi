@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
 import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
 
-export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
+export const FORK_BUILTIN_PACKAGES: readonly string[] = ["@juicesharp/rpiv-ask-user-question"];
 
 const requireFromHere = createRequire(import.meta.url);
 

@@ -129,7 +129,7 @@ Validate in a separate detached worktree, never in the implementation worktree. 
 1. Run `git worktree add --detach /tmp/pi-validate-<name> <branch>`. Copy `packages/ai/src/providers/data/` into it.
 2. Extract `spike/harness/` from SPIKE-0003's `evidence.patch` into the worktree. Create `spike/runs/`, because every script writes there and none creates it.
 3. Apply `packages/builtins/spike-fixture-provider/` from the same patch, and append `"@pi-fork/spike-fixture-provider"` to `FORK_BUILTIN_PACKAGES`. Seven of the eight scripts select its network-free `spike-fixture/echo` model.
-4. In `spike/harness/c9-missing.sh`, change both `npm run build` calls to `npm run build:offline`. Confirm that no `/tmp/spike-0003-*` file exists, because the script uses fixed paths there.
+4. In `spike/harness/c9-missing.sh`, change both `npm run build` calls to `npm run build:offline`. The script also writes fixed `/tmp/spike-0003-*` paths, and earlier runs may have left files there. Rename those paths to names this port owns, such as `/tmp/pi-port-<name>-c9*`, and record them for cleanup.
 5. Run `npm install --ignore-scripts` and `npm run build:offline`.
 6. Adapt tool names and prompts in the harness to the package. Run each script from the worktree root, with a unique label per run.
 7. Record the exit code of every command. A nonzero exit fails the check.
@@ -138,13 +138,13 @@ Validate in a separate detached worktree, never in the implementation worktree. 
 | --- | --- | --- |
 | Interactive TUI through the bundle | `c1-tui.sh`, which drives `pty_drive.py` through `uv run --with pyte` | The package's UI renders, and the tool result returns. |
 | RPC mode | `c2-rpc.mjs` | Every UI call falls back to an RPC extension UI request. |
-| SDK services and allowlist | `c3-c5-sdk.mjs`, `c3-registry-detail.mjs` | Each tool is present by default. It is absent from `getAllTools()` when a `tools` allowlist omits it. |
+| SDK services and allowlist | `c3-c5-sdk.mjs`, `c3-registry-detail.mjs`, plus one services session created without a `tools` option | Each tool is present by default in `getAllTools()` and active. It is absent from `getAllTools()` when a `tools` allowlist omits it. Both SPIKE-0003 scripts always pass `tools`, so only the extra session proves the default. |
 | Bare import and third-party loader | `c4-direct-import.mjs <label> bare-only` | The built-in loads. |
 | Print mode | `c5-cli.sh` | Every command exits 0. The `-p` run prints the fixture's echo. |
 | Outside consumer through a symlink | `c8-outside.sh` | The built-in loads through the linked checkout. |
 | Missing package, end to end | `c9-missing.sh`, run last | The session starts, `errors` names the missing package, and the tools stay active. The rebuild after the restore succeeds. |
 | Unbundled CLI | `PI_BIN=$PWD/packages/coding-agent/dist/cli.js spike/harness/c5-cli.sh <label>` | The same as print mode. `~/.pi-fence/entry.json` launches this entry. |
-| `PI_FORK_BUILTINS=off` | The CLI with `--no-extensions -e packages/builtins/spike-fixture-provider/index.ts`, and a copy of `c3-c5-sdk.mjs` with the fixture in `additionalExtensionPaths` | The CLI prints the fixture's echo. The SDK session holds none of the package's tools. |
+| `PI_FORK_BUILTINS=off` | The CLI with `--no-extensions -e <absolute path of packages/builtins/spike-fixture-provider/index.ts>`, and a copy of `c3-c5-sdk.mjs` with the fixture in `additionalExtensionPaths` | The CLI prints the fixture's echo. The SDK session holds none of the package's tools. A relative `-e` path fails when the CLI runs from another directory. |
 
 The fenced check needs a `settings.json` without the package entry, so it runs at cutover.
 
@@ -156,8 +156,8 @@ Other Pi sessions share the main checkout. Every step there needs the owner's ap
 2. Run `git merge --ff-only <branch>` in the main checkout.
 3. Back up `~/.pi/agent/settings.json` and record its SHA-256. Remove the package entry and its adjoining comma. Verify with `JSON.parse`, and record the new SHA-256.
 4. Run `npm install --ignore-scripts`, then `npm run build:offline`, in the main checkout.
-5. Start a fresh fenced session with `pi-fence run --profile general`, and call one of the package's tools. Grep that launch's journal under `~/.pi-fence/violations/` for the fork checkout's path; expect no hit. `auth.json` read denials are normal.
-6. Start a fresh unfenced session, and confirm the tool once more.
+5. Start a fresh fenced session with `pi --profile general`, and ask the model to call one of the package's tools. The `pi` on PATH is the pi-fence launcher, and it starts `~/.pi-fence/entry.json`'s `piEntry` with credentials. Do not use `pi-fence run`: it wraps other programs and passes no credentials. Grep that launch's journal under `~/.pi-fence/violations/` for the fork checkout's path; expect no hit. `auth.json` read denials are normal.
+6. Start a fresh unfenced session with `pi --unfenced`, and confirm the tool once more. Plain `pi` is fenced, so it does not count.
 
 Step 3 precedes step 4 on purpose. New sessions lack the tool until the build finishes, but they never load two copies.
 

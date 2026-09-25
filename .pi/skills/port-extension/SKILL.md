@@ -112,6 +112,8 @@ Read the source and record each row before copying anything.
    - Run `./test.sh`. No failure may appear that is absent from a baseline `./test.sh` run on the start commit.
 10. **Commit the port.**
    - Stage the package with `git add -f -- packages/builtins/<name>`, plus `fork-builtins.ts`, `fork-builtins.test.ts` and `package-lock.json`.
+   - `git add -f` also stages ignored artifacts inside the package. A package `test` script run by `./test.sh` writes `node_modules/.vite/` there. Before staging, delete `packages/builtins/<name>/node_modules/` when it holds only such caches.
+   - Before committing, compare the staged files with the source commit. `git ls-files -s -- packages/builtins/<name>` lists each staged mode, blob id and path. Without `UPSTREAM.json`, the list must equal `git -C <clone> ls-tree -r <fork commit>:<subdir>` in modes, blob ids and paths.
    - Use the message `feat(coding-agent): port <name> as a built-in`. Its last paragraph is `Upstream-Base: <base>`.
    - The lockfile needs the owner's approval and `PI_ALLOW_LOCKFILE_CHANGE=1`.
 11. **Drop an unrunnable test script.** When the package's tests need the origin's tooling, remove its `test` script in a separate owned commit. `npm test --workspaces --if-present` then skips it, and `./test.sh` stays green. The commit does not touch `UPSTREAM.json`, so it needs no trailer.

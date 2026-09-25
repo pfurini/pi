@@ -1,0 +1,16 @@
+Page 1/2 (9 total matches) for "alph.*":
+
+#0 [user] Plan the alpha migration for the billing service.
+
+#1 [assistant] Reading the alpha config before changing anything.
+
+#3 [tool_result] export const alpha = 1;
+export const retries = 3;
+
+#4 [assistant] files:[src/b.ts] 
+src/b.ts
+alpha = 1
+alpha = 2
+
+#8 [user] Continue the alpha rollout after the compaction.
+--- Use page:2 for more results ---

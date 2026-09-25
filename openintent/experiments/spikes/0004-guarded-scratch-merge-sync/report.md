@@ -5,6 +5,7 @@ status: open
 kind: spike
 date: 2026-09-25
 verdict: null
+frozen-at: de669e504d0cf32a40f6941d95c7742fcb073057
 unblocks:
   - .pi/skills/sync-upstream/SKILL.md
   - .pi/skills/port-extension/SKILL.md

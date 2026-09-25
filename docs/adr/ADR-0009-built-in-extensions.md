@@ -13,22 +13,24 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | --- | --- |
 | Location | A ported package lives in `packages/builtins/<name>/`, byte-identical to its source at the port, plus an `UPSTREAM.json` that records its upstream. |
 | Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. |
-| Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. |
+| Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
 | Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. |
+| Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence does not forward it, so fenced sessions always load the built-ins. |
 | Failure | A listed package that cannot be resolved appears by name in `getExtensions().errors`; the session starts and the other built-ins load. |
 
-The upstream-owned footprint is 9 added lines in five files, with no changed or removed line:
+The upstream-owned footprint is 9 added lines and 1 changed line, in six files, with no removed line:
 
-| File | Added lines | Purpose |
+| File | Lines | Purpose |
 | --- | --- | --- |
-| `package.json` | 1 | The `packages/builtins/*` workspace glob. |
-| `scripts/check-pinned-deps.mjs` | 1 | Exempts `packages/builtins/` from the exact-pin rule. |
-| `scripts/check-ts-relative-imports.mjs` | 1 | Exempts `packages/builtins/` from the `.ts` import rule. |
-| `packages/coding-agent/src/core/extensions/loader.ts` | 4 | Exports `loadExtensionFactoryFromPath`. |
-| `packages/coding-agent/src/core/resource-loader.ts` | 2 | Imports the list and merges it in the constructor. |
+| `package.json` | 1 added | The `packages/builtins/*` workspace glob. |
+| `scripts/check-pinned-deps.mjs` | 1 added | Exempts `packages/builtins/` from the exact-pin rule. |
+| `scripts/check-ts-relative-imports.mjs` | 1 added | Exempts `packages/builtins/` from the `.ts` import rule. |
+| `packages/coding-agent/src/core/extensions/loader.ts` | 4 added | Exports `loadExtensionFactoryFromPath`. |
+| `packages/coding-agent/src/core/resource-loader.ts` | 2 added | Imports the list and appends it to the caller's factories in the constructor. |
+| `packages/coding-agent/vitest.config.ts` | 1 changed | Sets `PI_FORK_BUILTINS: "off"` in the test environment. |
 
-A further built-in adds one entry to the fork-owned list and one folder, and no upstream-owned line. The shrinkwrap, the install lock and their generators stay untouched. These rules apply ADR-0003 to packaging: new code lives in new files, and hot upstream files receive only added call sites.
+A further built-in adds one entry to the fork-owned list and one folder, and no upstream-owned line. The shrinkwrap, the install lock and their generators stay untouched. These rules apply ADR-0003 to packaging: new code lives in new files, and hot upstream files receive only added call sites. The one changed line is a test setting outside the hot files ADR-0003 names.
 
 ## Considered options
 
@@ -43,7 +45,21 @@ A further built-in adds one entry to the fork-owned list and one folder, and no 
 - **Checks.** Ported packages keep their own version ranges and import style. `check:runtime-deps` does not see names held as data.
 - **pi-fence.** A ported package leaves `~/.pi/agent/settings.json`, so the fence stops deriving a read grant for its fork checkout. The base profile already grants `~/Developer/ai/pi`, which holds the built-ins.
 - **OpenIntent.** A worker that links to the checkout receives the built-ins without selecting them as extensions; its `tools` allowlist governs them. The workflow-engine design changes through its own amendment process.
-- **Open items.** SPIKE-0003 did not test OpenIntent's fenced worker entry, a second port with external dependencies, or the release scripts, which would bump a non-private ported package's version.
+- **Tests.** `packages/coding-agent/test/fork-builtins.test.ts` guards the call site, the load order, the switch and its read at construction, and each port's registrations. A ported package whose tests need its origin's tooling loses its `test` script in an owned commit.
+- **Release scripts.** Never run `version:*`, `release:*` or `publish` on `personal`. They would bump or publish the ported packages.
+- **Open items.** SPIKE-0003 did not test OpenIntent's fenced worker entry or a second port with external dependencies.
+
+## Amendment evidence
+
+The 2026-09-25 amendment added the load order, the switch and the test policy. `docs/plans/built-in-extensions-phase1.plan.md` records the proof: Section 3 lists the verified facts, and Appendix A holds the probe measurements.
+
+| Rule | Evidence |
+| --- | --- |
+| Load after the caller's factories (R2) | Prepending renumbered callers' unnamed factories and failed 23 upstream tests in 8 files. Appending restored the baseline exactly: 4 failed, the same 4 as without the mechanism. |
+| The switch (R1) | With the switch set in the vitest config, the upstream suites show no failure beyond the baseline. `fork-builtins.test.ts` fails when the switch read moves from construction to reload. |
+| Test policy (R3) | 27 of rpiv-ask-user-question's 37 test files fail to load in Pi, because they need rpiv-mono's test utilities and setup. |
+
+Report decision D9 requires a spike before an ADR records a design choice. The owner granted one exception (R5): the probe above proves R1 and R2 instead of an opin-spike. `fork-builtins.test.ts` re-proves both on every `./test.sh`.
 
 ## Upstream sync
 

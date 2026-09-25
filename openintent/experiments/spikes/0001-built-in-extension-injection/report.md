@@ -5,6 +5,7 @@ status: open
 kind: spike
 date: 2026-09-25
 verdict: null
+frozen-at: a63149b1991959f803ef215a21bf4d77f58ff6f7
 unblocks:
   - docs/adr/ADR-0009-built-in-extensions.md
   - .pi/skills/port-extension/SKILL.md

@@ -26,9 +26,6 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"scripts": {
-		"test": "vitest run"
-	},
 	"files": [
 		"ask-user-question.ts",
 		"rpc-fallback.ts",

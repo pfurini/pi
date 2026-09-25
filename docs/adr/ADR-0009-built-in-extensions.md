@@ -12,6 +12,7 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Part | Rule |
 | --- | --- |
 | Location | A ported package lives in `packages/builtins/<name>/`, byte-identical to its source at the port, plus an `UPSTREAM.json` that records its upstream. |
+| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. |
 | Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. |
 | Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
@@ -32,6 +33,8 @@ The upstream-owned footprint is 9 added lines and 1 changed line, in six files, 
 
 A further built-in adds one entry to the fork-owned list and one folder, and no upstream-owned line. The shrinkwrap, the install lock and their generators stay untouched. These rules apply ADR-0003 to packaging: new code lives in new files, and hot upstream files receive only added call sites. The one changed line is a test setting outside the hot files ADR-0003 names.
 
+A fork-owned built-in adds no upstream-owned line. Its code and its tests live in new files, and its list entry lives in the fork-owned `fork-builtins.ts`.
+
 ## Considered options
 
 | Option | Why not chosen |
@@ -46,6 +49,7 @@ A further built-in adds one entry to the fork-owned list and one folder, and no 
 - **pi-fence.** A ported package leaves `~/.pi/agent/settings.json`, so the fence stops deriving a read grant for its fork checkout. The base profile already grants `~/Developer/ai/pi`, which holds the built-ins.
 - **OpenIntent.** A worker that links to the checkout receives the built-ins without selecting them as extensions; its `tools` allowlist governs them. The workflow-engine design changes through its own amendment process.
 - **Tests.** `packages/coding-agent/test/fork-builtins.test.ts` guards the call site, the load order, the switch and its read at construction, and each port's registrations. A ported package whose tests need its origin's tooling loses its `test` script in an owned commit.
+- **Fork-owned built-ins.** Biome, `tsgo`, the import check and vitest cover `packages/coding-agent/src/core/` and `packages/coding-agent/test/`. Fork-owned built-ins therefore get the full check and test coverage that ported packages under `packages/builtins/` lack. OpenIntent workers receive `vcc_recall` like every built-in, and their `tools` allowlist governs it.
 - **Release scripts.** Never run `version:*`, `release:*` or `publish` on `personal`. They would bump or publish the ported packages.
 - **Open items.** SPIKE-0003 did not test OpenIntent's fenced worker entry or a second port with external dependencies.
 
@@ -60,6 +64,15 @@ The 2026-09-25 amendment added the load order, the switch and the test policy. `
 | Test policy (R3) | 27 of rpiv-ask-user-question's 37 test files fail to load in Pi, because they need rpiv-mono's test utilities and setup. |
 
 Report decision D9 requires a spike before an ADR records a design choice. The owner granted one exception (R5): the probe above proves R1 and R2 instead of an opin-spike. `fork-builtins.test.ts` re-proves both on every `./test.sh`.
+
+A second 2026-09-25 amendment added fork-owned built-ins. `docs/plans/vcc-recall-builtin.plan.md` records the proof: Section 3 lists the verified facts, and Appendix A holds the probe measurements.
+
+| Rule | Evidence |
+| --- | --- |
+| An inline factory registers the tool with no upstream-owned line | `fork-builtins.test.ts` passed 8 of 8 with the change, and `git diff` touched only fork-owned files. |
+| The list entry is guarded | Without `FORK_OWNED_BUILTINS` in `forkBuiltInExtensions()`, 3 tests in `fork-builtins.test.ts` fail. |
+| The built outputs carry the tool | After `npm run build:offline`, `dist/index.js` registers `vcc_recall`, and `PI_FORK_BUILTINS=off` removes it. |
+| In-memory entries equal the session file | 3,455 session files and 292,626 message entries showed 0 mismatches between the file and `SessionManager.open().getEntries()`. |
 
 ## Upstream sync
 

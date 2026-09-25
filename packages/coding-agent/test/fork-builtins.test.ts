@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InlineExtension } from "../src/core/extensions/types.ts";
-import { createForkBuiltInExtensions, FORK_BUILTIN_PACKAGES } from "../src/core/fork-builtins.ts";
+import { createForkBuiltInExtensions, FORK_BUILTIN_PACKAGES, FORK_OWNED_BUILTINS } from "../src/core/fork-builtins.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import type { ExtensionAPI } from "../src/index.ts";
 
@@ -49,6 +49,7 @@ describe("fork built-in extensions", () => {
 		expect(extensions.map((extension) => extension.path)).toEqual([
 			"<inline:1>",
 			...FORK_BUILTIN_PACKAGES.map((name) => `<inline:${name}>`),
+			...FORK_OWNED_BUILTINS.map((builtIn) => `<inline:${builtIn.name}>`),
 		]);
 		expect(extensions.slice(1).every((extension) => extension.hidden === true)).toBe(true);
 	});
@@ -62,6 +63,16 @@ describe("fork built-in extensions", () => {
 			.getExtensions()
 			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>");
 		expect(builtIn?.tools.has("ask_user_question")).toBe(true);
+	});
+
+	it("registers vcc_recall as a fork-owned built-in", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const subject = loader([]);
+		await subject.reload();
+
+		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:vcc-recall>");
+		expect(builtIn?.hidden).toBe(true);
+		expect(builtIn?.tools.has("vcc_recall")).toBe(true);
 	});
 
 	function rpivDescription(subject: DefaultResourceLoader): string | undefined {
@@ -118,7 +129,9 @@ describe("fork built-in extensions", () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "off");
 		await constructedOn.reload();
 
-		expect(constructedOn.getExtensions().extensions).toHaveLength(FORK_BUILTIN_PACKAGES.length);
+		expect(constructedOn.getExtensions().extensions).toHaveLength(
+			FORK_BUILTIN_PACKAGES.length + FORK_OWNED_BUILTINS.length,
+		);
 		expect(constructedOff.getExtensions().extensions).toEqual([]);
 	});
 

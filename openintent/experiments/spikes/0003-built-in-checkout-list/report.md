@@ -1,10 +1,11 @@
 ---
 id: SPIKE-0003
 title: Can a fork-owned list inside coding-agent that resolves ported packages through the monorepo's workspace links make every session path load them, within 10 added upstream-owned lines and none per further built-in?
-status: open
+status: settled
 kind: spike
 date: 2026-09-25
-verdict: null
+verdict: PROVEN
+settled: 2026-09-25
 frozen-at: 42cf76d687eb64864be518c15b46a91e881b679b
 unblocks:
   - docs/adr/ADR-0009-built-in-extensions.md
@@ -16,9 +17,42 @@ unblocks:
 
 ## Verdict
 
-_Pending. Written in pass 2, after the evidence. Everything between the frozen markers below is fixed once `run` stamps `frozen-at`; this section and everything after the end marker is pass 2._
+`PROVEN`. The checkout list loaded both built-ins on every session path with 9 added upstream-owned lines, and the second built-in added none (`spike/runs/C7-measure-1-ported-only.txt`, `spike/runs/C7-measure-2-with-fixture.txt`). All nine claims are proved, including the fenced run and the outside consumer shaped like OpenIntent's worker. No restriction from the frozen list applies.
 
-<!-- opin-spike: pass 2. First paragraph, at most 100 words: the verdict token in backticks and the single piece of evidence that decided it. Then, as needed: the restrictions as a table (restriction, cost, claim); what survives or is unblocked, naming which unblocks entries the routing will edit and why any will not; why this verdict and not its neighbour, quoting the frozen sentences that decided it. No sentence over 25 words. Replace the pending line above as well. -->
+**Why `PROVEN` and not `CONDITIONAL`.**
+
+The frozen `PROVEN` row reads: "C1 to C9 are all proved, with no patch to the ported package."
+The ported directory differs from rpiv-mono `8403bb09` only by `UPSTREAM.json`, with equal file modes.
+C6's journal holds `auth.json` read denials and one DNS lookup, which the frozen non-kill list does not count.
+The built-in never appeared in the interactive startup `[Extensions]` section.
+The `-e` scripted provider and the pseudo-terminal answers are frozen as compatible with `PROVEN`.
+
+**What the verdict establishes.**
+
+| Fact | Evidence |
+| --- | --- |
+| Five upstream-owned files carry 9 added lines: the root workspace glob, two check-script exclusions, a loader export and one `DefaultResourceLoader` call site. | `spike/runs/C7-measure-2-with-fixture.txt` |
+| Each further built-in is one entry in the fork-owned list and a folder under `packages/builtins/`, with no upstream-owned line. | `spike/runs/C7-measure-2-with-fixture.txt` |
+| The shrinkwrap, the install lock and their generators stay untouched. | `spike/runs/C7-measure-*.txt`, `spike/runs/04-check-list2.log` |
+| A consumer that links to the checkout, as OpenIntent's worker does, receives the built-ins with no declaration of its own. | `spike/runs/C-C8-outside.txt` |
+| The `tools` allowlist stays the control: a built-in outside it never enters the session registry and cannot be enabled at runtime. | `spike/runs/C-C3-registry-detail.json` |
+| A fenced session needs no grant beyond the checkout once `settings.json` stops listing the fork's package. | `spike/runs/C6-00-dry-run-after-edit.txt`, `spike/runs/C6-01-journal-check.txt` |
+| A missing built-in package is reported by name and does not stop the session. | `spike/runs/C-C9-missing.txt` |
+
+**Costs the verdict carries into ADR-0009.**
+
+| Cost | Evidence |
+| --- | --- |
+| The mechanism works only from this monorepo checkout. A published `coding-agent` or a Bun binary would carry no built-ins. | The checkout-list term; untested beyond it |
+| `check:pinned-deps` and `check:ts-relative-imports` skip `packages/builtins/`, so ported packages keep their own ranges and import style. | `spike/runs/C7-measure-*.txt` |
+| `check:runtime-deps` does not see package names held as data. | `spike/runs/02-check-list1.log` |
+
+**Routing.**
+
+The routing creates `docs/adr/ADR-0009-built-in-extensions.md` citing this report for the injection mechanism.
+`.pi/skills/port-extension/SKILL.md` waits for SPIKE-0004, because the skill needs the sync method as well; it will cite this report.
+The OpenIntent design at `/Users/paolof/.openintent/workspaces/pfurini/OpenIntent/worktrees/workflow-engine/openintent/changes/workflow-engine/design.md` changes only through its own amendment process.
+The operator rules that amendment; this routing does not edit the file.
 
 <!-- OPENINTENT:FROZEN:START -->
 
@@ -179,42 +213,99 @@ Every conclusion is marked **proved** (observed running here) or **inferred** (r
 
 ### Harness
 
-<!-- opin-spike: each harness in evidence.patch: file, what it does, its command; where raw output lives (spike/runs/); how the thing under test was reached (absolute path, built from which commit) so there is no doubt what answered -->
+The checkout was `~/.openintent/workspaces/pfurini/pi/worktrees/spike-0003`, branched from `frozen-at` `42cf76d`, whose files outside `openintent/` equal `0be71ca`'s.
+The checkout list lives outside `spike/` because it is the thing under test: `packages/coding-agent/src/core/fork-builtins.ts`, 9 added lines in five upstream-owned files, and two packages under `packages/builtins/`.
+The ported package came from `git archive 8403bb09` of rpiv-mono; the fixture package came from SPIKE-0001's `evidence.patch`.
+
+| File | What it does |
+| --- | --- |
+| `spike/c7-measure.sh` | C7: numstat against `0be71ca` for upstream-owned files present at `a7d17e39`, lock-file identity, and ported-file parity. |
+| `spike/harness/scripted-provider.ts`, `pty_drive.py`, `c1-tui.sh`, `c2-rpc.mjs`, `c3-c5-sdk.mjs`, `c3-registry-detail.mjs`, `c4-direct-import.mjs`, `c5-cli.sh`, `c6-fenced.sh` | Reused from SPIKE-0001's `evidence.patch` for C1 to C6. |
+| `spike/harness/c8-outside.sh` | C8: a consumer in `/tmp` whose `node_modules/@earendil-works/pi-coding-agent` links to the checkout's `packages/coding-agent`. |
+| `spike/harness/c9-missing.sh` | C9: adds an unresolvable name to the list, rebuilds, starts a session, restores the list and rebuilds. |
+
+`spike/README.md` gives every command. Raw output lives in `spike/runs/`, one file per run; files named `*-attempt*` record runs that exposed a harness defect.
+
+| Session path | What answered, by absolute path in the checkout |
+| --- | --- |
+| CLI and RPC | `packages/coding-agent/dist/bundle/cli.js` |
+| SDK services, in-process loader, C9 | `packages/coding-agent/dist/index.js` |
+| Bare-specifier process and outside consumer | `packages/coding-agent/dist/index.js`, as `import.meta.resolve` recorded |
 
 ### Harness versions
 
-<!-- opin-spike: everything the harness installed or linked, with exact versions -->
+| Thing | Version |
+| --- | --- |
+| Node.js | 26.10.0 |
+| npm | 11.19.1 |
+| Git | 2.55.0 |
+| uv, Python, pyte | uv 0.12.19, Python 3.11.16, pyte 0.8.2 |
+| pi-fence | `e8c0600`, runtime `@anthropic-ai/sandbox-runtime` 0.0.75 |
 
 ### Budget spent
 
-<!-- opin-spike: turns spent of the cap, per harness, and where the ledger is; or "no model was called" -->
+No model was called.
+The run stayed within the one-session time box.
 
 ### Claims
 
 | Claim | Result | Status | What showed it |
 | --- | --- | --- | --- |
-| C1, <!-- opin-spike: name --> | <!-- opin-spike: holds, fails or partly --> | **<!-- opin-spike: proved or inferred -->** | <!-- opin-spike: the run file and the exact observation --> |
+| C1, interactive CLI | Holds: the questionnaire renders, "Teal" reaches the scripted provider, and `[Extensions]` lists only `scripted-provider.ts`. | **proved** | `spike/runs/C-C1-tui.txt`, `spike/runs/C-C1-scripted.jsonl` |
+| C2, RPC mode | Holds: one `select` request arrives, and "1. Teal — The first option." becomes the tool result. | **proved** | `spike/runs/C-C2-rpc.jsonl` |
+| C3, SDK services path | Holds: the extension registration lists `ask_user_question` in both services, `getAllTools()` only in the second session, and the first stays at `read` after the runtime call. | **proved** | `spike/runs/C-C3-C5-sdk.json`, `spike/runs/C-C3-registry-detail.json` |
+| C4, third-party loader and bare import | Holds: both loaders list both built-ins with no errors, and `import.meta.resolve` names the checkout's `dist/index.js`. | **proved** | `spike/runs/C-C3-C5-sdk.json`, `spike/runs/C-C4-direct-bare-only.json` |
+| C5, provider built-in | Holds: `--list-models` lists `echo`, `-p` prints `FIXTURE-ECHO: cli path hello`, and `getModel` resolves the pair. | **proved** | `spike/runs/C-C5-cli.txt`, `spike/runs/C-C3-C5-sdk.json` |
+| C6, fenced session | Holds: the dry run grants no `rpiv-mono` path, "Teal" reaches the provider, and no journal entry names the checkout or `rpiv-mono`. | **proved** | `spike/runs/C6-00-dry-run-after-edit.txt`, `spike/runs/C-C6-fenced.txt`, `spike/runs/C6-01-journal-check.txt` |
+| C7, merge hygiene | Holds: 9 added and 0 removed both times, shrinkwrap and install lock byte-identical, parity except `UPSTREAM.json`, `npm run check` exit 0 both times. | **proved** | `spike/runs/C7-measure-1-ported-only.txt`, `spike/runs/C7-measure-2-with-fixture.txt`, `spike/runs/02-check-list1.log`, `spike/runs/04-check-list2.log` |
+| C8, outside consumer | Holds: the consumer in `/tmp` resolves the checkout, lists both built-ins with no errors, and has `ask_user_question` active. | **proved** | `spike/runs/C-C8-outside.txt` |
+| C9, loud failure | Holds: the session starts, both real built-ins load, and one error names `<inline:@pi-fork/spike-missing-package>`. | **proved** | `spike/runs/C-C9-missing.txt` |
 
 ### Supporting conclusions
 
 | Conclusion | Status | What showed it |
 | --- | --- | --- |
-| <!-- opin-spike: a fact learned on the way, marked proved or inferred; delete the table when there is none --> | | |
+| `@juicesharp/rpiv-config` resolved to 2.11.0 with the frozen integrity. | **proved** | `package-lock.json` in `evidence.patch` |
+| The workspace line must precede `npm install`, and `npm ci` refuses a changed workspace list. | **proved** | `spike/runs/01-install-build-list1-attempt1-npm-ci-out-of-sync.log` |
+| The C6 harness reused from SPIKE-0001 greps its journal for `spike-0001`; a separate check covers this checkout's paths. | **proved** | `spike/runs/C6-01-journal-check.txt` |
+| Biome reformats `fork-builtins.ts` and reorders the `resource-loader.ts` import; neither change adds an upstream-owned line. | **proved** | `spike/runs/02-check-list1.log`, `spike/runs/C7-measure-2-with-fixture.txt` |
 
 ### Re-verified by the coordinator
 
-<!-- opin-spike: when subagents ran harnesses: each claim re-read from the raw runs and the source, not from the subagent's report; or "no subagent ran a harness" -->
+No subagent ran a harness.
+The pre-freeze reviewer read the frozen block only.
+The coordinator read every claim from the raw run files that the Claims table names.
 
 ### What this spike did not test
 
-<!-- opin-spike: the nearest things a reader might assume were covered, and where they belong -->
+| Not tested | Where it belongs |
+| --- | --- |
+| OpenIntent's worker entry, which also uses `createAgentSessionRuntime` and `runRpcMode` inside a fence | The OpenIntent change, after its amendment. |
+| A second rpiv-shaped port with external dependencies and relative `.js` imports | The first real port after `rpiv-ask-user-question`. |
+| The release scripts, which would bump the version of a non-private ported package | ADR-0009 and the port skill. |
+| npm publication, the Bun binary and the Node SEA build | ADR-0009, as a stated limit. |
+| The upstream sync method | SPIKE-0004. |
 
 ## Cleanup
 
-<!-- opin-spike: every write outside the worktree the harnesses made, by path, so the human can remove it; or "nothing outside the worktree" -->
+| Path | What it holds | State |
+| --- | --- | --- |
+| `/tmp/spike-0001-*` | 5 more agent directories, working directories and script files from the reused harness | Present; safe to delete. |
+| `/var/folders/vf/p_cnzz_s1mjcy26fxr1k7c9m0000gn/T/spike-0001-*` and `spike-0003-*` | 14 more agent and working directories from the Node harnesses | Present; safe to delete. |
+| `/tmp/spike-0003-outside.SCRMHY`, `/tmp/spike-0003-c9-build.log`, `/tmp/spike-0003-c9-rebuild.log` | C8's consumer and C9's build logs | Present; safe to delete. |
+| `~/.pi/agent/sessions/--Users-paolof-.openintent-workspaces-pfurini-pi-worktrees-spike-0003--/` | One session file from C6 | Present; safe to delete. |
+| `~/.pi-fence/violations/20260925T113028Z-e3c5a865.jsonl` | C6's launch journal | Present; removal is the operator's call. |
+| `~/.pi/agent/settings.json` | Edited for C6, then restored byte-identical, SHA-256 `088a665e…` | Restored; the backup file is removed. |
+
+## Template gaps
+
+| Gap | What the run did |
+| --- | --- |
+| A harness reused from an earlier spike carries that spike's paths. | `spike/runs/C6-01-journal-check.txt` repeats the journal check with this checkout's paths. |
 
 ## Spike code
 
 `evidence.patch`, beside this file: one squashed commit of the worktree branch. Built in an isolated worktree, never merged, never pushed as a branch, never opened as a pull request. To re-check a decayed verdict, run `/skill:opin-spike re-check` on this spike; it applies the patch into a fresh worktree.
 
-<!-- opin-spike: how to run it from the applied patch. If the template had to be worked around, add a "## Template gaps" section above this one saying what and why. -->
+Apply the patch onto `frozen-at` in a fresh worktree, then run `npm install --ignore-scripts` and `npm run build`.
+`spike/README.md` lists every command; C6 needs `~/Developer/ai/rpiv-mono` out of `~/.pi/agent/settings.json`.

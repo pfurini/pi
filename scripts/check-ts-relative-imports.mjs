@@ -3,6 +3,7 @@ import { join } from "node:path";
 import ts from "typescript";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
+ignoredDirectories.add("builtins");
 const files = [];
 
 function collectTypescriptFiles(directory) {

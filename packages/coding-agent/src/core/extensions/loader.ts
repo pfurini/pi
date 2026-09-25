@@ -866,3 +866,7 @@ export async function discoverAndLoadExtensions(
 
 	return loadExtensions(allPaths, resolvedCwd, resolvedAgentDir, eventBus);
 }
+
+export async function loadExtensionFactoryFromPath(extensionPath: string): Promise<ExtensionFactory | undefined> {
+	return loadExtensionModule(extensionPath);
+}

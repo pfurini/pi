@@ -1,0 +1,13 @@
+diff --git a/packages/coding-agent/src/core/fork-builtins.ts b/packages/coding-agent/src/core/fork-builtins.ts
+index 8d8457f2d..d9306ecd9 100644
+--- a/packages/coding-agent/src/core/fork-builtins.ts
++++ b/packages/coding-agent/src/core/fork-builtins.ts
+@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
+ import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
+ import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
+ 
+-export const FORK_BUILTIN_PACKAGES: readonly string[] = ["@juicesharp/rpiv-ask-user-question"];
++export const FORK_BUILTIN_PACKAGES: readonly string[] = ["@juicesharp/rpiv-ask-user-question", "@pi-fork/spike-fixture-provider"];
+ 
+ const requireFromHere = createRequire(import.meta.url);
+ 

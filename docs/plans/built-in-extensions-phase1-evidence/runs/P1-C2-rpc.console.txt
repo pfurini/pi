@@ -1,0 +1,4 @@
+finish: agent_end
+extension_ui_request methods: select
+tool_execution_end: {"type":"tool_execution_end","toolCallId":"tool:1790353721855:ffb7g9tsbde","toolName":"ask_user_question","result":{"content":[{"type":"text","text":"User has answered your questions: \"Which colour should the spike pick?\"=\"Teal\". You can now continue with the user's answers in mind."}],"details":{"answers":[{"questionIndex":0,"question":"Which colour should the spike pick?","kind":"option","answer":"Teal"}],"cancelled":false}},"isError":false}
+raw: /private/tmp/pi-builtins-validate/spike/runs/P1-C2-rpc.jsonl

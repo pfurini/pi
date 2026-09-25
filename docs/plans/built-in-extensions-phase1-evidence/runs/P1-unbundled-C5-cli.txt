@@ -1,0 +1,10 @@
+candidate: P1-unbundled
+bin: /tmp/pi-builtins-validate/packages/coding-agent/dist/cli.js
+agent dir: /tmp/spike-0001-agent.ooOJru (settings.json lists no package)
+===== pi --list-models spike-fixture
+provider       model  context  max-out  thinking  images
+spike-fixture  echo   128K     16.4K    no        yes   
+exit=0
+===== pi -p --model spike-fixture/echo
+FIXTURE-ECHO: cli path hello
+exit=0

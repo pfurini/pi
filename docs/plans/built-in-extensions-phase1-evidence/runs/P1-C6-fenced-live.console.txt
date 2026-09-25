@@ -1,0 +1,1 @@
+/tmp/pi-builtins-validate/spike/runs/P1-C6-fenced.txt

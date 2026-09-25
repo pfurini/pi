@@ -1,0 +1,88 @@
+== workspaces and totals
+> pi-monorepo@0.0.3 test
+ℹ tests 16
+ℹ pass 16
+ℹ fail 0
+> @earendil-works/pi-agent-core@0.87.1 test
+ Test Files  80 passed (80)
+      Tests  972 passed | 1 skipped (973)
+> @earendil-works/pi-ai@0.87.1 test
+ Test Files  1 failed | 127 passed | 26 skipped (154)
+      Tests  1 failed | 1156 passed | 859 skipped (2016)
+> @earendil-works/chord@0.87.1 test
+ Test Files  25 passed (25)
+      Tests  349 passed (349)
+> @earendil-works/pi-client@0.87.1 test
+ Test Files  1 failed | 2 passed (3)
+      Tests  19 passed (19)
+> @earendil-works/pi-coding-agent@0.87.1 test
+ Test Files  3 failed | 342 passed | 5 skipped (350)
+      Tests  4 failed | 3594 passed | 50 skipped (3648)
+> @earendil-works/pi-durable@0.87.1 test
+ Test Files  5 failed | 2 passed (7)
+      Tests  5 passed (5)
+> @earendil-works/pi-evals@0.87.1 test
+ Test Files  6 passed (6)
+      Tests  55 passed (55)
+> @earendil-works/pi-protocol@0.87.1 test
+ Test Files  3 passed (3)
+      Tests  133 passed (133)
+> @earendil-works/pi-server@0.87.1 test
+ Test Files  6 passed (6)
+      Tests  44 passed (44)
+> @earendil-works/pi-telemetry@0.87.1 test
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+> @earendil-works/pi-tui@0.87.1 test
+> @juicesharp/rpiv-ask-user-question@2.11.0 test
+ Test Files  27 failed | 10 passed (37)
+      Tests  153 passed (153)
+> @earendil-works/pi-session-backend-sqlite-node@0.87.1 test
+ Test Files  6 failed (6)
+      Tests  no tests
+EXIT 1
+== FAIL set
+ FAIL  ask-user-question.execute.test.ts [ ask-user-question.execute.test.ts ]
+ FAIL  ask-user-question.guidance.test.ts [ ask-user-question.guidance.test.ts ]
+ FAIL  ask-user-question.listener.test.ts [ ask-user-question.listener.test.ts ]
+ FAIL  ask-user-question.normalize.test.ts [ ask-user-question.normalize.test.ts ]
+ FAIL  ask-user-question.session-load.test.ts [ ask-user-question.session-load.test.ts ]
+ FAIL  ask-user-question.test.ts [ ask-user-question.test.ts ]
+ FAIL  factory.test.ts [ factory.test.ts ]
+ FAIL  reconcile.test.ts [ reconcile.test.ts ]
+ FAIL  rpc-fallback.test.ts [ rpc-fallback.test.ts ]
+ FAIL  set-aside.test.ts [ set-aside.test.ts ]
+ FAIL  ship-manifest.test.ts [ ship-manifest.test.ts ]
+ FAIL  state/key-router.test.ts [ state/key-router.test.ts ]
+ FAIL  state/questionnaire-session.test.ts [ state/questionnaire-session.test.ts ]
+ FAIL  state/set-aside.test.ts [ state/set-aside.test.ts ]
+ FAIL  test/adapter.test.ts [ test/adapter.test.ts ]
+ FAIL  test/experimental-presentation-facets.test.ts > server-selected presentation facets > builds conventional plugin entries into the server-owned plugin cache
+ FAIL  test/experimental-presentation-facets.test.ts > server-selected presentation facets > builds the example plugin package without a package-owned build script
+ FAIL  test/experimental-remote-runtime.test.ts > experimental durable server composition > passes client plugin packages to a cold server and restores them for its next generation
+ FAIL  test/jsonl-storage.test.ts [ test/jsonl-storage.test.ts ]
+ FAIL  test/memory-storage.test.ts [ test/memory-storage.test.ts ]
+ FAIL  test/model-catalog-types.test.ts > routes all GitHub Copilot GPT models through the Responses API
+ FAIL  test/repo-conformance.test.ts [ test/repo-conformance.test.ts ]
+ FAIL  test/repo.test.ts [ test/repo.test.ts ]
+ FAIL  test/sql.test.ts [ test/sql.test.ts ]
+ FAIL  test/sqlite-facade.test.ts [ test/sqlite-facade.test.ts ]
+ FAIL  test/sqlite-migrations.test.ts [ test/sqlite-migrations.test.ts ]
+ FAIL  test/sqlite-storage.test.ts [ test/sqlite-storage.test.ts ]
+ FAIL  test/storage-conformance.test.ts [ test/storage-conformance.test.ts ]
+ FAIL  test/storage.test.ts [ test/storage.test.ts ]
+ FAIL  test/suite/regressions/2791-fswatch-error-crash.test.ts > issue #2791 fs.watch error event crashes process > process should survive an error event on the theme FSWatcher
+ FAIL  test/unix.test.ts [ test/unix.test.ts ]
+ FAIL  view/components/inline-input.test.ts [ view/components/inline-input.test.ts ]
+ FAIL  view/components/multi-select-view.test.ts [ view/components/multi-select-view.test.ts ]
+ FAIL  view/components/option-list-view.test.ts [ view/components/option-list-view.test.ts ]
+ FAIL  view/components/preview/preview-block-renderer.test.ts [ view/components/preview/preview-block-renderer.test.ts ]
+ FAIL  view/components/preview/preview-layout-decider.test.ts [ view/components/preview/preview-layout-decider.test.ts ]
+ FAIL  view/components/preview/preview-pane.test.ts [ view/components/preview/preview-pane.test.ts ]
+ FAIL  view/components/submit-picker.test.ts [ view/components/submit-picker.test.ts ]
+ FAIL  view/components/tab-bar.test.ts [ view/components/tab-bar.test.ts ]
+ FAIL  view/components/wrapping-select.test.ts [ view/components/wrapping-select.test.ts ]
+ FAIL  view/dialog-builder.test.ts [ view/dialog-builder.test.ts ]
+ FAIL  view/dialog-container.test.ts [ view/dialog-container.test.ts ]
+ FAIL  view/dialog-overflow.test.ts [ view/dialog-overflow.test.ts ]
+ FAIL  view/props-adapter.test.ts [ view/props-adapter.test.ts ]

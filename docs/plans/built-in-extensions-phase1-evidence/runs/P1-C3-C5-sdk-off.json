@@ -1,0 +1,51 @@
+{
+	"label": "P1",
+	"sdkEntry": "/private/tmp/pi-builtins-validate/packages/coding-agent/dist/index.js",
+	"node": "v26.10.0",
+	"execArgv": [],
+	"steps": [
+		{
+			"name": "setup",
+			"agentDir": "/var/folders/vf/p_cnzz_s1mjcy26fxr1k7c9m0000gn/T/spike-0001-agent-sfMeHf",
+			"cwd": "/var/folders/vf/p_cnzz_s1mjcy26fxr1k7c9m0000gn/T/spike-0001-cwd-ccleJL"
+		},
+		{
+			"name": "C3-session-without",
+			"extensionPaths": [
+				"/private/tmp/pi-builtins-validate/packages/builtins/spike-fixture-provider/index.ts"
+			],
+			"extensionErrors": [],
+			"registry": [
+				"read"
+			],
+			"active": [
+				"read"
+			]
+		},
+		{
+			"name": "C5-sdk-getModel",
+			"resolved": {
+				"provider": "spike-fixture",
+				"id": "echo"
+			}
+		},
+		{
+			"name": "C3-session-with",
+			"registry": [
+				"read"
+			],
+			"active": [
+				"read"
+			]
+		},
+		{
+			"name": "C5-sdk-turn",
+			"reply": "FIXTURE-ECHO: sdk path hello"
+		},
+		{
+			"name": "C4-third-party-loader",
+			"extensions": [],
+			"errors": []
+		}
+	]
+}

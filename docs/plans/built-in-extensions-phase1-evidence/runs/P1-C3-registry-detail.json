@@ -1,0 +1,62 @@
+{
+	"label": "P1",
+	"sdkEntry": "/private/tmp/pi-builtins-validate/packages/coding-agent/dist/index.js",
+	"sessions": [
+		{
+			"allowlist": [
+				"read"
+			],
+			"extensionLevel": [
+				{
+					"path": "<inline:@juicesharp/rpiv-ask-user-question>",
+					"tools": [
+						"ask_user_question"
+					]
+				},
+				{
+					"path": "<inline:@pi-fork/spike-fixture-provider>",
+					"tools": []
+				}
+			],
+			"sessionLevelGetAllTools": [
+				"read"
+			],
+			"activeBefore": [
+				"read"
+			],
+			"activeAfterEnablingAtRuntime": [
+				"read"
+			]
+		},
+		{
+			"allowlist": [
+				"read",
+				"ask_user_question"
+			],
+			"extensionLevel": [
+				{
+					"path": "<inline:@juicesharp/rpiv-ask-user-question>",
+					"tools": [
+						"ask_user_question"
+					]
+				},
+				{
+					"path": "<inline:@pi-fork/spike-fixture-provider>",
+					"tools": []
+				}
+			],
+			"sessionLevelGetAllTools": [
+				"read",
+				"ask_user_question"
+			],
+			"activeBefore": [
+				"read",
+				"ask_user_question"
+			],
+			"activeAfterEnablingAtRuntime": [
+				"read",
+				"ask_user_question"
+			]
+		}
+	]
+}

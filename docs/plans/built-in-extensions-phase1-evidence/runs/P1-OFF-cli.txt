@@ -1,0 +1,6 @@
+label: P1
+bin: /tmp/pi-builtins-validate/packages/coding-agent/dist/bundle/cli.js
+agent dir: /tmp/pi-builtins-t6-agent.ynmwYC (settings.json lists no package)
+===== PI_FORK_BUILTINS=off pi --no-extensions -e fixture -p --model spike-fixture/echo
+FIXTURE-ECHO: off check
+exit=0

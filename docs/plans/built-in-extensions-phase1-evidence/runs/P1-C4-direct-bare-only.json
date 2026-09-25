@@ -1,0 +1,18 @@
+{
+	"label": "P1",
+	"mode": "bare-only",
+	"resolved": "file:///private/tmp/pi-builtins-validate/packages/coding-agent/dist/index.js",
+	"extensions": [
+		{
+			"path": "<inline:@juicesharp/rpiv-ask-user-question>",
+			"tools": [
+				"ask_user_question"
+			]
+		},
+		{
+			"path": "<inline:@pi-fork/spike-fixture-provider>",
+			"tools": []
+		}
+	],
+	"errors": []
+}

@@ -1,0 +1,29 @@
+consumer directory: /tmp/spike-0003-outside.lEYa8j
+link: /tmp/pi-builtins-validate/packages/coding-agent
+{
+	"consumerCwd": "/private/tmp/spike-0003-outside.lEYa8j",
+	"resolved": "file:///private/tmp/pi-builtins-validate/packages/coding-agent/dist/index.js",
+	"servicesExtensions": [
+		"<inline:@juicesharp/rpiv-ask-user-question>",
+		"<inline:@pi-fork/spike-fixture-provider>"
+	],
+	"servicesErrors": [],
+	"activeTools": [
+		"read",
+		"ask_user_question"
+	],
+	"loaderExtensions": [
+		{
+			"path": "<inline:@juicesharp/rpiv-ask-user-question>",
+			"tools": [
+				"ask_user_question"
+			]
+		},
+		{
+			"path": "<inline:@pi-fork/spike-fixture-provider>",
+			"tools": []
+		}
+	],
+	"loaderErrors": []
+}
+exit=0

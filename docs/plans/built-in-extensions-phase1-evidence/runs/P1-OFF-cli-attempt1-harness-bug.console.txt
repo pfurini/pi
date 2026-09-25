@@ -1,0 +1,8 @@
+label: P1
+bin: /tmp/pi-builtins-validate/packages/coding-agent/dist/bundle/cli.js
+agent dir: /tmp/pi-builtins-t6-agent.ffdf6L (settings.json lists no package)
+===== PI_FORK_BUILTINS=off pi --no-extensions -e fixture -p --model spike-fixture/echo
+Error: Failed to load extension "/tmp/pi-builtins-t6-cwd.oW8xUN/packages/builtins/spike-fixture-provider/index.ts": Extension path does not exist: /tmp/pi-builtins-t6-cwd.oW8xUN/packages/builtins/spike-fixture-provider/index.ts
+Error: Model "spike-fixture/echo" not found. Use --list-models to see available models.
+Hint: Start without extensions using "pi -ne".
+exit=1

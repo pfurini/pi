@@ -1,0 +1,14 @@
+C2-rpc	0	node spike/harness/c2-rpc.mjs P1
+C3-C5-sdk	0	node spike/harness/c3-c5-sdk.mjs P1
+C3-registry-detail	0	node spike/harness/c3-registry-detail.mjs P1
+C4-direct	0	node spike/harness/c4-direct-import.mjs P1 bare-only
+C5-cli-bundle	0	spike/harness/c5-cli.sh P1
+C5-cli-unbundled	0	spike/harness/c5-cli.sh P1-unbundled
+C8-outside	0	spike/harness/c8-outside.sh P1
+C3-default	0	node spike/harness/c3-default.mjs P1
+OFF-cli	1	spike/harness/off-cli.sh P1
+OFF-sdk	0	node spike/harness/c3-c5-sdk-off.mjs P1
+OFF-cli-attempt2	0	spike/harness/off-cli.sh P1
+C1-tui	0	spike/harness/c1-tui.sh P1
+C9-missing	0	spike/harness/c9-missing.sh P1
+C6-fenced-live	0	spike/harness/c6-fenced.sh P1 /Users/paolof/Developer/ai/pi/packages/coding-agent/dist/cli.js

@@ -1,0 +1,33 @@
+edit exit=0
+===== list under test
+14:export const FORK_BUILTIN_PACKAGES: readonly string[] = ["@juicesharp/rpiv-ask-user-question", "@pi-fork/spike-fixture-provider", "@pi-fork/spike-missing-package"];
+workspace provides @pi-fork/spike-missing-package: no
+build exit=0
+===== session on C3's second path
+{
+	"sessionStarted": true,
+	"extensions": [
+		{
+			"path": "<inline:@juicesharp/rpiv-ask-user-question>",
+			"tools": [
+				"ask_user_question"
+			]
+		},
+		{
+			"path": "<inline:@pi-fork/spike-fixture-provider>",
+			"tools": []
+		}
+	],
+	"errors": [
+		{
+			"path": "<inline:@pi-fork/spike-missing-package>",
+			"error": "Cannot find module '@pi-fork/spike-missing-package'\nRequire stack:\n- /private/tmp/pi-builtins-validate/packages/coding-agent/dist/core/fork-builtins.js"
+		}
+	],
+	"activeTools": [
+		"read",
+		"ask_user_question"
+	]
+}
+session exit=0
+restore: rebuild exit=0; list equals its pre-run content: yes

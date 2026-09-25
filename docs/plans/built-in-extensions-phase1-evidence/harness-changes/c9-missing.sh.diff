@@ -1,0 +1,40 @@
+--- /dev/fd/63	2026-09-25 16:55:21.953686815 +0000
++++ spike/harness/c9-missing.sh	2026-09-25 16:28:10.336441549 +0000
+@@ -9,16 +9,17 @@
+ list=packages/coding-agent/src/core/fork-builtins.ts
+ missing="@pi-fork/spike-missing-package"
+ {
+-	cp "$list" /tmp/spike-0003-fork-builtins.backup
++	list_before=$(shasum -a 256 <"$list")
++	cp "$list" /tmp/pi-builtins-c9-fork-builtins.backup
+ 	# Append the missing name as the list's last entry, whatever layout the formatter chose.
+ 	SPIKE_LIST="$list" SPIKE_MISSING="$missing" node -e 'const fs=require("fs");const p=process.env.SPIKE_LIST;const s=fs.readFileSync(p,"utf8");const re=/(const FORK_BUILTIN_PACKAGES: readonly string\[\] = \[)([\s\S]*?)(\];)/;if(!re.test(s))throw new Error("list not found");fs.writeFileSync(p,s.replace(re,(m,a,b,c)=>a+b.replace(/,?\s*$/,"")+", "+JSON.stringify(process.env.SPIKE_MISSING)+c));'
+ 	echo "edit exit=$?"
+ 	echo "===== list under test"
+ 	grep -n "FORK_BUILTIN_PACKAGES:" "$list"
+ 	echo "workspace provides $missing: $([ -e "node_modules/$missing" ] && echo yes || echo no)"
+-	npm run build >/tmp/spike-0003-c9-build.log 2>&1
++	npm run build:offline >/tmp/pi-builtins-c9-build.log 2>&1
+ 	echo "build exit=$?"
+-	cat >/tmp/spike-0003-c9.mjs <<EOF
++	cat >/tmp/pi-builtins-c9.mjs <<EOF
+ import { mkdtempSync, writeFileSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+@@ -50,11 +51,11 @@
+ setTimeout(() => process.exit(), 200);
+ EOF
+ 	echo "===== session on C3's second path"
+-	node /tmp/spike-0003-c9.mjs
++	node /tmp/pi-builtins-c9.mjs
+ 	echo "session exit=$?"
+-	cp /tmp/spike-0003-fork-builtins.backup "$list"
+-	rm -f /tmp/spike-0003-fork-builtins.backup /tmp/spike-0003-c9.mjs
+-	npm run build >/tmp/spike-0003-c9-rebuild.log 2>&1
+-	echo "restore: rebuild exit=$?; list differs from HEAD: $(git diff --quiet -- "$list" && echo no || echo YES)"
++	cp /tmp/pi-builtins-c9-fork-builtins.backup "$list"
++	rm -f /tmp/pi-builtins-c9-fork-builtins.backup /tmp/pi-builtins-c9.mjs
++	npm run build:offline >/tmp/pi-builtins-c9-rebuild.log 2>&1
++	echo "restore: rebuild exit=$?; list equals its pre-run content: $([ "$(shasum -a 256 <"$list")" = "$list_before" ] && echo yes || echo NO)"
+ } >"$out" 2>&1
+ cat "$out"

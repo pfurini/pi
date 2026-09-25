@@ -11,7 +11,7 @@ Phase 1 ships `rpiv-ask-user-question` as a built-in of this fork (`docs/adr/ADR
 | rpiv's external editor | Unverified. It spawns only on user request. | `packages/builtins/rpiv-ask-user-question/state/external-editor.ts` line 19 calls `spawn`. | Check once in a fenced session, if the editor is ever used there. |
 | The `rpiv-mono` read grant | Disappears automatically when T9 removes the `settings.json` entry. | `pi-fence/src/profile/loader.ts` line 99, `derivedPackageReads`. | None. |
 | The doorman | Needs no change. It inspects only `bash`, `read`, `grep`, `find` and `ls`. | `pi-fence/extensions/lib/doorman.ts` line 113, `COVERED_TOOLS`. | None. |
-| `PI_FORK_BUILTINS` | Done. pi-fence forwards the name to the fenced child since commit `83fa852`, and the launcher was rebuilt on 2026-09-25. Fenced sessions started with `PI_FORK_BUILTINS=off` load no built-in. Unverified end to end: no fenced session has run with the switch yet. | `pi-fence/src/profile/environment.ts` line 41, inside `ALLOWED_PI_NAMES` (line 24); `pi-fence/src/launch/env.ts` line 92. | Run one fenced session with `PI_FORK_BUILTINS=off pi --profile general`, and confirm that `ask_user_question` is absent. |
+| `PI_FORK_BUILTINS` | Done and verified. pi-fence forwards the name to the fenced child since commit `83fa852`, and the launcher was rebuilt on 2026-09-25. On 2026-09-25 the owner ran `PI_FORK_BUILTINS=off pi --profile general`, and `ask_user_question` was absent. Earlier fenced sessions without the switch had the tool. | `pi-fence/src/profile/environment.ts` line 41, inside `ALLOWED_PI_NAMES` (line 24); `pi-fence/src/launch/env.ts` line 92. | None. |
 
 ## OpenIntent amendment points
 
@@ -32,4 +32,3 @@ OpenIntent's own vitest tests see the built-ins. Only Pi's `packages/coding-agen
 - The external editor under the fence.
 - OpenIntent worker behavior with built-ins. No phase-1 run started an OpenIntent worker.
 - A fenced OpenIntent worker entry (SPIKE-0003 open item).
-- A fenced session honoring `PI_FORK_BUILTINS`. pi-fence commit `83fa852` forwards the name, and its unit tests prove the forwarding. No fenced session has run with the switch yet.

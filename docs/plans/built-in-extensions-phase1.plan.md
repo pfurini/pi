@@ -331,7 +331,7 @@ Run T6 in a separate validation worktree, never in `/tmp/pi-builtins-phase1`. Pr
 1. Run `git worktree add --detach /tmp/pi-builtins-validate feat/builtins-phase1`, then copy the model data as in Section 5 step 2.
 2. Extract `spike/harness/` from SPIKE-0003's `evidence.patch` into `/tmp/pi-builtins-validate/spike/harness/`. Create `/tmp/pi-builtins-validate/spike/runs/`, because every script writes there and none creates it.
 3. Apply `packages/builtins/spike-fixture-provider/` from the same patch, and append `"@pi-fork/spike-fixture-provider"` to `FORK_BUILTIN_PACKAGES`. Seven of the eight scripts select its `spike-fixture/echo` model, a network-free faux provider. The fixture also re-proves two claims: a second built-in adds no upstream-owned line, and a built-in can register a provider.
-4. In `c9-missing.sh`, change both `npm run build` calls to `npm run build:offline`. Confirm that no `/tmp/spike-0003-*` file exists, because the script uses fixed paths there.
+4. In `c9-missing.sh`, change both `npm run build` calls to `npm run build:offline`. The script also writes fixed `/tmp/spike-0003-*` paths, and SPIKE-0003 left files there. Rename those paths to `/tmp/pi-builtins-c9*`, which this phase owns.
 5. Run `npm install --ignore-scripts` and `npm run build:offline` (R4 standing approval).
 
 Run every script from the validation worktree root, with a unique label per run. Adapt paths and expected tool names. Record the exit code of every command; a nonzero exit fails the check. Never commit anything from the validation worktree; T10 discards it.
@@ -409,8 +409,8 @@ Start only when every T6 check passes or has an explicit owner waiver. Every ste
 2. Run `git merge --ff-only feat/builtins-phase1` in the main checkout.
 3. Back up `~/.pi/agent/settings.json` and record its SHA-256. Remove the last `packages` entry, `"../../Developer/ai/rpiv-mono/packages/rpiv-ask-user-question"`, together with the preceding comma. Verify with `JSON.parse`, then record the new SHA-256. Both hashes and the backup path go into the results file.
 4. Run `npm install --ignore-scripts`, then `npm run build:offline`, in the main checkout.
-5. Start a fresh fenced session with `pi-fence run --profile general`. Ask the model to call `ask_user_question`. Grep that launch's journal under `~/.pi-fence/violations/` for `rpiv-mono`; expect no hit. `auth.json` read denials are normal.
-6. Start a fresh unfenced session and confirm the tool once more.
+5. Start a fresh fenced session with `pi --profile general`. The `pi` on PATH is the pi-fence launcher; it starts `~/.pi-fence/entry.json`'s `piEntry` with credentials. `pi-fence run` wraps other programs and passes no credentials, so it cannot call a model. Ask the model to call `ask_user_question`. Grep that launch's journal under `~/.pi-fence/violations/` for `rpiv-mono`; expect no hit. `auth.json` read denials are normal.
+6. Start a fresh unfenced session with `pi --unfenced`, and confirm the tool once more. Plain `pi` is fenced.
 
 Step 3 precedes step 4 on purpose. Until the build finishes, new sessions lack `ask_user_question` but never load two copies. Duplicate tool handling is unverified (report Section 6, "Double loading").
 
@@ -429,7 +429,7 @@ Unfenced sessions may use `PI_FORK_BUILTINS=off` as a stopgap before step 1. Nev
 3. With the owner's approval, commit both on `personal` in the main checkout, staging those explicit paths. The message is `docs: phase-1 results and validation evidence`.
 4. Before removing any worktree, run `git -C <worktree> status --short` and confirm that it holds only expected changes. Confirm that no Pi session runs inside it.
 5. The probe worktrees `/tmp/pi-builtins-probe` and `/tmp/pi-baseline-probe` hold no unique content. Appendix B holds the probe's test file, and Section 6 holds its `fork-builtins.ts`. With the owner's approval, remove them, `/tmp/pi-builtins-validate` and `/tmp/pi-builtins-phase1`. Use `git worktree remove --force`, because the probe and validation worktrees are dirty by design. Then run `git worktree prune`.
-6. Delete only the temporary paths this phase recorded: the T5 scratch directory and its `.merge.log`, and the `/tmp/spike-0003-*` logs that `c9-missing.sh` wrote. Never delete `/tmp/spike-000*` by glob.
+6. Delete only the temporary paths this phase recorded: the T5 scratch directory and its `.merge.log`, if the sync printed one, and the `/tmp/pi-builtins-c9*` logs that `c9-missing.sh` wrote. Never delete `/tmp/spike-000*` by glob.
 7. Delete the `feat/builtins-phase1` branch, with approval.
 8. Ask whether to remove the report's older leftovers (report Section 6, "Leftovers").
 

@@ -1,0 +1,206 @@
+// Ported from pi-tokensave (github.com/pfurini/pi-tokensave) commit 2a626d3b, src/index.ts.
+// Copyright (c) 2026 pi-tokensave contributors. MIT licence: see LICENSE in this directory.
+
+/**
+ * pi-tokensave: native Pi extension that makes the agent use the local
+ * TokenSave CLI for code intelligence before grep/find/manual exploration.
+ *
+ * Read-only tools only — code changes still go through Pi's normal edit/write
+ * tools.
+ */
+
+import type { ExtensionAPI, ExtensionContext } from "../../extensions/types.ts";
+import { resolveAgentDir } from "./agent-dir.ts";
+import { createBranchIndexLifecycle, sharedReconciliationStore } from "./branch-lifecycle.ts";
+import { registerTokensaveCommands } from "./commands.ts";
+import { detectSearchCandidate, evaluateGuard, type GuardableToolName } from "./guard.ts";
+import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
+import { agentsMdPath, buildRulesBlock, installRulesBlock } from "./rules.ts";
+import { checkTokensaveAvailable } from "./runner.ts";
+import {
+	createSessionState,
+	loadPersistedConfig,
+	modeConfigPath,
+	type TokensaveSessionState,
+	wasCandidateConsulted,
+} from "./state.ts";
+import { registerTokensaveTools } from "./tools.ts";
+
+const GUARDED_TOOLS = new Set<GuardableToolName>(["bash", "grep", "find", "anchor_grep"]);
+const TOKENSAVE_TOOL_PREFIX = "tokensave_";
+const RULES_MARKER = "pi-tokensave:start";
+/** Rendered as `<tokensave>...</tokensave>` in the system prompt. */
+const RULES_SECTION_NAME = "tokensave";
+
+/**
+ * Whether the model can call `name` in the current request. A pi-subagents child
+ * can load this extension yet leave its tools inactive (`tools:` lists, `ext:`
+ * selectors), and a running skill's `disallowed-tools` blocks tools that stay
+ * active. The guard must not point the model at such a tool.
+ *
+ * The Pi fork (github.com/pfurini/pi) reports the tools the current request can
+ * call. Upstream Pi 0.87 has no such method; there the active set is the best
+ * available answer, and a skill's `disallowed-tools` goes unseen.
+ */
+function canCallTool(pi: ExtensionAPI, name: string): boolean {
+	const callable = (pi as { getCallableTools?: () => string[] }).getCallableTools?.();
+	return (callable ?? pi.getActiveTools()).includes(name);
+}
+
+function createBranchReconciliation(
+	pi: ExtensionAPI,
+	getConfig: () => { autoManageBranches: boolean },
+	getState: () => TokensaveSessionState,
+) {
+	// Shared with every session in this process, pi-subagents children included:
+	// a child finds its parent's fingerprint and does not repeat the work.
+	const lifecycle = createBranchIndexLifecycle(sharedReconciliationStore());
+	const warnedRoots = new Set<string>();
+
+	return {
+		/** Warn again in a new session; reconciled state stays shared. */
+		resetWarnings() {
+			warnedRoots.clear();
+		},
+		async run(ctx: ExtensionContext): Promise<void> {
+			if (!getConfig().autoManageBranches) return;
+
+			const root = resolveProjectRoot(ctx.cwd);
+			if (!isProjectInitialized(root)) return;
+
+			const state = getState();
+			if (state.binaryAvailable === undefined) {
+				state.binaryAvailable = await checkTokensaveAvailable();
+			}
+			if (!state.binaryAvailable) return;
+
+			const result = await lifecycle.reconcile(pi, root);
+			if (result.warnings.length > 0 && !warnedRoots.has(root)) {
+				warnedRoots.add(root);
+				ctx.ui.notify(`pi-tokensave could not reconcile branch indexes:\n${result.warnings.join("\n")}`, "warning");
+			}
+		},
+	};
+}
+
+export default function pluginTokensave(pi: ExtensionAPI): void {
+	// Sessions created with an explicit agentDir keep their settings and AGENTS.md
+	// there, not in ~/.pi/agent. `pi.agentDir` is the same directory ctx reports later.
+	let config = loadPersistedConfig(modeConfigPath(resolveAgentDir(pi)));
+	let state: TokensaveSessionState = createSessionState(config.mode);
+	const branchReconciliation = createBranchReconciliation(
+		pi,
+		() => config,
+		() => state,
+	);
+
+	pi.on("session_start", async (_event, ctx) => {
+		const agentDir = resolveAgentDir(ctx);
+		config = loadPersistedConfig(modeConfigPath(agentDir));
+		state = createSessionState(config.mode);
+		branchReconciliation.resetWarnings();
+		// The global block is conditional on .tokensave presence, so it is safe to
+		// refresh for every session even though AGENTS.md is shared by all projects.
+		installRulesBlock(agentsMdPath(agentDir));
+		// A sync after long drift can take seconds, so session start does not wait
+		// for it. A TokenSave tool call joins the reconciliation still in flight.
+		// The catch covers a ctx made stale by a session switch before it settles.
+		void branchReconciliation.run(ctx).catch(() => {});
+	});
+
+	registerTokensaveTools(pi, () => state);
+	registerTokensaveCommands(
+		pi,
+		() => state,
+		(mode) => {
+			state.mode = mode;
+		},
+	);
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName.startsWith(TOKENSAVE_TOOL_PREFIX)) {
+			await branchReconciliation.run(ctx);
+			return;
+		}
+		if (!GUARDED_TOOLS.has(event.toolName as GuardableToolName)) return;
+		const toolName = event.toolName as GuardableToolName;
+
+		const root = resolveProjectRoot(ctx.cwd);
+		if (!isProjectInitialized(root)) return;
+		// Both the block reason and the prefer-mode notice point at this tool.
+		if (!canCallTool(pi, "tokensave_find_symbol")) return;
+
+		if (state.binaryAvailable === undefined) {
+			state.binaryAvailable = await checkTokensaveAvailable();
+		}
+
+		if (state.mode === "prefer") {
+			maybeWarnManualExploration(toolName, event.input, ctx, state);
+			return;
+		}
+
+		const decision = evaluateGuard({
+			toolName,
+			input: event.input,
+			mode: state.mode,
+			tokensaveAvailable: state.binaryAvailable,
+			projectInitialized: true,
+			wasConsulted: (candidate) => wasCandidateConsulted(state, candidate),
+		});
+
+		if (decision.block) {
+			return { block: true, reason: decision.reason };
+		}
+	});
+
+	pi.on("before_agent_start", (event) => {
+		const options = event.systemPromptOptions;
+		if (!isProjectInitialized(resolveProjectRoot(options.cwd))) return;
+		// Rules that mandate TokenSave tools only mislead a session that cannot call them.
+		// The check uses the active set, not the callable one: the rules section is
+		// recorded in the transcript, and toggling it for each skill turn would rewrite
+		// the prompt and invalidate the provider's cached prefix.
+		if (!pi.getActiveTools().some((name) => name.startsWith(TOKENSAVE_TOOL_PREFIX))) return;
+
+		// The rendered prompt already holds the block when a loaded AGENTS.md carries
+		// it, or when a subagent embeds its parent's prompt (pi-subagents append mode).
+		const alreadyLoaded =
+			event.systemPrompt.includes(RULES_MARKER) ||
+			options.contextFiles.some((file) => file.content.includes(RULES_MARKER));
+		if (alreadyLoaded) return;
+
+		// Not yet present: Pi loaded context before installRulesBlock() ran, or the
+		// session loads no context files (pi-subagents children). Inject for this run
+		// and check again on the next one; do not gate on a one-shot session flag.
+		//
+		// A named section leaves the rest of the prompt structured. Returning a full
+		// `systemPrompt` would replace the prompt for the whole run instead. That
+		// fallback remains only for a prompt an earlier handler already replaced,
+		// because a replaced prompt ignores sections.
+		if (options.forceSystemPrompt === undefined) {
+			options.sections[RULES_SECTION_NAME] = buildRulesBlock();
+			return;
+		}
+		return { systemPrompt: `${event.systemPrompt}\n\n${buildRulesBlock()}` };
+	});
+}
+
+function maybeWarnManualExploration(
+	toolName: GuardableToolName,
+	input: unknown,
+	ctx: { cwd: string; ui: { notify: (message: string, level?: "info" | "warning" | "error") => void } },
+	state: TokensaveSessionState,
+): void {
+	if (state.warnedManualExplorationOnce) return;
+	if (state.binaryAvailable === false) return;
+	if (!isProjectInitialized(resolveProjectRoot(ctx.cwd))) return;
+
+	const candidate = detectSearchCandidate(toolName, input);
+	if (!candidate || wasCandidateConsulted(state, candidate)) return;
+
+	state.warnedManualExplorationOnce = true;
+	ctx.ui.notify(
+		`pi-tokensave: this looks like symbol discovery for '${candidate}'. Consider tokensave_find_symbol first.`,
+		"info",
+	);
+}

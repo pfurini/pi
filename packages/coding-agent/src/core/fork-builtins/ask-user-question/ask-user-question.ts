@@ -40,7 +40,7 @@ import {
 import { validateQuestionnaire } from "./tool/validate-questionnaire.ts";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.ts";
 
-/** Canonical tool name, shared with `base-tool.ts`. */
+/** Canonical tool name, shared with `fork-builtins/base-tools.ts`. */
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 
 export interface AskUserQuestionToolOptions {

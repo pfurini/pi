@@ -9,25 +9,24 @@
  *   loads any extension path.
  * - Fork-owned modules live under `src/core/fork-builtins/<name>/` and have no upstream. Each
  *   entry of `FORK_OWNED_BUILTINS` registers through an inline factory, with no package resolution.
- *   The fork-owned built-ins are vcc-recall and tokensave (pi-tokensave).
+ *   The fork-owned built-in is tokensave (pi-tokensave).
  *
- * `ask_user_question` is a fork-owned base tool instead: `AgentSession` registers it next to
- * `read` (`fork-builtins/ask-user-question/base-tool.ts`), so no loader affects it.
+ * `ask_user_question` and `vcc_recall` are fork-owned base tools instead: `AgentSession`
+ * registers them next to `read` (`fork-builtins/base-tools.ts`), so no loader affects them.
  *
- * `PI_FORK_BUILTINS=off` disables every kind, the base tool included; coding-agent's vitest
+ * `PI_FORK_BUILTINS=off` disables every kind, the base tools included; coding-agent's vitest
  * config sets it (ADR-0009).
  */
 import { createRequire } from "node:module";
 import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
 import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
+import { forkBuiltinsEnabled } from "./fork-builtins/switch.ts";
 import pluginTokensave from "./fork-builtins/tokensave/index.ts";
-import { registerRecallTool } from "./fork-builtins/vcc-recall/recall.ts";
 
 export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
 
 /** Fork-owned built-ins that live in this package and register without a package resolution. */
 export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [
-	{ name: "vcc-recall", factory: registerRecallTool, hidden: true },
 	{ name: "tokensave", factory: pluginTokensave, hidden: true },
 ];
 
@@ -46,11 +45,6 @@ function packageFactory(packageName: string): ExtensionFactory {
 /** The built-ins for the given package names. Tests pass their own names; production uses the fork list. */
 export function createForkBuiltInExtensions(packageNames: readonly string[]): InlineExtension[] {
 	return packageNames.map((name) => ({ name, factory: packageFactory(name), hidden: true }));
-}
-
-/** False when `PI_FORK_BUILTINS=off`. The loader reads it at construction; `ask_user_question` at each runtime build. */
-export function forkBuiltinsEnabled(): boolean {
-	return process.env.PI_FORK_BUILTINS !== "off";
 }
 
 /** The fork's built-ins, or none when `PI_FORK_BUILTINS=off`. Read at each loader construction. */

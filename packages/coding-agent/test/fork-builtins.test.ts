@@ -54,23 +54,14 @@ describe("fork built-in extensions", () => {
 		expect(extensions.slice(1).every((extension) => extension.hidden === true)).toBe(true);
 	});
 
-	it("leaves ask_user_question to AgentSession, which registers it as a base tool", async () => {
+	it("leaves ask_user_question and vcc_recall to AgentSession, which registers them as base tools", async () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "on");
 		const subject = loader([]);
 		await subject.reload();
 
 		const tools = subject.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]);
 		expect(tools).not.toContain("ask_user_question");
-	});
-
-	it("registers vcc_recall as a fork-owned built-in", async () => {
-		vi.stubEnv("PI_FORK_BUILTINS", "on");
-		const subject = loader([]);
-		await subject.reload();
-
-		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:vcc-recall>");
-		expect(builtIn?.hidden).toBe(true);
-		expect(builtIn?.tools.has("vcc_recall")).toBe(true);
+		expect(tools).not.toContain("vcc_recall");
 	});
 
 	it("registers the TokenSave tools and commands as a fork-owned built-in", async () => {

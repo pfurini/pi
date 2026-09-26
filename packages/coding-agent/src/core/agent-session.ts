@@ -132,10 +132,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
-import {
-	addAskUserQuestionBaseTool,
-	askUserQuestionDefaultActive,
-} from "./fork-builtins/ask-user-question/base-tool.ts";
+import { addForkBaseTools, forkBaseToolNames, forkBaseToolsNeverCarried } from "./fork-builtins/base-tools.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -2252,6 +2249,9 @@ export class AgentSession {
 		const toolNames = (current.toolsAdded ?? [])
 			.map((tool) => tool.name)
 			.filter((name) => this._toolRegistry.has(name));
+		// Fork: a fork base tool this transcript never carried starts active (ADR-0009).
+		const messages = this.sessionManager.buildSessionContext().messages;
+		toolNames.push(...forkBaseToolsNeverCarried(this._baseToolDefinitions, this._toolRegistry, messages));
 		this.agent.state.tools = toolNames.flatMap((name) => {
 			const registered = this._toolRegistry.get(name);
 			return registered ? [registered] : [];
@@ -5581,6 +5581,8 @@ export class AgentSession {
 			for (const tool of wrappedExtensionTools) {
 				nextActiveToolNames.push(tool.name);
 			}
+			// Fork: the fork's base tools stay active like extension tools (ADR-0009).
+			nextActiveToolNames.push(...forkBaseToolNames(this._baseToolDefinitions));
 		} else if (!options?.activeToolNames) {
 			for (const toolName of this._toolRegistry.keys()) {
 				if (!previousRegistryNames.has(toolName)) {
@@ -5628,8 +5630,8 @@ export class AgentSession {
 		if (this._getModelVisibleCommands().length > 0) {
 			this._baseToolDefinitions.set(SLASH_COMMAND_TOOL_NAME, this._createSlashCommandTool());
 		}
-		// Fork: ask_user_question is a base tool like read (ADR-0009).
-		addAskUserQuestionBaseTool(this._baseToolDefinitions, {
+		// Fork: ask_user_question and vcc_recall are base tools like read (ADR-0009).
+		addForkBaseTools(this._baseToolDefinitions, {
 			agentDir: this._agentDir,
 			eventBus: this._resourceLoader.getEventBus?.(),
 			getExternalEditorCommand: () => this.settingsManager.getExternalEditorCommand(),
@@ -5668,7 +5670,6 @@ export class AgentSession {
 					"write",
 					...(this._baseToolDefinitions.has(SKILL_TOOL_NAME) ? [SKILL_TOOL_NAME] : []),
 					...(this._baseToolDefinitions.has(SLASH_COMMAND_TOOL_NAME) ? [SLASH_COMMAND_TOOL_NAME] : []),
-					...askUserQuestionDefaultActive(this._baseToolDefinitions),
 				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sting8k. MIT licence: see LICENSE in this directory.
 
 import { Type } from "typebox";
-import type { ExtensionAPI } from "../../extensions/types.ts";
+import { defineTool, type ToolDefinition } from "../../extensions/types.ts";
 import { expandEntryFile, parseDrillDown } from "./drill-down.ts";
 import { formatRecallOutput, formatTouchedOutput } from "./format-recall.ts";
 import { getActiveLineageEntryIds } from "./lineage.ts";
@@ -16,9 +16,13 @@ const PAGE_SIZE = 5;
 export const invalidExpandIndices = (requested: number[], available: Set<number>): number[] =>
 	requested.filter((i) => !Number.isInteger(i) || !available.has(i));
 
-export const registerRecallTool = (pi: ExtensionAPI) => {
-	pi.registerTool({
-		name: "vcc_recall",
+/** Canonical tool name, shared with `fork-builtins/base-tools.ts`. */
+export const VCC_RECALL_TOOL_NAME = "vcc_recall";
+
+/** The `vcc_recall` definition. `AgentSession` registers it as a base tool (`fork-builtins/base-tools.ts`). */
+export const createRecallToolDefinition = (): ToolDefinition => {
+	return defineTool({
+		name: VCC_RECALL_TOOL_NAME,
 		label: "VCC Recall",
 		description:
 			"Recall earlier parts of the current session — decisions made, files touched, commands run, " +

@@ -1,13 +1,16 @@
 // Fork-owned: a model's vcc_recall call returns an earlier turn through the real session stack
-// (docs/plans/vcc-recall-builtin.plan.md, T2).
+// (docs/plans/vcc-recall-builtin.plan.md, T2). vcc_recall is a base tool since 2026-09-26 (ADR-0009),
+// so the switch is turned on and no extension factory is needed.
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
-import { FORK_OWNED_BUILTINS } from "../../src/core/fork-builtins.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, getMessageText } from "./harness.ts";
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("vcc_recall built-in", () => {
 	it("returns an earlier user turn to the model", async () => {
-		const harness = await createHarness({ extensionFactories: [...FORK_OWNED_BUILTINS] });
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const harness = await createHarness();
 		try {
 			harness.setResponses([
 				fauxAssistantMessage("Noted."),

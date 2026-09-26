@@ -12,11 +12,11 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Part | Rule |
 | --- | --- |
 | Location | A ported package lives in `packages/builtins/<name>/`, byte-identical to its source at the port, plus an `UPSTREAM.json` that records its upstream. |
-| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. pi-tokensave (`fork-builtins/tokensave/`) is the second: the fork took over its code, because the owner wrote 13 of its 15 commits. `ask_user_question` (`fork-builtins/ask-user-question/`) is the third. It is a fork-owned base tool, not an inline factory: `AgentSession` registers it next to `read`, so no resource loader can drop it. |
+| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. It has no `UPSTREAM.json` and takes no sync. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each extension-shaped one as an inline factory. pi-tokensave (`fork-builtins/tokensave/`) is the one inline factory today. The fork took over its code, because the owner wrote 13 of its 15 commits. `vcc_recall` (`fork-builtins/vcc-recall/`) and `ask_user_question` (`fork-builtins/ask-user-question/`) are fork-owned base tools instead. `AgentSession` registers them next to `read` through `fork-builtins/base-tools.ts`. No resource loader can drop them. `vcc_recall` was an inline factory until 2026-09-26. |
 | Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. The package list is empty since the `ask_user_question` move; the mechanism stays for future ports. |
 | Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
-| Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. The `ask_user_question` base tool follows the same allowlist rule. Under a caller's `baseToolsOverride`, it stays registered but inactive, like `skill`. |
+| Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. The fork's base tools follow the same allowlist and exclude rules. Otherwise they stay active. `--no-builtin-tools`, a `defaultTools` setting and a caller's `baseToolsOverride` leave them active, as they leave extension tools. A deactivation lasts until `/reload`. A resumed session or a tree navigation keeps it when the transcript recorded the removal. It activates a base tool the transcript never carried. |
 | Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence forwards it to the fenced child since pi-fence commit `83fa852`, so fenced sessions honor it too. |
 | Failure | A listed package that cannot be resolved appears by name in `getExtensions().errors`; the session starts and the other built-ins load. |
 
@@ -33,7 +33,7 @@ The upstream-owned footprint is 9 added lines and 1 changed line, in six files, 
 
 A further built-in adds one entry to the fork-owned list and one folder, and no upstream-owned line. The shrinkwrap, the install lock and their generators stay untouched. These rules apply ADR-0003 to packaging: new code lives in new files, and hot upstream files receive only added call sites. The one changed line is a test setting outside the hot files ADR-0003 names.
 
-A fork-owned built-in adds no upstream-owned line, with one exception: the `ask_user_question` base tool adds 11 lines to `agent-session.ts` and 2 to `keybindings.ts`. Its code and its tests live in new files, and its list entry lives in the fork-owned `fork-builtins.ts`. The base tool has no list entry; its three `agent-session.ts` hunks are thin call sites into `fork-builtins/ask-user-question/base-tool.ts` (ADR-0003).
+A fork-owned built-in adds no upstream-owned line, with one exception. The fork's base tools add 12 lines to `agent-session.ts` and 2 to `keybindings.ts`. Their code and their tests live in new files. An inline factory's list entry lives in the fork-owned `fork-builtins.ts`. The base tools have no list entry. Their four `agent-session.ts` hunks are thin call sites into `fork-builtins/base-tools.ts` (ADR-0003).
 
 ## Considered options
 
@@ -44,12 +44,12 @@ A fork-owned built-in adds no upstream-owned line, with one exception: the `ask_
 
 ## Consequences
 
-- **Checkout only.** The mechanism works only from this monorepo checkout. A published `coding-agent`, a Bun binary or a Node single-executable build would carry no built-ins. Publishing the fork would need a new decision.
+- **Checkout only.** The package mechanism works only from this monorepo checkout. A published `coding-agent`, a Bun binary or a Node single-executable build would carry no ported package. The fork-owned modules compile into `coding-agent` itself, so such a build would carry them. Publishing the fork would need a new decision.
 - **Checks.** Ported packages keep their own version ranges and import style. `check:runtime-deps` does not see names held as data.
 - **pi-fence.** A ported package leaves `~/.pi/agent/settings.json`, so the fence stops deriving a read grant for its fork checkout. The base profile already grants `~/Developer/ai/pi`, which holds the built-ins.
 - **OpenIntent.** A worker that links to the checkout receives the built-ins without selecting them as extensions; its `tools` allowlist governs them. The workflow-engine design changes through its own amendment process.
 - **Tests.** `packages/coding-agent/test/fork-builtins.test.ts` guards the call site, the load order, the switch and its read at construction, and each port's registrations. A ported package whose tests need its origin's tooling loses its `test` script in an owned commit.
-- **Fork-owned built-ins.** Biome, `tsgo`, the import check and vitest cover `packages/coding-agent/src/core/` and `packages/coding-agent/test/`. Fork-owned built-ins therefore get the full check and test coverage that ported packages under `packages/builtins/` lack. OpenIntent workers receive `vcc_recall` like every built-in, and their `tools` allowlist governs it.
+- **Fork-owned built-ins.** Biome, `tsgo`, the import check and vitest cover `packages/coding-agent/src/core/` and `packages/coding-agent/test/`. Fork-owned built-ins therefore get the full check and test coverage that ported packages under `packages/builtins/` lack. OpenIntent workers receive `vcc_recall` and `ask_user_question` in every session, and their `tools` allowlist governs both.
 - **Fork-owned settings.** A fork-owned built-in reads its settings from `forkBuiltins.<key>` in the session agent directory's `settings.json`. It writes no file in the agent directory. pi-tokensave uses the key `pi-tokensave`, and its `/tokensave-mode` command changes the mode for the current session only.
 - **Release scripts.** Never run `version:*`, `release:*` or `publish` on `personal`. They would bump or publish the ported packages.
 - **Open items.** SPIKE-0003 did not test OpenIntent's fenced worker entry or a second port with external dependencies.
@@ -93,6 +93,17 @@ A second 2026-09-26 amendment made `ask_user_question` a fork-owned base tool an
 | Registration never takes a tool it does not own | Overwriting a caller's tool fails a module test (M6); letting the base tool override a same-named extension tool fails a suite test (M8) (Appendix A). |
 | Nothing hides the tool without a UI | The suite test reads the tool list the model receives, from the system messages' tool deltas. Hiding the tool without a UI, or dropping it at request time, fails that test (Appendix A, M3, M9 and M10). A call without a UI returns `no_ui` (M4). |
 | The footprint is 11 lines in `agent-session.ts` and 2 in `keybindings.ts` | `git diff` of the final commits shows three `agent-session.ts` hunks and two `keybindings.ts` lines (Appendix A and Appendix B). |
+
+A third 2026-09-26 amendment moved `vcc_recall` from an inline factory to a base tool. It also set one activation rule for both base tools. The owner ruled it on 2026-09-26: a fork base tool is active unless the allowlist or the exclude list removes it. Turning off Pi's own tools targets tools that act on files and the shell, and these two do neither. The earlier rule is superseded: under a caller's `baseToolsOverride`, the tool was registered but inactive, like `skill`.
+
+| Rule | Evidence |
+| --- | --- |
+| Both tools register with a custom `ResourceLoader` and are sent to the model | `test/suite/fork-base-tools.test.ts` runs every case for both tools on the suite harness's custom loader. |
+| Turning off Pi's own tools leaves them active | The same suite covers a caller's base tools, an empty initial active list and a narrowed one. Removing the activation line in `_refreshToolRegistry` fails 16 suite tests. |
+| A restored transcript keeps a recorded removal and activates a tool it never carried | Two tree-navigation tests per tool in the same suite. Dropping the restore call fails both never-carried tests. Ignoring the transcript fails both removal tests. |
+| The allowlist, the exclude list and the switch still remove them | The same suite, with `PI_FORK_BUILTINS=off` and both lists. A caller's same-named base tool is never activated. |
+| `vcc_recall` works through the base-tool context | A suite test recalls the session's own prompt. The 114 module tests build the same definition. |
+| The footprint is 12 lines in `agent-session.ts` and 2 in `keybindings.ts` | `git diff 92294f229 -- packages/coding-agent/src/core/agent-session.ts` shows four hunks. |
 
 ## Upstream sync
 

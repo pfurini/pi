@@ -19,17 +19,17 @@ The move to a base tool changed the following:
 
 ## Registration
 
-`base-tool.ts` holds the two call sites that `agent-session.ts` uses. `addAskUserQuestionBaseTool` registers the definition, and `askUserQuestionDefaultActive` makes it active by default.
+`../base-tools.ts` holds the call sites that `agent-session.ts` uses, shared with `vcc_recall`. `addForkBaseTools` registers the definition. `forkBaseToolNames` names it for activation. `AgentSession` activates it wherever it activates every extension tool: at construction and on `/reload`.
 
-The tool is absent or inactive in these cases:
+The rule: the tool is active unless the session's allowlist or exclude list removes it. `--no-builtin-tools`, a `defaultTools` setting without the name and a caller's `baseToolsOverride` turn off Pi's own tools. They leave this tool active, as they leave extension tools. A deactivation through `setActiveToolsByName` lasts until `/reload`. A resumed session or a tree navigation keeps it when the transcript recorded the removal. Either one activates the tool when the transcript never carried it.
+
+The tool is absent in these cases:
 
 | Case | Effect |
 | --- | --- |
 | `PI_FORK_BUILTINS=off` | The tool is not registered. |
 | A `tools` allowlist (`--tools`) without `ask_user_question` | The tool never enters the session registry. |
 | An `excludeTools` list (`--exclude-tools`) naming `ask_user_question` | The tool never enters the session registry. |
-| A caller's `baseToolsOverride` | The tool stays registered but inactive, like `skill`. An allowlist or `setActiveToolsByName` can activate it. |
-| `--no-builtin-tools`, or a `defaultTools` setting without the name | The tool stays registered but inactive. |
 | A caller's base tool named `ask_user_question` | Registration skips; the caller's tool stays. |
 | An extension tool named `ask_user_question` | The extension tool overrides the base tool. |
 

@@ -1,8 +1,8 @@
 // Fork-owned: in-memory sessions and a tool runner for the ported vcc_recall tests.
 // pi-vcc's tests wrote JSONL files; these helpers hold the same entries in a SessionManager.
 import type { TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "../../../src/core/extensions/types.ts";
-import { registerRecallTool } from "../../../src/core/fork-builtins/vcc-recall/recall.ts";
+import type { ExtensionContext, ToolDefinition } from "../../../src/core/extensions/types.ts";
+import { createRecallToolDefinition } from "../../../src/core/fork-builtins/vcc-recall/recall.ts";
 import {
 	type FileEntry,
 	type ReadonlySessionManager,
@@ -37,17 +37,9 @@ export function sessionOf(specs: readonly MessageSpec[], leafId?: string): Sessi
 	return sessionManager;
 }
 
-/** The tool definition `registerRecallTool` registers. */
+/** The `vcc_recall` definition, as `AgentSession` registers it. */
 export function recallTool(): ToolDefinition {
-	let tool: ToolDefinition | undefined;
-	const pi = {
-		registerTool: (definition: ToolDefinition) => {
-			tool = definition;
-		},
-	};
-	registerRecallTool(pi as unknown as ExtensionAPI);
-	if (!tool) throw new Error("registerRecallTool registered no tool");
-	return tool;
+	return createRecallToolDefinition();
 }
 
 /** Run the tool against a session and return its text output. */

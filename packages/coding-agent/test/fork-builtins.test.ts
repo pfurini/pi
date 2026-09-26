@@ -1,13 +1,8 @@
 // Fork-owned: guards the built-in extension mechanism (ADR-0009) across upstream merges.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	DEFAULT_COLLAPSE_KEY,
-	loadConfig as loadRpivConfig,
-	resolveCollapseKey,
-} from "../../builtins/rpiv-ask-user-question/config.ts";
 import type { InlineExtension } from "../src/core/extensions/types.ts";
 import { createForkBuiltInExtensions, FORK_BUILTIN_PACKAGES, FORK_OWNED_BUILTINS } from "../src/core/fork-builtins.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
@@ -59,15 +54,13 @@ describe("fork built-in extensions", () => {
 		expect(extensions.slice(1).every((extension) => extension.hidden === true)).toBe(true);
 	});
 
-	it("registers the tools of rpiv-ask-user-question", async () => {
+	it("leaves ask_user_question to AgentSession, which registers it as a base tool", async () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "on");
 		const subject = loader([]);
 		await subject.reload();
 
-		const builtIn = subject
-			.getExtensions()
-			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>");
-		expect(builtIn?.tools.has("ask_user_question")).toBe(true);
+		const tools = subject.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]);
+		expect(tools).not.toContain("ask_user_question");
 	});
 
 	it("registers vcc_recall as a fork-owned built-in", async () => {
@@ -96,64 +89,6 @@ describe("fork built-in extensions", () => {
 			"tokensave_symbol",
 		]);
 		expect(builtIn?.commands.has("tokensave-mode")).toBe(true);
-	});
-
-	function rpivDescription(subject: DefaultResourceLoader): string | undefined {
-		return subject
-			.getExtensions()
-			.extensions.find((extension) => extension.path === "<inline:@juicesharp/rpiv-ask-user-question>")
-			?.tools.get("ask_user_question")?.definition.description;
-	}
-
-	function writeSettings(directory: string, description: string): void {
-		mkdirSync(directory, { recursive: true });
-		const settings = { forkBuiltins: { "rpiv-ask-user-question": { guidance: { description } } } };
-		writeFileSync(join(directory, "settings.json"), JSON.stringify(settings));
-	}
-
-	it("configures rpiv-ask-user-question from forkBuiltins in the global settings file", async () => {
-		vi.stubEnv("PI_FORK_BUILTINS", "on");
-		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-		writeSettings(agentDir, "global description");
-		writeSettings(join(cwd, ".pi"), "project description");
-		const subject = loader([]);
-		await subject.reload();
-
-		expect(rpivDescription(subject)).toBe("global description");
-	});
-
-	it("never configures rpiv-ask-user-question from a project settings file", async () => {
-		vi.stubEnv("PI_FORK_BUILTINS", "on");
-		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-		writeSettings(join(cwd, ".pi"), "project description");
-		const subject = loader([]);
-		await subject.reload();
-
-		const description = rpivDescription(subject);
-		expect(description).toBeDefined();
-		expect(description).not.toBe("project description");
-	});
-
-	it("keeps only well-typed rpiv-ask-user-question settings", () => {
-		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-		const settings = {
-			forkBuiltins: { "rpiv-ask-user-question": { collapseKey: 42, guidance: { description: 7 } } },
-		};
-		writeFileSync(join(agentDir, "settings.json"), JSON.stringify(settings));
-
-		const config = loadRpivConfig();
-		expect(config).toEqual({ guidance: {} });
-		expect(resolveCollapseKey(config)).toBe(DEFAULT_COLLAPSE_KEY);
-	});
-
-	it("reads a BOM-prefixed settings file and ignores a malformed one", () => {
-		vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-		const settings = { forkBuiltins: { "rpiv-ask-user-question": { collapseKey: "alt+o" } } };
-		writeFileSync(join(agentDir, "settings.json"), `\uFEFF${JSON.stringify(settings)}`);
-		expect(loadRpivConfig().collapseKey).toBe("alt+o");
-
-		writeFileSync(join(agentDir, "settings.json"), "{ not json");
-		expect(loadRpivConfig()).toEqual({});
 	});
 
 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {

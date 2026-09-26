@@ -23,7 +23,7 @@ import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
 import pluginTokensave from "./fork-builtins/tokensave/index.ts";
 import { registerRecallTool } from "./fork-builtins/vcc-recall/recall.ts";
 
-export const FORK_BUILTIN_PACKAGES: readonly string[] = ["@juicesharp/rpiv-ask-user-question"];
+export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
 
 /** Fork-owned built-ins that live in this package and register without a package resolution. */
 export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [

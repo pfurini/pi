@@ -343,8 +343,9 @@ export class ResourceWatcher {
 				this.failedDirs.delete(key);
 				attachedNew = true;
 			} else if (result === "permission-denied" && target.fallbackOnly) {
-				// Not degraded and no retry timer: the directory stays unwatched in the plan,
-				// so the next event-driven re-sync attempts it again.
+				// Not degraded and no retry timer: the directory stays unwatched in the plan.
+				// An unwatched directory emits no event, so only a re-sync that another
+				// watched directory's event or an explicit refresh starts attempts it again.
 				this.failedDirs.delete(key);
 			} else {
 				this.failedDirs.set(key, target);

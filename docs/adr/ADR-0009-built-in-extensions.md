@@ -20,7 +20,7 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence forwards it to the fenced child since pi-fence commit `83fa852`, so fenced sessions honor it too. |
 | Failure | A listed package that cannot be resolved appears by name in `getExtensions().errors`; the session starts and the other built-ins load. |
 
-The upstream-owned footprint is 9 added lines and 1 changed line, in six files, with no removed line:
+The upstream-owned footprint is 9 added lines and 1 changed line, in six files, with no removed line. The count excludes the root `package-lock.json`, where npm records the new workspace:
 
 | File | Lines | Purpose |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ A ported package takes upstream changes through `scripts/fork/sync-upstream.sh`,
 
 | Part | Rule |
 | --- | --- |
-| Record | `packages/builtins/<name>/UPSTREAM.json` holds `repository` (the local upstream clone), `path` (the sub-folder, or empty) and `base` (the last upstream commit merged, as 40 hex digits). |
+| Record | `packages/builtins/<name>/UPSTREAM.json` holds an `upstream` object with `repository` (the local upstream clone), `path` (the sub-folder, or empty) and `base` (the last upstream commit merged, as 40 hex digits). |
 | Provenance | Every commit that changes `UPSTREAM.json` carries the trailer `Upstream-Base: <base>`. Only the port and the sync write the record; nobody edits it by hand. |
 | Guards | The sync refuses (exit 2) when the trailer does not match, when the package directory has uncommitted changes, or when the base is not an ancestor of the new commit or is missing from the clone. It also refuses when the upstream path is not a directory at the base or the new commit. |
 | Failures | A failed command during the merge refuses (exit 2). Before the package directory is cleared, the package stays unchanged and no `scratch:` line appears. After that point, the `scratch:` line appears and the caller restores the package from `HEAD`. |

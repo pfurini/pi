@@ -2000,14 +2000,15 @@ export class AgentSession {
 	/**
 	 * Get the names of active tools the model can call in the current request.
 	 * Applies the loop's pre-lookup gate, so a tool an active skill disallows is
-	 * left out even though it stays active. A throwing gate fails closed, as in the loop.
+	 * left out even though it stays active. Like the loop, only a non-empty reason blocks,
+	 * and a throwing gate fails closed.
 	 */
 	getCallableToolNames(): string[] {
 		const isDisallowed = this.agent.isToolCallDisallowed;
 		return this.getActiveToolNames().filter((name) => {
 			if (!isDisallowed) return true;
 			try {
-				return isDisallowed(name) === undefined;
+				return !isDisallowed(name);
 			} catch {
 				return false;
 			}

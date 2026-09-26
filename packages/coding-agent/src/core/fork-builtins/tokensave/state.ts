@@ -17,6 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { canonicalPath } from "./project.ts";
 
 export type TokensaveMode = "prefer" | "enforce";
 
@@ -73,7 +74,7 @@ export interface TokensaveSessionState {
 	modeSource: TokensaveModeSource;
 	/** undefined = not checked yet this session */
 	binaryAvailable: boolean | undefined;
-	/** Normalized query fragments TokenSave has already been asked about, per project root. */
+	/** Normalized query fragments TokenSave has already been asked about, keyed by the root's canonical path. */
 	consultedQueries: Map<string, string[]>;
 	/** Set when the most recent TokenSave call failed or returned nothing useful. */
 	lastCallFailedOrEmpty: boolean;
@@ -106,12 +107,13 @@ export function recordConsultation(
 ): void {
 	const normalized = normalizeQueryFragment(query);
 	if (normalized.length >= 2) {
-		const queries = state.consultedQueries.get(root) ?? [];
+		const key = canonicalPath(root);
+		const queries = state.consultedQueries.get(key) ?? [];
 		queries.push(normalized);
 		if (queries.length > MAX_CONSULTED_QUERIES) {
 			queries.shift();
 		}
-		state.consultedQueries.set(root, queries);
+		state.consultedQueries.set(key, queries);
 	}
 	state.lastCallFailedOrEmpty = !succeededWithResults;
 }
@@ -129,6 +131,6 @@ export function recordFailure(state: TokensaveSessionState, message: string): vo
 export function wasCandidateConsulted(state: TokensaveSessionState, root: string, candidate: string): boolean {
 	const normalized = normalizeQueryFragment(candidate);
 	if (!normalized) return false;
-	const queries = state.consultedQueries.get(root) ?? [];
+	const queries = state.consultedQueries.get(canonicalPath(root)) ?? [];
 	return queries.some((query) => query.includes(normalized) || normalized.includes(query));
 }

@@ -46,7 +46,7 @@ test("builds argv as an array with tool/name/--project/--args/--json, no shell",
 		'{"foo":"bar"}',
 		"--json",
 	]);
-	expect((capturedOptions as any).shell).toBe(undefined);
+	expect(capturedOptions?.shell).toBe(undefined);
 	expect(result.ok).toBeTruthy();
 });
 

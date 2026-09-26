@@ -30,8 +30,11 @@ Every tool takes an optional `project`: a path, absolute or relative to the sess
 
 | Aspect | Behavior |
 | --- | --- |
+| Spelling | The path expands `~` and drops a leading `@`, as Pi's file tools do. |
 | Resolution | The path resolves to the nearest ancestor with `.tokensave/`, or else the nearest Git root. |
+| Missing path | A path that does not exist returns an error that names it, and it starts no process. The commands notify the same error. |
 | Uninitialized target | The tool returns an error that names the root, and it starts no process. |
+| Root identity | Roots compare by real path. A symlinked spelling of the session's root is not a foreign project, and an absolute input path under either spelling is stripped. |
 | Result header | Every result starts with `Project: <root>`. |
 | Output paths | A foreign root gives absolute file paths. The session's project keeps TokenSave's relative paths. |
 | `tokensave_context` | Its text stays as TokenSave writes it. For a foreign root, the header adds `File paths below are relative to <root>.` |
@@ -85,7 +88,7 @@ The guard in `enforce` mode blocks a search only when all of these hold:
 
 Everything else passes unmodified: complex regular expressions, pipelines, `git grep`, logs, configuration, migrations, generated code, Markdown, JSON, YAML and TOML. After TokenSave returns no result or an error, a manual search for that symbol is allowed.
 
-The guard inspects `bash`, `grep`, `find` and `anchor_grep` (from pi-hashline-edit-pro). It checks the project the search reads, not the session cwd. For `grep`, `find` and `anchor_grep`, that is the `path` input. For `bash`, it is the last non-flag argument that exists as a path, or else the cwd. When that project differs from the session's, the block message tells the model to pass `project`.
+The guard inspects `bash`, `grep`, `find` and `anchor_grep` (from pi-hashline-edit-pro). It checks the project the search reads, not the session cwd. For `grep`, `find` and `anchor_grep`, that is the `path` input, resolved as the `grep` tool resolves it. For `bash`, it is the last non-flag argument that exists as a path, with `~` expanded, or else the cwd. When that project differs from the session's, the block message tells the model to pass `project`. A call that is not a symbol search passes without a root lookup or an index probe.
 
 Both modes stand down when the model cannot call `tokensave_find_symbol`, because the block message and the notice point at it. That covers subagents whose tool list leaves the TokenSave tools out, and a running skill whose `disallowed-tools` blocks the tool (`pi.getCallableTools()` reports it). A worker's `toolSelection` therefore governs the guard.
 
@@ -136,4 +139,6 @@ Every session in one Pi process shares the reconciliation state, keyed by projec
 | --- | --- |
 | "TokenSave binary not found" | Install `tokensave` on `PATH`, or set `TOKENSAVE_BIN` to its absolute path. |
 | "TokenSave is not initialized at `<root>`" | Run `/tokensave-init` (with the path for another project), or omit `project`. |
+| "Project path not found: `<path>`" | Pass an existing directory, absolute or relative to the cwd, or omit `project`. |
+| A symbol lookup returns a TokenSave error, such as a timeout | The index could not be read, so the symbol's absence is unknown. Run `tokensave_status`, and in a fenced session check write access to the target's `.tokensave/`. |
 | The guard blocks a legitimate search | Call `tokensave_find_symbol` first, or run `/tokensave-mode prefer` for this session. |

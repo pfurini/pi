@@ -4,7 +4,7 @@
  * spawned TokenSave process.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -18,6 +18,7 @@ import {
 	type TokensaveModeSource,
 } from "../../../src/core/fork-builtins/tokensave/state.ts";
 import { registerTokensaveTools } from "../../../src/core/fork-builtins/tokensave/tools.ts";
+import type { FakeCommand, FakeHandler, FakeTool } from "./fake-types.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -25,7 +26,7 @@ type Cb = (
 	stderr: string,
 ) => void;
 
-type Handler = (event: any, ctx: any) => any;
+type Handler = FakeHandler;
 
 interface ToolCall {
 	tool: string;
@@ -108,16 +109,28 @@ function twoProjects() {
 }
 
 function fakeTools() {
-	const tools: Record<string, any> = {};
+	const tools: Record<string, FakeTool> = {};
 	const pi = {
 		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
-		registerTool(def: any) {
+		registerTool(def: FakeTool) {
 			tools[def.name] = def;
 		},
 	} as unknown as ExtensionAPI;
 	const state = createSessionState("enforce");
 	registerTokensaveTools(pi, () => state);
 	return { tools, state };
+}
+
+/** Runs `fn` with `HOME` set to `home`, which is where `~` expands. */
+async function withHome(home: string, fn: () => Promise<void>): Promise<void> {
+	const saved = process.env.HOME;
+	process.env.HOME = home;
+	try {
+		await fn();
+	} finally {
+		if (saved === undefined) delete process.env.HOME;
+		else process.env.HOME = saved;
+	}
 }
 
 function ctxFor(cwd: string) {
@@ -128,7 +141,7 @@ function ctxFor(cwd: string) {
 	};
 }
 
-async function run(tools: Record<string, any>, name: string, params: Record<string, unknown>, cwd: string) {
+async function run(tools: Record<string, FakeTool>, name: string, params: Record<string, unknown>, cwd: string) {
 	const result = await tools[name].execute("call-1", params, undefined, () => {}, ctxFor(cwd));
 	return result.content[0].text as string;
 }
@@ -181,8 +194,10 @@ test("a relative and an absolute project both reach the resolved root", async ()
 	await run(tools, "tokensave_find_symbol", { name: "Example", project: "../other" }, session);
 	expect(relative.calls.map((call) => call.project)).toStrictEqual([other]);
 
+	const deep = join(other, "src", "deep");
+	mkdirSync(deep, { recursive: true });
 	const nested = fakeCli();
-	await run(tools, "tokensave_find_symbol", { name: "Example", project: join(other, "src", "deep") }, session);
+	await run(tools, "tokensave_find_symbol", { name: "Example", project: deep }, session);
 	expect(
 		nested.calls.map((call) => call.project),
 		"a path inside the project resolves to its root",
@@ -201,6 +216,57 @@ test("an uninitialized target returns an error naming its root and spawns no pro
 		expect(text).toMatch(`TokenSave is not initialized at ${plain}. Run /tokensave-init ${plain} or omit project.`);
 	}
 	expect(cli.calls).toStrictEqual([]);
+});
+
+test("a project path that does not exist returns an error naming it and spawns no process", async () => {
+	const { session, parent } = twoProjects();
+	const { tools } = fakeTools();
+	const cli = fakeCli();
+
+	for (const [name, params] of SIX_TOOLS) {
+		const text = await run(tools, name, { ...params, project: "../missing" }, session);
+		expect(text, name).toContain(`Project path not found: ${join(parent, "missing")}.`);
+	}
+	expect(cli.calls, "no walk up to the session's project").toStrictEqual([]);
+});
+
+describe("project path spellings", () => {
+	test("~ and a leading @ resolve as Pi's file tools resolve them", async () => {
+		const { parent, session, other } = twoProjects();
+		const { tools } = fakeTools();
+
+		await withHome(parent, async () => {
+			const tilde = fakeCli();
+			await run(tools, "tokensave_find_symbol", { name: "Example", project: "~/other" }, session);
+			expect(tilde.calls.map((call) => call.project)).toStrictEqual([other]);
+		});
+
+		const at = fakeCli();
+		await run(tools, "tokensave_find_symbol", { name: "Example", project: "@../other" }, session);
+		expect(at.calls.map((call) => call.project)).toStrictEqual([other]);
+	});
+
+	test("a symlinked spelling of a root is the same project", async () => {
+		const { parent, session, other } = twoProjects();
+		const sessionLink = join(parent, "session-link");
+		const otherLink = join(parent, "other-link");
+		symlinkSync(session, sessionLink);
+		symlinkSync(other, otherLink);
+		const file = join(other, "src", "example.ts");
+		mkdirSync(join(other, "src"));
+		writeFileSync(file, "export class Example {}\n");
+		const { tools } = fakeTools();
+
+		fakeCli();
+		const own = await run(tools, "tokensave_find_symbol", { name: "Example", project: sessionLink }, session);
+		expect(own, "the session root through a link keeps relative paths").toContain("- file: src/example.ts:3");
+
+		const cli = fakeCli();
+		await run(tools, "tokensave_impact", { file, project: otherLink }, session);
+		expect(cli.calls.find((call) => call.tool === "file_dependents")?.args).toMatchObject({
+			file: "src/example.ts",
+		});
+	});
 });
 
 describe("structured file paths", () => {
@@ -348,9 +414,9 @@ test("an absolute pathInclude inside the foreign root filters and reaches the CL
 
 describe("commands take an optional path", () => {
 	function commands() {
-		const registered: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
+		const registered: Record<string, FakeCommand> = {};
 		const pi = {
-			registerCommand(name: string, def: any) {
+			registerCommand(name: string, def: FakeCommand) {
 				registered[name] = def;
 			},
 		} as unknown as ExtensionAPI;
@@ -394,18 +460,32 @@ describe("commands take an optional path", () => {
 		expect(prompts).toStrictEqual([`Run 'tokensave init' in ${fresh}?`]);
 		expect(cli.commands).toStrictEqual([["init", fresh]]);
 	});
+
+	test("a path argument that does not exist notifies an error and runs nothing", async () => {
+		const { parent, session } = twoProjects();
+		const registered = commands();
+		const cli = fakeCli();
+		const notices: string[] = [];
+		const ctx = { ...ctxFor(session), ui: { notify: (m: string) => notices.push(m), confirm: async () => true } };
+
+		for (const name of ["tokensave-status", "tokensave-init", "tokensave-sync"]) {
+			await registered[name].handler("../missing", ctx);
+		}
+		expect(notices).toStrictEqual(Array(3).fill(`Path not found: ${join(parent, "missing")}`));
+		expect(cli.commands).toStrictEqual([]);
+	});
 });
 
 describe("guard and reconciliation per root", () => {
 	function plugin(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))) {
 		const handlers: Record<string, Handler> = {};
-		const tools: Record<string, any> = {};
+		const tools: Record<string, FakeTool> = {};
 		const pi = {
 			agentDir,
 			on(event: string, handler: Handler) {
 				handlers[event] = handler;
 			},
-			registerTool(def: any) {
+			registerTool(def: FakeTool) {
 				tools[def.name] = def;
 			},
 			registerCommand() {},
@@ -479,5 +559,43 @@ describe("guard and reconciliation per root", () => {
 		expect(cli.commands).toContainEqual(["branch", "add", "--path", other]);
 		expect(cli.commands).toContainEqual(["sync", other]);
 		expect(cli.commands.some((args) => args.includes(session))).toBe(false);
+	});
+
+	test("a grep path with ~ targets the root the grep tool searches", async () => {
+		const { parent, session } = twoProjects();
+		const { handlers, tools } = plugin();
+		const ctx = ctxFor(session);
+		fakeCli({
+			find_exact_symbol: () => ({
+				count: 1,
+				matches: [{ id: "w1", name: "WellModel", kind: "class", file: "src/well.ts", line: 1 }],
+			}),
+		});
+
+		await withHome(parent, async () => {
+			const grep = { toolName: "grep", input: { pattern: "WellModel", path: "~/other" } };
+			const blocked = await handlers.tool_call(grep, ctx);
+			expect(blocked?.reason).toContain(`Pass project: "${join(parent, "other")}"`);
+
+			await tools.tokensave_find_symbol.execute(
+				"c1",
+				{ name: "WellModel", project: "~/other" },
+				undefined,
+				() => {},
+				ctx,
+			);
+			expect(await handlers.tool_call(grep, ctx), "consulting ~/other unblocks the grep").toBe(undefined);
+		});
+	});
+
+	test("a guarded call that is not a symbol search spawns no index probe", async () => {
+		const { session } = twoProjects();
+		const { handlers } = plugin();
+		const cli = fakeCli();
+
+		expect(await handlers.tool_call({ toolName: "bash", input: { command: "ls ../other" } }, ctxFor(session))).toBe(
+			undefined,
+		);
+		expect(cli.calls).toStrictEqual([]);
 	});
 });

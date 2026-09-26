@@ -14,7 +14,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolvePath } from "../../../utils/paths.ts";
+import { resolveToCwd } from "../../tools/path-utils.ts";
 import type { TokensaveMode } from "./state.ts";
 
 export const BLOCKED_SEARCH_MESSAGE = [
@@ -126,18 +127,20 @@ export function detectSearchCandidate(toolName: GuardableToolName, input: unknow
  * The path a guarded search runs against, resolved against `cwd`: `path` for
  * `grep`, `find` and `anchor_grep`; for `bash`, the last non-flag argument that
  * exists as a path. Falls back to `cwd`. The guard checks the project that holds
- * this path, which can differ from the session's project.
+ * this path, which can differ from the session's project. `path` resolves as the
+ * `grep` and `find` tools resolve it (`~` expanded, a leading `@` dropped); a `bash`
+ * argument expands `~` as the shell does.
  */
 export function resolveGuardTarget(toolName: GuardableToolName, input: unknown, cwd: string): string {
 	if (toolName === "bash") {
 		const command = (input as { command?: string })?.command;
 		if (typeof command !== "string") return cwd;
 		const [, ...rest] = tokenize(command.trim());
-		const paths = rest.filter((token) => !token.startsWith("-")).map((token) => resolve(cwd, token));
+		const paths = rest.filter((token) => !token.startsWith("-")).map((token) => resolvePath(token, cwd));
 		return paths.reverse().find((path) => existsSync(path)) ?? cwd;
 	}
 	const path = (input as GrepLikeInput | undefined)?.path;
-	return typeof path === "string" && path.length > 0 ? resolve(cwd, path) : cwd;
+	return typeof path === "string" && path.length > 0 ? resolveToCwd(path, cwd) : cwd;
 }
 
 export interface GuardCheckParams {

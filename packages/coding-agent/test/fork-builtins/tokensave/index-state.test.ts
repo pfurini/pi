@@ -4,13 +4,15 @@
  * records every probe.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import type { ExtensionAPI } from "../../../src/core/extensions/types.ts";
 import pluginTokensave from "../../../src/core/fork-builtins/tokensave/index.ts";
+import { createIndexStateCache, type KnownIndexState } from "../../../src/core/fork-builtins/tokensave/index-state.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
+import type { FakeCommand, FakeHandler } from "./fake-types.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -18,7 +20,7 @@ type Cb = (
 	stderr: string,
 ) => void;
 
-type Handler = (event: any, ctx: any) => any;
+type Handler = FakeHandler;
 
 /** A root's `status` answer: a node count, a failed process, or a killed (timed out) one. */
 type StatusAnswer = number | "error" | "timeout";
@@ -57,16 +59,16 @@ afterEach(() => setExecFileImplForTest(undefined));
 function plugin(options: { agentDir?: string; refs?: () => string } = {}) {
 	const handlers: Record<string, Handler> = {};
 	const tools: Record<string, unknown> = {};
-	const commands: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
+	const commands: Record<string, FakeCommand> = {};
 	const pi = {
 		agentDir: options.agentDir ?? mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
 		on(event: string, handler: Handler) {
 			handlers[event] = handler;
 		},
-		registerTool(def: any) {
+		registerTool(def: { name: string }) {
 			tools[def.name] = def;
 		},
-		registerCommand(name: string, def: any) {
+		registerCommand(name: string, def: FakeCommand) {
 			commands[name] = def;
 		},
 		getActiveTools: () => ["bash", ...Object.keys(tools)],
@@ -219,4 +221,44 @@ test("a reconciliation that ran sync resets the root; one that skipped sync does
 		expect(search?.block === true, label).toBe(resets);
 		expect(cli.probes.length, label).toBe(resets ? 2 : 1);
 	}
+});
+
+test("concurrent lookups share one probe, and a reset during the probe discards its result", async () => {
+	const releases: Array<(state: KnownIndexState) => void> = [];
+	const cache = createIndexStateCache(() => new Promise<KnownIndexState>((resolve) => releases.push(resolve)));
+
+	const first = cache.lookup("/repo");
+	const second = cache.lookup("/repo");
+	expect(releases.length, "the second lookup joins the first probe").toBe(1);
+
+	cache.reset("/repo");
+	releases[0]("empty");
+	expect(await first).toBe("empty");
+	expect(await second).toBe("empty");
+	expect(cache.state("/repo"), "the reset dropped the stale result").toBe("unknown");
+
+	const third = cache.lookup("/repo");
+	expect(releases.length, "an unknown root is probed again").toBe(2);
+	releases[1]("ready");
+	expect(await third).toBe("ready");
+	expect(cache.state("/repo")).toBe("ready");
+});
+
+test("two spellings of one root share a cache entry", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-tokensave-index-state-"));
+	const real = join(parent, "repo");
+	const link = join(parent, "repo-link");
+	mkdirSync(real);
+	symlinkSync(real, link);
+	const probed: string[] = [];
+	const cache = createIndexStateCache(async (root) => {
+		probed.push(root);
+		return "empty";
+	});
+
+	expect(await cache.lookup(real)).toBe("empty");
+	expect(await cache.lookup(link)).toBe("empty");
+	expect(probed).toStrictEqual([real]);
+	cache.reset(link);
+	expect(cache.state(real), "a reset through the link resets the root").toBe("unknown");
 });

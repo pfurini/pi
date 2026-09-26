@@ -14,7 +14,7 @@ import { createBranchIndexLifecycle, sharedReconciliationStore } from "./branch-
 import { registerTokensaveCommands } from "./commands.ts";
 import { detectSearchCandidate, evaluateGuard, type GuardableToolName, resolveGuardTarget } from "./guard.ts";
 import { createIndexStateCache } from "./index-state.ts";
-import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
+import { canonicalPath, isProjectInitialized, resolveProjectRoot } from "./project.ts";
 import { resolveToolProject } from "./projects.ts";
 import { buildRulesBlock } from "./rules.ts";
 import { checkTokensaveAvailable } from "./runner.ts";
@@ -31,16 +31,6 @@ const TOKENSAVE_TOOL_PREFIX = "tokensave_";
 const RULES_MARKER = "pi-tokensave:start";
 /** Rendered as `<tokensave>...</tokensave>` in the system prompt. */
 const RULES_SECTION_NAME = "tokensave";
-
-/**
- * Whether the model can call `name` in the current request. A pi-subagents child
- * can load this extension yet leave its tools inactive (`tools:` lists, `ext:`
- * selectors), and a running skill's `disallowed-tools` blocks tools that stay
- * active. The guard must not point the model at such a tool.
- */
-function canCallTool(pi: ExtensionAPI, name: string): boolean {
-	return pi.getCallableTools().includes(name);
-}
 
 function createBranchReconciliation(
 	pi: ExtensionAPI,
@@ -134,13 +124,19 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		}
 		if (!GUARDED_TOOLS.has(event.toolName as GuardableToolName)) return;
 		const toolName = event.toolName as GuardableToolName;
+		// Only a symbol search can be blocked or warned about, so any other call skips the
+		// root walk, the binary check and the index probe below.
+		if (!detectSearchCandidate(toolName, event.input)) return;
 
 		// The guard checks the project the search reads, which may not be the session's.
 		const sessionRoot = resolveProjectRoot(ctx.cwd);
 		const root = resolveProjectRoot(resolveGuardTarget(toolName, event.input, ctx.cwd));
 		if (!isProjectInitialized(root)) return;
-		// Both the block reason and the prefer-mode notice point at this tool.
-		if (!canCallTool(pi, "tokensave_find_symbol")) return;
+		// Both the block reason and the prefer-mode notice point at this tool. A pi-subagents
+		// child can load this extension yet leave its tools inactive (`tools:` lists, `ext:`
+		// selectors), and a running skill's `disallowed-tools` blocks tools that stay active.
+		// The guard must not point the model at a tool it cannot call.
+		if (!pi.getCallableTools().includes("tokensave_find_symbol")) return;
 
 		if (state.binaryAvailable === undefined) {
 			state.binaryAvailable = await checkTokensaveAvailable();
@@ -164,7 +160,7 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 
 		if (decision.block) {
 			const hint =
-				root === sessionRoot
+				canonicalPath(root) === canonicalPath(sessionRoot)
 					? ""
 					: `\n\nThis search reads ${root}, another indexed project. Pass project: "${root}" to the TokenSave tool.`;
 			return { block: true, reason: `${decision.reason}${hint}` };

@@ -7,7 +7,7 @@
  * checks on the directory. Actual data always comes through the CLI.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const TOKENSAVE_DIR_NAME = ".tokensave";
@@ -37,6 +37,19 @@ export function resolveProjectRoot(cwd: string): string {
 		dir = parent;
 	}
 	return cwd;
+}
+
+/**
+ * The real path of `path`, or `path` itself when it does not exist. Project roots are
+ * compared and keyed by this value, so two spellings of one root, such as `/tmp/repo`
+ * and `/private/tmp/repo` on macOS, name the same project.
+ */
+export function canonicalPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return path;
+	}
 }
 
 export function isProjectInitialized(projectRoot: string): boolean {

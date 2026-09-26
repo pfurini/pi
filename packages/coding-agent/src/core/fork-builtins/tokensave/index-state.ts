@@ -7,9 +7,11 @@
  * An error or a timeout counts as `ready`, so the rules and the guard stay on when the
  * check itself fails. An entry stays until `reset` returns the root to `unknown`. A
  * successful `/tokensave-init`, `/tokensave-sync` or reconciliation sync calls `reset`.
+ * Entries are keyed by the root's canonical path, so two spellings share one entry.
  */
 
 import { decodeStatusResponse } from "./decoders.ts";
+import { canonicalPath } from "./project.ts";
 import { runTokensaveTool } from "./runner.ts";
 
 export type IndexState = "unknown" | "empty" | "ready";
@@ -39,30 +41,32 @@ export function createIndexStateCache(
 
 	return {
 		state(root) {
-			return states.get(root) ?? "unknown";
+			return states.get(canonicalPath(root)) ?? "unknown";
 		},
 		lookup(root) {
-			const known = states.get(root);
+			const key = canonicalPath(root);
+			const known = states.get(key);
 			if (known) return Promise.resolve(known);
-			const inFlight = pending.get(root);
+			const inFlight = pending.get(key);
 			if (inFlight) return inFlight;
 
 			const probing: Promise<KnownIndexState> = probe(root)
 				.catch((): KnownIndexState => "ready")
 				.then((state) => {
 					// A reset during the probe drops its result: the index changed after it started.
-					if (pending.get(root) === probing) {
-						pending.delete(root);
-						states.set(root, state);
+					if (pending.get(key) === probing) {
+						pending.delete(key);
+						states.set(key, state);
 					}
 					return state;
 				});
-			pending.set(root, probing);
+			pending.set(key, probing);
 			return probing;
 		},
 		reset(root) {
-			states.delete(root);
-			pending.delete(root);
+			const key = canonicalPath(root);
+			states.delete(key);
+			pending.delete(key);
 		},
 	};
 }

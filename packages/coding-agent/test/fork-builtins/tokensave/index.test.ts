@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 import type { ExtensionAPI } from "../../../src/core/extensions/types.ts";
 import pluginTokensave from "../../../src/core/fork-builtins/tokensave/index.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
+import type { FakeCommand, FakeHandler } from "./fake-types.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -18,13 +19,13 @@ type Cb = (
 	stderr: string,
 ) => void;
 
-type Handler = (event: any, ctx: any) => any;
+type Handler = FakeHandler;
 
 /** Each fake session gets its own agent directory unless a test shares one. */
 function fakePi(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))) {
 	const handlers: Record<string, Handler> = {};
 	const tools: Record<string, unknown> = {};
-	const commands: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
+	const commands: Record<string, FakeCommand> = {};
 	const pi = {
 		handlers,
 		commands,
@@ -32,10 +33,10 @@ function fakePi(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))
 		on(event: string, handler: Handler) {
 			handlers[event] = handler;
 		},
-		registerTool(def: any) {
+		registerTool(def: { name: string }) {
 			tools[def.name] = def;
 		},
-		registerCommand(name: string, def: any) {
+		registerCommand(name: string, def: FakeCommand) {
 			commands[name] = def;
 		},
 		// Pi activates registered extension tools by default; tests override this for
@@ -153,8 +154,8 @@ test("before_agent_start appends to the text when an earlier handler already rep
 	const event = { prompt: "hello", systemPrompt: "replaced prompt", systemPromptOptions };
 
 	const result = await pi.handlers.before_agent_start(event, { agentDir: pi.agentDir });
-	expect(result?.systemPrompt.startsWith("replaced prompt")).toBeTruthy();
-	expect(result?.systemPrompt.includes("pi-tokensave:start")).toBeTruthy();
+	expect(result?.systemPrompt?.startsWith("replaced prompt")).toBeTruthy();
+	expect(result?.systemPrompt?.includes("pi-tokensave:start")).toBeTruthy();
 	expect(systemPromptOptions.sections).toStrictEqual({});
 });
 

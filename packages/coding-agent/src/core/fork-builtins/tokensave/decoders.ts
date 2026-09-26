@@ -597,6 +597,18 @@ export type DecodedStatus =
 
 export function decodeStatusResponse(result: TokensaveRunOk): DecodedStatus {
 	if (result.isMarkdown) return { kind: "text", text: String(result.data) };
-	if (isRecord(result.data)) return { kind: "object", stats: result.data as StatusStats };
+	if (isRecord(result.data)) {
+		// A field of the wrong type is dropped, so a string `node_count` never reads as a count.
+		const data = result.data;
+		return {
+			kind: "object",
+			stats: {
+				node_count: asNumber(data.node_count),
+				edge_count: asNumber(data.edge_count),
+				file_count: asNumber(data.file_count),
+				db_size_bytes: asNumber(data.db_size_bytes),
+			},
+		};
+	}
 	return { kind: "unknown" };
 }

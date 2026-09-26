@@ -23,13 +23,22 @@ type GetConfig = () => TokensaveConfig;
 /** Called after a command changed a root's index, so cached index state is dropped. */
 type OnIndexChanged = (root: string) => void;
 
-/** The root a command targets: its optional path argument, else the session's project. */
-function commandRoot(args: string, ctx: ExtensionCommandContext): string {
-	return resolveToolProject(ctx.cwd, args.trim() || undefined).root;
+/**
+ * The root a command targets: its optional path argument, else the session's project.
+ * A path argument that does not exist gets an error notice and yields undefined.
+ */
+function commandRoot(args: string, ctx: ExtensionCommandContext): string | undefined {
+	const project = resolveToolProject(ctx.cwd, args.trim() || undefined);
+	if (project.missingPath !== undefined) {
+		ctx.ui.notify(`Path not found: ${project.missingPath}`, "error");
+		return undefined;
+	}
+	return project.root;
 }
 
 async function handleStatus(args: string, ctx: ExtensionCommandContext): Promise<void> {
 	const root = commandRoot(args, ctx);
+	if (root === undefined) return;
 	const available = await checkTokensaveAvailable();
 	if (!available) {
 		ctx.ui.notify("TokenSave binary not found on PATH.", "error");
@@ -45,6 +54,7 @@ async function handleStatus(args: string, ctx: ExtensionCommandContext): Promise
 
 async function handleInit(args: string, ctx: ExtensionCommandContext, onIndexChanged: OnIndexChanged): Promise<void> {
 	const root = commandRoot(args, ctx);
+	if (root === undefined) return;
 	if (isProjectInitialized(root)) {
 		ctx.ui.notify(`TokenSave is already initialized at ${root}.`, "info");
 		return;
@@ -61,6 +71,7 @@ async function handleInit(args: string, ctx: ExtensionCommandContext, onIndexCha
 
 async function handleSync(args: string, ctx: ExtensionCommandContext, onIndexChanged: OnIndexChanged): Promise<void> {
 	const root = commandRoot(args, ctx);
+	if (root === undefined) return;
 	if (!isProjectInitialized(root)) {
 		ctx.ui.notify(`TokenSave is not initialized at ${root}. Run /tokensave-init first.`, "warning");
 		return;

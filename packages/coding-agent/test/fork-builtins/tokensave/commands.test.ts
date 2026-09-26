@@ -2,9 +2,11 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import type { ExtensionAPI } from "../../../src/core/extensions/types.ts";
 import { registerTokensaveCommands } from "../../../src/core/fork-builtins/tokensave/commands.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
 import type { TokensaveMode, TokensaveModeSource } from "../../../src/core/fork-builtins/tokensave/state.ts";
+import type { FakeCommand } from "./fake-types.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -13,20 +15,20 @@ type Cb = (
 ) => void;
 
 function fakePi() {
-	const commands: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
+	const commands: Record<string, FakeCommand> = {};
 	return {
 		commands,
 		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
-		registerCommand(name: string, def: any) {
+		registerCommand(name: string, def: FakeCommand) {
 			commands[name] = def;
 		},
 		getActiveTools(): string[] {
 			return [];
 		},
 		getCallableTools(): string[] {
-			return this.getActiveTools();
+			return [];
 		},
-	} as any;
+	} as unknown as ExtensionAPI & { commands: Record<string, FakeCommand> };
 }
 
 function fakeCtx(cwd: string, confirmAnswer = true) {
@@ -39,7 +41,7 @@ function fakeCtx(cwd: string, confirmAnswer = true) {
 			confirm: async () => confirmAnswer,
 		},
 		notifications,
-	} as any;
+	};
 }
 
 test.afterEach(() => setExecFileImplForTest(undefined));
@@ -67,7 +69,7 @@ test("tokensave-status notifies binary-missing when TokenSave is absent", async 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
 	await pi.commands["tokensave-status"].handler("", ctx);
 
-	expect(ctx.notifications.some((n: any) => /not found/i.test(n.message))).toBeTruthy();
+	expect(ctx.notifications.some((n) => /not found/i.test(n.message))).toBeTruthy();
 });
 
 test("tokensave-init asks for confirmation before running init", async () => {
@@ -122,7 +124,7 @@ test("tokensave-init does not run when the user declines confirmation", async ()
 	await pi.commands["tokensave-init"].handler("", ctx);
 
 	expect(ranInit).toBe(false);
-	expect(ctx.notifications.some((n: any) => /cancelled/i.test(n.message))).toBeTruthy();
+	expect(ctx.notifications.some((n) => /cancelled/i.test(n.message))).toBeTruthy();
 });
 
 test("tokensave-mode reports the mode and its source, and sets a new one for this session without writing", async () => {
@@ -173,7 +175,7 @@ test("tokensave-mode rejects invalid values", async () => {
 	const ctx = fakeCtx("/tmp");
 	await pi.commands["tokensave-mode"].handler("bogus", ctx);
 	expect(state.mode).toBe("enforce");
-	expect(ctx.notifications.some((n: any) => n.level === "error")).toBeTruthy();
+	expect(ctx.notifications.some((n) => n.level === "error")).toBeTruthy();
 });
 
 test("tokensave-doctor reports the settings path, the mode, autoManageBranches and no rules-block line", async () => {

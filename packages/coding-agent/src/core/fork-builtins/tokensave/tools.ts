@@ -92,6 +92,17 @@ async function callTool(
 
 /** An uninitialized target gets an error text and spawns no process. */
 function guardCheckNotInitialized(project: ToolProject) {
+	if (project.missingPath !== undefined) {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Project path not found: ${project.missingPath}. Pass an existing directory, absolute or relative to the cwd, or omit project.`,
+				},
+			],
+			details: { initialized: false, missingPath: project.missingPath },
+		};
+	}
 	if (!project.initialized) {
 		return {
 			content: [{ type: "text" as const, text: notInitializedText(project) }],
@@ -417,9 +428,13 @@ function dedupeSymbolIdentity(matches: RankedSymbolMatch[]): RankedSymbolMatch[]
 	return out;
 }
 
+type RunError = Extract<TokensaveRunResult, { ok: false }>;
+
 export interface SymbolNameResolution {
 	match?: RankedSymbolMatch;
 	ambiguous?: RankedSymbolMatch[];
+	/** Set when the lookups failed, so the name's absence is unknown rather than confirmed. */
+	error?: RunError;
 }
 
 /**
@@ -441,17 +456,22 @@ function looksQualified(name: string): boolean {
  *  2. `by_qualified_name` when the input looks qualified and (1) found nothing;
  *  3. bounded `search` otherwise.
  * All results are normalized to ExactSymbolMatch and left unranked here.
+ * When nothing matched and the final `search` call failed, `error` holds the
+ * first failure, so a timeout or an unreadable index is not reported as "not found".
  */
 async function fetchSymbolCandidates(
 	name: string,
 	project: ToolProject,
 	signal: AbortSignal | undefined,
-): Promise<ExactSymbolMatch[]> {
+): Promise<{ matches: ExactSymbolMatch[]; error?: RunError }> {
 	const limit = candidatePoolLimit(20);
+	let firstError: RunError | undefined;
 	const exact = await callTool("find_exact_symbol", { name, limit }, project, signal);
 	if (exact.ok) {
 		const decoded = decodeExactSymbolResponse(exact);
-		if (decoded.kind === "object" && decoded.matches.length > 0) return decoded.matches;
+		if (decoded.kind === "object" && decoded.matches.length > 0) return { matches: decoded.matches };
+	} else {
+		firstError = exact;
 	}
 
 	if (looksQualified(name)) {
@@ -459,16 +479,18 @@ async function fetchSymbolCandidates(
 		if (qualified.ok) {
 			// by_qualified_name returns a direct array, not a node object.
 			const decoded = decodeQualifiedNameResponse(qualified);
-			if (decoded.kind === "object" && decoded.matches.length > 0) return decoded.matches;
+			if (decoded.kind === "object" && decoded.matches.length > 0) return { matches: decoded.matches };
+		} else {
+			firstError ??= qualified;
 		}
 	}
 
 	const search = await callTool("search", { query: name, limit }, project, signal);
 	if (search.ok) {
 		const decoded = decodeSearchResponse(search);
-		if (decoded.kind === "array") return decoded.items;
+		return { matches: decoded.kind === "array" ? decoded.items : [] };
 	}
-	return [];
+	return { matches: [], error: firstError ?? search };
 }
 
 async function resolveSymbolByName(
@@ -476,8 +498,8 @@ async function resolveSymbolByName(
 	project: ToolProject,
 	signal: AbortSignal | undefined,
 ): Promise<SymbolNameResolution> {
-	const candidates = await fetchSymbolCandidates(name, project, signal);
-	if (candidates.length === 0) return {};
+	const { matches: candidates, error } = await fetchSymbolCandidates(name, project, signal);
+	if (candidates.length === 0) return { error };
 
 	const ranked = rankSymbolMatches(name, candidates);
 	const best = ranked[0];
@@ -913,6 +935,9 @@ async function resolveNode(
 		if (resolution.match) {
 			return { id: resolution.match.id, base: resolution.match, name: resolution.match.name };
 		}
+		if (resolution.error) {
+			return { id: undefined, base: undefined, name: undefined, error: resolution.error };
+		}
 	}
 
 	return { id: undefined, base: undefined, name: undefined };
@@ -945,6 +970,14 @@ async function executeSymbol(
 		};
 	}
 
+	// Before the unresolved check: a failed name lookup has no id, and is not a "not found".
+	if (resolved.error) {
+		return {
+			content: [{ type: "text" as const, text: errorText(resolved.error) }],
+			details: { ok: false, kind: resolved.error.kind },
+		};
+	}
+
 	if (!resolved.id) {
 		return {
 			content: [
@@ -961,13 +994,6 @@ async function executeSymbol(
 		return {
 			content: [{ type: "text" as const, text: resolved.notFoundText }],
 			details: { ok: true, resolved: false },
-		};
-	}
-
-	if (resolved.error) {
-		return {
-			content: [{ type: "text" as const, text: errorText(resolved.error) }],
-			details: { ok: false, kind: resolved.error.kind },
 		};
 	}
 
@@ -1142,6 +1168,7 @@ async function executeImpact(
 	if (params.name || params.nodeId) {
 		let nodeId = params.nodeId;
 		let ambiguousText: string | undefined;
+		let lookupError: RunError | undefined;
 		if (!nodeId && params.name) {
 			const resolution = await resolveSymbolByName(params.name, project, signal);
 			if (resolution.ambiguous) {
@@ -1149,6 +1176,8 @@ async function executeImpact(
 			} else if (resolution.match) {
 				nodeId = resolution.match.id;
 				resolvedFile = resolvedFile ?? resolution.match.file;
+			} else {
+				lookupError = resolution.error;
 			}
 		}
 
@@ -1184,6 +1213,8 @@ async function executeImpact(
 			}
 		} else if (ambiguousText) {
 			sections.push(ambiguousText);
+		} else if (lookupError) {
+			sections.push(errorText(lookupError));
 		} else {
 			sections.push(`Could not resolve symbol '${params.name ?? params.nodeId}' to compute impact.`);
 		}

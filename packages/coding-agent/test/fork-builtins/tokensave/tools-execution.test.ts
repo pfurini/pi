@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "../../../src/core/extension
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
 import { createSessionState } from "../../../src/core/fork-builtins/tokensave/state.ts";
 import { registerTokensaveTools } from "../../../src/core/fork-builtins/tokensave/tools.ts";
+import type { FakeTool } from "./fake-types.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -50,11 +51,11 @@ function mockCli(responders: Record<string, ToolResponder>) {
 }
 
 function fakePi() {
-	const tools: Record<string, any> = {};
+	const tools: Record<string, FakeTool> = {};
 	const pi = {
 		tools,
 		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
-		registerTool(def: any) {
+		registerTool(def: FakeTool) {
 			tools[def.name] = def;
 		},
 		getActiveTools(): string[] {
@@ -64,7 +65,7 @@ function fakePi() {
 			return pi.getActiveTools();
 		},
 	};
-	return pi as unknown as ExtensionAPI & { tools: Record<string, any> };
+	return pi as unknown as ExtensionAPI & { tools: Record<string, FakeTool> };
 }
 
 function fakeCtx(cwd: string): ExtensionContext {
@@ -81,7 +82,12 @@ function initializedProjectDir(): string {
 	return dir;
 }
 
-async function execute(pi: ReturnType<typeof fakePi>, name: string, params: unknown, ctx: ExtensionContext) {
+async function execute(
+	pi: ReturnType<typeof fakePi>,
+	name: string,
+	params: Record<string, unknown>,
+	ctx: ExtensionContext,
+) {
 	const tool = pi.tools[name];
 	expect(tool, `tool '${name}' was not registered`).toBeTruthy();
 	return tool.execute("call-1", params, undefined, () => {}, ctx);
@@ -521,7 +527,7 @@ test("no registered tool throws when TokenSave returns an unexpected but valid p
 		return {};
 	});
 
-	const invocations: Array<[string, unknown]> = [
+	const invocations: Array<[string, Record<string, unknown>]> = [
 		["tokensave_status", {}],
 		["tokensave_context", { task: "x" }],
 		["tokensave_find_symbol", { name: "Example" }],
@@ -1031,4 +1037,45 @@ test("tokensave_symbol formats a signature-less impls entry as 'type implements 
 	const result = await execute(pi, "tokensave_symbol", { name: "Example", includeImplementations: true }, ctx);
 	expect(result.content[0].text).not.toMatch(/- \?/);
 	expect(result.content[0].text).toMatch(/Example implements Runner — src\/example\.py:5/);
+});
+
+test("tokensave_status drops a stats field of the wrong type", async () => {
+	const { pi, ctx } = setup();
+	mockCli({ status: () => ({ json: { node_count: "12", edge_count: 3 } }) });
+
+	const result = await execute(pi, "tokensave_status", {}, ctx);
+	expect(result.content[0].text).toMatch(/nodes: \?/);
+	expect(result.content[0].text).toMatch(/edges: 3/);
+});
+
+test("a failed name lookup reports the CLI error instead of an unknown symbol", async () => {
+	const { pi, ctx } = setup();
+	setExecFileImplForTest((_file, _args, _options, cb: Cb) => {
+		cb(Object.assign(new Error("timed out"), { killed: true, signal: "SIGTERM" }), "", "");
+		return {};
+	});
+
+	const symbol = await execute(pi, "tokensave_symbol", { name: "Example" }, ctx);
+	expect(symbol.content[0].text).toMatch(/TokenSave tool 'find_exact_symbol' timed out/);
+	expect(symbol.content[0].text).not.toMatch(/Could not resolve/);
+	expect(symbol.details.ok).toBe(false);
+
+	const impact = await execute(pi, "tokensave_impact", { name: "Example" }, ctx);
+	expect(impact.content[0].text).toMatch(/TokenSave tool 'find_exact_symbol' timed out/);
+	expect(impact.content[0].text).not.toMatch(/Could not resolve/);
+});
+
+test("a name lookup whose search succeeds with no match still reports an unknown symbol", async () => {
+	const { pi, ctx } = setup();
+	setExecFileImplForTest((_file, args: string[], _options, cb: Cb) => {
+		if (args[1] === "find_exact_symbol") {
+			cb(new Error("crash"), "", "internal error");
+			return {};
+		}
+		cb(null, envelope(JSON.stringify([])), "");
+		return {};
+	});
+
+	const result = await execute(pi, "tokensave_symbol", { name: "Example" }, ctx);
+	expect(result.content[0].text).toMatch(/Could not resolve symbol 'Example'/);
 });

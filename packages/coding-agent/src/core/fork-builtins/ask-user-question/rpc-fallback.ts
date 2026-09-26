@@ -24,10 +24,8 @@ import { displayLabel } from "./state/row-intent.ts";
 import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.ts";
 
 /**
- * Canonical-English fallbacks; resolved through `t()` at dialog time so the
- * live locale applies (top-level `const x = t(...)` would bake load-time
- * English in — see i18n-bridge.ts). The sentinel row label comes from
- * `displayLabel("other")` — same source as the TUI row.
+ * English dialog texts. The sentinel row label comes from `displayLabel("other")`,
+ * the same source as the TUI row.
  */
 const MULTI_SELECT_INSTRUCTIONS =
 	'Enter the numbers of all that apply, comma-separated (e.g. "1,3"), or type a custom answer as plain text.';
@@ -39,9 +37,8 @@ const MAX_PREVIEW_CHARS = 600;
 
 /**
  * The dialog-primitive slice of `ExtensionUIContext` this walker needs.
- * Structural on purpose: the pinned pi 0.74 peer types predate `ctx.mode`,
- * and jiti transpiles without type-checking — `hasDialogUI` is the runtime
- * gate that makes the shape trustworthy.
+ * Structural on purpose: the walker depends only on the two primitives it calls,
+ * and `hasDialogUI` checks that runtime shape before the walker runs.
  */
 export type DialogUI = {
 	select: (title: string, options: string[]) => Promise<string | undefined>;

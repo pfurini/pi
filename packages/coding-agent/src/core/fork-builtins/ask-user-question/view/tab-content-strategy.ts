@@ -94,7 +94,7 @@ export interface QuestionTabStrategyConfig {
 	notesInput: Editor;
 	isMulti: boolean;
 	getCurrentBodyHeight: (width: number) => number;
-	/** Resolved collapse key spec (`"ctrl+]"`, `"alt+o"`, or `"off"`). Drives the footer's collapse hint. */
+	/** Display text of each questionnaire key; `""` marks an unbound key, whose hint the footer omits. */
 	keyTexts: QuestionnaireKeyTexts;
 }
 
@@ -151,7 +151,10 @@ export class QuestionTabStrategy implements TabContentStrategy {
 			...(this.footerRowCount === 3
 				? [
 						new OneLineClippedText(
-							question?.setAside?.length && !state.notesVisible && !state.inputMode
+							question?.setAside?.length &&
+								this.config.keyTexts.setAside &&
+								!state.notesVisible &&
+								!state.inputMode
 								? this.config.theme.fg(
 										"muted",
 										hintPart(SET_ASIDE_HINT_TEMPLATE, this.config.keyTexts.setAside),
@@ -294,10 +297,9 @@ export class SubmitTabStrategy implements TabContentStrategy {
  * editor shortcut and needs no local hint; the context-specific clear shortcut is
  * appended at the far right while input mode is active.
  *
- * The collapse part interpolates the configured `keyTexts` (display-cased)
- * and is omitted entirely when the shortcut is `"off"` — `routeKey` and the raw
- * terminal listener both refuse to collapse in that case, so advertising a key
- * would be a lie.
+ * Each key part interpolates the bound key from `keyTexts` (display-cased). A part
+ * is omitted when its key is unbound (`""`): `routeKey` and the raw terminal
+ * listener never act on an unbound key, so advertising one would be a lie.
  */
 export function buildHintText(
 	question: QuestionData | undefined,

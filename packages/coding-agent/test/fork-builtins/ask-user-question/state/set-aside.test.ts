@@ -135,6 +135,17 @@ describe("read-only alternatives in the questionnaire session", () => {
 		expect(plain(render())).toContain("Choice 1");
 	});
 
+	it("drops the hint and the key when the set-aside binding is empty", () => {
+		const { session, render, done } = sessionFor([makeQuestion(metadata)], {
+			"app.askUserQuestion.collapse": [],
+			"app.askUserQuestion.setAside": [],
+		});
+		expect(plain(render())).not.toContain("alternatives");
+		session.dispatch("a");
+		expect(plain(render())).not.toContain("Alternatives considered");
+		expect(done).not.toHaveBeenCalled();
+	});
+
 	it("closes disclosure on tab switch without leaking it into the next question", () => {
 		const { session, render, done, terminal } = sessionFor([
 			makeQuestion(metadata),

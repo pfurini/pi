@@ -993,5 +993,40 @@ describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)"
 		expect(routeKey("n", makeState(), runtime)).not.toEqual({ kind: "notes_enter" });
 		expect(routeKey("\x0c", makeState(), runtime)).toEqual({ kind: "tab_switch", nextTab: 1 });
 		expect(routeKey(BYTE_TAB, makeState(), runtime)).not.toEqual({ kind: "tab_switch", nextTab: 1 });
+		const multiQ = { ...makeQuestion(), multiSelect: true };
+		const multiRuntime = makeRuntime({
+			keybindings: keybindingsWith({ "app.askUserQuestion.toggle": "alt+x" }),
+			questions: [multiQ],
+			isMulti: false,
+			items: multiQ.options.map((o) => ({ kind: "option" as const, label: o.label })),
+			currentItem: { kind: "option", label: "B" },
+		});
+		expect(routeKey("\x1bx", makeState({ optionIndex: 1 }), multiRuntime)).toEqual({ kind: "toggle", index: 1 });
+		expect(routeKey(BYTE_SPACE, makeState({ optionIndex: 1 }), multiRuntime)).not.toEqual({
+			kind: "toggle",
+			index: 1,
+		});
+	});
+
+	it("follows rebound previous-tab and set-aside keys", () => {
+		const keybindings = keybindingsWith({
+			"app.askUserQuestion.previousTab": "alt+p",
+			"app.askUserQuestion.setAside": "alt+a",
+		});
+		const runtime = makeRuntime({
+			keybindings,
+			questions: [{ ...makeQuestion(), setAside: [{ label: "X", reason: "y" }] }, makeQuestion()],
+		});
+		expect(routeKey("\x1bp", makeState({ currentTab: 1 }), runtime)).toEqual({ kind: "tab_switch", nextTab: 0 });
+		expect(routeKey(BYTE_SHIFT_TAB, makeState({ currentTab: 1 }), runtime)).not.toEqual({
+			kind: "tab_switch",
+			nextTab: 0,
+		});
+		expect(routeKey("\x1ba", makeState(), runtime)).toEqual({ kind: "set_aside", scroll: 0 });
+		expect(routeKey("a", makeState(), runtime)).not.toEqual({ kind: "set_aside", scroll: 0 });
+		expect(routeKey("\x1ba", makeState({ setAsideScroll: 0 }), runtime)).toEqual({
+			kind: "set_aside",
+			scroll: undefined,
+		});
 	});
 });

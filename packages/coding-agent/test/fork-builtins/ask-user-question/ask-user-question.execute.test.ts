@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { BEL } from "../../../src/core/fork-builtins/ask-user-question/ask-user-question.ts";
+import {
+	BEL,
+	createAskUserQuestionToolDefinition,
+} from "../../../src/core/fork-builtins/ask-user-question/ask-user-question.ts";
 import {
 	MAX_QUESTIONS,
 	type QuestionnaireResult,
@@ -377,7 +380,7 @@ describe("ask_user_question.execute — event emission", () => {
 		return { custom, ctx };
 	}
 
-	it("emits ASK_USER_PROMPT event via pi.events.emit before showing dialog", async () => {
+	it("emits ASK_USER_PROMPT event on the event bus before showing dialog", async () => {
 		const mockEmit = vi.fn();
 		const { pi, captured } = createMockPi({
 			events: { emit: mockEmit, on: vi.fn(() => () => {}) },
@@ -409,6 +412,19 @@ describe("ask_user_question.execute — event emission", () => {
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
+	});
+
+	it("answers without an event bus, as with a custom loader that has none", async () => {
+		const { pi } = createMockPi();
+		const tool = createAskUserQuestionToolDefinition({ agentDir: pi.agentDir });
+		const answer = { questionIndex: 0, question: "Which library?", kind: "option", answer: "React" };
+		const custom = vi.fn(async () => ({ answers: [answer], cancelled: false }));
+		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+		const r = await tool.execute("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
+
+		expect(custom).toHaveBeenCalledOnce();
+		expect(r.details).toMatchObject({ cancelled: false, answers: [expect.objectContaining({ answer: "React" })] });
 	});
 
 	it("clears ask-user blocked lifecycle after cancellation and UI rejection", async () => {

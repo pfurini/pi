@@ -15,6 +15,9 @@ export const ASK_USER_QUESTION_KEYBINDING_IDS = {
 	toggle: "app.askUserQuestion.toggle",
 } as const;
 
+export type QuestionnaireKeyName = keyof typeof ASK_USER_QUESTION_KEYBINDING_IDS;
+type AskUserQuestionKeybindingId = (typeof ASK_USER_QUESTION_KEYBINDING_IDS)[QuestionnaireKeyName];
+
 declare module "@earendil-works/pi-tui" {
 	interface Keybindings {
 		"app.askUserQuestion.collapse": true;
@@ -51,9 +54,7 @@ export const ASK_USER_QUESTION_KEYBINDINGS = {
 		defaultKeys: "space",
 		description: "Toggle a multi-select option",
 	},
-} satisfies Record<string, KeybindingDefinition>;
-
-export type QuestionnaireKeyName = keyof typeof ASK_USER_QUESTION_KEYBINDING_IDS;
+} satisfies Record<AskUserQuestionKeybindingId, KeybindingDefinition>;
 
 /** The display text of each questionnaire key, e.g. `Ctrl+]` or `n`; `""` when the action has no key. */
 export type QuestionnaireKeyTexts = Record<QuestionnaireKeyName, string>;
@@ -82,8 +83,8 @@ export function questionnaireKeyTexts(keybindings: {
 /** The key texts under the default bindings. Hint constants and tests use them. */
 export const DEFAULT_KEY_TEXTS: QuestionnaireKeyTexts = questionnaireKeyTexts({
 	getKeys: (id) => {
-		const keys = (ASK_USER_QUESTION_KEYBINDINGS as Record<string, { defaultKeys: string | string[] }>)[id]
-			?.defaultKeys;
+		const keys: string | string[] | undefined =
+			ASK_USER_QUESTION_KEYBINDINGS[id as AskUserQuestionKeybindingId]?.defaultKeys;
 		return keys === undefined ? [] : Array.isArray(keys) ? keys : [keys];
 	},
 });

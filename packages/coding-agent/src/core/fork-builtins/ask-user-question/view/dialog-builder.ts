@@ -134,10 +134,10 @@ export interface DialogConfig {
 	/** Terminal height getter. Mirrors `getTerminalWidth` — reads `tui.terminal.rows` at render time. */
 	getTerminalRows: () => number;
 	/**
-	 * Resolved collapse/expand key spec (`resolveCollapseKey` output: `"ctrl+]"`,
-	 * `"alt+o"`, or `"off"`). Construction-time config, NOT canonical state —
+	 * Display text of each questionnaire key, from the resolved keybindings; `""`
+	 * marks an unbound key. Construction-time config, NOT canonical state —
 	 * `QuestionnaireRuntime.keyTexts` must never reach view setProps consumers.
-	 * The footer hint interpolates it, and drops the collapse part when `"off"`.
+	 * The footer hints interpolate it, and drop the part of an unbound key.
 	 */
 	keyTexts: QuestionnaireKeyTexts;
 }

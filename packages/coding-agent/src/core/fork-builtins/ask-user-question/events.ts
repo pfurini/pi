@@ -1,5 +1,5 @@
 /**
- * Public event contract for @juicesharp/rpiv-ask-user-question.
+ * Public event contract for the `ask_user_question` base tool.
  *
  * STABILITY POLICY — applies to every event in the `rpiv:*` namespace.
  *

@@ -132,12 +132,12 @@ export class QuestionnaireSession {
 	 * the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
 	 * the bottom-anchored overlay from full-height to one row and the transcript
 	 * behind it becomes readable (#47). The overlay stays focused and in the
-	 * stack, so the collapse key still routes here to expand. `t` stays inside the
-	 * closure (live locale updates); the key display is static per session.
+	 * stack, so the collapse key still routes here to expand. The key display is
+	 * computed once per session from the resolved keybindings.
 	 *
 	 * With no collapse key the router and raw listener never toggle `collapsed`,
 	 * but `toggleCollapsedExternal()` is a public ungated entry — fall back to the
-	 * cancel-only line rather than rendering a literal "Off to expand".
+	 * cancel-only line rather than rendering an expand hint with no key.
 	 */
 	private buildCollapsedRender(theme: Theme): (width: number) => string[] {
 		const collapse = this.keyTexts.collapse;

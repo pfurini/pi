@@ -137,6 +137,7 @@ import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import type { PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader, ResourceLoaderChangeEvent } from "./resource-loader.ts";
+import { prepareRunPrompt, prepareTriggeredRun, type TriggeredRunHost } from "./run-preparation.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
 import type {
 	BranchSummaryEntry,
@@ -2269,20 +2270,8 @@ export class AgentSession {
 	}
 
 	/**
-	 * Run the agent over `messages`.
-	 *
-	 * `preparePrompt` is for a run that did not come through `prompt()`, such as a custom
-	 * message an extension sends with `triggerTurn` on an idle session. It is the text
-	 * `before_agent_start` reports as the prompt, and the run's prompt state is prepared
-	 * here as `prompt()` prepares it. Without that preparation the first request replays
-	 * the transcript's prompt, which is empty in a new session, and every later turn of
-	 * the run drops the sections extensions set (upstream issue 5581).
-	 *
-	 * Preparation runs after the run is claimed, so a message that arrives while
-	 * `before_agent_start` handlers run is queued into this run instead of starting a
-	 * second one, which the agent would refuse. A run that never starts, because
-	 * preparation failed or the run was aborted meanwhile, still records its custom
-	 * messages.
+	 * Run the agent over `messages`. `preparePrompt` is set for a run that did not come
+	 * through `prompt()`; the run is claimed first and then prepared (run-preparation.ts).
 	 */
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[], preparePrompt?: string): Promise<void> {
 		return this.runInDefaultStreamScope(async () => {
@@ -2291,20 +2280,8 @@ export class AgentSession {
 			try {
 				let runMessages = messages;
 				if (preparePrompt !== undefined) {
-					const prepared = Array.isArray(messages) ? [...messages] : [messages];
-					let started = false;
-					try {
-						this._refreshSkillListingIfDirty();
-						await this._prepareRunPrompt(prepared, preparePrompt, undefined);
-						started = !this._agentRunAbortRequested;
-					} finally {
-						if (!started) {
-							for (const message of prepared) {
-								if (message.role === "custom") this._appendCustomMessage(message);
-							}
-						}
-					}
-					if (!started) return;
+					const prepared = await prepareTriggeredRun(this._runPreparationHost(), messages, preparePrompt);
+					if (!prepared) return;
 					runMessages = prepared;
 				}
 				this._syncPendingTurnOverride();
@@ -2334,42 +2311,23 @@ export class AgentSession {
 		});
 	}
 
-	/**
-	 * Prepare a run's prompt state: fire `before_agent_start`, apply what its handlers
-	 * changed, add the custom messages they returned to `messages`, and put the system
-	 * prompt and tool delta first. Shared by `prompt()` and by runs that did not come
-	 * through it, so both kinds of run send the same prompt.
-	 */
-	private async _prepareRunPrompt(
-		messages: AgentMessage[],
-		promptText: string,
-		images: ImageContent[] | undefined,
-	): Promise<void> {
-		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
-		const result = await this._extensionRunner.emitBeforeAgentStart(
-			promptText,
-			images,
-			this._baseSystemPromptOptions,
-		);
-		const handlerEditedTools =
-			result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
-			result.systemPromptOptions.selectedTools.some((name, index) => name !== selectedToolsBefore[index]);
-		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
-		await this._normalizePreparedPromptImages(messages, images);
-
-		for (const msg of result.messages) {
-			messages.push({
-				role: "custom",
-				customType: msg.customType,
-				content: msg.content ?? [],
-				display: msg.display,
-				details: msg.details,
-				timestamp: Date.now(),
-			});
-		}
-		const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
-		this._runSystemPromptOptions = result.systemPromptOptions;
-		if (updateMessage) messages.unshift(updateMessage);
+	/** Fork: the session state run-preparation.ts reads and writes. */
+	private _runPreparationHost(): TriggeredRunHost {
+		return {
+			emitBeforeAgentStart: (...args) => this._extensionRunner.emitBeforeAgentStart(...args),
+			baseSystemPromptOptions: () => this._baseSystemPromptOptions,
+			activeToolNames: () => this.getActiveToolNames(),
+			normalizeImages: (messages, images) => this._normalizePreparedPromptImages(messages, images),
+			applyRunOptions: (options) => {
+				const updateMessage = this._preparePromptAndToolLoadout(options);
+				this._runSystemPromptOptions = options;
+				return updateMessage;
+			},
+			refreshSkillListing: () => this._refreshSkillListingIfDirty(),
+			isAbortRequested: () => this._agentRunAbortRequested,
+			appendCustomMessage: (message) => this._appendCustomMessage(message),
+			flushPendingCustomMessages: () => this._flushPendingCustomMessages(),
+		};
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
@@ -2711,7 +2669,7 @@ export class AgentSession {
 			}
 			this._pendingNextTurnMessages = [];
 
-			await this._prepareRunPrompt(messages, promptText, currentImages);
+			await prepareRunPrompt(this._runPreparationHost(), messages, promptText, currentImages);
 		} catch (error) {
 			preflightResult?.(false);
 			// Pre-run rollback (fork #5): a throw after a skill activated (e.g. in

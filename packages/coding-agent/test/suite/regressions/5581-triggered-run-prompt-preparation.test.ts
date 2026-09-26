@@ -154,6 +154,29 @@ describe("#5581 runs an extension starts on an idle session", () => {
 		expect(requests[0]!.conversation).toContain("handler context");
 	});
 
+	it("sends context a before_agent_start handler queues in the first request", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("before_agent_start", () => {
+						pi.sendMessage(
+							{ customType: "context", content: "queued context", display: false },
+							{ triggerTurn: false },
+						);
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+		const requests: RequestRecord[] = [];
+		harness.setResponses([recordInto(requests, fauxAssistantMessage("done"))]);
+
+		await harness.session.sendCustomMessage(wake("a background job finished"), { triggerTurn: true });
+
+		expect(requests).toHaveLength(1);
+		expect(requests[0]!.conversation).toContain("queued context");
+	});
+
 	it("prepares a run an agent_settled handler starts", async () => {
 		const prompts: string[] = [];
 		let triggered = false;

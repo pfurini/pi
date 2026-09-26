@@ -80,6 +80,24 @@ describe("fork built-in extensions", () => {
 		expect(builtIn?.tools.has("vcc_recall")).toBe(true);
 	});
 
+	it("registers the TokenSave tools and commands as a fork-owned built-in", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const subject = loader([]);
+		await subject.reload();
+
+		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:tokensave>");
+		expect(builtIn?.hidden).toBe(true);
+		expect([...(builtIn?.tools.keys() ?? [])].sort()).toEqual([
+			"tokensave_context",
+			"tokensave_find_symbol",
+			"tokensave_impact",
+			"tokensave_search",
+			"tokensave_status",
+			"tokensave_symbol",
+		]);
+		expect(builtIn?.commands.has("tokensave-mode")).toBe(true);
+	});
+
 	function rpivDescription(subject: DefaultResourceLoader): string | undefined {
 		return subject
 			.getExtensions()

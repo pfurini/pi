@@ -1,0 +1,5 @@
+test/fork-builtins.test.ts > fork built-in extensions registers the tools of rpiv-ask-user-question
+test/fork-builtins.test.ts > fork built-in extensions configures rpiv-ask-user-question from forkBuiltins in the global settings file
+test/fork-builtins.test.ts > fork built-in extensions never configures rpiv-ask-user-question from a project settings file
+test/fork-builtins.test.ts > fork built-in extensions keeps only well-typed rpiv-ask-user-question settings
+test/fork-builtins.test.ts > fork built-in extensions reads a BOM-prefixed settings file and ignores a malformed one

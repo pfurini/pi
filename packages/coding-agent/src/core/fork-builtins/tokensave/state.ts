@@ -73,8 +73,8 @@ export interface TokensaveSessionState {
 	modeSource: TokensaveModeSource;
 	/** undefined = not checked yet this session */
 	binaryAvailable: boolean | undefined;
-	/** Normalized query fragments TokenSave has already been asked about. */
-	consultedQueries: string[];
+	/** Normalized query fragments TokenSave has already been asked about, per project root. */
+	consultedQueries: Map<string, string[]>;
 	/** Set when the most recent TokenSave call failed or returned nothing useful. */
 	lastCallFailedOrEmpty: boolean;
 	lastFailureMessage?: string;
@@ -86,7 +86,7 @@ export function createSessionState(mode: TokensaveMode): TokensaveSessionState {
 		mode,
 		modeSource: "settings",
 		binaryAvailable: undefined,
-		consultedQueries: [],
+		consultedQueries: new Map(),
 		lastCallFailedOrEmpty: false,
 		warnedManualExplorationOnce: false,
 	};
@@ -98,13 +98,20 @@ export function normalizeQueryFragment(text: string): string {
 	return text.trim().toLowerCase();
 }
 
-export function recordConsultation(state: TokensaveSessionState, query: string, succeededWithResults: boolean): void {
+export function recordConsultation(
+	state: TokensaveSessionState,
+	root: string,
+	query: string,
+	succeededWithResults: boolean,
+): void {
 	const normalized = normalizeQueryFragment(query);
 	if (normalized.length >= 2) {
-		state.consultedQueries.push(normalized);
-		if (state.consultedQueries.length > MAX_CONSULTED_QUERIES) {
-			state.consultedQueries.shift();
+		const queries = state.consultedQueries.get(root) ?? [];
+		queries.push(normalized);
+		if (queries.length > MAX_CONSULTED_QUERIES) {
+			queries.shift();
 		}
+		state.consultedQueries.set(root, queries);
 	}
 	state.lastCallFailedOrEmpty = !succeededWithResults;
 }
@@ -117,10 +124,11 @@ export function recordFailure(state: TokensaveSessionState, message: string): vo
 /**
  * Conservative match: a candidate search term is considered "already
  * consulted" if it shares a case-insensitive substring relationship with
- * any previously consulted query fragment.
+ * any query fragment previously consulted in the same project root.
  */
-export function wasCandidateConsulted(state: TokensaveSessionState, candidate: string): boolean {
+export function wasCandidateConsulted(state: TokensaveSessionState, root: string, candidate: string): boolean {
 	const normalized = normalizeQueryFragment(candidate);
 	if (!normalized) return false;
-	return state.consultedQueries.some((query) => query.includes(normalized) || normalized.includes(query));
+	const queries = state.consultedQueries.get(root) ?? [];
+	return queries.some((query) => query.includes(normalized) || normalized.includes(query));
 }

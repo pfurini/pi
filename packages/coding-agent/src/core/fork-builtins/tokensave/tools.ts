@@ -9,7 +9,7 @@
 
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type Static, Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext } from "../../extensions/types.ts";
+import type { ExtensionAPI } from "../../extensions/types.ts";
 import {
 	decodeAffectedResponse,
 	decodeBodyResponse,
@@ -30,7 +30,14 @@ import {
 	nodeLine,
 } from "./decoders.ts";
 import { truncationNote } from "./format.ts";
-import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
+import {
+	displayPath,
+	projectHeader,
+	resolveToolProject,
+	type ToolProject,
+	toRootRelative,
+	toRootRelativeList,
+} from "./projects.ts";
 import { checkTokensaveAvailable, runTokensaveTool, type TokensaveRunResult } from "./runner.ts";
 import { recordConsultation, type TokensaveSessionState } from "./state.ts";
 
@@ -38,6 +45,12 @@ type GetState = () => TokensaveSessionState;
 
 const NOT_INITIALIZED_TEXT =
 	"TokenSave is not initialized for this project. Run `tokensave init` (or /tokensave-init) before using TokenSave tools.";
+
+function notInitializedText(project: ToolProject): string {
+	return project.foreign
+		? `TokenSave is not initialized at ${project.root}. Run /tokensave-init ${project.root} or omit project.`
+		: `TokenSave is not initialized at ${project.root}. Run \`tokensave init\` (or /tokensave-init) before using TokenSave tools.`;
+}
 
 function binaryMissingText(): string {
 	return "TokenSave binary was not found on PATH. Install it, then retry. See README for installation instructions.";
@@ -54,11 +67,14 @@ function errorText(result: Extract<TokensaveRunResult, { ok: false }>): string {
 	}
 }
 
-/** Converts a flat camelCase object into the snake_case keys the TokenSave CLI expects. */
+/**
+ * Converts a flat camelCase object into the snake_case keys the TokenSave CLI expects.
+ * `project` selects the `--project` root and never reaches the CLI as an argument.
+ */
 function toSnakeArgs(obj: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(obj)) {
-		if (value === undefined) continue;
+		if (value === undefined || key === "project") continue;
 		const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 		out[snake] = value;
 	}
@@ -68,48 +84,77 @@ function toSnakeArgs(obj: Record<string, unknown>): Record<string, unknown> {
 async function callTool(
 	toolName: string,
 	args: Record<string, unknown>,
-	ctx: ExtensionContext,
+	project: ToolProject,
 	signal: AbortSignal | undefined,
 ): Promise<TokensaveRunResult> {
-	const projectRoot = resolveProjectRoot(ctx.cwd);
-	return runTokensaveTool(toolName, toSnakeArgs(args), { projectRoot, signal });
+	return runTokensaveTool(toolName, toSnakeArgs(args), { projectRoot: project.root, signal });
 }
 
-function projectRoot(ctx: ExtensionContext): string {
-	return resolveProjectRoot(ctx.cwd);
-}
-
-function guardCheckNotInitialized(ctx: ExtensionContext) {
-	if (!isProjectInitialized(projectRoot(ctx))) {
-		return { content: [{ type: "text" as const, text: NOT_INITIALIZED_TEXT }], details: { initialized: false } };
+/** An uninitialized target gets an error text and spawns no process. */
+function guardCheckNotInitialized(project: ToolProject) {
+	if (!project.initialized) {
+		return {
+			content: [{ type: "text" as const, text: notInitializedText(project) }],
+			details: { initialized: false },
+		};
 	}
 	return undefined;
+}
+
+const projectParam = Type.Optional(
+	Type.String({ description: "Path of another indexed project; defaults to the session's project" }),
+);
+
+const PROJECT_GUIDELINE =
+	"Pass project (a path, absolute or relative to the cwd) to a TokenSave tool to query another indexed repository; omit it for the session's project.";
+
+interface PathInputs {
+	project?: string;
+	file?: string;
+	pathInclude?: string[];
+	pathExclude?: string[];
+}
+
+/** Strips a leading `<root>/` from every file-taking input, once, before any use. */
+function rootRelativeInputs<T extends PathInputs>(project: ToolProject, params: T): T {
+	const out: PathInputs = { ...params };
+	if (out.file !== undefined) out.file = toRootRelative(project, out.file);
+	if (out.pathInclude) out.pathInclude = toRootRelativeList(project, out.pathInclude);
+	if (out.pathExclude) out.pathExclude = toRootRelativeList(project, out.pathExclude);
+	return out as T;
+}
+
+type ToolResult = { content: Array<{ type: "text"; text: string }>; details: unknown };
+
+/** Every result starts with the project it describes. */
+function withProjectHeader(project: ToolProject, result: ToolResult, relativePathsNote = false): ToolResult {
+	const [first, ...rest] = result.content;
+	const header = projectHeader(project, relativePathsNote);
+	return { ...result, content: [{ ...first, text: `${header}\n\n${first.text}` }, ...rest] };
 }
 
 // ---------------------------------------------------------------------------
 // tokensave_status
 // ---------------------------------------------------------------------------
 
-const statusParams = Type.Object({});
+const statusParams = Type.Object({ project: projectParam });
 
 async function executeStatus(
 	_toolCallId: string,
 	_params: unknown,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
+	project: ToolProject,
 ) {
-	const root = projectRoot(ctx);
-	if (!isProjectInitialized(root)) {
-		return { content: [{ type: "text" as const, text: NOT_INITIALIZED_TEXT }], details: { initialized: false } };
-	}
+	const blocked = guardCheckNotInitialized(project);
+	if (blocked) return blocked;
 
 	const available = await checkTokensaveAvailable();
 	if (!available) {
 		return { content: [{ type: "text" as const, text: binaryMissingText() }], details: { binaryAvailable: false } };
 	}
 
-	const result = await runTokensaveTool("status", {}, { projectRoot: root, signal });
+	const result = await callTool("status", {}, project, signal);
 	if (!result.ok) {
 		return {
 			content: [{ type: "text" as const, text: errorText(result) }],
@@ -145,6 +190,7 @@ async function executeStatus(
 // ---------------------------------------------------------------------------
 
 const contextParams = Type.Object({
+	project: projectParam,
 	task: Type.String({ description: "Natural language description of the task or question" }),
 	mode: Type.Optional(StringEnum(["explore", "plan"] as const, { description: "explore (default) or plan" })),
 	includeCode: Type.Optional(Type.Boolean({ description: "Include small source snippets for key symbols" })),
@@ -163,10 +209,10 @@ async function executeContext(
 	params: Static<typeof contextParams>,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
 	getState: GetState,
+	project: ToolProject,
 ) {
-	const blocked = guardCheckNotInitialized(ctx);
+	const blocked = guardCheckNotInitialized(project);
 	if (blocked) return blocked;
 
 	const result = await callTool(
@@ -180,11 +226,11 @@ async function executeContext(
 			pathInclude: params.pathInclude,
 			pathExclude: params.pathExclude,
 		},
-		ctx,
+		project,
 		signal,
 	);
 
-	recordConsultation(getState(), params.task, result.ok);
+	recordConsultation(getState(), project.root, params.task, result.ok);
 	if (!result.ok) {
 		return {
 			content: [{ type: "text" as const, text: errorText(result) }],
@@ -205,6 +251,7 @@ async function executeContext(
 // ---------------------------------------------------------------------------
 
 const findSymbolParams = Type.Object({
+	project: projectParam,
 	name: Type.String({ description: "Bare or qualified symbol name to locate" }),
 	kind: Type.Optional(Type.String({ description: "Filter by kind (class, function, method, interface, ...)" })),
 	pathInclude: Type.Optional(Type.Array(Type.String())),
@@ -345,13 +392,14 @@ export function matchesPathFilters(
 	return true;
 }
 
-function formatSymbolMatch(match: RankedSymbolMatch): string[] {
+function formatSymbolMatch(match: RankedSymbolMatch, project: ToolProject): string[] {
 	const lines = [
 		`${match.name}${match.rank === "exact-case-sensitive" ? "" : ` (${match.rank})`}`,
 		`- kind: ${match.kind ?? "unknown"}`,
 	];
 	if (match.qualified_name) lines.push(`- qualified name: ${match.qualified_name}`);
-	if (match.file) lines.push(`- file: ${match.file}${match.line !== undefined ? `:${match.line}` : ""}`);
+	if (match.file)
+		lines.push(`- file: ${displayPath(project, match.file)}${match.line !== undefined ? `:${match.line}` : ""}`);
 	if (match.signature) lines.push(`- signature: ${match.signature}`);
 	if (match.id) lines.push(`- node id: ${match.id}`);
 	return lines;
@@ -396,18 +444,18 @@ function looksQualified(name: string): boolean {
  */
 async function fetchSymbolCandidates(
 	name: string,
-	ctx: ExtensionContext,
+	project: ToolProject,
 	signal: AbortSignal | undefined,
 ): Promise<ExactSymbolMatch[]> {
 	const limit = candidatePoolLimit(20);
-	const exact = await callTool("find_exact_symbol", { name, limit }, ctx, signal);
+	const exact = await callTool("find_exact_symbol", { name, limit }, project, signal);
 	if (exact.ok) {
 		const decoded = decodeExactSymbolResponse(exact);
 		if (decoded.kind === "object" && decoded.matches.length > 0) return decoded.matches;
 	}
 
 	if (looksQualified(name)) {
-		const qualified = await callTool("by_qualified_name", { qualifiedName: name }, ctx, signal);
+		const qualified = await callTool("by_qualified_name", { qualifiedName: name }, project, signal);
 		if (qualified.ok) {
 			// by_qualified_name returns a direct array, not a node object.
 			const decoded = decodeQualifiedNameResponse(qualified);
@@ -415,7 +463,7 @@ async function fetchSymbolCandidates(
 		}
 	}
 
-	const search = await callTool("search", { query: name, limit }, ctx, signal);
+	const search = await callTool("search", { query: name, limit }, project, signal);
 	if (search.ok) {
 		const decoded = decodeSearchResponse(search);
 		if (decoded.kind === "array") return decoded.items;
@@ -425,10 +473,10 @@ async function fetchSymbolCandidates(
 
 async function resolveSymbolByName(
 	name: string,
-	ctx: ExtensionContext,
+	project: ToolProject,
 	signal: AbortSignal | undefined,
 ): Promise<SymbolNameResolution> {
-	const candidates = await fetchSymbolCandidates(name, ctx, signal);
+	const candidates = await fetchSymbolCandidates(name, project, signal);
 	if (candidates.length === 0) return {};
 
 	const ranked = rankSymbolMatches(name, candidates);
@@ -441,13 +489,13 @@ async function resolveSymbolByName(
 	return { match: best };
 }
 
-function formatAmbiguity(name: string, candidates: RankedSymbolMatch[]): string {
+function formatAmbiguity(name: string, candidates: RankedSymbolMatch[], project: ToolProject): string {
 	return [
 		`Multiple equally plausible definitions match '${name}'. Use nodeId to disambiguate:`,
 		"",
 		...candidates.map(
 			(c) =>
-				`- ${c.name} (${c.kind ?? "unknown"}) — ${c.file ?? "?"}${c.line !== undefined ? `:${c.line}` : ""}${c.id ? ` [nodeId: ${c.id}]` : ""}`,
+				`- ${c.name} (${c.kind ?? "unknown"}) — ${displayPath(project, c.file) ?? "?"}${c.line !== undefined ? `:${c.line}` : ""}${c.id ? ` [nodeId: ${c.id}]` : ""}`,
 		),
 	].join("\n");
 }
@@ -457,10 +505,10 @@ async function executeFindSymbol(
 	params: Static<typeof findSymbolParams>,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
 	getState: GetState,
+	project: ToolProject,
 ) {
-	const blocked = guardCheckNotInitialized(ctx);
+	const blocked = guardCheckNotInitialized(project);
 	if (blocked) return blocked;
 
 	const limit = params.limit ?? 20;
@@ -470,7 +518,7 @@ async function executeFindSymbol(
 	// retrieve a larger bounded candidate pool up front; the user `limit` is
 	// applied only after ranking below.
 	const candidateLimit = candidatePoolLimit(limit);
-	const exact = await callTool("find_exact_symbol", { name: params.name, limit: candidateLimit }, ctx, signal);
+	const exact = await callTool("find_exact_symbol", { name: params.name, limit: candidateLimit }, project, signal);
 
 	let matches: ExactSymbolMatch[] = [];
 	let total: number | undefined;
@@ -491,7 +539,7 @@ async function executeFindSymbol(
 	}
 
 	if (matches.length === 0 && looksQualified(params.name)) {
-		const qualified = await callTool("by_qualified_name", { qualifiedName: params.name }, ctx, signal);
+		const qualified = await callTool("by_qualified_name", { qualifiedName: params.name }, project, signal);
 		if (qualified.ok) {
 			// by_qualified_name returns a direct array, not a node object.
 			const decoded = decodeQualifiedNameResponse(qualified);
@@ -514,12 +562,12 @@ async function executeFindSymbol(
 				pathInclude: params.pathInclude,
 				pathExclude: params.pathExclude,
 			},
-			ctx,
+			project,
 			signal,
 		);
 		const searchDecoded = search.ok ? decodeSearchResponse(search) : undefined;
 		const searchItems: ExactSymbolMatch[] = searchDecoded?.kind === "array" ? searchDecoded.items : [];
-		recordConsultation(getState(), params.name, searchItems.length > 0);
+		recordConsultation(getState(), project.root, params.name, searchItems.length > 0);
 		if (!search.ok) {
 			return {
 				content: [{ type: "text" as const, text: errorText(search) }],
@@ -529,7 +577,7 @@ async function executeFindSymbol(
 		fallbackHasMore = searchItems.length > searchLimit;
 		matches = searchItems.slice(0, searchLimit);
 	} else {
-		recordConsultation(getState(), params.name, true);
+		recordConsultation(getState(), project.root, params.name, true);
 	}
 
 	const returnedCount = matches.length;
@@ -559,7 +607,10 @@ async function executeFindSymbol(
 	const sections = [
 		exactHit ? "Exact symbol found" : "Symbol matches (no exact hit)",
 		"",
-		...shown.flatMap((match, index) => [...formatSymbolMatch(match), ...(index < shown.length - 1 ? [""] : [])]),
+		...shown.flatMap((match, index) => [
+			...formatSymbolMatch(match, project),
+			...(index < shown.length - 1 ? [""] : []),
+		]),
 	];
 
 	const totalUnknown = usedFallbackSearch || total === undefined;
@@ -576,7 +627,8 @@ async function executeFindSymbol(
 		);
 	}
 	if (notes.length > 0) sections.push("", notes.join(" "));
-	if (exactHit?.file) sections.push("", `Next step: read ${exactHit.file} before making implementation claims.`);
+	if (exactHit?.file)
+		sections.push("", `Next step: read ${displayPath(project, exactHit.file)} before making implementation claims.`);
 
 	return {
 		content: [{ type: "text" as const, text: sections.join("\n") }],
@@ -589,6 +641,7 @@ async function executeFindSymbol(
 // ---------------------------------------------------------------------------
 
 const searchParams = Type.Object({
+	project: projectParam,
 	query: Type.String({ description: "Conceptual, keyword, or identifier search query" }),
 	literal: Type.Optional(
 		Type.Boolean({ description: "Exact-substring search over source text (runtime error strings)" }),
@@ -603,10 +656,10 @@ async function executeSearch(
 	params: Static<typeof searchParams>,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
 	getState: GetState,
+	project: ToolProject,
 ) {
-	const blocked = guardCheckNotInitialized(ctx);
+	const blocked = guardCheckNotInitialized(project);
 	if (blocked) return blocked;
 
 	const limit = params.limit ?? 10;
@@ -619,12 +672,12 @@ async function executeSearch(
 			pathInclude: params.pathInclude,
 			pathExclude: params.pathExclude,
 		},
-		ctx,
+		project,
 		signal,
 	);
 
 	if (!result.ok) {
-		recordConsultation(getState(), params.query, false);
+		recordConsultation(getState(), project.root, params.query, false);
 		return {
 			content: [{ type: "text" as const, text: errorText(result) }],
 			details: { ok: false, kind: result.kind },
@@ -634,12 +687,12 @@ async function executeSearch(
 	const decoded = decodeSearchResponse(result);
 
 	if (decoded.kind === "text") {
-		recordConsultation(getState(), params.query, false);
+		recordConsultation(getState(), project.root, params.query, false);
 		return { content: [{ type: "text" as const, text: decoded.text }], details: { ok: true, count: 0 } };
 	}
 
 	if (decoded.kind === "unknown") {
-		recordConsultation(getState(), params.query, false);
+		recordConsultation(getState(), project.root, params.query, false);
 		return {
 			content: [
 				{
@@ -653,7 +706,7 @@ async function executeSearch(
 
 	if (decoded.kind === "literal") {
 		const shown = decoded.matches.slice(0, limit);
-		recordConsultation(getState(), params.query, shown.length > 0);
+		recordConsultation(getState(), project.root, params.query, shown.length > 0);
 
 		if (shown.length === 0) {
 			return {
@@ -669,7 +722,7 @@ async function executeSearch(
 
 		const lines = shown.map(
 			(match) =>
-				`- ${match.file ?? "?"}${match.line !== undefined ? `:${match.line}` : ""} — ${match.text ?? ""}${match.enclosing ? ` (in ${match.enclosing})` : ""}`,
+				`- ${displayPath(project, match.file) ?? "?"}${match.line !== undefined ? `:${match.line}` : ""} — ${match.text ?? ""}${match.enclosing ? ` (in ${match.enclosing})` : ""}`,
 		);
 		const hasMore = decoded.count !== undefined && decoded.count > shown.length;
 		const note = truncationNote(shown.length, decoded.count, hasMore && decoded.count === undefined);
@@ -685,7 +738,7 @@ async function executeSearch(
 	const items = decoded.items;
 	const hasMore = items.length > limit;
 	const shown = items.slice(0, limit);
-	recordConsultation(getState(), params.query, shown.length > 0);
+	recordConsultation(getState(), project.root, params.query, shown.length > 0);
 
 	if (shown.length === 0) {
 		return {
@@ -698,7 +751,7 @@ async function executeSearch(
 
 	const lines = shown.map(
 		(entry) =>
-			`- ${entry.name ?? "?"} (${entry.kind ?? "?"}) — ${entry.file ?? "?"}${entry.line !== undefined ? `:${entry.line}` : ""}`,
+			`- ${entry.name ?? "?"} (${entry.kind ?? "?"}) — ${displayPath(project, entry.file) ?? "?"}${entry.line !== undefined ? `:${entry.line}` : ""}`,
 	);
 
 	const note = truncationNote(shown.length, undefined, hasMore);
@@ -715,6 +768,7 @@ async function executeSearch(
 // ---------------------------------------------------------------------------
 
 const symbolParams = Type.Object({
+	project: projectParam,
 	name: Type.Optional(Type.String()),
 	nodeId: Type.Optional(Type.String()),
 	includeBody: Type.Optional(Type.Boolean()),
@@ -798,9 +852,9 @@ function classifyImplementationLookupKind(kind: string | undefined): Implementat
  * back through: signature, "type implements trait", qualified name, type,
  * then the file location itself.
  */
-function formatImplEntry(entry: ImplEntry): string {
+function formatImplEntry(entry: ImplEntry, project: ToolProject): string {
 	const location = entry.file
-		? `${entry.file}${entry.start_line !== undefined ? `:${entry.start_line}` : ""}`
+		? `${displayPath(project, entry.file)}${entry.start_line !== undefined ? `:${entry.start_line}` : ""}`
 		: undefined;
 	const typeAndTrait = entry.type && entry.trait ? `${entry.type} implements ${entry.trait}` : undefined;
 	const label = entry.signature ?? typeAndTrait ?? entry.qualified_name ?? entry.type;
@@ -808,8 +862,10 @@ function formatImplEntry(entry: ImplEntry): string {
 	return location ? `- ${location}` : "- (implementation)";
 }
 
-function formatImplementationEntry(entry: ImplementationEntry): string[] {
-	const location = entry.file ? `${entry.file}${entry.line !== undefined ? `:${entry.line}` : ""}` : undefined;
+function formatImplementationEntry(entry: ImplementationEntry, project: ToolProject): string[] {
+	const location = entry.file
+		? `${displayPath(project, entry.file)}${entry.line !== undefined ? `:${entry.line}` : ""}`
+		: undefined;
 	const label = entry.signature ?? entry.type ?? entry.name ?? entry.qualified_name;
 	const header = label
 		? `- ${label}${location ? ` — ${location}` : ""}`
@@ -827,11 +883,11 @@ function formatImplementationEntry(entry: ImplementationEntry): string[] {
 
 async function resolveNode(
 	params: Static<typeof symbolParams>,
-	ctx: ExtensionContext,
+	project: ToolProject,
 	signal: AbortSignal | undefined,
 ): Promise<ResolvedSymbol> {
 	if (params.nodeId) {
-		const node = await callTool("node", { nodeId: params.nodeId }, ctx, signal);
+		const node = await callTool("node", { nodeId: params.nodeId }, project, signal);
 		if (!node.ok) return { id: params.nodeId, base: undefined, name: undefined, error: node };
 
 		const decoded = decodeNodeResponse(node);
@@ -845,13 +901,13 @@ async function resolveNode(
 	}
 
 	if (params.name) {
-		const resolution = await resolveSymbolByName(params.name, ctx, signal);
+		const resolution = await resolveSymbolByName(params.name, project, signal);
 		if (resolution.ambiguous) {
 			return {
 				id: undefined,
 				base: undefined,
 				name: undefined,
-				ambiguousText: formatAmbiguity(params.name, resolution.ambiguous),
+				ambiguousText: formatAmbiguity(params.name, resolution.ambiguous, project),
 			};
 		}
 		if (resolution.match) {
@@ -867,10 +923,10 @@ async function executeSymbol(
 	params: Static<typeof symbolParams>,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
 	getState: GetState,
+	project: ToolProject,
 ) {
-	const blocked = guardCheckNotInitialized(ctx);
+	const blocked = guardCheckNotInitialized(project);
 	if (blocked) return blocked;
 	if (!params.name && !params.nodeId) {
 		return {
@@ -879,8 +935,8 @@ async function executeSymbol(
 		};
 	}
 
-	const resolved = await resolveNode(params, ctx, signal);
-	recordConsultation(getState(), params.name ?? params.nodeId ?? "", Boolean(resolved.id));
+	const resolved = await resolveNode(params, project, signal);
+	recordConsultation(getState(), project.root, params.name ?? params.nodeId ?? "", Boolean(resolved.id));
 
 	if (resolved.ambiguousText) {
 		return {
@@ -924,7 +980,7 @@ async function executeSymbol(
 	if (base) {
 		sections.push(`${resolvedName ?? resolved.id} (${base.kind ?? "symbol"})`);
 		const line = nodeLine(base);
-		if (base.file) sections.push(`- file: ${base.file}${line !== undefined ? `:${line}` : ""}`);
+		if (base.file) sections.push(`- file: ${displayPath(project, base.file)}${line !== undefined ? `:${line}` : ""}`);
 		if (base.signature) sections.push(`- signature: ${base.signature}`);
 	} else {
 		sections.push(`${resolvedName ?? resolved.id} (symbol)`);
@@ -938,7 +994,7 @@ async function executeSymbol(
 	const bodyLookupName = base?.qualified_name ?? params.name ?? resolvedName;
 	const implementationLookupName = base?.name ?? params.name ?? resolvedName;
 	if (params.includeBody !== false && bodyLookupName) {
-		const body = await callTool("body", { symbol: bodyLookupName, limit: 1 }, ctx, signal);
+		const body = await callTool("body", { symbol: bodyLookupName, limit: 1 }, project, signal);
 		if (body.ok) {
 			const decoded = decodeBodyResponse(body);
 			if (decoded.kind === "object" && decoded.body) sections.push("", "Body:", "```", decoded.body, "```");
@@ -949,7 +1005,7 @@ async function executeSymbol(
 	}
 
 	if (params.includeCallers) {
-		const callers = await callTool("callers", { nodeId: resolved.id, maxDepth: depth }, ctx, signal);
+		const callers = await callTool("callers", { nodeId: resolved.id, maxDepth: depth }, project, signal);
 		if (callers.ok) {
 			const decoded = decodeRelatedListResponse(callers);
 			if (decoded.kind === "array") {
@@ -957,7 +1013,7 @@ async function executeSymbol(
 				sections.push(
 					"",
 					`Callers (${list.length}):`,
-					...list.map((c) => `- ${c.name ?? "?"} — ${c.file ?? "?"}:${c.line ?? "?"}`),
+					...list.map((c) => `- ${c.name ?? "?"} — ${displayPath(project, c.file) ?? "?"}:${c.line ?? "?"}`),
 				);
 			} else if (decoded.kind === "text") {
 				sections.push("", decoded.text);
@@ -968,7 +1024,7 @@ async function executeSymbol(
 	}
 
 	if (params.includeCallees) {
-		const callees = await callTool("callees", { nodeId: resolved.id, maxDepth: depth }, ctx, signal);
+		const callees = await callTool("callees", { nodeId: resolved.id, maxDepth: depth }, project, signal);
 		if (callees.ok) {
 			const decoded = decodeRelatedListResponse(callees);
 			if (decoded.kind === "array") {
@@ -976,7 +1032,7 @@ async function executeSymbol(
 				sections.push(
 					"",
 					`Callees (${list.length}):`,
-					...list.map((c) => `- ${c.name ?? "?"} — ${c.file ?? "?"}:${c.line ?? "?"}`),
+					...list.map((c) => `- ${c.name ?? "?"} — ${displayPath(project, c.file) ?? "?"}:${c.line ?? "?"}`),
 				);
 			} else if (decoded.kind === "text") {
 				sections.push("", decoded.text);
@@ -992,12 +1048,16 @@ async function executeSymbol(
 		if (lookupKind === "unsupported") {
 			sections.push("", `Implementation lookup is not supported for kind '${base?.kind ?? "unknown"}'.`);
 		} else if (lookupKind === "type") {
-			const impls = await callTool("impls", { type: implementationLookupName, limit }, ctx, signal);
+			const impls = await callTool("impls", { type: implementationLookupName, limit }, project, signal);
 			if (impls.ok) {
 				const decoded = decodeImplsResponse(impls);
 				if (decoded.kind === "object") {
 					const list = decoded.impls.slice(0, limit);
-					sections.push("", `Implementations (${decoded.count ?? list.length}):`, ...list.map(formatImplEntry));
+					sections.push(
+						"",
+						`Implementations (${decoded.count ?? list.length}):`,
+						...list.map((entry) => formatImplEntry(entry, project)),
+					);
 					const note = truncationNote(list.length, decoded.count);
 					if (note) sections.push("", note);
 				} else if (decoded.kind === "text") {
@@ -1008,7 +1068,12 @@ async function executeSymbol(
 			}
 		} else {
 			const argKey = lookupKind === "trait" ? "trait" : "method";
-			const impls = await callTool("implementations", { [argKey]: implementationLookupName, limit }, ctx, signal);
+			const impls = await callTool(
+				"implementations",
+				{ [argKey]: implementationLookupName, limit },
+				project,
+				signal,
+			);
 			if (impls.ok) {
 				const decoded = decodeImplementationsResponse(impls);
 				if (decoded.kind === "object") {
@@ -1016,7 +1081,7 @@ async function executeSymbol(
 					sections.push(
 						"",
 						`Implementations (${decoded.matchCount ?? list.length}):`,
-						...list.flatMap(formatImplementationEntry),
+						...list.flatMap((entry) => formatImplementationEntry(entry, project)),
 					);
 					const note = truncationNote(list.length, decoded.matchCount);
 					if (note) sections.push("", note);
@@ -1042,6 +1107,7 @@ async function executeSymbol(
 // ---------------------------------------------------------------------------
 
 const impactParams = Type.Object({
+	project: projectParam,
 	name: Type.Optional(Type.String()),
 	nodeId: Type.Optional(Type.String()),
 	file: Type.Optional(Type.String()),
@@ -1055,10 +1121,10 @@ async function executeImpact(
 	params: Static<typeof impactParams>,
 	signal: AbortSignal | undefined,
 	_onUpdate: unknown,
-	ctx: ExtensionContext,
 	getState: GetState,
+	project: ToolProject,
 ) {
-	const blocked = guardCheckNotInitialized(ctx);
+	const blocked = guardCheckNotInitialized(project);
 	if (blocked) return blocked;
 	if (!params.name && !params.nodeId && !params.file) {
 		return {
@@ -1077,9 +1143,9 @@ async function executeImpact(
 		let nodeId = params.nodeId;
 		let ambiguousText: string | undefined;
 		if (!nodeId && params.name) {
-			const resolution = await resolveSymbolByName(params.name, ctx, signal);
+			const resolution = await resolveSymbolByName(params.name, project, signal);
 			if (resolution.ambiguous) {
-				ambiguousText = formatAmbiguity(params.name, resolution.ambiguous);
+				ambiguousText = formatAmbiguity(params.name, resolution.ambiguous, project);
 			} else if (resolution.match) {
 				nodeId = resolution.match.id;
 				resolvedFile = resolvedFile ?? resolution.match.file;
@@ -1087,7 +1153,7 @@ async function executeImpact(
 		}
 
 		if (nodeId) {
-			const impact = await callTool("impact", { nodeId, maxDepth: depth }, ctx, signal);
+			const impact = await callTool("impact", { nodeId, maxDepth: depth }, project, signal);
 			consultedOk = impact.ok;
 			if (impact.ok) {
 				const decoded = decodeImpactResponse(impact);
@@ -1096,7 +1162,7 @@ async function executeImpact(
 					sections.push(
 						`Impact radius: ${decoded.nodeCount ?? list.length} symbol(s)`,
 						"",
-						...list.map((n) => `- ${n.name ?? "?"} — ${n.file ?? "?"}:${n.line ?? "?"}`),
+						...list.map((n) => `- ${n.name ?? "?"} — ${displayPath(project, n.file) ?? "?"}:${n.line ?? "?"}`),
 					);
 					const note = truncationNote(list.length, decoded.nodeCount);
 					if (note) sections.push("", note);
@@ -1110,7 +1176,7 @@ async function executeImpact(
 			}
 
 			if (params.includeTests && !resolvedFile) {
-				const node = await callTool("node", { nodeId }, ctx, signal);
+				const node = await callTool("node", { nodeId }, project, signal);
 				if (node.ok) {
 					const decoded = decodeNodeResponse(node);
 					if (decoded.kind === "object") resolvedFile = decoded.node.file;
@@ -1122,7 +1188,7 @@ async function executeImpact(
 			sections.push(`Could not resolve symbol '${params.name ?? params.nodeId}' to compute impact.`);
 		}
 	} else if (params.file) {
-		const dependents = await callTool("file_dependents", { file: params.file, depth }, ctx, signal);
+		const dependents = await callTool("file_dependents", { file: params.file, depth }, project, signal);
 		consultedOk = dependents.ok;
 		if (dependents.ok) {
 			const decoded = decodeFileDependentsResponse(dependents);
@@ -1132,7 +1198,10 @@ async function executeImpact(
 				sections.push(
 					`File dependents (${total ?? list.length}):`,
 					"",
-					...list.map((d) => `- ${d.name ?? d.file ?? "?"}${d.name && d.file ? ` — ${d.file}` : ""}`),
+					...list.map(
+						(d) =>
+							`- ${d.name ?? displayPath(project, d.file) ?? "?"}${d.name && d.file ? ` — ${displayPath(project, d.file)}` : ""}`,
+					),
 				);
 				const note = truncationNote(list.length, total);
 				if (note) sections.push("", note);
@@ -1145,7 +1214,7 @@ async function executeImpact(
 			sections.push(errorText(dependents));
 		}
 
-		const diff = await callTool("diff_context", { files: [params.file], depth }, ctx, signal);
+		const diff = await callTool("diff_context", { files: [params.file], depth }, project, signal);
 		consultedOk = consultedOk || diff.ok;
 		if (diff.ok) {
 			const decoded = decodeDiffContextResponse(diff);
@@ -1160,7 +1229,9 @@ async function executeImpact(
 					sections.push(
 						"",
 						`Downstream impacted symbols (${decoded.impactedCount ?? impacted.length}):`,
-						...impacted.map((n) => `- ${n.name ?? "?"} — ${n.file ?? "?"}:${n.line ?? "?"}`),
+						...impacted.map(
+							(n) => `- ${n.name ?? "?"} — ${displayPath(project, n.file) ?? "?"}:${n.line ?? "?"}`,
+						),
 					);
 					const note = truncationNote(impacted.length, decoded.impactedCount);
 					if (note) sections.push("", note);
@@ -1176,12 +1247,16 @@ async function executeImpact(
 	if (params.includeTests) {
 		const testFile = resolvedFile ?? params.file;
 		if (testFile) {
-			const affected = await callTool("affected", { files: [testFile], depth }, ctx, signal);
+			const affected = await callTool("affected", { files: [testFile], depth }, project, signal);
 			if (affected.ok) {
 				const decoded = decodeAffectedResponse(affected);
 				if (decoded.kind === "object") {
 					const list = decoded.affectedTests.slice(0, limit);
-					sections.push("", `Affected tests (${decoded.count ?? list.length}):`, ...list.map((t) => `- ${t}`));
+					sections.push(
+						"",
+						`Affected tests (${decoded.count ?? list.length}):`,
+						...list.map((t) => `- ${displayPath(project, t)}`),
+					);
 					const note = truncationNote(list.length, decoded.count);
 					if (note) sections.push("", note);
 				} else if (decoded.kind === "text") {
@@ -1197,6 +1272,7 @@ async function executeImpact(
 
 	recordConsultation(
 		getState(),
+		project.root,
 		params.name ?? params.file ?? params.nodeId ?? "",
 		consultedOk || sections.length > 0,
 	);
@@ -1217,10 +1293,13 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 			"Check whether TokenSave is installed, initialized for this project, and report basic graph statistics.",
 		promptGuidelines: [
 			"Call tokensave_status when TokenSave tools fail, when the graph may be unavailable, or before falling back to broad manual exploration.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: statusParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeStatus(toolCallId, params, signal, onUpdate, ctx);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(project, await executeStatus(toolCallId, input, signal, onUpdate, project));
 		},
 	});
 
@@ -1230,10 +1309,17 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 		description: "Build AI-ready context for a task: relevant symbols, relationships, and optionally code snippets.",
 		promptGuidelines: [
 			"STEP 1 — ORIENT. Call tokensave_context before exploring an unfamiliar subsystem, planning a change, or opening several files. Do not begin broad grep, find, glob, or speculative file reads first. After tokensave_context identifies relevant files and symbols, read the actual source files before making claims or modifying code.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: contextParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeContext(toolCallId, params, signal, onUpdate, ctx, getState);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(
+				project,
+				await executeContext(toolCallId, input, signal, onUpdate, getState, project),
+				true,
+			);
 		},
 	});
 
@@ -1244,10 +1330,16 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 			"Locate a named class, function, method, model, interface, type, or constant. Prioritizes exact matches.",
 		promptGuidelines: [
 			"STEP 1 — LOCATE. Use tokensave_find_symbol for any named class, function, method, model, interface, constant, type, or symbol. Do not guess a path. Do not grep for the symbol first. After locating it, read the returned source file before answering implementation questions or editing code.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: findSymbolParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeFindSymbol(toolCallId, params, signal, onUpdate, ctx, getState);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(
+				project,
+				await executeFindSymbol(toolCallId, input, signal, onUpdate, getState, project),
+			);
 		},
 	});
 
@@ -1257,10 +1349,13 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 		description: "Conceptual, keyword, or literal code search when no exact symbol name is known.",
 		promptGuidelines: [
 			"Use tokensave_search before raw grep for conceptual code search, identifiers, runtime strings, and likely implementation locations. Raw grep remains valid for complex regular expressions, logs, generated files, configuration files, non-indexed content, or after tokensave_search returned no useful result.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: searchParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeSearch(toolCallId, params, signal, onUpdate, ctx, getState);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(project, await executeSearch(toolCallId, input, signal, onUpdate, getState, project));
 		},
 	});
 
@@ -1271,10 +1366,13 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 			"Compact view of a symbol: signature, body, callers, callees, and implementations, resolved by name or node id.",
 		promptGuidelines: [
 			"Use tokensave_symbol after locating a symbol when its implementation and direct relationships are needed. TokenSave context does not replace reading the actual source file.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: symbolParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeSymbol(toolCallId, params, signal, onUpdate, ctx, getState);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(project, await executeSymbol(toolCallId, input, signal, onUpdate, getState, project));
 		},
 	});
 
@@ -1284,10 +1382,13 @@ export function registerTokensaveTools(pi: ExtensionAPI, getState: GetState): vo
 		description: "Analyze the blast radius of changing a symbol or file: dependents, callers, and affected tests.",
 		promptGuidelines: [
 			"STEP 2 — ASSESS. Call tokensave_impact before changing shared logic, public APIs, models, services, or high-dependency files. After receiving the result, verify the actual callers, affected source files, and tests before editing.",
+			PROJECT_GUIDELINE,
 		],
 		parameters: impactParams,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return executeImpact(toolCallId, params, signal, onUpdate, ctx, getState);
+			const project = resolveToolProject(ctx.cwd, params.project);
+			const input = rootRelativeInputs(project, params);
+			return withProjectHeader(project, await executeImpact(toolCallId, input, signal, onUpdate, getState, project));
 		},
 	});
 }

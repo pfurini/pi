@@ -13,6 +13,8 @@
  * generated code, migrations, markdown, JSON/YAML/TOML) is allowed through.
  */
 
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { TokensaveMode } from "./state.ts";
 
 export const BLOCKED_SEARCH_MESSAGE = [
@@ -118,6 +120,24 @@ export function detectSearchCandidate(toolName: GuardableToolName, input: unknow
 		return typeof command === "string" ? extractBashSearchCandidate(command) : undefined;
 	}
 	return evaluateGrepOrFind((input as GrepLikeInput) ?? {});
+}
+
+/**
+ * The path a guarded search runs against, resolved against `cwd`: `path` for
+ * `grep`, `find` and `anchor_grep`; for `bash`, the last non-flag argument that
+ * exists as a path. Falls back to `cwd`. The guard checks the project that holds
+ * this path, which can differ from the session's project.
+ */
+export function resolveGuardTarget(toolName: GuardableToolName, input: unknown, cwd: string): string {
+	if (toolName === "bash") {
+		const command = (input as { command?: string })?.command;
+		if (typeof command !== "string") return cwd;
+		const [, ...rest] = tokenize(command.trim());
+		const paths = rest.filter((token) => !token.startsWith("-")).map((token) => resolve(cwd, token));
+		return paths.reverse().find((path) => existsSync(path)) ?? cwd;
+	}
+	const path = (input as GrepLikeInput | undefined)?.path;
+	return typeof path === "string" && path.length > 0 ? resolve(cwd, path) : cwd;
 }
 
 export interface GuardCheckParams {

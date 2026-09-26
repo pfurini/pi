@@ -8,6 +8,7 @@
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../extensions/types.ts";
 import { isProjectInitialized, resolveProjectRoot, resolveTokensaveBinary } from "./project.ts";
+import { resolveToolProject } from "./projects.ts";
 import { checkTokensaveAvailable, runTokensaveCommand } from "./runner.ts";
 import {
 	type TokensaveConfig,
@@ -20,25 +21,30 @@ type GetState = () => Pick<TokensaveSessionState, "mode" | "modeSource">;
 type SetMode = (mode: TokensaveMode) => void;
 type GetConfig = () => TokensaveConfig;
 
-async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
-	const root = resolveProjectRoot(ctx.cwd);
+/** The root a command targets: its optional path argument, else the session's project. */
+function commandRoot(args: string, ctx: ExtensionCommandContext): string {
+	return resolveToolProject(ctx.cwd, args.trim() || undefined).root;
+}
+
+async function handleStatus(args: string, ctx: ExtensionCommandContext): Promise<void> {
+	const root = commandRoot(args, ctx);
 	const available = await checkTokensaveAvailable();
 	if (!available) {
 		ctx.ui.notify("TokenSave binary not found on PATH.", "error");
 		return;
 	}
 	if (!isProjectInitialized(root)) {
-		ctx.ui.notify("TokenSave is not initialized for this project. Run /tokensave-init.", "warning");
+		ctx.ui.notify(`TokenSave is not initialized at ${root}. Run /tokensave-init.`, "warning");
 		return;
 	}
 	const result = await runTokensaveCommand(["status", root], root);
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleInit(ctx: ExtensionCommandContext): Promise<void> {
-	const root = resolveProjectRoot(ctx.cwd);
+async function handleInit(args: string, ctx: ExtensionCommandContext): Promise<void> {
+	const root = commandRoot(args, ctx);
 	if (isProjectInitialized(root)) {
-		ctx.ui.notify("TokenSave is already initialized for this project.", "info");
+		ctx.ui.notify(`TokenSave is already initialized at ${root}.`, "info");
 		return;
 	}
 	const confirmed = await ctx.ui.confirm("Initialize TokenSave", `Run 'tokensave init' in ${root}?`);
@@ -50,10 +56,10 @@ async function handleInit(ctx: ExtensionCommandContext): Promise<void> {
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleSync(ctx: ExtensionCommandContext): Promise<void> {
-	const root = resolveProjectRoot(ctx.cwd);
+async function handleSync(args: string, ctx: ExtensionCommandContext): Promise<void> {
+	const root = commandRoot(args, ctx);
 	if (!isProjectInitialized(root)) {
-		ctx.ui.notify("TokenSave is not initialized. Run /tokensave-init first.", "warning");
+		ctx.ui.notify(`TokenSave is not initialized at ${root}. Run /tokensave-init first.`, "warning");
 		return;
 	}
 	const result = await runTokensaveCommand(["sync", root, "--doctor"], root);
@@ -90,18 +96,18 @@ export function registerTokensaveCommands(
 	getConfig: GetConfig,
 ): void {
 	pi.registerCommand("tokensave-status", {
-		description: "Show TokenSave binary, project init, and graph status",
-		handler: async (_args, ctx) => handleStatus(ctx),
+		description: "Show TokenSave binary, project init, and graph status [path of another project]",
+		handler: async (args, ctx) => handleStatus(args, ctx),
 	});
 
 	pi.registerCommand("tokensave-init", {
-		description: "Initialize TokenSave for the current project (asks for confirmation)",
-		handler: async (_args, ctx) => handleInit(ctx),
+		description: "Initialize TokenSave for the current project or [path] (asks for confirmation)",
+		handler: async (args, ctx) => handleInit(args, ctx),
 	});
 
 	pi.registerCommand("tokensave-sync", {
-		description: "Incrementally sync the TokenSave index for the current project",
-		handler: async (_args, ctx) => handleSync(ctx),
+		description: "Incrementally sync the TokenSave index for the current project or [path]",
+		handler: async (args, ctx) => handleSync(args, ctx),
 	});
 
 	pi.registerCommand("tokensave-mode", {

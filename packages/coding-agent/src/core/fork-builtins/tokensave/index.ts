@@ -12,8 +12,9 @@
 import type { ExtensionAPI, ExtensionContext } from "../../extensions/types.ts";
 import { createBranchIndexLifecycle, sharedReconciliationStore } from "./branch-lifecycle.ts";
 import { registerTokensaveCommands } from "./commands.ts";
-import { detectSearchCandidate, evaluateGuard, type GuardableToolName } from "./guard.ts";
+import { detectSearchCandidate, evaluateGuard, type GuardableToolName, resolveGuardTarget } from "./guard.ts";
 import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
+import { resolveToolProject } from "./projects.ts";
 import { buildRulesBlock } from "./rules.ts";
 import { checkTokensaveAvailable } from "./runner.ts";
 import {
@@ -55,10 +56,10 @@ function createBranchReconciliation(
 		resetWarnings() {
 			warnedRoots.clear();
 		},
-		async run(ctx: ExtensionContext): Promise<void> {
+		/** Reconciles `root`, the session's project unless a tool call targets another one. */
+		async run(ctx: ExtensionContext, root = resolveProjectRoot(ctx.cwd)): Promise<void> {
 			if (!getConfig().autoManageBranches) return;
 
-			const root = resolveProjectRoot(ctx.cwd);
 			if (!isProjectInitialized(root)) return;
 
 			const state = getState();
@@ -111,13 +112,17 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (event.toolName.startsWith(TOKENSAVE_TOOL_PREFIX)) {
-			await branchReconciliation.run(ctx);
+			const project = (event.input as { project?: unknown } | undefined)?.project;
+			const target = resolveToolProject(ctx.cwd, typeof project === "string" ? project : undefined);
+			await branchReconciliation.run(ctx, target.root);
 			return;
 		}
 		if (!GUARDED_TOOLS.has(event.toolName as GuardableToolName)) return;
 		const toolName = event.toolName as GuardableToolName;
 
-		const root = resolveProjectRoot(ctx.cwd);
+		// The guard checks the project the search reads, which may not be the session's.
+		const sessionRoot = resolveProjectRoot(ctx.cwd);
+		const root = resolveProjectRoot(resolveGuardTarget(toolName, event.input, ctx.cwd));
 		if (!isProjectInitialized(root)) return;
 		// Both the block reason and the prefer-mode notice point at this tool.
 		if (!canCallTool(pi, "tokensave_find_symbol")) return;
@@ -127,7 +132,7 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		}
 
 		if (state.mode === "prefer") {
-			maybeWarnManualExploration(toolName, event.input, ctx, state);
+			maybeWarnManualExploration(toolName, event.input, ctx, state, root);
 			return;
 		}
 
@@ -137,11 +142,15 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 			mode: state.mode,
 			tokensaveAvailable: state.binaryAvailable,
 			projectInitialized: true,
-			wasConsulted: (candidate) => wasCandidateConsulted(state, candidate),
+			wasConsulted: (candidate) => wasCandidateConsulted(state, root, candidate),
 		});
 
 		if (decision.block) {
-			return { block: true, reason: decision.reason };
+			const hint =
+				root === sessionRoot
+					? ""
+					: `\n\nThis search reads ${root}, another indexed project. Pass project: "${root}" to the TokenSave tool.`;
+			return { block: true, reason: `${decision.reason}${hint}` };
 		}
 	});
 
@@ -181,13 +190,13 @@ function maybeWarnManualExploration(
 	input: unknown,
 	ctx: { cwd: string; ui: { notify: (message: string, level?: "info" | "warning" | "error") => void } },
 	state: TokensaveSessionState,
+	root: string,
 ): void {
 	if (state.warnedManualExplorationOnce) return;
 	if (state.binaryAvailable === false) return;
-	if (!isProjectInitialized(resolveProjectRoot(ctx.cwd))) return;
 
 	const candidate = detectSearchCandidate(toolName, input);
-	if (!candidate || wasCandidateConsulted(state, candidate)) return;
+	if (!candidate || wasCandidateConsulted(state, root, candidate)) return;
 
 	state.warnedManualExplorationOnce = true;
 	ctx.ui.notify(

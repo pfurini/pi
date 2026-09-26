@@ -132,6 +132,10 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import {
+	addAskUserQuestionBaseTool,
+	askUserQuestionDefaultActive,
+} from "./fork-builtins/ask-user-question/base-tool.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -5624,6 +5628,12 @@ export class AgentSession {
 		if (this._getModelVisibleCommands().length > 0) {
 			this._baseToolDefinitions.set(SLASH_COMMAND_TOOL_NAME, this._createSlashCommandTool());
 		}
+		// Fork: ask_user_question is a base tool like read (ADR-0009).
+		addAskUserQuestionBaseTool(this._baseToolDefinitions, {
+			agentDir: this._agentDir,
+			eventBus: this._resourceLoader.getEventBus?.(),
+			getExternalEditorCommand: () => this.settingsManager.getExternalEditorCommand(),
+		});
 
 		const extensionsResult = this._resourceLoader.getExtensions();
 		if (options.flagValues) {
@@ -5658,6 +5668,7 @@ export class AgentSession {
 					"write",
 					...(this._baseToolDefinitions.has(SKILL_TOOL_NAME) ? [SKILL_TOOL_NAME] : []),
 					...(this._baseToolDefinitions.has(SLASH_COMMAND_TOOL_NAME) ? [SLASH_COMMAND_TOOL_NAME] : []),
+					...askUserQuestionDefaultActive(this._baseToolDefinitions),
 				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({

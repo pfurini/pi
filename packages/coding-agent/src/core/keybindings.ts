@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.ts";
 import { stripBom } from "../utils/text.ts";
+import { ASK_USER_QUESTION_KEYBINDINGS } from "./fork-builtins/ask-user-question/keybindings.ts";
 
 export interface AppKeybindings {
 	"app.interrupt": true;
@@ -77,6 +78,7 @@ const windowsKeybindings = useWindowsKeybindings();
 
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
+	...ASK_USER_QUESTION_KEYBINDINGS,
 	"tui.editor.undo": {
 		...TUI_KEYBINDINGS["tui.editor.undo"],
 		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",

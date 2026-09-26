@@ -11,7 +11,11 @@
  *   entry of `FORK_OWNED_BUILTINS` registers through an inline factory, with no package resolution.
  *   The fork-owned built-ins are vcc-recall and tokensave (pi-tokensave).
  *
- * `PI_FORK_BUILTINS=off` disables both kinds; coding-agent's vitest config sets it (ADR-0009).
+ * `ask_user_question` is a fork-owned base tool instead: `AgentSession` registers it next to
+ * `read` (`fork-builtins/ask-user-question/base-tool.ts`), so no loader affects it.
+ *
+ * `PI_FORK_BUILTINS=off` disables every kind, the base tool included; coding-agent's vitest
+ * config sets it (ADR-0009).
  */
 import { createRequire } from "node:module";
 import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
@@ -44,9 +48,14 @@ export function createForkBuiltInExtensions(packageNames: readonly string[]): In
 	return packageNames.map((name) => ({ name, factory: packageFactory(name), hidden: true }));
 }
 
+/** False when `PI_FORK_BUILTINS=off`. The loader reads it at construction; `ask_user_question` at each runtime build. */
+export function forkBuiltinsEnabled(): boolean {
+	return process.env.PI_FORK_BUILTINS !== "off";
+}
+
 /** The fork's built-ins, or none when `PI_FORK_BUILTINS=off`. Read at each loader construction. */
 export function forkBuiltInExtensions(): InlineExtension[] {
-	if (process.env.PI_FORK_BUILTINS === "off") {
+	if (!forkBuiltinsEnabled()) {
 		return [];
 	}
 	return [...createForkBuiltInExtensions(FORK_BUILTIN_PACKAGES), ...FORK_OWNED_BUILTINS];

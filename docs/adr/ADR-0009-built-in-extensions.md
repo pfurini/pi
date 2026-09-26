@@ -12,11 +12,11 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Part | Rule |
 | --- | --- |
 | Location | A ported package lives in `packages/builtins/<name>/`, byte-identical to its source at the port, plus an `UPSTREAM.json` that records its upstream. |
-| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. pi-tokensave (`fork-builtins/tokensave/`) is the second: the fork took over its code, because the owner wrote 13 of its 15 commits. |
-| Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. |
+| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. pi-tokensave (`fork-builtins/tokensave/`) is the second: the fork took over its code, because the owner wrote 13 of its 15 commits. `ask_user_question` (`fork-builtins/ask-user-question/`) is the third. It is a fork-owned base tool, not an inline factory: `AgentSession` registers it next to `read`, so no resource loader can drop it. |
+| Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. The package list is empty since the `ask_user_question` move; the mechanism stays for future ports. |
 | Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
-| Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. |
+| Control | A session's `tools` allowlist decides which built-in tools a session sees. A built-in tool outside the allowlist never enters the session registry and cannot be enabled at runtime. The `ask_user_question` base tool follows the same allowlist rule. Under a caller's `baseToolsOverride`, it stays registered but inactive, like `skill`. |
 | Switch | `PI_FORK_BUILTINS=off` disables all built-ins in a process. Each loader reads it when it is constructed. `packages/coding-agent/vitest.config.ts` sets it, so upstream tests see no built-ins. pi-fence forwards it to the fenced child since pi-fence commit `83fa852`, so fenced sessions honor it too. |
 | Failure | A listed package that cannot be resolved appears by name in `getExtensions().errors`; the session starts and the other built-ins load. |
 
@@ -33,7 +33,7 @@ The upstream-owned footprint is 9 added lines and 1 changed line, in six files, 
 
 A further built-in adds one entry to the fork-owned list and one folder, and no upstream-owned line. The shrinkwrap, the install lock and their generators stay untouched. These rules apply ADR-0003 to packaging: new code lives in new files, and hot upstream files receive only added call sites. The one changed line is a test setting outside the hot files ADR-0003 names.
 
-A fork-owned built-in adds no upstream-owned line. Its code and its tests live in new files, and its list entry lives in the fork-owned `fork-builtins.ts`.
+A fork-owned built-in adds no upstream-owned line, with one exception: the `ask_user_question` base tool adds 11 lines to `agent-session.ts` and 2 to `keybindings.ts`. Its code and its tests live in new files, and its list entry lives in the fork-owned `fork-builtins.ts`. The base tool has no list entry; its three `agent-session.ts` hunks are thin call sites into `fork-builtins/ask-user-question/base-tool.ts` (ADR-0003).
 
 ## Considered options
 
@@ -83,6 +83,16 @@ A 2026-09-26 amendment added pi-tokensave as the second fork-owned built-in, and
 | The list entry is guarded | Without the `tokensave` entry in `FORK_OWNED_BUILTINS`, 1 test in `fork-builtins.test.ts` fails. |
 | The built outputs carry the module | The built SDK registers the six tools and runs `tokensave_status`. RPC and print mode run `/tokensave-status` with no model call, for both `dist/cli.js` and `dist/bundle/cli.js`. `PI_FORK_BUILTINS=off` removes the module. |
 | Settings come from `forkBuiltins` and nothing is written | Tests read the settings from the session agent directory only, and a mode change leaves `settings.json` byte-identical. The fence lets Pi read `settings.json` and write neither `AGENTS.md` nor `pi-tokensave.json`. |
+
+A second 2026-09-26 amendment made `ask_user_question` a fork-owned base tool and removed the ported rpiv-ask-user-question package. `docs/plans/ask-user-question-base-tool.plan.md` records the proof: Section 3 lists the verified facts, and Appendix A holds the probe measurements.
+
+| Rule | Evidence |
+| --- | --- |
+| A custom `ResourceLoader` and an `extensionsOverride` both keep the tool | `sdk-probe.mjs` gives `<builtin:ask_user_question>`, active, with a custom loader, a `DefaultResourceLoader` and an override that removes every extension. The baseline gives `none` for the custom and override loaders (Appendix A, probe results). |
+| The switch removes the base tool | With `PI_FORK_BUILTINS=off` the probe gives `none`; ignoring the switch fails the suite test and a module test (Appendix A, M5). |
+| Registration never takes a tool it does not own | Overwriting a caller's tool fails a module test (M6); letting the base tool override a same-named extension tool fails a suite test (M8) (Appendix A). |
+| Nothing hides the tool without a UI | The suite test reads the tool list the model receives, from the system messages' tool deltas. Hiding the tool without a UI, or dropping it at request time, fails that test (Appendix A, M3, M9 and M10). A call without a UI returns `no_ui` (M4). |
+| The footprint is 11 lines in `agent-session.ts` and 2 in `keybindings.ts` | `git diff` of the final commits shows three `agent-session.ts` hunks and two `keybindings.ts` lines (Appendix A and Appendix B). |
 
 ## Upstream sync
 

@@ -46,7 +46,7 @@ Read the source and record each row before copying anything.
 | Check | What to look for | Why it matters |
 | --- | --- | --- |
 | Registrations | `registerTool`, `registerProvider`, `registerCommand`, `registerFlag`, `registerShortcut`, renderers, `pi.on(...)` hooks | Everything must work through the extension API. Nothing moves into core. |
-| UI | `ctx.ui.custom()` | RPC mode returns nothing from `custom()`. The extension needs its own RPC fallback, as `rpiv-ask-user-question` ships. |
+| UI | `ctx.ui.custom()` | RPC mode returns nothing from `custom()`. The extension needs its own RPC fallback, as `packages/coding-agent/src/core/fork-builtins/ask-user-question/rpc-fallback.ts` shows. |
 | Providers | `registerProvider` inside the factory | Registration must finish in the factory, so model resolution sees it. |
 | Dependencies | `dependencies` and `peerDependencies` | External packages change the lockfile. Peers such as `@earendil-works/*` and `typebox` must resolve to the monorepo's copies. |
 | Runtime state | Files under `~/.pi/agent/`, `~/.config/`, caches, logs | A fenced session still needs grants for them. The port removes only the grant on the fork checkout. |
@@ -104,7 +104,7 @@ Read the source and record each row before copying anything.
 
 8. **Register.**
    - Add the package name to `FORK_BUILTIN_PACKAGES` in `packages/coding-agent/src/core/fork-builtins.ts`.
-   - Add one assertion to `packages/coding-agent/test/fork-builtins.test.ts` for each tool, provider and command the package registers. The rpiv test "registers the tools of rpiv-ask-user-question" is the pattern.
+   - Add one assertion to `packages/coding-agent/test/fork-builtins.test.ts` for each tool, provider and command the package registers. The test "registers the TokenSave tools and commands as a fork-owned built-in" is the pattern.
 9. **Install and check.**
    - Run `npm install --ignore-scripts`. Do not use `npm ci`, because it refuses an out-of-sync lock.
    - Read the `package-lock.json` diff. Expect only the workspace link and the package's external dependencies.

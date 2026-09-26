@@ -1,29 +1,17 @@
 // Ported from pi-vcc 0.8.0 (npm @sting8k/pi-vcc), src/core/lineage.ts.
 // Copyright (c) 2026 sting8k. MIT licence: see LICENSE in this directory.
 
-export interface LineageEntryLike {
-	id?: string;
-}
+import type { ReadonlySessionManager } from "../../session-manager.ts";
 
-export interface LineageSessionManagerLike {
-	getBranch: () => LineageEntryLike[];
-	getEntries?: () => LineageEntryLike[];
-}
-
-export const getActiveLineageEntryIds = (sessionManager: LineageSessionManagerLike): Set<string> => {
-	try {
-		const branch = sessionManager.getBranch() ?? [];
-		if (branch.length > 0) {
-			return new Set(branch.map((e) => e.id).filter((id): id is string => Boolean(id)));
-		}
-	} catch {
-		// fall through to defensive fallback
-	}
-
-	try {
-		const all = sessionManager.getEntries?.() ?? [];
-		return new Set(all.map((e) => e.id).filter((id): id is string => Boolean(id)));
-	} catch {
-		return new Set();
-	}
+/**
+ * The ids of the entries on the active branch. A session without a leaf, which
+ * `resetLeaf()` produces while entries remain, falls back to every entry, so
+ * recall still reaches the session's history.
+ */
+export const getActiveLineageEntryIds = (
+	sessionManager: Pick<ReadonlySessionManager, "getBranch" | "getEntries">,
+): Set<string> => {
+	const branch = sessionManager.getBranch();
+	const entries = branch.length > 0 ? branch : sessionManager.getEntries();
+	return new Set(entries.map((entry) => entry.id));
 };

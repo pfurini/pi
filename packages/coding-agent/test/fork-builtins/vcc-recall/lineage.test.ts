@@ -2,34 +2,29 @@
 // Copyright (c) 2026 sting8k. MIT licence: see src/core/fork-builtins/vcc-recall/LICENSE.
 import { describe, expect, it } from "vitest";
 import { getActiveLineageEntryIds } from "../../../src/core/fork-builtins/vcc-recall/lineage.ts";
+import { sessionOf } from "./session.ts";
+
+const user = (text: string) => ({ role: "user", content: text, timestamp: 0 });
 
 describe("getActiveLineageEntryIds", () => {
-	it("returns IDs from active branch", () => {
-		const ids = getActiveLineageEntryIds({
-			getBranch: () => [{ id: "a" }, { id: "b" }, { id: "c" }],
-		});
-		expect([...ids]).toEqual(["a", "b", "c"]);
+	it("returns the ids of the active branch only", () => {
+		const session = sessionOf(
+			[
+				{ id: "a", message: user("root") },
+				{ id: "b", message: user("first try") },
+				{ id: "c", parentId: "a", message: user("retry") },
+			],
+			"c",
+		);
+		expect([...getActiveLineageEntryIds(session)].sort()).toEqual(["a", "c"]);
 	});
 
-	it("falls back to getEntries when getBranch throws", () => {
-		const ids = getActiveLineageEntryIds({
-			getBranch: () => {
-				throw new Error("boom");
-			},
-			getEntries: () => [{ id: "x" }, { id: "y" }],
-		});
-		expect([...ids]).toEqual(["x", "y"]);
-	});
-
-	it("returns empty set when both branch and entries are unavailable", () => {
-		const ids = getActiveLineageEntryIds({
-			getBranch: () => {
-				throw new Error("boom");
-			},
-			getEntries: () => {
-				throw new Error("boom2");
-			},
-		});
-		expect(ids.size).toBe(0);
+	it("falls back to every entry for a session without a leaf", () => {
+		const session = sessionOf([
+			{ id: "a", message: user("root") },
+			{ id: "b", message: user("reply") },
+		]);
+		session.resetLeaf();
+		expect([...getActiveLineageEntryIds(session)].sort()).toEqual(["a", "b"]);
 	});
 });

@@ -38,26 +38,20 @@ export interface ReconciliationStore {
 	inFlight: Map<string, Promise<BranchReconciliationResult>>;
 }
 
-const SHARED_STORE_KEY = Symbol.for("pi-tokensave.branch-reconciliation.v1");
-
 export function createReconciliationStore(): ReconciliationStore {
 	return { fingerprints: new Map(), inFlight: new Map() };
 }
 
 /**
  * The store shared by every session in this process. pi-subagents runs each
- * child session in the parent's process. Pi calls the extension factory again
- * for every session, and re-imports this module for a child in another cwd, so
- * neither factory nor module state reaches the child. A registered symbol on
- * `globalThis` does: a child skips the work its parent already did and joins a
+ * child session in the parent's process, and Pi calls the extension factory
+ * again for every session. `fork-builtins.ts` imports this module statically,
+ * so the module evaluates once per process, and a module constant reaches
+ * every session: a child skips the work its parent already did and joins a
  * reconciliation the parent still runs. The store is keyed by project root, so
  * a child in its own worktree still reconciles that worktree.
  */
-export function sharedReconciliationStore(): ReconciliationStore {
-	const registry = globalThis as unknown as Record<symbol, ReconciliationStore | undefined>;
-	registry[SHARED_STORE_KEY] ??= createReconciliationStore();
-	return registry[SHARED_STORE_KEY];
-}
+export const sharedReconciliationStore: ReconciliationStore = createReconciliationStore();
 
 /**
  * Reconciles TokenSave's indexes with local Git state, doing the work of

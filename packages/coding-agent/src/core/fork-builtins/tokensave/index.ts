@@ -40,7 +40,7 @@ function createBranchReconciliation(
 ) {
 	// Shared with every session in this process, pi-subagents children included:
 	// a child finds its parent's fingerprint and does not repeat the work.
-	const lifecycle = createBranchIndexLifecycle(sharedReconciliationStore());
+	const lifecycle = createBranchIndexLifecycle(sharedReconciliationStore);
 	const warnedRoots = new Set<string>();
 
 	return {

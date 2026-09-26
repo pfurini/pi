@@ -2,7 +2,6 @@ import { expect, test } from "vitest";
 import {
 	createBranchIndexLifecycle,
 	createReconciliationStore,
-	sharedReconciliationStore,
 } from "../../../src/core/fork-builtins/tokensave/branch-lifecycle.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
 
@@ -245,10 +244,6 @@ test("a lifecycle joins a reconciliation another one on the same store still run
 	const [parentResult, childResult] = await Promise.all([parent, child]);
 	expect(parentResult, "the child awaits the parent's run").toBe(childResult);
 	expect(steps(commands)).toStrictEqual(["branch add", "sync", "branch gc"]);
-});
-
-test("sharedReconciliationStore returns one store per process", () => {
-	expect(sharedReconciliationStore()).toBe(sharedReconciliationStore());
 });
 
 test("a git call that throws (stale session) resolves without reconciling", async () => {

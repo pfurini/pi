@@ -25,7 +25,7 @@ A package under `packages/builtins/<name>/` is fork-owned code copied from an up
 - Run unfenced. The sync reads upstream clones outside the fence's grants.
 - Run in a disposable worktree on a sync branch. Never pass `.` in the main checkout, because other Pi sessions share it.
 - The script never fetches. Refresh the upstream clone first. The clone stays read-only otherwise.
-- Never change the script's behavior. The SPIKE-0004 verdict covers its exact steps; a change needs a new spike.
+- Never change the script's behavior. The SPIKE-0004 verdict and the 2026-09-26 ruling in ADR-0009 cover its exact steps; a change needs a new spike or a recorded ruling.
 - Builds use `npm run build:offline`. `npm run build` regenerates model data over the network.
 - Never run the release scripts (`version:*`, `release:*`, `publish`) on `personal`.
 - `AGENTS.md` applies. Stage explicit paths. Commit a lockfile change only with the owner's approval and `PI_ALLOW_LOCKFILE_CHANGE=1`.
@@ -48,8 +48,8 @@ A package under `packages/builtins/<name>/` is fork-owned code copied from an up
 | 3 | `SYNC OUTCOME: up to date` | The script rewrote only the base and left `UPSTREAM.json` unstaged. When `git status --porcelain` lists it, commit it alone with the trailer. Otherwise nothing is due. |
 | 0 | `SYNC OUTCOME: clean` | Review `git diff --cached -- packages/builtins/<name>`. Verify (step 7), then commit (step 8). |
 | 1 | `SYNC OUTCOME: conflicts (n files)` | The conflicted files hold markers and are already staged. The `conflicted:` list is the only record. Resolve each listed file: keep the fork's intent and upstream's change. Stage with `git add -f -- <file>`. Ask the owner when a conflict needs a judgment call. Verify and commit. |
-| 2, no `scratch:` line | `SYNC OUTCOME: refused (...)` | The script refused before any change. Stop and report the refusal line. Never work around it by editing the record or the working tree. |
-| 2, with a `scratch:` line | `SYNC OUTCOME: refused (scratch merge failed without conflicts, ...)` | The script already rewrote and staged the package. Keep the scratch directory and its `.merge.log`. Restore the package with `git restore --source=HEAD --staged --worktree -- packages/builtins/<name>` in the sync worktree. Ask the owner before any retry. |
+| 2, no `scratch:` line | `SYNC OUTCOME: refused (...)` | The script refused before any change to the package. Stop and report the refusal line. A `scratch setup:` refusal names its scratch directory; keep it for diagnosis. Never work around a refusal by editing the record or the working tree. |
+| 2, with a `scratch:` line | `SYNC OUTCOME: refused (scratch merge failed without conflicts, ...)` or `refused (... failed after the package directory was cleared; ...)` | The script already cleared or rewrote the package. Keep the scratch directory and its `.merge.log`. Restore the package with `git restore --source=HEAD --staged --worktree -- packages/builtins/<name>` in the sync worktree, then delete any untracked file `git status --porcelain -- packages/builtins/<name>` still lists. Ask the owner before any retry. |
 
 7. **Verify** after exit 0 or 1.
    - Run `npm install --ignore-scripts` first, always. The script's step (6) deletes every file in the package directory, ignored files and local `node_modules/` included. A lockfile-only install is not enough.

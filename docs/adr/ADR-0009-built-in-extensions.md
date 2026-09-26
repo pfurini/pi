@@ -82,7 +82,8 @@ A ported package takes upstream changes through `scripts/fork/sync-upstream.sh`,
 | --- | --- |
 | Record | `packages/builtins/<name>/UPSTREAM.json` holds `repository` (the local upstream clone), `path` (the sub-folder, or empty) and `base` (the last upstream commit merged, as 40 hex digits). |
 | Provenance | Every commit that changes `UPSTREAM.json` carries the trailer `Upstream-Base: <base>`. Only the port and the sync write the record; nobody edits it by hand. |
-| Guards | The sync refuses (exit 2) when the trailer does not match, when the package directory has uncommitted changes, or when the base is not an ancestor of the new commit or is missing from the clone. |
+| Guards | The sync refuses (exit 2) when the trailer does not match, when the package directory has uncommitted changes, or when the base is not an ancestor of the new commit or is missing from the clone. It also refuses when the upstream path is not a directory at the base or the new commit. |
+| Failures | A failed command during the merge refuses (exit 2). Before the package directory is cleared, the package stays unchanged and no `scratch:` line appears. After that point, the `scratch:` line appears and the caller restores the package from `HEAD`. |
 | Up to date | When the upstream sub-folder is unchanged, the sync advances only the base and exits 3. |
 | Merge | Otherwise the sync merges base, the package as committed at `HEAD`, and the new upstream tree in a scratch repository, with Git's own rename and conflict handling. The result replaces the package directory and is staged with `git add -A -f`, so files Pi's `.gitignore` matches survive. It exits 0 when clean and 1 with conflicts. |
 | Commit | The sync never commits and never fetches. A person or an agent refreshes the upstream clone first, reviews or resolves the result, and commits it with the trailer. |
@@ -96,3 +97,5 @@ Rejected methods:
 | Git subtree or a vendor branch | The operator ruled for copied, owned code on 2026-09-25. |
 
 One failure mode stays untested: a verified base that is an ancestor of the new commit, while the Pi side comes from another line. The provenance rule above is what prevents it.
+
+The owner ruled on 2026-09-26 to add the path guard and the failure checks without a new spike. Before them, a removed upstream path or a failed tree extraction produced a `clean` outcome that deleted the package. A replay of every SPIKE-0004 case with the changed script matched the recorded runs on all outcome, conflict-set, comparison, containment and index lines. A fault-injection fixture confirmed each new refusal. Any further change to the script's behavior needs a new spike or another recorded ruling, followed by the same replay.

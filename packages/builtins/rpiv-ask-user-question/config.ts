@@ -126,6 +126,16 @@ export function setAsideKey(collapseKey: string): "a" | "ctrl+a" {
 	return collapseKey === "a" ? "ctrl+a" : "a";
 }
 
+/**
+ * Fork-owned: reads the settings from Pi's settings file and keeps only well-typed fields,
+ * so a mistyped value (e.g. `collapseKey: 42`) falls back to its default instead of
+ * throwing when the tool runs.
+ */
 export function loadConfig(): AskUserQuestionConfig {
-	return loadForkBuiltinSettings<AskUserQuestionConfig>("rpiv-ask-user-question") ?? {};
+	const settings = loadForkBuiltinSettings("rpiv-ask-user-question");
+	if (!settings) return {};
+	const config: AskUserQuestionConfig = {};
+	if (settings.guidance !== undefined) config.guidance = validateGuidanceFields(settings.guidance);
+	if (typeof settings.collapseKey === "string") config.collapseKey = settings.collapseKey;
+	return config;
 }

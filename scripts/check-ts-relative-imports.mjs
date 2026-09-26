@@ -3,12 +3,12 @@ import { join } from "node:path";
 import ts from "typescript";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
-ignoredDirectories.add("builtins");
 const files = [];
 
 function collectTypescriptFiles(directory) {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.isDirectory()) {
+			if (join(directory, entry.name) === join("packages", "builtins")) continue; // Fork: ADR-0009 exemption.
 			if (!ignoredDirectories.has(entry.name)) {
 				collectTypescriptFiles(join(directory, entry.name));
 			}

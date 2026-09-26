@@ -4,13 +4,13 @@ import { join } from "node:path";
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
 const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const ignoredDirectories = new Set([".git", "dist", "node_modules"]);
-ignoredDirectories.add("builtins");
 const internalPackageNames = new Set(["@earendil-works/chord"]);
 const packageJsonFiles = [];
 
 function collectPackageJsonFiles(directory) {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.isDirectory()) {
+			if (join(directory, entry.name) === join("packages", "builtins")) continue; // Fork: ADR-0009 exemption.
 			if (!ignoredDirectories.has(entry.name)) {
 				collectPackageJsonFiles(join(directory, entry.name));
 			}

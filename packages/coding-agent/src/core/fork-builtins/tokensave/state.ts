@@ -12,7 +12,6 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { resolveAgentDir } from "./agent-dir.ts";
 
 export type TokensaveMode = "prefer" | "enforce";
 
@@ -24,7 +23,7 @@ export interface TokensaveConfig {
 export const DEFAULT_MODE: TokensaveMode = "enforce";
 export const DEFAULT_AUTO_MANAGE_BRANCHES = false;
 
-export function modeConfigPath(agentDir: string = resolveAgentDir()): string {
+export function modeConfigPath(agentDir: string): string {
 	return join(agentDir, "pi-tokensave.json");
 }
 
@@ -40,7 +39,7 @@ function readPersistedConfig(path: string): Record<string, unknown> {
 	}
 }
 
-export function loadPersistedConfig(path: string = modeConfigPath()): TokensaveConfig {
+export function loadPersistedConfig(path: string): TokensaveConfig {
 	const parsed = readPersistedConfig(path);
 	return {
 		mode: parsed.mode === "prefer" ? "prefer" : DEFAULT_MODE,
@@ -48,11 +47,11 @@ export function loadPersistedConfig(path: string = modeConfigPath()): TokensaveC
 	};
 }
 
-export function loadPersistedMode(path: string = modeConfigPath()): TokensaveMode {
+export function loadPersistedMode(path: string): TokensaveMode {
 	return loadPersistedConfig(path).mode;
 }
 
-export function savePersistedMode(mode: TokensaveMode, path: string = modeConfigPath()): void {
+export function savePersistedMode(mode: TokensaveMode, path: string): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const config = { ...readPersistedConfig(path), mode };
 	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");

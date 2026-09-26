@@ -10,12 +10,11 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "../../extensions/types.ts";
-import { resolveAgentDir } from "./agent-dir.ts";
 import { createBranchIndexLifecycle, sharedReconciliationStore } from "./branch-lifecycle.ts";
 import { registerTokensaveCommands } from "./commands.ts";
 import { detectSearchCandidate, evaluateGuard, type GuardableToolName } from "./guard.ts";
 import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
-import { agentsMdPath, buildRulesBlock, installRulesBlock } from "./rules.ts";
+import { buildRulesBlock } from "./rules.ts";
 import { checkTokensaveAvailable } from "./runner.ts";
 import {
 	createSessionState,
@@ -37,14 +36,9 @@ const RULES_SECTION_NAME = "tokensave";
  * can load this extension yet leave its tools inactive (`tools:` lists, `ext:`
  * selectors), and a running skill's `disallowed-tools` blocks tools that stay
  * active. The guard must not point the model at such a tool.
- *
- * The Pi fork (github.com/pfurini/pi) reports the tools the current request can
- * call. Upstream Pi 0.87 has no such method; there the active set is the best
- * available answer, and a skill's `disallowed-tools` goes unseen.
  */
 function canCallTool(pi: ExtensionAPI, name: string): boolean {
-	const callable = (pi as { getCallableTools?: () => string[] }).getCallableTools?.();
-	return (callable ?? pi.getActiveTools()).includes(name);
+	return pi.getCallableTools().includes(name);
 }
 
 function createBranchReconciliation(
@@ -84,9 +78,9 @@ function createBranchReconciliation(
 }
 
 export default function pluginTokensave(pi: ExtensionAPI): void {
-	// Sessions created with an explicit agentDir keep their settings and AGENTS.md
-	// there, not in ~/.pi/agent. `pi.agentDir` is the same directory ctx reports later.
-	let config = loadPersistedConfig(modeConfigPath(resolveAgentDir(pi)));
+	// Sessions created with an explicit agentDir keep their settings there, not in
+	// ~/.pi/agent. `pi.agentDir` is the same directory ctx reports later.
+	let config = loadPersistedConfig(modeConfigPath(pi.agentDir));
 	let state: TokensaveSessionState = createSessionState(config.mode);
 	const branchReconciliation = createBranchReconciliation(
 		pi,
@@ -95,13 +89,9 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 	);
 
 	pi.on("session_start", async (_event, ctx) => {
-		const agentDir = resolveAgentDir(ctx);
-		config = loadPersistedConfig(modeConfigPath(agentDir));
+		config = loadPersistedConfig(modeConfigPath(ctx.agentDir));
 		state = createSessionState(config.mode);
 		branchReconciliation.resetWarnings();
-		// The global block is conditional on .tokensave presence, so it is safe to
-		// refresh for every session even though AGENTS.md is shared by all projects.
-		installRulesBlock(agentsMdPath(agentDir));
 		// A sync after long drift can take seconds, so session start does not wait
 		// for it. A TokenSave tool call joins the reconciliation still in flight.
 		// The catch covers a ctx made stale by a session switch before it settles.
@@ -162,16 +152,15 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		// the prompt and invalidate the provider's cached prefix.
 		if (!pi.getActiveTools().some((name) => name.startsWith(TOKENSAVE_TOOL_PREFIX))) return;
 
-		// The rendered prompt already holds the block when a loaded AGENTS.md carries
+		// The rendered prompt already holds the block when a loaded context file carries
 		// it, or when a subagent embeds its parent's prompt (pi-subagents append mode).
 		const alreadyLoaded =
 			event.systemPrompt.includes(RULES_MARKER) ||
 			options.contextFiles.some((file) => file.content.includes(RULES_MARKER));
 		if (alreadyLoaded) return;
 
-		// Not yet present: Pi loaded context before installRulesBlock() ran, or the
-		// session loads no context files (pi-subagents children). Inject for this run
-		// and check again on the next one; do not gate on a one-shot session flag.
+		// Not yet present: inject for this run and check again on the next one; do not
+		// gate on a one-shot session flag.
 		//
 		// A named section leaves the rest of the prompt structured. Returning a full
 		// `systemPrompt` would replace the prompt for the whole run instead. That

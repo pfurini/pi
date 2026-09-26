@@ -51,17 +51,26 @@ function mockCli(responders: Record<string, ToolResponder>) {
 
 function fakePi() {
 	const tools: Record<string, any> = {};
-	return {
+	const pi = {
 		tools,
+		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
 		registerTool(def: any) {
 			tools[def.name] = def;
 		},
-	} as unknown as ExtensionAPI & { tools: Record<string, any> };
+		getActiveTools(): string[] {
+			return Object.keys(tools);
+		},
+		getCallableTools(): string[] {
+			return pi.getActiveTools();
+		},
+	};
+	return pi as unknown as ExtensionAPI & { tools: Record<string, any> };
 }
 
 function fakeCtx(cwd: string): ExtensionContext {
 	return {
 		cwd,
+		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
 		ui: { notify: () => {}, confirm: async () => true },
 	} as unknown as ExtensionContext;
 }

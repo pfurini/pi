@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { registerTokensaveCommands } from "../../../src/core/fork-builtins/tokensave/commands.ts";
-import { installRulesBlock } from "../../../src/core/fork-builtins/tokensave/rules.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
 import type { TokensaveMode } from "../../../src/core/fork-builtins/tokensave/state.ts";
 
@@ -17,8 +16,15 @@ function fakePi() {
 	const commands: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
 	return {
 		commands,
+		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
 		registerCommand(name: string, def: any) {
 			commands[name] = def;
+		},
+		getActiveTools(): string[] {
+			return [];
+		},
+		getCallableTools(): string[] {
+			return this.getActiveTools();
 		},
 	} as any;
 }
@@ -27,6 +33,7 @@ function fakeCtx(cwd: string, confirmAnswer = true) {
 	const notifications: Array<{ message: string; level: string }> = [];
 	return {
 		cwd,
+		agentDir: mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-")),
 		ui: {
 			notify: (message: string, level = "info") => notifications.push({ message, level }),
 			confirm: async () => confirmAnswer,
@@ -152,36 +159,11 @@ test("tokensave-mode rejects invalid values", async () => {
 	expect(ctx.notifications.some((n: any) => n.level === "error")).toBeTruthy();
 });
 
-test("tokensave-rules-install and tokensave-rules-remove round-trip", async () => {
-	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
-	const agentsPath = join(mkdtempSync(join(tmpdir(), "pi-tokensave-agents-")), "AGENTS.md");
-	registerTokensaveCommands(
-		pi,
-		() => state,
-		(m) => {
-			state.mode = m;
-		},
-		undefined,
-		agentsPath,
-	);
-
-	const ctx = fakeCtx("/tmp");
-	await pi.commands["tokensave-rules-install"].handler("", ctx);
-	await pi.commands["tokensave-rules-remove"].handler("", ctx);
-
-	expect(ctx.notifications.some((n: any) => /Installed/.test(n.message))).toBeTruthy();
-	expect(ctx.notifications.some((n: any) => /Removed/.test(n.message))).toBeTruthy();
-});
-
-test("tokensave-doctor reports mode and rules-block presence", async () => {
+test("tokensave-doctor reports the mode and no rules-block line", async () => {
 	setExecFileImplForTest((_f, args: string[], _o, cb: Cb) => {
 		cb(args[0] === "--version" ? null : new Error("unused"), "tokensave 7.0.3", "");
 		return {};
 	});
-
-	const agentsPath = join(mkdtempSync(join(tmpdir(), "pi-tokensave-agents-")), "AGENTS.md");
-	installRulesBlock(agentsPath); // isolated tmp file, never touches the real ~/.pi/agent/AGENTS.md
 
 	const pi = fakePi();
 	const state = { mode: "prefer" as TokensaveMode };
@@ -191,8 +173,6 @@ test("tokensave-doctor reports mode and rules-block presence", async () => {
 		(m) => {
 			state.mode = m;
 		},
-		undefined,
-		agentsPath,
 	);
 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
@@ -200,10 +180,10 @@ test("tokensave-doctor reports mode and rules-block presence", async () => {
 
 	const report = ctx.notifications[0]?.message ?? "";
 	expect(report.includes("Mode: prefer")).toBeTruthy();
-	expect(report.includes("AGENTS.md rules block present")).toBeTruthy();
+	expect(report).not.toMatch(/AGENTS\.md|rules block/);
 });
 
-test("mode, rules, and doctor commands use the session agentDir when no override is given", async () => {
+test("mode and doctor commands use the session agentDir when no override is given", async () => {
 	setExecFileImplForTest((_f, _args: string[], _o, cb: Cb) => {
 		cb(null, "tokensave 7.12.1", "");
 		return {};
@@ -225,10 +205,8 @@ test("mode, rules, and doctor commands use the session agentDir when no override
 	await pi.commands["tokensave-mode"].handler("prefer", ctx);
 	expect(JSON.parse(readFileSync(join(agentDir, "pi-tokensave.json"), "utf8"))).toStrictEqual({ mode: "prefer" });
 
-	await pi.commands["tokensave-rules-install"].handler("", ctx);
-	expect(readFileSync(join(agentDir, "AGENTS.md"), "utf8").includes("pi-tokensave:start")).toBeTruthy();
-
 	await pi.commands["tokensave-doctor"].handler("", ctx);
 	const report = ctx.notifications.at(-1)?.message ?? "";
-	expect(report.includes(`AGENTS.md rules block present (${join(agentDir, "AGENTS.md")})`)).toBeTruthy();
+	expect(report.includes("Mode: prefer")).toBeTruthy();
+	expect(existsSync(join(agentDir, "AGENTS.md"))).toBe(false);
 });

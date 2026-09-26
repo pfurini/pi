@@ -2,15 +2,12 @@
 // Copyright (c) 2026 pi-tokensave contributors. MIT licence: see LICENSE in this directory.
 
 /**
- * Slash commands: status, init, sync, mode switch, rules install/remove, doctor.
+ * Slash commands: status, init, sync, mode switch, doctor.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../extensions/types.ts";
-import { resolveAgentDir } from "./agent-dir.ts";
 import { isProjectInitialized, resolveProjectRoot, resolveTokensaveBinary } from "./project.ts";
-import { agentsMdPath, installRulesBlock, removeRulesBlock } from "./rules.ts";
 import { checkTokensaveAvailable, runTokensaveCommand } from "./runner.ts";
 import { modeConfigPath, savePersistedMode, type TokensaveMode } from "./state.ts";
 
@@ -57,11 +54,7 @@ async function handleSync(ctx: ExtensionCommandContext): Promise<void> {
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleDoctor(
-	ctx: ExtensionCommandContext,
-	getState: GetState,
-	agentsPathOverride?: string,
-): Promise<void> {
+async function handleDoctor(ctx: ExtensionCommandContext, getState: GetState): Promise<void> {
 	const root = resolveProjectRoot(ctx.cwd);
 	const lines: string[] = [];
 
@@ -76,14 +69,6 @@ async function handleDoctor(
 			: "✘ Project not initialized. Run /tokensave-init.",
 	);
 
-	const agentsPath = agentsPathOverride ?? agentsMdPath(resolveAgentDir(ctx));
-	const hasBlock = existsSync(agentsPath) && readFileSync(agentsPath, "utf8").includes("pi-tokensave:start");
-	lines.push(
-		hasBlock
-			? `✔ AGENTS.md rules block present (${agentsPath})`
-			: `✘ AGENTS.md rules block missing. Run /tokensave-rules-install.`,
-	);
-
 	lines.push(`Mode: ${getState().mode}`);
 
 	ctx.ui.notify(lines.join("\n"), "info");
@@ -94,7 +79,6 @@ export function registerTokensaveCommands(
 	getState: GetState,
 	setMode: SetMode,
 	modePathOverride?: string,
-	agentsPathOverride?: string,
 ): void {
 	pi.registerCommand("tokensave-status", {
 		description: "Show TokenSave binary, project init, and graph status",
@@ -128,40 +112,14 @@ export function registerTokensaveCommands(
 				return;
 			}
 			setMode(value);
-			const modePath = modePathOverride ?? modeConfigPath(resolveAgentDir(ctx));
+			const modePath = modePathOverride ?? modeConfigPath(ctx.agentDir);
 			savePersistedMode(value, modePath);
 			ctx.ui.notify(`pi-tokensave mode set to '${value}' (persisted to ${modePath}).`, "info");
 		},
 	});
 
-	pi.registerCommand("tokensave-rules-install", {
-		description: "Install/update the pi-tokensave instructions block in the agent directory's AGENTS.md",
-		handler: async (_args, ctx) => {
-			const path = agentsPathOverride ?? agentsMdPath(resolveAgentDir(ctx));
-			const { changed } = installRulesBlock(path);
-			ctx.ui.notify(
-				changed
-					? `Installed pi-tokensave rules in ${path}. Run /reload or start a new session to apply immediately.`
-					: "pi-tokensave rules already up to date.",
-				"info",
-			);
-		},
-	});
-
-	pi.registerCommand("tokensave-rules-remove", {
-		description: "Remove the pi-tokensave instructions block from the agent directory's AGENTS.md",
-		handler: async (_args, ctx) => {
-			const path = agentsPathOverride ?? agentsMdPath(resolveAgentDir(ctx));
-			const { changed } = removeRulesBlock(path);
-			ctx.ui.notify(
-				changed ? `Removed pi-tokensave rules from ${path}.` : "No pi-tokensave rules block found.",
-				"info",
-			);
-		},
-	});
-
 	pi.registerCommand("tokensave-doctor", {
-		description: "Diagnose TokenSave binary, project init, rules block, and mode",
-		handler: async (_args, ctx) => handleDoctor(ctx, getState, agentsPathOverride),
+		description: "Diagnose TokenSave binary, project init, and mode",
+		handler: async (_args, ctx) => handleDoctor(ctx, getState),
 	});
 }

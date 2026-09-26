@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { registerTokensaveCommands } from "../../../src/core/fork-builtins/tokensave/commands.ts";
 import { setExecFileImplForTest } from "../../../src/core/fork-builtins/tokensave/runner.ts";
-import type { TokensaveMode } from "../../../src/core/fork-builtins/tokensave/state.ts";
+import type { TokensaveMode, TokensaveModeSource } from "../../../src/core/fork-builtins/tokensave/state.ts";
 
 type Cb = (
 	error: (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null,
@@ -53,13 +53,14 @@ test("tokensave-status notifies binary-missing when TokenSave is absent", async 
 	});
 
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: false }),
 	);
 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
@@ -77,13 +78,14 @@ test("tokensave-init asks for confirmation before running init", async () => {
 	});
 
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: false }),
 	);
 
 	const dir = mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"));
@@ -102,13 +104,14 @@ test("tokensave-init does not run when the user declines confirmation", async ()
 	});
 
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: false }),
 	);
 
 	const dir = mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"));
@@ -119,38 +122,47 @@ test("tokensave-init does not run when the user declines confirmation", async ()
 	expect(ctx.notifications.some((n: any) => /cancelled/i.test(n.message))).toBeTruthy();
 });
 
-test("tokensave-mode reports current mode with no args and persists a new one", async () => {
+test("tokensave-mode reports the mode and its source, and sets a new one for this session without writing", async () => {
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
-	const modePath = join(mkdtempSync(join(tmpdir(), "pi-tokensave-mode-")), "mode.json");
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
+			state.modeSource = "session";
 		},
-		modePath,
+		() => ({ mode: "enforce", autoManageBranches: false }),
 	);
 
 	const ctx = fakeCtx("/tmp");
+	const settingsPath = join(ctx.agentDir, "settings.json");
+	const settings = '{\n  "forkBuiltins": {\n    "pi-tokensave": {\n      "mode": "enforce"\n    }\n  }\n}';
+	writeFileSync(settingsPath, settings, "utf8");
+
 	await pi.commands["tokensave-mode"].handler("", ctx);
-	expect(ctx.notifications.some((n: any) => /Current mode: enforce/.test(n.message))).toBeTruthy();
+	expect(ctx.notifications.at(-1)?.message).toMatch(/Current mode: enforce \(source: settings\)/);
 
 	await pi.commands["tokensave-mode"].handler("prefer", ctx);
 	expect(state.mode).toBe("prefer");
-	expect(existsSync(modePath)).toBeTruthy();
-	expect(JSON.parse(readFileSync(modePath, "utf8"))).toStrictEqual({ mode: "prefer" });
+	expect(ctx.notifications.at(-1)?.message).toMatch(/for this session/);
+	expect(readFileSync(settingsPath, "utf8")).toBe(settings);
+	expect(readdirSync(ctx.agentDir)).toStrictEqual(["settings.json"]);
+
+	await pi.commands["tokensave-mode"].handler("", ctx);
+	expect(ctx.notifications.at(-1)?.message).toMatch(/Current mode: prefer \(source: session\)/);
 });
 
 test("tokensave-mode rejects invalid values", async () => {
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: false }),
 	);
 
 	const ctx = fakeCtx("/tmp");
@@ -159,31 +171,36 @@ test("tokensave-mode rejects invalid values", async () => {
 	expect(ctx.notifications.some((n: any) => n.level === "error")).toBeTruthy();
 });
 
-test("tokensave-doctor reports the mode and no rules-block line", async () => {
+test("tokensave-doctor reports the settings path, the mode, autoManageBranches and no rules-block line", async () => {
 	setExecFileImplForTest((_f, args: string[], _o, cb: Cb) => {
 		cb(args[0] === "--version" ? null : new Error("unused"), "tokensave 7.0.3", "");
 		return {};
 	});
 
 	const pi = fakePi();
-	const state = { mode: "prefer" as TokensaveMode };
+	const state = { mode: "prefer" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: true }),
 	);
 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
 	await pi.commands["tokensave-doctor"].handler("", ctx);
 
 	const report = ctx.notifications[0]?.message ?? "";
-	expect(report.includes("Mode: prefer")).toBeTruthy();
+	expect(
+		report.includes(`Settings: forkBuiltins["pi-tokensave"] in ${join(ctx.agentDir, "settings.json")}`),
+	).toBeTruthy();
+	expect(report.includes("Mode: prefer (source: settings)")).toBeTruthy();
+	expect(report.includes("autoManageBranches: true")).toBeTruthy();
 	expect(report).not.toMatch(/AGENTS\.md|rules block/);
 });
 
-test("mode and doctor commands use the session agentDir when no override is given", async () => {
+test("the doctor reports the session agentDir's settings, and the mode command writes nothing there", async () => {
 	setExecFileImplForTest((_f, _args: string[], _o, cb: Cb) => {
 		cb(null, "tokensave 7.12.1", "");
 		return {};
@@ -191,22 +208,24 @@ test("mode and doctor commands use the session agentDir when no override is give
 
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"));
 	const pi = fakePi();
-	const state = { mode: "enforce" as TokensaveMode };
+	const state = { mode: "enforce" as TokensaveMode, modeSource: "settings" as TokensaveModeSource };
 	registerTokensaveCommands(
 		pi,
 		() => state,
 		(m) => {
 			state.mode = m;
 		},
+		() => ({ mode: state.mode, autoManageBranches: false }),
 	);
 
 	const ctx = Object.assign(fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"))), { agentDir });
 
 	await pi.commands["tokensave-mode"].handler("prefer", ctx);
-	expect(JSON.parse(readFileSync(join(agentDir, "pi-tokensave.json"), "utf8"))).toStrictEqual({ mode: "prefer" });
+	expect(readdirSync(agentDir)).toStrictEqual([]);
 
 	await pi.commands["tokensave-doctor"].handler("", ctx);
 	const report = ctx.notifications.at(-1)?.message ?? "";
 	expect(report.includes("Mode: prefer")).toBeTruthy();
-	expect(existsSync(join(agentDir, "AGENTS.md"))).toBe(false);
+	expect(report.includes(join(agentDir, "settings.json"))).toBeTruthy();
+	expect(readdirSync(agentDir)).toStrictEqual([]);
 });

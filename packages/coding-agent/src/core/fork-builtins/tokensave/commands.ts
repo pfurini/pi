@@ -9,10 +9,16 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../extensions/types.ts";
 import { isProjectInitialized, resolveProjectRoot, resolveTokensaveBinary } from "./project.ts";
 import { checkTokensaveAvailable, runTokensaveCommand } from "./runner.ts";
-import { modeConfigPath, savePersistedMode, type TokensaveMode } from "./state.ts";
+import {
+	type TokensaveConfig,
+	type TokensaveMode,
+	type TokensaveSessionState,
+	tokensaveSettingsPath,
+} from "./state.ts";
 
-type GetState = () => { mode: TokensaveMode };
+type GetState = () => Pick<TokensaveSessionState, "mode" | "modeSource">;
 type SetMode = (mode: TokensaveMode) => void;
+type GetConfig = () => TokensaveConfig;
 
 async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
 	const root = resolveProjectRoot(ctx.cwd);
@@ -54,7 +60,7 @@ async function handleSync(ctx: ExtensionCommandContext): Promise<void> {
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleDoctor(ctx: ExtensionCommandContext, getState: GetState): Promise<void> {
+async function handleDoctor(ctx: ExtensionCommandContext, getState: GetState, getConfig: GetConfig): Promise<void> {
 	const root = resolveProjectRoot(ctx.cwd);
 	const lines: string[] = [];
 
@@ -69,7 +75,10 @@ async function handleDoctor(ctx: ExtensionCommandContext, getState: GetState): P
 			: "✘ Project not initialized. Run /tokensave-init.",
 	);
 
-	lines.push(`Mode: ${getState().mode}`);
+	const state = getState();
+	lines.push(`Settings: forkBuiltins["pi-tokensave"] in ${tokensaveSettingsPath(ctx.agentDir)}`);
+	lines.push(`Mode: ${state.mode} (source: ${state.modeSource})`);
+	lines.push(`autoManageBranches: ${getConfig().autoManageBranches}`);
 
 	ctx.ui.notify(lines.join("\n"), "info");
 }
@@ -78,7 +87,7 @@ export function registerTokensaveCommands(
 	pi: ExtensionAPI,
 	getState: GetState,
 	setMode: SetMode,
-	modePathOverride?: string,
+	getConfig: GetConfig,
 ): void {
 	pi.registerCommand("tokensave-status", {
 		description: "Show TokenSave binary, project init, and graph status",
@@ -96,7 +105,7 @@ export function registerTokensaveCommands(
 	});
 
 	pi.registerCommand("tokensave-mode", {
-		description: "Show or set enforcement mode: prefer | enforce",
+		description: "Show or set the enforcement mode for this session: prefer | enforce",
 		getArgumentCompletions: (prefix: string) => {
 			const options = ["prefer", "enforce"].filter((option) => option.startsWith(prefix));
 			return options.length > 0 ? options.map((value) => ({ value, label: value })) : null;
@@ -104,7 +113,8 @@ export function registerTokensaveCommands(
 		handler: async (args, ctx) => {
 			const value = args.trim();
 			if (!value) {
-				ctx.ui.notify(`Current mode: ${getState().mode}`, "info");
+				const state = getState();
+				ctx.ui.notify(`Current mode: ${state.mode} (source: ${state.modeSource})`, "info");
 				return;
 			}
 			if (value !== "prefer" && value !== "enforce") {
@@ -112,14 +122,15 @@ export function registerTokensaveCommands(
 				return;
 			}
 			setMode(value);
-			const modePath = modePathOverride ?? modeConfigPath(ctx.agentDir);
-			savePersistedMode(value, modePath);
-			ctx.ui.notify(`pi-tokensave mode set to '${value}' (persisted to ${modePath}).`, "info");
+			ctx.ui.notify(
+				`pi-tokensave mode set to '${value}' for this session. A new session starts from the settings mode.`,
+				"info",
+			);
 		},
 	});
 
 	pi.registerCommand("tokensave-doctor", {
-		description: "Diagnose TokenSave binary, project init, and mode",
-		handler: async (_args, ctx) => handleDoctor(ctx, getState),
+		description: "Diagnose TokenSave binary, project init, settings, and mode",
+		handler: async (_args, ctx) => handleDoctor(ctx, getState, getConfig),
 	});
 }

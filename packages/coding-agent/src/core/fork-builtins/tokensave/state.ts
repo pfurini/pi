@@ -2,18 +2,26 @@
 // Copyright (c) 2026 pi-tokensave contributors. MIT licence: see LICENSE in this directory.
 
 /**
- * Session-scoped guard state and persisted user preference (mode).
+ * Session-scoped guard state and the user's settings (mode, branch management).
  *
- * Persisted mode lives in a simple JSON file in the session's agent directory
- * (default ~/.pi/agent/, never inside the project). Session state is in-memory
- * only and is intentionally small: it exists to unblock the guard after
+ * Settings live in the session agent directory's `settings.json`, under
+ * `forkBuiltins["pi-tokensave"]`:
+ *
+ *   { "forkBuiltins": { "pi-tokensave": { "mode": "prefer", "autoManageBranches": true } } }
+ *
+ * The module only reads that file, and never a project's `.pi/settings.json`.
+ * `/tokensave-mode` changes the mode for the current session only. Session state
+ * is in-memory and intentionally small: it exists to unblock the guard after
  * TokenSave has been consulted, or after it failed/returned nothing useful.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export type TokensaveMode = "prefer" | "enforce";
+
+/** Where the session's mode came from: the settings file, or `/tokensave-mode`. */
+export type TokensaveModeSource = "settings" | "session";
 
 export interface TokensaveConfig {
 	mode: TokensaveMode;
@@ -23,42 +31,46 @@ export interface TokensaveConfig {
 export const DEFAULT_MODE: TokensaveMode = "enforce";
 export const DEFAULT_AUTO_MANAGE_BRANCHES = false;
 
-export function modeConfigPath(agentDir: string): string {
-	return join(agentDir, "pi-tokensave.json");
+/** The key of this module's entry under `forkBuiltins` in `settings.json`. */
+export const SETTINGS_KEY = "pi-tokensave";
+
+export function tokensaveSettingsPath(agentDir: string): string {
+	return join(agentDir, "settings.json");
 }
 
-function readPersistedConfig(path: string): Record<string, unknown> {
-	try {
-		if (!existsSync(path)) return {};
-		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-		return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
-	} catch {
-		return {};
-	}
-}
-
-export function loadPersistedConfig(path: string): TokensaveConfig {
-	const parsed = readPersistedConfig(path);
+/**
+ * Reads `forkBuiltins["pi-tokensave"]` from the agent directory's `settings.json`.
+ * A field keeps its value only when it has the right type; a missing, unreadable
+ * or malformed file, or a missing or non-object entry, yields the defaults.
+ */
+export function loadTokensaveSettings(agentDir: string): TokensaveConfig {
+	const entry = readSettingsEntry(tokensaveSettingsPath(agentDir));
 	return {
-		mode: parsed.mode === "prefer" ? "prefer" : DEFAULT_MODE,
-		autoManageBranches: parsed.autoManageBranches === true,
+		mode: entry.mode === "prefer" || entry.mode === "enforce" ? entry.mode : DEFAULT_MODE,
+		autoManageBranches:
+			typeof entry.autoManageBranches === "boolean" ? entry.autoManageBranches : DEFAULT_AUTO_MANAGE_BRANCHES,
 	};
 }
 
-export function loadPersistedMode(path: string): TokensaveMode {
-	return loadPersistedConfig(path).mode;
+function readSettingsEntry(path: string): Record<string, unknown> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
+	} catch {
+		return {};
+	}
+	const section = isObject(parsed) ? parsed.forkBuiltins : undefined;
+	const entry = isObject(section) ? section[SETTINGS_KEY] : undefined;
+	return isObject(entry) ? entry : {};
 }
 
-export function savePersistedMode(mode: TokensaveMode, path: string): void {
-	mkdirSync(dirname(path), { recursive: true });
-	const config = { ...readPersistedConfig(path), mode };
-	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export interface TokensaveSessionState {
 	mode: TokensaveMode;
+	modeSource: TokensaveModeSource;
 	/** undefined = not checked yet this session */
 	binaryAvailable: boolean | undefined;
 	/** Normalized query fragments TokenSave has already been asked about. */
@@ -72,6 +84,7 @@ export interface TokensaveSessionState {
 export function createSessionState(mode: TokensaveMode): TokensaveSessionState {
 	return {
 		mode,
+		modeSource: "settings",
 		binaryAvailable: undefined,
 		consultedQueries: [],
 		lastCallFailedOrEmpty: false,

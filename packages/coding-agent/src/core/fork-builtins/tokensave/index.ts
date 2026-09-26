@@ -18,8 +18,7 @@ import { buildRulesBlock } from "./rules.ts";
 import { checkTokensaveAvailable } from "./runner.ts";
 import {
 	createSessionState,
-	loadPersistedConfig,
-	modeConfigPath,
+	loadTokensaveSettings,
 	type TokensaveSessionState,
 	wasCandidateConsulted,
 } from "./state.ts";
@@ -80,7 +79,7 @@ function createBranchReconciliation(
 export default function pluginTokensave(pi: ExtensionAPI): void {
 	// Sessions created with an explicit agentDir keep their settings there, not in
 	// ~/.pi/agent. `pi.agentDir` is the same directory ctx reports later.
-	let config = loadPersistedConfig(modeConfigPath(pi.agentDir));
+	let config = loadTokensaveSettings(pi.agentDir);
 	let state: TokensaveSessionState = createSessionState(config.mode);
 	const branchReconciliation = createBranchReconciliation(
 		pi,
@@ -89,7 +88,8 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 	);
 
 	pi.on("session_start", async (_event, ctx) => {
-		config = loadPersistedConfig(modeConfigPath(ctx.agentDir));
+		// A new session drops any /tokensave-mode change and starts from the settings mode.
+		config = loadTokensaveSettings(ctx.agentDir);
 		state = createSessionState(config.mode);
 		branchReconciliation.resetWarnings();
 		// A sync after long drift can take seconds, so session start does not wait
@@ -104,7 +104,9 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		() => state,
 		(mode) => {
 			state.mode = mode;
+			state.modeSource = "session";
 		},
+		() => config,
 	);
 
 	pi.on("tool_call", async (event, ctx) => {

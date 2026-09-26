@@ -4,7 +4,7 @@
  * context file, not gated by a one-shot per-session flag.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -24,9 +24,10 @@ type Handler = (event: any, ctx: any) => any;
 function fakePi(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))) {
 	const handlers: Record<string, Handler> = {};
 	const tools: Record<string, unknown> = {};
-	const commands: Record<string, unknown> = {};
+	const commands: Record<string, { handler: (args: string, ctx: any) => Promise<void> }> = {};
 	const pi = {
 		handlers,
+		commands,
 		agentDir,
 		on(event: string, handler: Handler) {
 			handlers[event] = handler;
@@ -47,7 +48,21 @@ function fakePi(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))
 			return pi.getActiveTools();
 		},
 	};
-	return pi as unknown as ExtensionAPI & { handlers: Record<string, Handler> };
+	return pi as unknown as ExtensionAPI & {
+		handlers: Record<string, Handler>;
+		commands: typeof commands;
+	};
+}
+
+/** Writes `settings.json` with this module's `forkBuiltins` entry, and returns its path. */
+function writeSettings(agentDir: string, entry: Record<string, unknown>): string {
+	const path = join(agentDir, "settings.json");
+	writeFileSync(
+		path,
+		JSON.stringify({ packages: ["../other"], forkBuiltins: { "pi-tokensave": entry } }, null, 2),
+		"utf8",
+	);
+	return path;
 }
 
 /** Pi 0.87's normalized prompt options: `contextFiles` and `sections` are always present. */
@@ -252,7 +267,7 @@ test("tool_call in prefer mode does not recommend a TokenSave tool when the bina
 	});
 
 	const pi = fakePi();
-	writeFileSync(join(pi.agentDir, "pi-tokensave.json"), JSON.stringify({ mode: "prefer" }), "utf8");
+	writeSettings(pi.agentDir, { mode: "prefer" });
 	pluginTokensave(pi);
 
 	const projectDir = mkdtempSync(join(tmpdir(), "pi-tokensave-index-"));
@@ -290,7 +305,7 @@ test("autoManageBranches starts reconciling at session start without blocking it
 
 	let refs = `*\trefs/heads/main\t${"a".repeat(40)}`;
 	const pi = fakePi();
-	writeFileSync(join(pi.agentDir, "pi-tokensave.json"), JSON.stringify({ autoManageBranches: true }), "utf8");
+	writeSettings(pi.agentDir, { autoManageBranches: true });
 	pi.exec = async () => ({ code: 0, stdout: refs, stderr: "", killed: false });
 	pluginTokensave(pi);
 
@@ -353,7 +368,7 @@ test("the guard stands down while a skill disallows tokensave_find_symbol, but t
 test("a subagent session in the same process reuses the parent's branch reconciliation", async () => {
 	// The parent and the child session share one agent directory, as a subagent does.
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"));
-	writeFileSync(join(agentDir, "pi-tokensave.json"), JSON.stringify({ autoManageBranches: true }), "utf8");
+	writeSettings(agentDir, { autoManageBranches: true });
 
 	const tokensaveCommands: string[][] = [];
 	setExecFileImplForTest((_file, args: string[], _options, cb: Cb) => {
@@ -385,7 +400,7 @@ test("a subagent session in the same process reuses the parent's branch reconcil
 test("a session with its own agentDir reads settings there and creates no AGENTS.md, there or under HOME", async () => {
 	const fakeHome = mkdtempSync(join(tmpdir(), "pi-tokensave-home-"));
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"));
-	writeFileSync(join(agentDir, "pi-tokensave.json"), JSON.stringify({ mode: "prefer" }), "utf8");
+	writeSettings(agentDir, { mode: "prefer" });
 	const previousHome = process.env.HOME;
 	process.env.HOME = fakeHome;
 	setExecFileImplForTest((_file, _args: string[], _options, cb: Cb) => {
@@ -438,4 +453,76 @@ test("session_start creates no AGENTS.md in the agent directory and leaves an ex
 		{ cwd: initializedProjectDir(), agentDir: existing.agentDir, ui: { notify: () => {} } },
 	);
 	expect(readFileSync(agentsPath, "utf8")).toBe(original);
+});
+
+function guardedSearchContext(pi: { agentDir: string }, cwd: string) {
+	return { cwd, agentDir: pi.agentDir, ui: { notify: () => {}, confirm: async () => true } };
+}
+
+const SEARCH = { toolName: "bash", input: { command: 'rg "WellModel" .' } };
+
+test("settings come from the session agent directory, never from HOME or a project's .pi/settings.json", async () => {
+	setExecFileImplForTest((_file, _args: string[], _options, cb: Cb) => {
+		cb(null, "tokensave 7.12.1", "");
+		return {};
+	});
+	const fakeHome = mkdtempSync(join(tmpdir(), "pi-tokensave-home-"));
+	mkdirSync(join(fakeHome, ".pi", "agent"), { recursive: true });
+	writeSettings(join(fakeHome, ".pi", "agent"), { mode: "prefer" });
+	const projectDir = initializedProjectDir();
+	mkdirSync(join(projectDir, ".pi"));
+	writeSettings(join(projectDir, ".pi"), { mode: "prefer" });
+	const previousHome = process.env.HOME;
+	process.env.HOME = fakeHome;
+
+	try {
+		const pi = fakePi();
+		pluginTokensave(pi);
+		const ctx = guardedSearchContext(pi, projectDir);
+		await pi.handlers.session_start({}, ctx);
+		expect((await pi.handlers.tool_call(SEARCH, ctx))?.block, "HOME and the project do not set prefer").toBe(true);
+
+		writeSettings(pi.agentDir, { mode: "prefer" });
+		await pi.handlers.session_start({}, ctx);
+		expect(await pi.handlers.tool_call(SEARCH, ctx), "the agent directory sets prefer").toBe(undefined);
+	} finally {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	}
+});
+
+test("/tokensave-mode prefer changes the guard for this session, and settings.json keeps its exact bytes", async () => {
+	setExecFileImplForTest((_file, _args: string[], _options, cb: Cb) => {
+		cb(null, "tokensave 7.12.1", "");
+		return {};
+	});
+	const pi = fakePi();
+	const settingsPath = writeSettings(pi.agentDir, { mode: "enforce", autoManageBranches: false });
+	const before = readFileSync(settingsPath);
+	pluginTokensave(pi);
+	const ctx = guardedSearchContext(pi, initializedProjectDir());
+	await pi.handlers.session_start({}, ctx);
+	expect((await pi.handlers.tool_call(SEARCH, ctx))?.block).toBe(true);
+
+	await pi.commands["tokensave-mode"].handler("prefer", ctx);
+	expect(await pi.handlers.tool_call(SEARCH, ctx)).toBe(undefined);
+	expect(readFileSync(settingsPath).equals(before), "settings.json is unchanged").toBe(true);
+	expect(readdirSync(pi.agentDir)).toStrictEqual(["settings.json"]);
+});
+
+test("a new session_start resets the mode to the settings value", async () => {
+	setExecFileImplForTest((_file, _args: string[], _options, cb: Cb) => {
+		cb(null, "tokensave 7.12.1", "");
+		return {};
+	});
+	const pi = fakePi();
+	writeSettings(pi.agentDir, { mode: "enforce" });
+	pluginTokensave(pi);
+	const ctx = guardedSearchContext(pi, initializedProjectDir());
+	await pi.handlers.session_start({}, ctx);
+	await pi.commands["tokensave-mode"].handler("prefer", ctx);
+	expect(await pi.handlers.tool_call(SEARCH, ctx)).toBe(undefined);
+
+	await pi.handlers.session_start({}, ctx);
+	expect((await pi.handlers.tool_call(SEARCH, ctx))?.block).toBe(true);
 });

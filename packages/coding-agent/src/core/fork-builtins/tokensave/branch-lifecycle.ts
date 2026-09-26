@@ -15,6 +15,8 @@ const SYNC_LOCK_PATTERN = /another sync is already in progress/i;
 
 export interface BranchReconciliationResult {
 	reconciled: boolean;
+	/** True only when the `sync` step ran and succeeded, so the index content may have changed. */
+	synced: boolean;
 	warnings: string[];
 }
 
@@ -83,15 +85,15 @@ export function createBranchIndexLifecycle(
 			// `pi.exec` throws once the session that started this run is replaced.
 			// Other sessions may be awaiting the run, so it settles instead of
 			// rejecting; the next TokenSave tool call reconciles again.
-			return { reconciled: false, warnings: [] };
+			return { reconciled: false, synced: false, warnings: [] };
 		}
 		if (refs.code !== 0) {
-			return { reconciled: false, warnings: [] };
+			return { reconciled: false, synced: false, warnings: [] };
 		}
 
 		const fingerprint = refs.stdout.trim();
 		if (!fingerprint || fingerprints.get(projectRoot) === fingerprint) {
-			return { reconciled: false, warnings: [] };
+			return { reconciled: false, synced: false, warnings: [] };
 		}
 
 		// A detached HEAD (rebase, bisect) also prints a `*` line, but its refname
@@ -118,8 +120,9 @@ export function createBranchIndexLifecycle(
 
 		// `branch add` is a no-op for a tracked branch, so `sync` refreshes the
 		// checked-out branch index after a commit made outside TokenSave's hooks.
+		let synced = false;
 		if (onBranch && (await runStep(["branch", "add", "--path", projectRoot]))) {
-			await runStep(["sync", projectRoot], SYNC_TIMEOUT_MS);
+			synced = await runStep(["sync", projectRoot], SYNC_TIMEOUT_MS);
 		}
 		await runStep(["branch", "gc", "--path", projectRoot]);
 
@@ -127,7 +130,7 @@ export function createBranchIndexLifecycle(
 		if (reconciled) {
 			fingerprints.set(projectRoot, fingerprint);
 		}
-		return { reconciled, warnings };
+		return { reconciled, synced, warnings };
 	}
 
 	return {

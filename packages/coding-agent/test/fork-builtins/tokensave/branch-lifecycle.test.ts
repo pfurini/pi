@@ -78,9 +78,10 @@ test("a commit on the checked-out branch syncs its index", async () => {
 	commands.length = 0;
 
 	refs = ref("main", SHA_B, true);
-	await lifecycle.reconcile(pi, "/repo");
+	const result = await lifecycle.reconcile(pi, "/repo");
 	expect(steps(commands)).toStrictEqual(["branch add", "sync", "branch gc"]);
 	expect(commands[1]).toStrictEqual(["sync", "/repo"]);
+	expect(result.synced, "a sync that ran and succeeded is reported").toBe(true);
 });
 
 test("sync runs with a longer timeout than the branch commands", async () => {
@@ -105,12 +106,13 @@ test("detached HEAD skips branch add and sync but still removes stale indexes", 
 
 	// Real `git branch` output during a rebase or bisect.
 	const refs = [`*\t(HEAD detached at ${SHA_A.slice(0, 7)})\t${SHA_A}`, ref("main")].join("\n");
-	await createBranchIndexLifecycle().reconcile(
+	const result = await createBranchIndexLifecycle().reconcile(
 		fakePi(() => refs),
 		"/repo",
 	);
 
 	expect(steps(commands)).toStrictEqual(["branch gc"]);
+	expect(result.synced, "a skipped sync is not reported").toBe(false);
 });
 
 test("a failed branch add skips the sync and reports the failure", async () => {
@@ -258,6 +260,6 @@ test("a git call that throws (stale session) resolves without reconciling", asyn
 	};
 
 	const result = await createBranchIndexLifecycle().reconcile(stalePi, "/repo");
-	expect(result).toStrictEqual({ reconciled: false, warnings: [] });
+	expect(result).toStrictEqual({ reconciled: false, synced: false, warnings: [] });
 	expect(commands.length).toBe(0);
 });

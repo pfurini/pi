@@ -360,6 +360,7 @@ describe("commands take an optional path", () => {
 			() => state,
 			() => {},
 			() => ({ mode: state.mode, autoManageBranches: false }),
+			() => {},
 		);
 		return registered;
 	}

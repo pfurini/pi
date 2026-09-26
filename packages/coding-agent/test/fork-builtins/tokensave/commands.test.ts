@@ -61,6 +61,7 @@ test("tokensave-status notifies binary-missing when TokenSave is absent", async 
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: false }),
+		() => {},
 	);
 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
@@ -86,6 +87,7 @@ test("tokensave-init asks for confirmation before running init", async () => {
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: false }),
+		() => {},
 	);
 
 	const dir = mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"));
@@ -112,6 +114,7 @@ test("tokensave-init does not run when the user declines confirmation", async ()
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: false }),
+		() => {},
 	);
 
 	const dir = mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"));
@@ -133,6 +136,7 @@ test("tokensave-mode reports the mode and its source, and sets a new one for thi
 			state.modeSource = "session";
 		},
 		() => ({ mode: "enforce", autoManageBranches: false }),
+		() => {},
 	);
 
 	const ctx = fakeCtx("/tmp");
@@ -163,6 +167,7 @@ test("tokensave-mode rejects invalid values", async () => {
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: false }),
+		() => {},
 	);
 
 	const ctx = fakeCtx("/tmp");
@@ -186,6 +191,7 @@ test("tokensave-doctor reports the settings path, the mode, autoManageBranches a
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: true }),
+		() => {},
 	);
 
 	const ctx = fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-")));
@@ -216,6 +222,7 @@ test("the doctor reports the session agentDir's settings, and the mode command w
 			state.mode = m;
 		},
 		() => ({ mode: state.mode, autoManageBranches: false }),
+		() => {},
 	);
 
 	const ctx = Object.assign(fakeCtx(mkdtempSync(join(tmpdir(), "pi-tokensave-cmd-"))), { agentDir });

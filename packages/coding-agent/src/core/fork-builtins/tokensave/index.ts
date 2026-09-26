@@ -13,6 +13,7 @@ import type { ExtensionAPI, ExtensionContext } from "../../extensions/types.ts";
 import { createBranchIndexLifecycle, sharedReconciliationStore } from "./branch-lifecycle.ts";
 import { registerTokensaveCommands } from "./commands.ts";
 import { detectSearchCandidate, evaluateGuard, type GuardableToolName, resolveGuardTarget } from "./guard.ts";
+import { createIndexStateCache } from "./index-state.ts";
 import { isProjectInitialized, resolveProjectRoot } from "./project.ts";
 import { resolveToolProject } from "./projects.ts";
 import { buildRulesBlock } from "./rules.ts";
@@ -45,6 +46,7 @@ function createBranchReconciliation(
 	pi: ExtensionAPI,
 	getConfig: () => { autoManageBranches: boolean },
 	getState: () => TokensaveSessionState,
+	onSynced: (root: string) => void,
 ) {
 	// Shared with every session in this process, pi-subagents children included:
 	// a child finds its parent's fingerprint and does not repeat the work.
@@ -69,6 +71,7 @@ function createBranchReconciliation(
 			if (!state.binaryAvailable) return;
 
 			const result = await lifecycle.reconcile(pi, root);
+			if (result.synced) onSynced(root);
 			if (result.warnings.length > 0 && !warnedRoots.has(root)) {
 				warnedRoots.add(root);
 				ctx.ui.notify(`pi-tokensave could not reconcile branch indexes:\n${result.warnings.join("\n")}`, "warning");
@@ -82,10 +85,13 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 	// ~/.pi/agent. `pi.agentDir` is the same directory ctx reports later.
 	let config = loadTokensaveSettings(pi.agentDir);
 	let state: TokensaveSessionState = createSessionState(config.mode);
+	// Per project root: an index with 0 nodes gets no rules and no guard.
+	const indexStates = createIndexStateCache();
 	const branchReconciliation = createBranchReconciliation(
 		pi,
 		() => config,
 		() => state,
+		(root) => indexStates.reset(root),
 	);
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -97,6 +103,14 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		// for it. A TokenSave tool call joins the reconciliation still in flight.
 		// The catch covers a ctx made stale by a session switch before it settles.
 		void branchReconciliation.run(ctx).catch(() => {});
+		// The rules injection awaits the session root's index state; starting the lookup
+		// here hides its cost behind the user's first prompt.
+		void Promise.resolve()
+			.then(() => {
+				const root = resolveProjectRoot(ctx.cwd);
+				return isProjectInitialized(root) ? indexStates.lookup(root) : undefined;
+			})
+			.catch(() => {});
 	});
 
 	registerTokensaveTools(pi, () => state);
@@ -108,6 +122,7 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 			state.modeSource = "session";
 		},
 		() => config,
+		(root) => indexStates.reset(root),
 	);
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -130,6 +145,8 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		if (state.binaryAvailable === undefined) {
 			state.binaryAvailable = await checkTokensaveAvailable();
 		}
+		// An empty index answers nothing, so the guard stands down for its root.
+		if (state.binaryAvailable && (await indexStates.lookup(root)) === "empty") return;
 
 		if (state.mode === "prefer") {
 			maybeWarnManualExploration(toolName, event.input, ctx, state, root);
@@ -154,9 +171,10 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("before_agent_start", (event) => {
+	pi.on("before_agent_start", async (event) => {
 		const options = event.systemPromptOptions;
-		if (!isProjectInitialized(resolveProjectRoot(options.cwd))) return;
+		const sessionRoot = resolveProjectRoot(options.cwd);
+		if (!isProjectInitialized(sessionRoot)) return;
 		// Rules that mandate TokenSave tools only mislead a session that cannot call them.
 		// The check uses the active set, not the callable one: the rules section is
 		// recorded in the transcript, and toggling it for each skill turn would rewrite
@@ -169,6 +187,9 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 			event.systemPrompt.includes(RULES_MARKER) ||
 			options.contextFiles.some((file) => file.content.includes(RULES_MARKER));
 		if (alreadyLoaded) return;
+
+		// Rules for an index with 0 nodes would send the model to tools that return nothing.
+		if ((await indexStates.lookup(sessionRoot)) === "empty") return;
 
 		// Not yet present: inject for this run and check again on the next one; do not
 		// gate on a one-shot session flag.

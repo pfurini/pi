@@ -195,6 +195,16 @@ test("guarded tool calls do not probe the TokenSave binary outside initialized p
 
 test.afterEach(() => setExecFileImplForTest(undefined));
 
+// A test that sets no fake still never spawns the real binary: the index-state probe
+// gets a ready index, and every other call succeeds.
+test.beforeEach(() =>
+	setExecFileImplForTest((_file, args: string[], _options, cb: Cb) => {
+		const ready = JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ node_count: 3 }) }] });
+		cb(null, args[0] === "--version" ? "tokensave 7.12.1" : args[1] === "status" ? ready : "ok", "");
+		return {};
+	}),
+);
+
 test("enforce mode blocks a symbol search through anchor_grep but allows a config-file search", async () => {
 	setExecFileImplForTest((_file, _args: string[], _options, cb: Cb) => {
 		cb(null, "tokensave 7.12.1", "");
@@ -292,7 +302,8 @@ test("autoManageBranches starts reconciling at session start without blocking it
 	let releaseSync: (() => void) | undefined;
 	let holdSync = true;
 	setExecFileImplForTest((_file, args: string[], _options, cb: Cb) => {
-		if (args[0] !== "--version") tokensaveCommands.push(args);
+		// The index-state probe runs `tokensave tool status`; this test counts branch lifecycle commands only.
+		if (args[0] !== "--version" && args[0] !== "tool") tokensaveCommands.push(args);
 		if (args[0] === "sync" && holdSync) {
 			releaseSync = () => cb(null, "ok", "");
 			return {};
@@ -372,7 +383,8 @@ test("a subagent session in the same process reuses the parent's branch reconcil
 
 	const tokensaveCommands: string[][] = [];
 	setExecFileImplForTest((_file, args: string[], _options, cb: Cb) => {
-		if (args[0] !== "--version") tokensaveCommands.push(args);
+		// The index-state probe runs `tokensave tool status`; this test counts branch lifecycle commands only.
+		if (args[0] !== "--version" && args[0] !== "tool") tokensaveCommands.push(args);
 		cb(null, args[0] === "--version" ? "tokensave 7.12.1" : "ok", "");
 		return {};
 	});

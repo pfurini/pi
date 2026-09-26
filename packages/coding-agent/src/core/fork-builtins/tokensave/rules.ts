@@ -7,7 +7,7 @@
  * holds the rules.
  */
 
-export const RULES_BLOCK_VERSION = "3";
+export const RULES_BLOCK_VERSION = "4";
 const START_MARKER = "<!-- pi-tokensave:start -->";
 const END_MARKER = "<!-- pi-tokensave:end -->";
 const VERSION_MARKER_PREFIX = "<!-- pi-tokensave:version=";
@@ -65,6 +65,27 @@ Never modify code based only on TokenSave output.
 
 TokenSave tools are orientation and code-intelligence tools. The source code
 is the final authority.
+
+### Projects
+
+The tools query the session's project by default. Pass \`project\` to query
+another repository that holds \`.tokensave/\`. Session-project results keep paths
+relative to that project. Foreign-project results give absolute paths, except
+\`tokensave_context\`, whose header says its paths are relative to the named root.
+Absolute or root-relative paths both work as inputs.
+
+### Direct database
+
+When the tools cannot answer a structural question, read
+\`<root>/.tokensave/tokensave.db\` directly, read-only (tables \`nodes\`, \`edges\`,
+\`files\`). TokenSave does not version this schema.
+
+### Subagents
+
+Do not spawn a subagent for codebase research, exploration or analysis of a
+repository that TokenSave has indexed, unless the user says otherwise. This
+applies to the session's project and to any repository reachable through
+\`project\`.
 
 ${END_MARKER}`;
 }

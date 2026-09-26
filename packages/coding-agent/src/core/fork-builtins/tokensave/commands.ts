@@ -20,6 +20,8 @@ import {
 type GetState = () => Pick<TokensaveSessionState, "mode" | "modeSource">;
 type SetMode = (mode: TokensaveMode) => void;
 type GetConfig = () => TokensaveConfig;
+/** Called after a command changed a root's index, so cached index state is dropped. */
+type OnIndexChanged = (root: string) => void;
 
 /** The root a command targets: its optional path argument, else the session's project. */
 function commandRoot(args: string, ctx: ExtensionCommandContext): string {
@@ -41,7 +43,7 @@ async function handleStatus(args: string, ctx: ExtensionCommandContext): Promise
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleInit(args: string, ctx: ExtensionCommandContext): Promise<void> {
+async function handleInit(args: string, ctx: ExtensionCommandContext, onIndexChanged: OnIndexChanged): Promise<void> {
 	const root = commandRoot(args, ctx);
 	if (isProjectInitialized(root)) {
 		ctx.ui.notify(`TokenSave is already initialized at ${root}.`, "info");
@@ -53,16 +55,18 @@ async function handleInit(args: string, ctx: ExtensionCommandContext): Promise<v
 		return;
 	}
 	const result = await runTokensaveCommand(["init", root], root);
+	if (result.ok) onIndexChanged(root);
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
-async function handleSync(args: string, ctx: ExtensionCommandContext): Promise<void> {
+async function handleSync(args: string, ctx: ExtensionCommandContext, onIndexChanged: OnIndexChanged): Promise<void> {
 	const root = commandRoot(args, ctx);
 	if (!isProjectInitialized(root)) {
 		ctx.ui.notify(`TokenSave is not initialized at ${root}. Run /tokensave-init first.`, "warning");
 		return;
 	}
 	const result = await runTokensaveCommand(["sync", root, "--doctor"], root);
+	if (result.ok) onIndexChanged(root);
 	ctx.ui.notify(result.stdout || result.stderr || "No output.", result.ok ? "info" : "error");
 }
 
@@ -94,6 +98,7 @@ export function registerTokensaveCommands(
 	getState: GetState,
 	setMode: SetMode,
 	getConfig: GetConfig,
+	onIndexChanged: OnIndexChanged,
 ): void {
 	pi.registerCommand("tokensave-status", {
 		description: "Show TokenSave binary, project init, and graph status [path of another project]",
@@ -102,12 +107,12 @@ export function registerTokensaveCommands(
 
 	pi.registerCommand("tokensave-init", {
 		description: "Initialize TokenSave for the current project or [path] (asks for confirmation)",
-		handler: async (args, ctx) => handleInit(args, ctx),
+		handler: async (args, ctx) => handleInit(args, ctx, onIndexChanged),
 	});
 
 	pi.registerCommand("tokensave-sync", {
 		description: "Incrementally sync the TokenSave index for the current project or [path]",
-		handler: async (args, ctx) => handleSync(args, ctx),
+		handler: async (args, ctx) => handleSync(args, ctx, onIndexChanged),
 	});
 
 	pi.registerCommand("tokensave-mode", {

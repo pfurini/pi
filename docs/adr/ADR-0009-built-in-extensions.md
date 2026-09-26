@@ -12,7 +12,7 @@ The fork ships the extensions its owner uses every day as built-ins, not as inst
 | Part | Rule |
 | --- | --- |
 | Location | A ported package lives in `packages/builtins/<name>/`, byte-identical to its source at the port, plus an `UPSTREAM.json` that records its upstream. |
-| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. |
+| Fork-owned built-ins | Code the fork writes or rewrites, with no upstream, lives in `packages/coding-agent/src/core/fork-builtins/<name>/`. `FORK_OWNED_BUILTINS` in `fork-builtins.ts` lists each one as an inline factory. It has no `UPSTREAM.json` and takes no sync. `vcc_recall` is the first. pi-tokensave (`fork-builtins/tokensave/`) is the second: the fork took over its code, because the owner wrote 13 of its 15 commits. |
 | Loading | `fork-builtins.ts` holds the package names as data. It resolves each name with `createRequire(import.meta.url).resolve` and loads it through the jiti-backed extension loader. |
 | Reach | Every `DefaultResourceLoader` merges the list, so the CLI, RPC mode, SDK services, third-party loaders in the same process and consumers that link to the checkout all load the built-ins, including under `noExtensions`. Built-ins load after the caller's factories, so upstream's `<inline:N>` numbering for unnamed factories stays unchanged. |
 | Visibility | Each built-in is marked hidden, so the interactive startup `[Extensions]` section does not list it. |
@@ -50,6 +50,7 @@ A fork-owned built-in adds no upstream-owned line. Its code and its tests live i
 - **OpenIntent.** A worker that links to the checkout receives the built-ins without selecting them as extensions; its `tools` allowlist governs them. The workflow-engine design changes through its own amendment process.
 - **Tests.** `packages/coding-agent/test/fork-builtins.test.ts` guards the call site, the load order, the switch and its read at construction, and each port's registrations. A ported package whose tests need its origin's tooling loses its `test` script in an owned commit.
 - **Fork-owned built-ins.** Biome, `tsgo`, the import check and vitest cover `packages/coding-agent/src/core/` and `packages/coding-agent/test/`. Fork-owned built-ins therefore get the full check and test coverage that ported packages under `packages/builtins/` lack. OpenIntent workers receive `vcc_recall` like every built-in, and their `tools` allowlist governs it.
+- **Fork-owned settings.** A fork-owned built-in reads its settings from `forkBuiltins.<key>` in the session agent directory's `settings.json`. It writes no file in the agent directory. pi-tokensave uses the key `pi-tokensave`, and its `/tokensave-mode` command changes the mode for the current session only.
 - **Release scripts.** Never run `version:*`, `release:*` or `publish` on `personal`. They would bump or publish the ported packages.
 - **Open items.** SPIKE-0003 did not test OpenIntent's fenced worker entry or a second port with external dependencies.
 
@@ -73,6 +74,15 @@ A second 2026-09-25 amendment added fork-owned built-ins. `docs/plans/vcc-recall
 | The list entry is guarded | Without `FORK_OWNED_BUILTINS` in `forkBuiltInExtensions()`, 3 tests in `fork-builtins.test.ts` fail. |
 | The built outputs carry the tool | After `npm run build:offline`, `dist/index.js` registers `vcc_recall`, and `PI_FORK_BUILTINS=off` removes it. |
 | In-memory entries equal the session file | 3,455 session files and 292,626 message entries showed 0 mismatches between the file and `SessionManager.open().getEntries()`. |
+
+A 2026-09-26 amendment added pi-tokensave as the second fork-owned built-in, and the settings rule for fork-owned built-ins. `docs/plans/tokensave-builtin.plan.md` records the proof: Section 3 lists the verified facts, and Appendix A holds the probe measurements.
+
+| Rule | Evidence |
+| --- | --- |
+| A copied extension becomes a fork-owned module with no upstream-owned line | The copied module passed `tsgo` and Biome after two hand fixes, and its 148 tests passed under vitest after the test conversion. `git diff` touched only fork-owned files. |
+| The list entry is guarded | Without the `tokensave` entry in `FORK_OWNED_BUILTINS`, 1 test in `fork-builtins.test.ts` fails. |
+| The built outputs carry the module | The built SDK registers the six tools and runs `tokensave_status`. RPC and print mode run `/tokensave-status` with no model call, for both `dist/cli.js` and `dist/bundle/cli.js`. `PI_FORK_BUILTINS=off` removes the module. |
+| Settings come from `forkBuiltins` and nothing is written | Tests read the settings from the session agent directory only, and a mode change leaves `settings.json` byte-identical. The fence lets Pi read `settings.json` and write neither `AGENTS.md` nor `pi-tokensave.json`. |
 
 ## Upstream sync
 

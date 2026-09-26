@@ -125,4 +125,4 @@ The module takes no automatic sync, and it has no `UPSTREAM.json`. To bring in a
 
 ## Next: the D11 question primitive
 
-A later plan adds the D11 question primitive: `timeout`, `default`, `blocking` and `irreversible` on this tool's question shape, with a question service. It extends `tool/types.ts`, `tool/validate-questionnaire.ts` and `rpc-fallback.ts`, which hold the question types, their validation and the dialog walker. Until then this module has no question mode and no answer channel for headless hosts. Section 10 of the plan lists the order.
+A later plan adds the D11 question primitive: `timeout`, `default`, `blocking` and `irreversible` on this tool's question shape, with a question service. It extends `tool/types.ts`, `tool/validate-questionnaire.ts` and `rpc-fallback.ts`, which hold the question types, their validation and the dialog walker. Until then this module has no question mode and no answer channel for headless hosts. The session-control handoff, `/Users/paolof/Developer/ai/_handoffs/2026-09-26-pi-session-control-consolidated.md`, is the authority for D11 (sections 4.7, 9 and 11.1).

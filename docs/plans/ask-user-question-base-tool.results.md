@@ -102,6 +102,6 @@ No plan defect needed an amendment.
 ## Open user actions
 
 - Restart the Pi sessions that started before the cutover. A `/reload` in one of them reports the missing package in `getExtensions().errors` (ADR-0009 "Failure"). The pids were 6740, 6906, 7219, 7361, 15558, 29938, 34331, 56460, 71602, 80079, 83621, 95643 and 99871.
-- Start the D11 plan together with the engine amendment (plan Section 10).
+- Plan D11 inside the session-control work. `/Users/paolof/Developer/ai/_handoffs/2026-09-26-pi-session-control-consolidated.md` is the authority: section 4.7 (this tool), section 9 and D15 (the primitive and the engine amendment), sections 11.1 and 12.1 (Option 1 dependency and the open delivery split).
 - Decide whether to hand-port rpiv-mono changes made after `8403bb09`.
 - Remove `/tmp/ask-user-question-base-tool` and the branch `feat/ask-user-question-base-tool` after this session exits.

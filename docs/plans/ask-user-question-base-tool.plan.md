@@ -309,10 +309,9 @@ Footprint check, rerun after each upstream merge: `git diff --numstat <upstream-
 
 ## 10. Later phases
 
-| Order | Item | Prerequisite |
-| --- | --- | --- |
-| 1 | The D11 question primitive (handoff Section 9): `timeout`, `default`, `blocking` and `irreversible` on this tool's question shape; a QuestionService with ask, claim, answer, cancel, extend and ack; one deadline owner; `confirm`, `select`, `input` and `editor` as aliases. It extends `tool/types.ts`, `tool/validate-questionnaire.ts` and `rpc-fallback.ts`. | This plan done. Planned together with item 2. |
-| 2 | The engine amendment: OpenIntent workers raise model gates through this tool instead of ask-operator, with engine-tier questions recorded by the host under engine D11. | An engine design amendment in the workflow worktree, owned by that work, not by this fork. |
+The later phases moved to the session-control handoff, which is their only authority: `/Users/paolof/Developer/ai/_handoffs/2026-09-26-pi-session-control-consolidated.md`. Its section 4.7 records this tool's state and seams. Its section 9 and ruling D15 define the D11 primitive and the engine amendment that retires ask-operator. Its sections 11.1 and 12.1 place D11 inside the Option 1 work and record the open delivery split.
+
+This section held a two-row table until 2026-09-26. The table named only "this plan done" as the prerequisite of D11, which understated it: the wire part of D11 needs the Option 1 control service.
 
 ## Appendix A. Probe measurements
 

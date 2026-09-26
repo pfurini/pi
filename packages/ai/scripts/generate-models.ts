@@ -390,6 +390,12 @@ const OPENAI_GPT_5_6_AND_6_CONTEXT_WINDOW = 890000;
 const OPENAI_SHORT_CONTEXT_CAPPED_MODEL_IDS = new Set([
 	"gpt-5.4",
 	"gpt-5.5",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+	"gpt-6-astra",
+	"gpt-6-sol",
+	"gpt-6-luna",
 ]);
 const OPENAI_LONG_CONTEXT_PRICING_MODEL_IDS = new Set([
 	"gpt-5.4",
@@ -3269,6 +3275,9 @@ async function generateModels() {
 	const AZURE_CONTEXT_WINDOW_OVERRIDES: Record<string, number> = {
 		"gpt-5.4": 1050000,
 		"gpt-5.5": 1050000,
+		"gpt-5.6-luna": 1050000,
+		"gpt-5.6-sol": 1050000,
+		"gpt-5.6-terra": 1050000,
 	};
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
@@ -3289,7 +3298,9 @@ async function generateModels() {
 
 	for (const model of allModels) {
 		applyOpenAICompletionsCompatMetadata(model);
-		if (model.id.startsWith("gpt-5.6") || model.id.startsWith("gpt-6")) {
+		// Fork: direct OpenAI GPT-5.6 and GPT-6 match Codex's 890k window, after the Azure clones
+		// above took the capped value. Other providers keep their own catalog limits.
+		if (model.provider === "openai" && (model.id.startsWith("gpt-5.6") || model.id.startsWith("gpt-6"))) {
 			model.contextWindow = OPENAI_GPT_5_6_AND_6_CONTEXT_WINDOW;
 		}
 		applyAnthropicMessagesCompatMetadata(model);

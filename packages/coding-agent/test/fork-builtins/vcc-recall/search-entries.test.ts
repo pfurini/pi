@@ -573,3 +573,22 @@ describe("searchEntriesDetailed hard result cap", () => {
 		expect(r.truncated).toBe(false);
 	});
 });
+
+// Fork: a pattern hasNestedQuantifier misses backtracks exponentially inside one
+// RegExp.test; the ceiling must interrupt it instead of hanging the session.
+describe("search ceiling", () => {
+	const pathological = `${"a".repeat(45)}!`;
+	const e: RenderedEntry[] = [{ index: 0, role: "user", summary: pathological }];
+	const m: Message[] = [{ role: "user", content: pathological } as unknown as Message];
+
+	it("aborts an overlapping-alternation regex within the ceiling", () => {
+		const start = Date.now();
+		expect(() => searchEntriesDetailed(e, m, "(a|aa)+$", { budgetMs: 100 })).toThrow("Search aborted");
+		expect(Date.now() - start).toBeLessThan(2000);
+	});
+
+	it("keeps searching after an aborted search", () => {
+		expect(() => searchEntriesDetailed(e, m, "(a|aa)+$", { budgetMs: 100 })).toThrow("Search aborted");
+		expect(searchEntries(entries, messages, "login").map((hit) => hit.index)).toEqual([0]);
+	});
+});

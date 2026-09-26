@@ -1,6 +1,7 @@
 // Ported from pi-vcc 0.8.0 (npm @sting8k/pi-vcc), src/core/search-entries.ts.
 // Copyright (c) 2026 sting8k. MIT licence: see LICENSE in this directory.
 
+import { type Context, createContext, runInContext } from "node:vm";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { clip, contentOf, extractToolCallArgsText, extractToolCallText, isContentBearing, textOf } from "./content.ts";
@@ -108,28 +109,35 @@ const safeRegex = (pattern: string): RegExp => {
 };
 
 /**
- * Wall-clock budget for one search. A normal query over 400 entries takes ~10ms,
+ * Wall-clock ceiling for one search. A normal query over 400 entries takes ~10ms,
  * so this only trips on pathological patterns that survive `hasNestedQuantifier`.
  * Aborting loudly beats returning a silently truncated match count.
  *
- * This is a per-entry checkpoint, not a hard per-call ceiling: JavaScript cannot
- * interrupt a running `RegExp.test`, so a single pathological entry still runs to
- * completion and the overshoot is caught on the next iteration. That bounds the
- * damage to one entry instead of the whole corpus, which is the point — the
- * unbounded case was N entries multiplied by the per-entry cost.
+ * Fork: a model-supplied pattern such as `(a|aa)+$` backtracks exponentially inside a
+ * single `RegExp.test`, which no check between entries can interrupt. The search therefore
+ * runs through `node:vm` with a timeout. V8 enforces the timeout by terminating the running
+ * script, so the ceiling holds even for one pathological entry.
  */
 const SEARCH_BUDGET_MS = 3000;
 
-const startBudget = (): (() => void) => {
-	const deadline = Date.now() + SEARCH_BUDGET_MS;
-	return () => {
-		if (Date.now() > deadline) {
+let searchContext: Context | undefined;
+
+const withSearchBudget = <T>(search: () => T, budgetMs: number): T => {
+	searchContext ??= createContext({});
+	searchContext.search = search;
+	try {
+		return runInContext("search()", searchContext, { timeout: budgetMs }) as T;
+	} catch (error) {
+		if ((error as { code?: unknown } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
 			throw new Error(
-				`Search aborted: query exceeded ${SEARCH_BUDGET_MS}ms. Simplify the pattern — ` +
+				`Search aborted: query exceeded ${budgetMs}ms. Simplify the pattern — ` +
 					"nested quantifiers such as (a+)+ can make matching blow up.",
 			);
 		}
-	};
+		throw error;
+	} finally {
+		searchContext.search = undefined;
+	}
 };
 
 /** Detect if the query looks like a single regex pattern (contains regex metacharacters). */
@@ -266,13 +274,12 @@ interface BM25Context {
 }
 
 /** Precompute IDF and avgDl across all docs. */
-const buildBM25Context = (docs: string[], terms: string[], checkBudget: () => void): BM25Context => {
+const buildBM25Context = (docs: string[], terms: string[]): BM25Context => {
 	const n = docs.length;
 	const df = new Map<string, number>();
 	let totalLen = 0;
 
 	for (const doc of docs) {
-		checkBudget();
 		totalLen += doc.split(/\s+/).length;
 		for (const t of terms) {
 			if (safeRegex(t).test(doc)) {
@@ -529,6 +536,8 @@ const SEARCH_RESULT_CAP = 50;
 export interface SearchTuning {
 	relativeFloor?: number;
 	cap?: number;
+	/** Fork: the search's wall-clock ceiling; defaults to `SEARCH_BUDGET_MS`. */
+	budgetMs?: number;
 }
 
 /** Drop scored hits below `floor` of the top score. The top hit's own score
@@ -567,6 +576,7 @@ const capHits = (hits: SearchHit[], cap: number): SearchResult => {
  * Full search with truncation metadata. `searchEntries` below is a thin
  * `.hits`-only wrapper kept for existing call sites; use this directly when
  * a caller (the recall tool) needs to report a capped result set honestly.
+ * Throws a `Search aborted` error when the search exceeds its ceiling.
  */
 export const searchEntriesDetailed = (
 	entries: RenderedEntry[],
@@ -575,11 +585,21 @@ export const searchEntriesDetailed = (
 	tuning?: SearchTuning,
 ): SearchResult => {
 	if (!query?.trim()) return { hits: entries, totalBeforeCap: entries.length, truncated: false };
+	const trimmed = query.trim();
+	return withSearchBudget(
+		() => searchWithinBudget(entries, messages, trimmed, tuning),
+		tuning?.budgetMs ?? SEARCH_BUDGET_MS,
+	);
+};
 
+const searchWithinBudget = (
+	entries: RenderedEntry[],
+	messages: AgentMessage[],
+	rawQuery: string,
+	tuning: SearchTuning | undefined,
+): SearchResult => {
 	const relativeFloor = tuning?.relativeFloor ?? BM25_RELATIVE_FLOOR;
 	const cap = tuning?.cap ?? SEARCH_RESULT_CAP;
-	const rawQuery = query.trim();
-	const checkBudget = startBudget();
 
 	// If the query looks like a single regex pattern (contains metacharacters),
 	// treat the whole thing as one pattern — don't split into terms.
@@ -596,7 +616,6 @@ export const searchEntriesDetailed = (
 		const regex = safeRegex(rawQuery);
 		const hits: SearchHit[] = [];
 		for (let i = 0; i < entries.length; i++) {
-			checkBudget();
 			const e = entries[i];
 			const msg = messages[i];
 			const text = msg ? fullText(msg) : e.summary;
@@ -625,11 +644,10 @@ export const searchEntriesDetailed = (
 		docs.push(`${e.role} ${text} ${filePart}`);
 	}
 
-	const ctx = buildBM25Context(docs, terms, checkBudget);
+	const ctx = buildBM25Context(docs, terms);
 
 	const scored: Array<{ hit: SearchHit; score: number }> = [];
 	for (let i = 0; i < entries.length; i++) {
-		checkBudget();
 		const e = entries[i];
 		const hay = docs[i];
 		const mc = countMatches(hay, terms);

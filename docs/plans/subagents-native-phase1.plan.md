@@ -357,13 +357,13 @@ Old-test mapping: `child-session-shutdown` (`test/child-session-shutdown.test.ts
 
 ### T7. Worktree isolation
 
-**Changes.** `subagents/runner/worktree.ts`: `isolation: "worktree"` creates a git worktree under the OS temp directory and records its path. The child runs there. On completion, its changes are committed to a `pi-agent-<id>` branch, then the recorded worktree is removed. Frontmatter `off` refuses one. `worktreeIsolation: false` drops the request silently and hides the parameter (T5). A directory outside a git repository fails the spawn with a named error. The "Worktree preservation" default governs every failure. Tests: `test/fork-builtins/subagents/worktree.test.ts`, with git isolated from the developer's configuration (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`).
+**Changes.** `subagents/runner/worktree.ts`: `isolation: "worktree"` creates a git worktree under the OS temp directory and records its path. The child runs there. On completion, its changes are committed to a `pi-agent-<id>` branch, then the recorded worktree is removed. The commit runs with `--no-verify`, as in pi-subagents, so repository hooks never run on it (handoff D29). Frontmatter `off` refuses one. `worktreeIsolation: false` drops the request silently and hides the parameter (T5). A directory outside a git repository fails the spawn with a named error. The "Worktree preservation" default governs every failure. Tests: `test/fork-builtins/subagents/worktree.test.ts`, with git isolated from the developer's configuration (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`).
 
 **Validation.** Cases:
 - a child's file change lands on the branch and the main tree is unchanged;
 - no change means no branch, and the worktree is removed;
 - an aborted child with changes commits them, then removes the worktree;
-- a failing commit (a `pre-commit` hook that exits 1 in the test repository) keeps the worktree and reports its path and the error;
+- a failing commit (the test repository sets `user.useConfigOnly` and names no identity, so `git commit` fails) keeps the worktree and reports its path and the error; a `pre-commit` hook that exits 1 does not stop the commit (handoff D29);
 - a failing branch creation (the branch name already exists) does the same;
 - no test run leaves a worktree registered in `git worktree list` except the preserved ones, and the main repository's other worktrees stay listed.
 
@@ -775,3 +775,7 @@ Pass-3 dispositions: the reviewers confirmed findings 28 to 37 as applied, with 
 | 40 | The retained service had no contract for reloading agent definitions or republishing collisions after an agent-file change. | Accepted | pi-subagents `src/index.ts:436-445`, `:786-796`, `:1967-1968`. New default "Definition refresh"; T4 service row and case; T8 publication row and case. |
 
 Sections changed: 2.1 (child teardown, new definition refresh), 3, shared review gate, T3, T4, T8, T12. Changes made after this pass and not yet reviewed: all of the above.
+
+### Amendment 1: 2026-09-27, during implementation
+
+The owner ruled D29 on 2026-09-27: the worktree snapshot commit runs with `--no-verify`. T7's changes paragraph states it, and T7's failing-commit case now fails the commit through a missing git identity. The owner also ruled D28, a standing tolerance for two named flakes in regression rule 3 from T6 on; it lives in the handoff and the results file, and this plan's text is unchanged by it.

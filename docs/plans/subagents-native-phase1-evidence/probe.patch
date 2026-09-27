@@ -1,0 +1,427 @@
+diff --git a/packages/coding-agent/src/core/agent-session.ts b/packages/coding-agent/src/core/agent-session.ts
+index d9c0a5b56..ec873b834 100644
+--- a/packages/coding-agent/src/core/agent-session.ts
++++ b/packages/coding-agent/src/core/agent-session.ts
+@@ -5632,6 +5632,7 @@ export class AgentSession {
+ 		}
+ 		// Fork: ask_user_question and vcc_recall are base tools like read (ADR-0009).
+ 		addForkBaseTools(this._baseToolDefinitions, {
++			session: this,
+ 			agentDir: this._agentDir,
+ 			eventBus: this._resourceLoader.getEventBus?.(),
+ 			getExternalEditorCommand: () => this.settingsManager.getExternalEditorCommand(),
+diff --git a/packages/coding-agent/src/core/fork-builtins/base-tools.ts b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+index 973dbf996..3d86404b4 100644
+--- a/packages/coding-agent/src/core/fork-builtins/base-tools.ts
++++ b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+@@ -17,17 +17,24 @@
+  * the transcript never carried, such as one that did not exist when the transcript was written.
+  */
+ import type { SystemMessage, TranscriptMessages } from "@earendil-works/pi-ai";
++import type { AgentSession } from "../agent-session.ts";
+ import type { ToolDefinition } from "../extensions/types.ts";
+ import {
+ 	ASK_USER_QUESTION_TOOL_NAME,
+ 	type AskUserQuestionToolOptions,
+ 	createAskUserQuestionToolDefinition,
+ } from "./ask-user-question/ask-user-question.ts";
++import { installSubagentAdapter } from "./subagents/adapter.ts";
++import { AGENT_TOOL_NAME, createAgentToolDefinition } from "./subagents/agent-tool.ts";
++import { subagentServiceFor } from "./subagents/service.ts";
+ import { forkBuiltinsEnabled } from "./switch.ts";
+ import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
+ 
+ /** What the fork's base tools need from the session. */
+-export type ForkBaseToolOptions = AskUserQuestionToolOptions;
++export type ForkBaseToolOptions = AskUserQuestionToolOptions & {
++	/** The session that owns the base tools; the subagent service is keyed on it. */
++	session: AgentSession;
++};
+ 
+ /** The definitions this module created, so activation never touches a caller's tool of the same name. */
+ const forkOwned = new WeakSet<ToolDefinition>();
+@@ -43,6 +50,13 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
+ 	if (!forkBuiltinsEnabled()) return;
+ 	addOwned(definitions, ASK_USER_QUESTION_TOOL_NAME, () => createAskUserQuestionToolDefinition(options));
+ 	addOwned(definitions, VCC_RECALL_TOOL_NAME, createRecallToolDefinition);
++	addOwned(definitions, AGENT_TOOL_NAME, () =>
++		createAgentToolDefinition(
++			() => subagentServiceFor(options.session, options.agentDir),
++			() => [AGENT_TOOL_NAME, ...forkBaseToolNames(definitions)],
++		),
++	);
++	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);
+ }
+ 
+ export function forkBaseToolNames(definitions: ReadonlyMap<string, ToolDefinition>): string[] {
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/adapter.ts b/packages/coding-agent/src/core/fork-builtins/subagents/adapter.ts
+new file mode 100644
+index 000000000..c8b0450cf
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/adapter.ts
+@@ -0,0 +1,33 @@
++/**
++ * Fork-owned probe: the `subagents:*` bus adapter (D19). Installed when the session builds its
++ * base tools, before any tool call, so third parties can ping a fresh session. It announces
++ * `subagents:ready` on every build, including `/reload`, and leaves the bus when the session is
++ * disposed. It never reads the session at install time.
++ */
++import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
++import type { AgentSession } from "../../agent-session.ts";
++import type { EventBus } from "../../event-bus.ts";
++
++export const SUBAGENTS_PROTOCOL_VERSION = 3;
++
++const installed = new WeakMap<AgentSession, () => void>();
++
++export function installSubagentAdapter(session: AgentSession, bus: EventBus): void {
++	if (!installed.has(session)) {
++		const unsubscribePing = bus.on("subagents:rpc:ping", (raw) => {
++			const { requestId } = raw as { requestId: string };
++			bus.emit(`subagents:rpc:ping:reply:${requestId}`, {
++				success: true,
++				data: { version: SUBAGENTS_PROTOCOL_VERSION, capabilities: { skillAgents: true } },
++			});
++		});
++		const unregisterCleanup = registerSessionResourceCleanup((sessionId) => {
++			if (sessionId !== session.sessionId) return;
++			unsubscribePing();
++			unregisterCleanup();
++			installed.delete(session);
++		});
++		installed.set(session, unregisterCleanup);
++	}
++	bus.emit("subagents:ready", {});
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/agent-tool.ts b/packages/coding-agent/src/core/fork-builtins/subagents/agent-tool.ts
+new file mode 100644
+index 000000000..52b98be04
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/agent-tool.ts
+@@ -0,0 +1,27 @@
++/** Fork-owned probe: a minimal `Agent` base tool bound to the session's subagent service. */
++import { Type } from "typebox";
++import { defineTool, type ToolDefinition } from "../../extensions/types.ts";
++import type { SubagentService } from "./service.ts";
++
++export const AGENT_TOOL_NAME = "Agent";
++
++export function createAgentToolDefinition(
++	service: () => SubagentService,
++	childExcludedTools: () => string[],
++): ToolDefinition {
++	return defineTool({
++		name: AGENT_TOOL_NAME,
++		label: "Agent",
++		description: "Probe: run a prompt in a child session and return its final text.",
++		parameters: Type.Object({ prompt: Type.String() }),
++		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
++			const child = await service().spawn({
++				prompt: params.prompt,
++				cwd: ctx.cwd,
++				excludeTools: childExcludedTools(),
++			});
++			const text = await child.done;
++			return { content: [{ type: "text", text }], details: undefined };
++		},
++	});
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service.ts b/packages/coding-agent/src/core/fork-builtins/subagents/service.ts
+new file mode 100644
+index 000000000..86c2e06a8
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/service.ts
+@@ -0,0 +1,104 @@
++/**
++ * Fork-owned probe: the per-session subagent service (D18, D21, D22, D25).
++ * One service per parent `AgentSession`, kept in a WeakMap so a `/reload` that rebuilds the
++ * base tools finds the same service. The parent's `dispose()` ends every child through the
++ * per-session cleanup hook.
++ */
++import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
++import type { AgentSession } from "../../agent-session.ts";
++import type { LoadExtensionsResult } from "../../extensions/types.ts";
++import { DefaultResourceLoader } from "../../resource-loader.ts";
++import { createAgentSession } from "../../sdk.ts";
++import { SessionManager } from "../../session-manager.ts";
++import { SettingsManager } from "../../settings-manager.ts";
++
++export interface SpawnRequest {
++	prompt: string;
++	cwd: string;
++	/** Tool names the child must not see. */
++	excludeTools: string[];
++}
++
++export interface ChildHandle {
++	session: AgentSession;
++	loader: DefaultResourceLoader;
++	done: Promise<string>;
++}
++
++/** Drops every inline built-in (`<inline:name>`) from a child loader's extension set. */
++function dropInlineBuiltIns(base: LoadExtensionsResult): LoadExtensionsResult {
++	return { ...base, extensions: base.extensions.filter((extension) => !extension.path.startsWith("<inline:")) };
++}
++
++export class SubagentService {
++	readonly children = new Set<AgentSession>();
++	private readonly parent: AgentSession;
++	private readonly agentDir: string;
++	private readonly unregisterCleanup: () => void;
++	private disposed = false;
++
++	constructor(parent: AgentSession, agentDir: string) {
++		this.parent = parent;
++		this.agentDir = agentDir;
++		const parentId = parent.sessionId;
++		this.unregisterCleanup = registerSessionResourceCleanup((sessionId) => {
++			if (sessionId === parentId) this.dispose();
++		});
++	}
++
++	get isDisposed(): boolean {
++		return this.disposed;
++	}
++
++	async spawn(request: SpawnRequest): Promise<ChildHandle> {
++		const loader = new DefaultResourceLoader({
++			cwd: request.cwd,
++			agentDir: this.agentDir,
++			noSkills: true,
++			noPromptTemplates: true,
++			noThemes: true,
++			noContextFiles: true,
++			extensionsOverride: dropInlineBuiltIns,
++		});
++		await loader.reload();
++		const { session } = await createAgentSession({
++			cwd: request.cwd,
++			agentDir: this.agentDir,
++			modelRuntime: this.parent.modelRuntime,
++			model: this.parent.model,
++			sessionManager: SessionManager.inMemory(request.cwd),
++			settingsManager: SettingsManager.inMemory(),
++			resourceLoader: loader,
++			excludeTools: request.excludeTools,
++		});
++		await session.bindExtensions({});
++		this.children.add(session);
++		const done = session.prompt(request.prompt).then(() => {
++			const last = session.messages.filter((message) => message.role === "assistant").at(-1);
++			const content = last && "content" in last ? last.content : [];
++			return Array.isArray(content)
++				? content.map((part) => (part.type === "text" ? part.text : "")).join("")
++				: String(content);
++		});
++		return { session, loader, done };
++	}
++
++	dispose(): void {
++		if (this.disposed) return;
++		this.disposed = true;
++		this.unregisterCleanup();
++		for (const child of this.children) child.dispose();
++		this.children.clear();
++	}
++}
++
++const services = new WeakMap<AgentSession, SubagentService>();
++
++export function subagentServiceFor(session: AgentSession, agentDir: string): SubagentService {
++	let service = services.get(session);
++	if (!service) {
++		service = new SubagentService(session, agentDir);
++		services.set(session, service);
++	}
++	return service;
++}
+diff --git a/packages/coding-agent/test/fork-builtins/base-tools.test.ts b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+index 51cd6c1a5..62564582d 100644
+--- a/packages/coding-agent/test/fork-builtins/base-tools.test.ts
++++ b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+@@ -4,22 +4,33 @@ import { mkdtempSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+ import { afterEach, describe, expect, it, vi } from "vitest";
++import type { AgentSession } from "../../src/core/agent-session.ts";
+ import type { ToolDefinition } from "../../src/core/extensions/types.ts";
+ import { addForkBaseTools, forkBaseToolNames } from "../../src/core/fork-builtins/base-tools.ts";
+ 
+-const NAMES = ["ask_user_question", "vcc_recall"];
++const NAMES = ["ask_user_question", "vcc_recall", "Agent"];
++
++/** Registration never touches the session; the subagent service is built on the first Agent call. */
++const unusedSession = new Proxy(
++	{},
++	{
++		get() {
++			throw new Error("registration read the session");
++		},
++	},
++) as AgentSession;
+ 
+ afterEach(() => vi.unstubAllEnvs());
+ 
+ /** Base definitions as `AgentSession` builds them, optionally seeded with a caller's tools. */
+ function definitions(seed: ToolDefinition[] = []): Map<string, ToolDefinition> {
+ 	const map = new Map(seed.map((definition) => [definition.name, definition]));
+-	addForkBaseTools(map, { agentDir: mkdtempSync(join(tmpdir(), "pi-fork-base-tools-")) });
++	addForkBaseTools(map, { session: unusedSession, agentDir: mkdtempSync(join(tmpdir(), "pi-fork-base-tools-")) });
+ 	return map;
+ }
+ 
+ describe("addForkBaseTools", () => {
+-	it("registers ask_user_question and vcc_recall, both named for activation", () => {
++	it("registers ask_user_question, vcc_recall and Agent, all named for activation", () => {
+ 		vi.stubEnv("PI_FORK_BUILTINS", "on");
+ 		const map = definitions();
+ 		expect([...map.keys()]).toEqual(NAMES);
+@@ -38,6 +49,6 @@ describe("addForkBaseTools", () => {
+ 		const callers = { name: "vcc_recall" } as ToolDefinition;
+ 		const map = definitions([callers]);
+ 		expect(map.get("vcc_recall")).toBe(callers);
+-		expect(forkBaseToolNames(map)).toEqual(["ask_user_question"]);
++		expect(forkBaseToolNames(map)).toEqual(["ask_user_question", "Agent"]);
+ 	});
+ });
+diff --git a/packages/coding-agent/test/suite/fork-subagents-probe.test.ts b/packages/coding-agent/test/suite/fork-subagents-probe.test.ts
+new file mode 100644
+index 000000000..92a0f5f88
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-subagents-probe.test.ts
+@@ -0,0 +1,134 @@
++/**
++ * Probe for the native subagent service (handoff D18, D21, D22, D25). Real parent sessions on
++ * the suite harness; each child is built by `createAgentSession` from the parent's model runtime.
++ */
++import { getCurrentTools } from "@earendil-works/pi-ai";
++import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { createEventBus, type EventBus } from "../../src/core/event-bus.ts";
++import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service.ts";
++import { createHarness, getAssistantTexts, type Harness } from "./harness.ts";
++
++const harnesses: Harness[] = [];
++
++afterEach(() => {
++	for (const harness of harnesses.splice(0)) harness.cleanup();
++	vi.unstubAllEnvs();
++});
++
++async function parent(eventBus?: EventBus): Promise<Harness> {
++	vi.stubEnv("PI_FORK_BUILTINS", "on");
++	const harness = await createHarness(eventBus ? { eventBus } : {});
++	harnesses.push(harness);
++	return harness;
++}
++
++describe("native subagent service probe", () => {
++	it("runs a child from the parent's model runtime and returns its text through Agent", async () => {
++		const harness = await parent();
++		const childTools: string[] = [];
++		harness.setResponses([
++			fauxAssistantMessage([fauxToolCall("Agent", { prompt: "count files" })], { stopReason: "toolUse" }),
++			(context: Context) => {
++				childTools.push(...getCurrentTools(context.messages).map((tool) => tool.name));
++				return fauxAssistantMessage("child says 42");
++			},
++			fauxAssistantMessage("parent done"),
++		]);
++		await harness.session.prompt("delegate");
++		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
++		expect(JSON.stringify(toolResult)).toContain("child says 42");
++		expect(getAssistantTexts(harness).at(-1)).toBe("parent done");
++		expect(childTools, "the child sees no fork base tool and no Agent (D22)").not.toContain("Agent");
++		expect(childTools).not.toContain("ask_user_question");
++		expect(childTools).not.toContain("vcc_recall");
++		expect(childTools).toContain("read");
++	});
++
++	it("drops inline built-ins from the child's loader (D22)", async () => {
++		const harness = await parent();
++		const service = subagentServiceFor(harness.session, harness.tempDir);
++		harness.setResponses([fauxAssistantMessage("ok")]);
++		const child = await service.spawn({ prompt: "hi", cwd: harness.tempDir, excludeTools: [] });
++		await child.done;
++		const paths = child.loader.getExtensions().extensions.map((extension) => extension.path);
++		expect(paths.filter((path) => path.startsWith("<inline:"))).toEqual([]);
++	});
++
++	it("keeps one service across /reload", async () => {
++		const harness = await parent();
++		const before = subagentServiceFor(harness.session, harness.tempDir);
++		await harness.session.reload();
++		expect(subagentServiceFor(harness.session, harness.tempDir)).toBe(before);
++		expect(harness.session.getAllTools().some((tool) => tool.name === "Agent")).toBe(true);
++	});
++
++	it("parent dispose ends a running child through the session cleanup hook (D21)", async () => {
++		const harness = await parent();
++		const service = subagentServiceFor(harness.session, harness.tempDir);
++		let release: (() => void) | undefined;
++		harness.setResponses([
++			async () => {
++				await new Promise<void>((resolve) => {
++					release = resolve;
++				});
++				return fauxAssistantMessage("late");
++			},
++		]);
++		const child = await service.spawn({ prompt: "slow", cwd: harness.tempDir, excludeTools: [] });
++		await vi.waitFor(() => expect(release).toBeDefined());
++		harness.session.dispose();
++		expect(service.isDisposed).toBe(true);
++		expect(service.children.size).toBe(0);
++		release?.();
++		await child.done.catch(() => undefined);
++		const last = child.session.messages.filter((message) => message.role === "assistant").at(-1);
++		expect(last && "stopReason" in last ? last.stopReason : undefined).toBe("aborted");
++	});
++
++	it("answers subagents:rpc:ping on a fresh session, before any tool call (D19)", async () => {
++		const bus = createEventBus();
++		await parent(bus);
++		expect(await ping(bus)).toEqual({
++			success: true,
++			data: { version: 3, capabilities: { skillAgents: true } },
++		});
++	});
++
++	it("announces subagents:ready at construction and after /reload", async () => {
++		const bus = createEventBus();
++		let ready = 0;
++		bus.on("subagents:ready", () => {
++			ready++;
++		});
++		const harness = await parent(bus);
++		const afterBuild = ready;
++		expect(afterBuild).toBeGreaterThanOrEqual(1);
++		await harness.session.reload();
++		expect(ready).toBeGreaterThan(afterBuild);
++	});
++
++	it("leaves the bus when the session is disposed (D21)", async () => {
++		const bus = createEventBus();
++		const harness = await parent(bus);
++		harness.session.dispose();
++		expect(await ping(bus)).toBeUndefined();
++	});
++});
++
++/** Pings over the bus; resolves to the reply, or undefined when nothing answers within 100 ms. */
++function ping(bus: EventBus): Promise<unknown> {
++	const requestId = `probe-${Math.random().toString(36).slice(2)}`;
++	return new Promise((resolve) => {
++		const timer = setTimeout(() => {
++			unsubscribe();
++			resolve(undefined);
++		}, 100);
++		const unsubscribe = bus.on(`subagents:rpc:ping:reply:${requestId}`, (reply) => {
++			clearTimeout(timer);
++			unsubscribe();
++			resolve(reply);
++		});
++		bus.emit("subagents:rpc:ping", { requestId });
++	});
++}

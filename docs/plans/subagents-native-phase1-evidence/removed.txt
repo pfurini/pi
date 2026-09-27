@@ -1,0 +1,1 @@
+test/fork-builtins/base-tools.test.ts > addForkBaseTools registers ask_user_question and vcc_recall, both named for activation

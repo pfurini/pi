@@ -95,6 +95,18 @@ const foreground = (task: string, extra: Record<string, unknown> = {}) => ({
 });
 
 describe("notifications", () => {
+	it("turns a notification that fails to deliver into a warning, never an unhandled rejection", async () => {
+		const harness = await parent({ defaultJoinMode: "async" }, { stale: [say("stale result")] });
+		vi.spyOn(harness.session, "sendCustomMessage").mockRejectedValue(new Error("stale context"));
+		const subagents = service(harness);
+		const record = await subagents.spawn(background("stale"));
+		await subagents.waitForResult(record.id);
+		await vi.waitFor(() => expect(harness.session.sendCustomMessage).toHaveBeenCalled(), CHILD_START);
+		await vi.waitFor(() =>
+			expect(subagents.warnings).toContain("A subagent notification failed: Error: stale context"),
+		);
+	});
+
 	it("delivers one notification after the parent settles, and none for a result fetched first", async () => {
 		const parentTurns = [
 			held(() => fauxAssistantMessage("parent done")),

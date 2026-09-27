@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { BeforeToolCallContext } from "@earendil-works/pi-agent-core";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { type Context, fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -190,6 +191,28 @@ describe("child tool scope", () => {
 		const paths = child.loader.getExtensions().extensions.map((extension) => extension.path);
 		expect(paths).not.toContain("<inline:tokensave>");
 		expect(paths.some((entry) => entry.endsWith("tracker.ts"))).toBe(true);
+	});
+
+	it("blocks an out-of-scope tool call at run time, and hands an in-scope one to the hook installed before", async () => {
+		const harness = await parent();
+		writeExtension(
+			harness,
+			"veto",
+			`${tool("keep_me")}\n${tool("drop_me")}\npi.on("tool_call", (event) => (event.toolName === "keep_me" ? { block: true, reason: "extension veto" } : undefined));`,
+		);
+		const { child } = await create(harness, agent({ tools: ["read", "ext:veto/keep_me"] }));
+		// Pi's own hook reads only the tool call and its arguments.
+		const call = (name: string) =>
+			child.session.agent.beforeToolCall?.({
+				toolCall: { type: "toolCall", id: `call-${name}`, name, arguments: {} },
+				args: {},
+			} as unknown as BeforeToolCallContext);
+		expect(await call("drop_me")).toEqual({
+			block: true,
+			reason: 'Tool "drop_me" is not available to this subagent.',
+		});
+		expect(await call("keep_me")).toMatchObject({ block: true, reason: "extension veto" });
+		expect(await call("read")).toBeUndefined();
 	});
 
 	it("narrows extension tools to the ext: selectors, including a tool registered after bind", async () => {

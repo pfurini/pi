@@ -204,6 +204,39 @@ describe("Agent", () => {
 		expect(text(unknown)).toBe('Agent not found: "nobody". It may have been cleaned up.');
 	});
 
+	it("adds the reported spend to the session's stats once, and nothing for a result without usage", async () => {
+		let parentCalls = 0;
+		const harness = await parent({ reportUsage: true }, { omega: [say("omega result")] }, () => {
+			parentCalls++;
+			if (parentCalls === 1) {
+				return fauxAssistantMessage([fauxToolCall("Agent", task("omega task", { run_in_background: false }))], {
+					stopReason: "toolUse",
+				});
+			}
+			if (parentCalls === 2) {
+				const [record] = serviceOf(harness).list();
+				return fauxAssistantMessage([fauxToolCall("get_subagent_result", { agent_id: record.id })], {
+					stopReason: "toolUse",
+				});
+			}
+			return fauxAssistantMessage("parent done");
+		});
+		await harness.session.prompt("delegate the omega task");
+		const [record] = serviceOf(harness).list();
+		const results = harness.session.messages.filter((message) => message.role === "toolResult");
+		expect(
+			results.map((message) => (message.role === "toolResult" ? [message.toolName, message.usage] : [])),
+		).toEqual([
+			["Agent", record.usage],
+			["get_subagent_result", undefined],
+		]);
+		// A child that reported nothing would make the equality below hold vacuously.
+		expect(record.usage.input).toBeGreaterThan(0);
+		let own = 0;
+		for (const message of harness.session.messages) if (message.role === "assistant") own += message.usage.input;
+		expect(harness.session.getSessionStats().tokens.input).toBe(own + record.usage.input);
+	});
+
 	it("attaches the subagent spend to the result under reportUsage", async () => {
 		const harness = await parent({ reportUsage: true }, { theta: [say("theta result")] });
 		const result = await call(harness, "Agent", task("theta task", { run_in_background: false }));

@@ -396,7 +396,7 @@ Old-test mapping: `child-session-shutdown` (`test/child-session-shutdown.test.ts
 - In a child session without `allowed_subagents`, or with `isolated: true`, an RPC spawn on the child's bus replies with an error and starts nothing. With `allowed_subagents`, it starts a nested child owned by that agent: `subagents:completed` (and, for a failing child, `subagents:failed`) for it arrives on the child's bus with its id, and never on the main session's bus. At the depth cap it replies with an error.
 - The same three child cases hold for a `context: fork` skill run inside the child through the typed skill-fork path: refused without permission or under `isolated`, owned by the agent with permission, refused at the cap.
 - A skill change that frees a bare agent name publishes a higher revision with `collided: false`; a query returns the latest revision.
-- With the skill set unchanged, adding a project agent whose name collides with a skill agent's bare name publishes a higher revision with `collided: true` at the next spawn or `refreshDefinitions()`; disabling it publishes one with `collided: false`; a reload that changes nothing publishes no revision.
+- With the skill set unchanged, adding a project agent whose name collides with a skill agent's bare name publishes a higher revision with `collided: true` at the next spawn or `refreshDefinitions()`; disabling it publishes no revision, because a disabled agent keeps its bare name (handoff D30); deleting its file publishes one with `collided: false`; a reload that changes nothing publishes no revision.
 - After two `/reload` calls, `subagents:ready` has been emitted three times, and one ping gets exactly one reply.
 - After `dispose()`, a ping gets no answer within 100 ms.
 - Mutation checks for this task include a wrong terminal `status` value in the `completed` payload, a `consume` that replies success but leaves the result unread, a typed skill-fork path that ignores the child's lineage, and child events emitted on the main session's bus.
@@ -779,3 +779,7 @@ Sections changed: 2.1 (child teardown, new definition refresh), 3, shared review
 ### Amendment 1: 2026-09-27, during implementation
 
 The owner ruled D29 on 2026-09-27: the worktree snapshot commit runs with `--no-verify`. T7's changes paragraph states it, and T7's failing-commit case now fails the commit through a missing git identity. The owner also ruled D28, a standing tolerance for two named flakes in regression rule 3 from T6 on; it lives in the handoff and the results file, and this plan's text is unchanged by it.
+
+### Amendment 2: 2026-09-27, during implementation
+
+The owner ruled D30 on 2026-09-27: a user or project agent switched off with `enabled: false` keeps its bare name, as in pi-subagents and T1's registry. T8's rewrite-map case now expects switching the colliding agent off to publish nothing, and deleting its file to publish `collided: false`.

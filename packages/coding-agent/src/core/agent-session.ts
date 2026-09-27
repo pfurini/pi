@@ -794,6 +794,7 @@ export class AgentSession {
 		// registers on (the rewrite-map seam above already relies on this identity);
 		// an absent bus makes detectPresence() false so fork routing degrades to inline.
 		this._skillForkClient = new SkillForkClient(this._resourceLoader.getEventBus?.(), {
+			session: this,
 			...(config.skillForkTimeouts?.spawnReplyTimeoutMs !== undefined && {
 				spawnReplyTimeoutMs: config.skillForkTimeouts.spawnReplyTimeoutMs,
 			}),

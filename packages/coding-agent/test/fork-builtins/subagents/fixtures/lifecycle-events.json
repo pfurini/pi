@@ -1,0 +1,253 @@
+{
+	"description": "One example payload per subagents:* lifecycle event, and one per terminal status for completed, failed and agent-ended, as test/suite/fork-subagents-adapter.test.ts produces them. Ids read <id>, durationMs reads <ms>, and every measured number under tokens and usage reads <n>; a field whose value is undefined is absent, as JSON drops it. A run cut short before its first answer has spent nothing yet, so its tokens and usage are absent.",
+	"sources": {
+		"field sets": "pi-subagents 79a7c42 README.md:737-756 (the Events table)",
+		"completed and failed payload": "pi-subagents 79a7c42 src/index.ts:634-670 (buildEventData) and :676-701 (the completed or failed choice and agent-ended)",
+		"started and compacted payloads": "pi-subagents 79a7c42 src/index.ts:748-763",
+		"agent-ended payload": "pi-subagents 79a7c42 src/cross-extension-rpc.ts:44-49 (AgentEndedEvent) and docs/rpc.md:149-157 (protocol 3)",
+		"aborted by the session's end": "pi-subagents 79a7c42 docs/rpc.md:167-176 (status aborted, error SESSION_ENDED_ERROR)",
+		"settings payloads": "pi-subagents 79a7c42 src/settings.ts:568 and :585; the keys are this fork's forkBuiltins.subagents settings (plan T2)"
+	},
+	"events": {
+		"subagents:created": {
+			"default": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "background task",
+				"isBackground": true
+			}
+		},
+		"subagents:started": {
+			"default": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "background task"
+			}
+		},
+		"subagents:steered": {
+			"default": {
+				"id": "<id>",
+				"message": "focus on tests"
+			}
+		},
+		"subagents:completed": {
+			"completed": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "background task",
+				"result": "background done",
+				"status": "completed",
+				"toolUses": 0,
+				"durationMs": "<ms>",
+				"tokens": {
+					"input": "<n>",
+					"output": "<n>",
+					"total": "<n>"
+				},
+				"usage": {
+					"input": "<n>",
+					"output": "<n>",
+					"cacheRead": "<n>",
+					"cacheWrite": "<n>",
+					"totalTokens": "<n>",
+					"cost": {
+						"input": "<n>",
+						"output": "<n>",
+						"cacheRead": "<n>",
+						"cacheWrite": "<n>",
+						"total": "<n>"
+					}
+				}
+			},
+			"steered": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "wrap task",
+				"result": "wrapped up",
+				"status": "steered",
+				"toolUses": 1,
+				"durationMs": "<ms>",
+				"tokens": {
+					"input": "<n>",
+					"output": "<n>",
+					"total": "<n>"
+				},
+				"usage": {
+					"input": "<n>",
+					"output": "<n>",
+					"cacheRead": "<n>",
+					"cacheWrite": "<n>",
+					"totalTokens": "<n>",
+					"cost": {
+						"input": "<n>",
+						"output": "<n>",
+						"cacheRead": "<n>",
+						"cacheWrite": "<n>",
+						"total": "<n>"
+					}
+				}
+			}
+		},
+		"subagents:failed": {
+			"error": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "failing task",
+				"result": "",
+				"error": "provider exploded",
+				"status": "error",
+				"toolUses": 0,
+				"durationMs": "<ms>",
+				"tokens": {
+					"input": "<n>",
+					"output": "<n>",
+					"total": "<n>"
+				},
+				"usage": {
+					"input": "<n>",
+					"output": "<n>",
+					"cacheRead": "<n>",
+					"cacheWrite": "<n>",
+					"totalTokens": "<n>",
+					"cost": {
+						"input": "<n>",
+						"output": "<n>",
+						"cacheRead": "<n>",
+						"cacheWrite": "<n>",
+						"total": "<n>"
+					}
+				}
+			},
+			"stopped": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "stopping task",
+				"result": "",
+				"status": "stopped",
+				"toolUses": 0,
+				"durationMs": "<ms>",
+				"tokens": {
+					"input": "<n>",
+					"output": "<n>",
+					"total": "<n>"
+				},
+				"usage": {
+					"input": "<n>",
+					"output": "<n>",
+					"cacheRead": "<n>",
+					"cacheWrite": "<n>",
+					"totalTokens": "<n>",
+					"cost": {
+						"input": "<n>",
+						"output": "<n>",
+						"cacheRead": "<n>",
+						"cacheWrite": "<n>",
+						"total": "<n>"
+					}
+				}
+			},
+			"aborted": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "ending task",
+				"error": "The session ended before the agent finished.",
+				"status": "aborted",
+				"toolUses": 0,
+				"durationMs": "<ms>"
+			}
+		},
+		"subagents:agent-ended": {
+			"completed": {
+				"agentId": "<id>",
+				"status": "completed",
+				"result": "background done"
+			},
+			"steered": {
+				"agentId": "<id>",
+				"status": "steered",
+				"result": "wrapped up"
+			},
+			"error": {
+				"agentId": "<id>",
+				"status": "error",
+				"result": "",
+				"error": "provider exploded"
+			},
+			"stopped": {
+				"agentId": "<id>",
+				"status": "stopped",
+				"result": ""
+			},
+			"aborted": {
+				"agentId": "<id>",
+				"status": "aborted",
+				"error": "The session ended before the agent finished."
+			}
+		},
+		"subagents:compacted": {
+			"default": {
+				"id": "<id>",
+				"type": "worker",
+				"description": "settled task",
+				"reason": "threshold",
+				"tokensBefore": 1234,
+				"compactionCount": 1
+			}
+		},
+		"subagents:settings_loaded": {
+			"default": {
+				"settings": {
+					"maxConcurrent": 4,
+					"maxConcurrentForeground": 0,
+					"defaultMaxTurns": 0,
+					"graceTurns": 5,
+					"defaultJoinMode": "smart",
+					"backgroundByDefault": true,
+					"scopeModels": false,
+					"strictAgentFiles": false,
+					"disableDefaultAgents": false,
+					"toolDescriptionMode": "full",
+					"fleetView": true,
+					"agentMentions": "model",
+					"rememberAgents": true,
+					"widgetMode": "background",
+					"outputTranscript": true,
+					"worktreeIsolation": true,
+					"maxSubagentDepth": 2,
+					"reportUsage": false,
+					"showCost": false,
+					"showModel": false,
+					"viewerMarkdown": "assistant"
+				}
+			}
+		},
+		"subagents:settings_changed": {
+			"default": {
+				"settings": {
+					"maxConcurrent": 5,
+					"maxConcurrentForeground": 0,
+					"defaultMaxTurns": 0,
+					"graceTurns": 5,
+					"defaultJoinMode": "smart",
+					"backgroundByDefault": true,
+					"scopeModels": false,
+					"strictAgentFiles": false,
+					"disableDefaultAgents": false,
+					"toolDescriptionMode": "full",
+					"fleetView": true,
+					"agentMentions": "model",
+					"rememberAgents": true,
+					"widgetMode": "background",
+					"outputTranscript": true,
+					"worktreeIsolation": true,
+					"maxSubagentDepth": 2,
+					"reportUsage": false,
+					"showCost": false,
+					"showModel": false,
+					"viewerMarkdown": "assistant"
+				},
+				"persisted": true
+			}
+		}
+	}
+}

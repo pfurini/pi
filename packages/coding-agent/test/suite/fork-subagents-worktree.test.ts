@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type SubagentService, subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/service.ts";
-import { agentId, type Behavior, call, held, router, say, text, use } from "./fork-subagents-fixtures.ts";
+import { agentId, type Behavior, CHILD_START, call, held, router, say, text, use } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const harnesses: Harness[] = [];
@@ -112,7 +112,8 @@ describe("worktree isolation through the service", () => {
 		const launched = await call(harness, "Agent", isolated("stop task"));
 		const id = agentId(launched);
 		const outputFile = /^Output file: (.+)$/m.exec(text(launched))?.[1];
-		await vi.waitFor(() => expect(stuck.requests()).toBe(1));
+		// Creating the worktree is git I/O, which a loaded machine can stretch past the default second.
+		await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
 		serviceOf(harness).stop(id);
 		const record = await serviceOf(harness).waitForResult(id);
 		expect(record.status).toBe("stopped");

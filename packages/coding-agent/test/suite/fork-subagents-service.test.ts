@@ -34,7 +34,7 @@ import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, held, notices, router, say, sleep } from "./fork-subagents-fixtures.ts";
+import { type Behavior, CHILD_START, held, notices, router, say, sleep } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const harnesses: Harness[] = [];
@@ -115,7 +115,7 @@ describe("notifications", () => {
 		const parentTurn = parentTurns[0];
 		const subagents = service(harness);
 		const busy = harness.session.prompt("parent work");
-		await vi.waitFor(() => expect(parentTurn.requests()).toBe(1));
+		await vi.waitFor(() => expect(parentTurn.requests()).toBe(1), CHILD_START);
 		const alpha = await subagents.spawn(background("alpha"));
 		await subagents.waitForResult(alpha.id);
 		await sleep(300);
@@ -230,7 +230,7 @@ describe("pools", () => {
 		const harness = await parent({ maxConcurrentForeground: 1 }, { hold: [gate.behavior] });
 		const subagents = service(harness);
 		const first = await subagents.spawn(foreground("hold one"));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const second = await subagents.spawn(foreground("hold two"));
 		const detached = await subagents.spawn({ type: "worker", prompt: "free", description: "free", detached: {} });
 		expect(first.status).toBe("running");
@@ -307,7 +307,7 @@ describe("waits, steering, stopping and resuming", () => {
 		);
 		const subagents = service(harness);
 		const steered = await subagents.spawn(foreground("steerable"));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		expect(subagents.steer(steered.id, "switch to plan B")).toBe(true);
 		gate.release();
 		await subagents.waitForResult(steered.id);
@@ -315,7 +315,7 @@ describe("waits, steering, stopping and resuming", () => {
 		expect(steered.result).toBe("changed course");
 
 		const stopped = await subagents.spawn(foreground("stoppable"));
-		await vi.waitFor(() => expect(stopGate.requests()).toBe(1));
+		await vi.waitFor(() => expect(stopGate.requests()).toBe(1), CHILD_START);
 		expect(subagents.stop(stopped.id)).toBe(true);
 		await subagents.waitForResult(stopped.id);
 		expect(stopped.status).toBe("stopped");
@@ -414,7 +414,7 @@ describe("definitions, usage and statuses", () => {
 		const run = async (task: string, extra: Record<string, unknown> = {}) => {
 			const record = await subagents.spawn(foreground(task, extra));
 			if (task === "halt") {
-				await vi.waitFor(() => expect(stopGate.requests()).toBe(1));
+				await vi.waitFor(() => expect(stopGate.requests()).toBe(1), CHILD_START);
 				subagents.stop(record.id);
 			}
 			await subagents.waitForResult(record.id);
@@ -438,7 +438,7 @@ describe("ownership", () => {
 		await subagents.waitForResult(finished.id);
 		const running = await subagents.spawn(background("hold running"));
 		const queued = await subagents.spawn(background("hold queued"));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const ended: string[] = [];
 		subagents.subscribe((event) => {
 			if (event.type === "ended") ended.push(`${event.record.id}:${event.record.status}`);
@@ -519,7 +519,7 @@ describe("ownership", () => {
 		const first = runtime.session;
 		const subagents = new SubagentService(first, { agentDir: tempDir, forkBaseToolNames: () => [] });
 		const record = await subagents.spawn(background("hold"));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const loader = vi.spyOn(record.child?.loader as DefaultResourceLoader, "dispose");
 		await runtime.newSession();
 		expect(runtime.session).not.toBe(first);
@@ -537,7 +537,7 @@ describe("ownership", () => {
 		const finished = await subagents.spawn(foreground("finish me"));
 		await subagents.waitForResult(finished.id);
 		const running = await subagents.spawn(background("hold on"));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const loader = vi.spyOn(finished.child?.loader as DefaultResourceLoader, "dispose");
 		vi.advanceTimersByTime(9 * 60_000);
 		expect(subagents.get(finished.id)).toBe(finished);
@@ -563,7 +563,7 @@ describe("resumes and interrupted turns", () => {
 		const record = await subagents.spawn({ ...foreground("first run"), signal: controller.signal });
 		await subagents.waitForResult(record.id);
 		subagents.resume(record.id, "hold again", { background: true });
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		controller.abort();
 		await sleep(50);
 		expect(record.status).toBe("running");
@@ -604,9 +604,9 @@ describe("resumes and interrupted turns", () => {
 		});
 		const subagents = service(harness);
 		const busy = harness.session.prompt("parent work");
-		await vi.waitFor(() => expect(parentTurn.requests()).toBe(1));
+		await vi.waitFor(() => expect(parentTurn.requests()).toBe(1), CHILD_START);
 		const record = await subagents.spawn(background("late"));
-		await vi.waitFor(() => expect(late.requests()).toBe(1));
+		await vi.waitFor(() => expect(late.requests()).toBe(1), CHILD_START);
 		await harness.session.abort();
 		await busy;
 		late.release();

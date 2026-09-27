@@ -20,7 +20,7 @@ import {
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
+import { type Behavior, CHILD_START, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
@@ -260,7 +260,7 @@ describe("nested ownership", () => {
 			},
 		);
 		await call(harness, "Agent", { subagent_type: "lead", prompt: "alpha task", description: "alpha" });
-		await vi.waitFor(() => expect(stuck.requests()).toBe(1));
+		await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
 		const alpha = serviceOf(harness)
 			.list()
 			.find((record) => record.prompt === "alpha task");

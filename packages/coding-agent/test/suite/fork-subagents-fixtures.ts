@@ -92,6 +92,9 @@ export function notices(session: AgentSession): string[] {
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The bound for a child's startup: a loader reload and session build, which a loaded machine stretches past vitest's default second. */
+export const CHILD_START = { timeout: 10_000 };
+
 let calls = 0;
 
 /** Runs an active tool as the agent loop would, with the session's extension context. */

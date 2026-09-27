@@ -15,10 +15,26 @@
  * v0.15.1 `SpawnOptions` has no `env`, so A.8 values are already rendered into
  * the prompt in the parent. An absent event bus === "no subagents present": every
  * subscribe/emit is guarded and the client reports not-present so routing degrades.
+ *
+ * Fork: a session with the fork's native subagents (a per-session subagent record,
+ * D19, D26) takes the typed path instead. Presence, spawn, stop and completion go
+ * to the session's subagent service, with no ping; in a child session they go to
+ * the nested runtime of the agent the child runs as. The event-bus path above
+ * stays for sessions without the record (`PI_FORK_BUILTINS=off`).
  */
 
 import { randomUUID } from "node:crypto";
+import { basename, dirname } from "node:path";
+import type { AgentSession } from "../agent-session.ts";
 import type { EventBus } from "../event-bus.ts";
+import type { NestedRuntime } from "../fork-builtins/subagents/service/nested.ts";
+import type { SubagentRecord } from "../fork-builtins/subagents/service/records.ts";
+import {
+	type SpawnRequest,
+	type SubagentService,
+	subagentServiceFor,
+	subagentSessionRecord,
+} from "../fork-builtins/subagents/service/service.ts";
 
 const SUBAGENTS_PING = "subagents:rpc:ping";
 const SUBAGENTS_SPAWN = "subagents:rpc:spawn";
@@ -136,6 +152,16 @@ export function normalizeAgentEnded(payload: unknown): NormalizedCompletion | un
 	};
 }
 
+/** The service a typed fork spawns through: the session's own, or its owning agent's nested runtime in a child. */
+interface TypedRuntime {
+	service: SubagentService;
+	owner?: SubagentRecord;
+	nested?: NestedRuntime;
+}
+
+/** The protocol the typed path stands for: it forwards qualified `skill:agent` types. */
+const TYPED_PROTOCOL_VERSION = 3;
+
 /** Reply envelope `{success:true, data?} | {success:false, error}` (pi-mono RpcResponse). */
 function readReplyId(data: unknown): { ok: true; id: string } | { ok: false; error: string } {
 	const env = data as { success?: unknown; data?: { id?: unknown }; error?: unknown } | null;
@@ -147,6 +173,8 @@ function readReplyId(data: unknown): { ok: true; id: string } | { ok: false; err
 
 export class SkillForkClient {
 	private readonly eventBus: EventBus | undefined;
+	/** Set by the fork's own construction; its per-session subagent record selects the typed path. */
+	private readonly session: AgentSession | undefined;
 	private readonly spawnReplyTimeoutMs: number;
 	private readonly foregroundCapMs: number;
 	private readonly pingTimeoutMs: number;
@@ -173,9 +201,15 @@ export class SkillForkClient {
 
 	constructor(
 		eventBus: EventBus | undefined,
-		options: { spawnReplyTimeoutMs?: number; foregroundCapMs?: number; pingTimeoutMs?: number } = {},
+		options: {
+			session?: AgentSession;
+			spawnReplyTimeoutMs?: number;
+			foregroundCapMs?: number;
+			pingTimeoutMs?: number;
+		} = {},
 	) {
 		this.eventBus = eventBus;
+		this.session = options.session;
 		this.spawnReplyTimeoutMs = options.spawnReplyTimeoutMs ?? SPAWN_REPLY_TIMEOUT_MS;
 		this.foregroundCapMs = options.foregroundCapMs ?? FOREGROUND_CAP_MS;
 		this.pingTimeoutMs = options.pingTimeoutMs ?? PING_TIMEOUT_MS;
@@ -205,6 +239,11 @@ export class SkillForkClient {
 	 * broadcast, since the peer may have changed.
 	 */
 	detectPresence(): Promise<boolean> {
+		if (this.typedRuntime()) {
+			this.detectedVersion = TYPED_PROTOCOL_VERSION;
+			this.skillAgentsCapable = true;
+			return Promise.resolve(true);
+		}
 		if (this.presencePromise) {
 			return this.presencePromise;
 		}
@@ -299,7 +338,8 @@ export class SkillForkClient {
 			this.liveBackgroundBySkillId.set(skillId, SkillForkClient.RESERVED);
 			reserved = true;
 		}
-		if (!bus) {
+		const typed = this.typedRuntime();
+		if (!bus && !typed) {
 			if (reserved) {
 				this.liveBackgroundBySkillId.delete(skillId);
 			}
@@ -310,7 +350,13 @@ export class SkillForkClient {
 		let reply: { ok: true; id: string } | { ok: false; error: string };
 		this.awaitingSpawnReply++;
 		try {
-			reply = await this.awaitSpawnReply(bus, agentType, prompt, spawnOptions, params.spawnReplyTimeoutMs);
+			if (typed) {
+				reply = await this.spawnTyped(typed, skillId, agentType, prompt, spawnOptions);
+			} else if (bus) {
+				reply = await this.awaitSpawnReply(bus, agentType, prompt, spawnOptions, params.spawnReplyTimeoutMs);
+			} else {
+				reply = { ok: false, error: "no subagents extension present" };
+			}
 		} finally {
 			this.awaitingSpawnReply = Math.max(0, this.awaitingSpawnReply - 1);
 		}
@@ -338,6 +384,66 @@ export class SkillForkClient {
 			return { kind: "spawned-background", agentId };
 		}
 		return this.awaitForeground(agentId, params);
+	}
+
+	/** The typed path's service, or undefined when the session has no per-session subagent record. */
+	private typedRuntime(): TypedRuntime | undefined {
+		if (!this.session) {
+			return undefined;
+		}
+		const lineage = subagentSessionRecord(this.session)?.lineage;
+		if (lineage) {
+			return {
+				service: lineage.owner,
+				owner: lineage.parentRecord,
+				nested: lineage.owner.nested(lineage.parentRecord),
+			};
+		}
+		const service = subagentServiceFor(this.session);
+		return service ? { service } : undefined;
+	}
+
+	/**
+	 * Spawn through the service, detached like a bus spawn. The completion is routed through
+	 * `deliverCompletion`, as a broadcast would be, so the waiters and the repeat guard work alike.
+	 */
+	private async spawnTyped(
+		runtime: TypedRuntime,
+		skillId: string,
+		agentType: string | undefined,
+		prompt: string,
+		options: SubagentSpawnOptions & { isBackground: boolean },
+	): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+		const type = agentType ?? "general-purpose";
+		try {
+			const request: SpawnRequest = {
+				type,
+				prompt,
+				description: `skill ${basename(dirname(skillId))}`,
+				model: options.model ? await runtime.service.resolveCallerModel(options.model, type) : undefined,
+				detached: { isBackground: options.isBackground },
+			};
+			const record = runtime.nested ? await runtime.nested.spawn(request) : await runtime.service.spawn(request);
+			void runtime.service.waitForResult(record.id, undefined, runtime.owner).then(
+				(done) => {
+					const completion = normalizeAgentEnded({
+						agentId: done.id,
+						status: done.status,
+						result: done.result,
+						error: done.error,
+					});
+					if (completion) {
+						this.deliverCompletion(completion);
+					}
+				},
+				() => {
+					// The record is gone only after the session ended, which settles every wait.
+				},
+			);
+			return { ok: true, id: record.id };
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
 	}
 
 	private awaitSpawnReply(
@@ -432,10 +538,15 @@ export class SkillForkClient {
 		});
 	}
 
-	/** Emit `subagents:rpc:stop` (fire-and-forget) and settle any outstanding wait once. */
+	/** Stop the agent (the service, or `subagents:rpc:stop` fire-and-forget) and settle any outstanding wait once. */
 	stop(agentId: string): void {
 		try {
-			this.eventBus?.emit(SUBAGENTS_STOP, { requestId: randomUUID(), agentId });
+			const typed = this.typedRuntime();
+			if (typed) {
+				typed.service.stop(agentId, typed.owner);
+			} else {
+				this.eventBus?.emit(SUBAGENTS_STOP, { requestId: randomUUID(), agentId });
+			}
 		} catch {
 			// Fire-and-forget: a stale/throwing bus must never prevent settling the wait.
 		}

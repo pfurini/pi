@@ -21,6 +21,7 @@ import type { Settings } from "../../src/core/settings-manager.ts";
 import {
 	agentId,
 	type Behavior,
+	CHILD_START,
 	call,
 	held,
 	notices,
@@ -170,9 +171,9 @@ describe("Agent", () => {
 		const harness = await parent({ defaultJoinMode: "async" }, { mu: [stuck.behavior], lambda: [slow.behavior] });
 		const controller = new AbortController();
 		const background = agentId(await call(harness, "Agent", task("lambda task"), controller.signal));
-		await vi.waitFor(() => expect(slow.requests()).toBe(1));
+		await vi.waitFor(() => expect(slow.requests()).toBe(1), CHILD_START);
 		const foreground = call(harness, "Agent", task("mu task", { run_in_background: false }), controller.signal);
-		await vi.waitFor(() => expect(stuck.requests()).toBe(1));
+		await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
 		controller.abort();
 		expect(text(await foreground)).toMatch(
 			/^Agent completed in .* \(STOPPED BY THE USER — everything the agent produced is above; the task is unfinished\)\.\n\nNo output\.$/s,
@@ -219,7 +220,7 @@ describe("get_subagent_result", () => {
 		const gate = held(() => fauxAssistantMessage("gamma result"));
 		const harness = await parent({ defaultJoinMode: "async" }, { gamma: [gate.behavior] });
 		const id = agentId(await call(harness, "Agent", task("gamma task")));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const running = text(await call(harness, "get_subagent_result", { agent_id: id }));
 		expect(running).toMatch(/Status: running \|/);
 		expect(running).toMatch(/Agent is still running\. Use wait: true or check back later\.$/);
@@ -236,7 +237,7 @@ describe("get_subagent_result", () => {
 		const gate = held(() => fauxAssistantMessage("delta result"));
 		const harness = await parent({ defaultJoinMode: "async" }, { delta: [gate.behavior] });
 		const id = agentId(await call(harness, "Agent", task("delta task")));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const controller = new AbortController();
 		const waiting = call(harness, "get_subagent_result", { agent_id: id, wait: true }, controller.signal);
 		controller.abort();
@@ -272,7 +273,7 @@ describe("steer_subagent", () => {
 		);
 		const first = agentId(await call(harness, "Agent", task("first task")));
 		const second = agentId(await call(harness, "Agent", task("second task")));
-		await vi.waitFor(() => expect(gate.requests()).toBe(1));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const queued = await call(harness, "steer_subagent", { agent_id: second, message: "also check the tests" });
 		expect(text(queued)).toBe(
 			`Steering message queued for agent ${second}. It will be delivered once the session initializes.`,

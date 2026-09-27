@@ -28,6 +28,7 @@ import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { getSkillSetController } from "../../../skills/skill-set-events.ts";
+import { bridgeServiceEvents } from "../adapter/events.ts";
 import { loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
 import {
 	type AgentRegistry,
@@ -133,6 +134,7 @@ export type SubagentEvent =
 	| { type: "steered"; record: SubagentRecord; message: string }
 	| { type: "compacted"; record: SubagentRecord; reason: "manual" | "threshold" | "overflow"; tokensBefore: number }
 	| { type: "definitions"; registry: AgentRegistry }
+	| { type: "settings"; settings: SubagentSettings }
 	| { type: "warning"; message: string };
 
 export interface SpawnRequest {
@@ -153,9 +155,14 @@ export interface SpawnRequest {
 	 * decides whether it takes a background slot. Without it, `run_in_background` decides.
 	 */
 	detached?: { isBackground?: boolean };
-	/** Aborting it stops a blocking agent, as a caller's cancel stops a foreground run; a background one outlives it. */
+	/**
+	 * Aborting it stops the agent: a foreground run, or a detached one whose caller passed it. A
+	 * background `Agent` spawn outlives the tool call's signal.
+	 */
 	signal?: AbortSignal;
 	toolCallId?: string;
+	/** Called with the record as soon as it exists, before it starts; the bus adapter orders its reply with it. */
+	onCreated?: (record: SubagentRecord) => void;
 }
 
 type Pool = "background" | "foreground";
@@ -243,6 +250,11 @@ export class SubagentService {
 		}
 	}
 
+	/** The session's event bus, where the adapter announces the session's own agents. */
+	get eventBus(): EventBus | undefined {
+		return this.context.eventBus;
+	}
+
 	/** Every distinct warning so far, oldest first, including those raised before anyone subscribed. */
 	get warnings(): readonly string[] {
 		return [...this.warned];
@@ -255,12 +267,35 @@ export class SubagentService {
 		this.emit({ type: "warning", message });
 	}
 
-	/** Rereads the settings, as every spawn does, and returns them. */
+	/** Rereads the settings, as every spawn does, and returns them; a change from the last read is announced. */
 	reloadSettings(): SubagentSettings {
 		const { settings, warnings } = readSubagentSettings(this.session.settingsManager);
 		for (const warning of warnings) this.warn(warning);
+		// Undefined only during construction, when there is nothing to compare with.
+		const previous: SubagentSettings | undefined = this.current;
 		this.current = settings;
+		if (previous && JSON.stringify(previous) !== JSON.stringify(settings)) this.emit({ type: "settings", settings });
 		return settings;
+	}
+
+	/**
+	 * A caller's model, by name, resolved and scope-checked as the `Agent` tool's `model` is. The bus
+	 * adapter and the skill-fork client pass the result as `SpawnRequest.model`. Throws the refusal.
+	 */
+	async resolveCallerModel(input: string, agentLabel: string): Promise<Model<Api>> {
+		this.reloadSettings();
+		const resolution = resolveSpawnModel({
+			modelInput: input,
+			fromCaller: true,
+			parentModel: this.session.model,
+			available: await this.session.modelRuntime.getAvailable(),
+			scopeModels: this.current.scopeModels,
+			enabledModels: this.session.settingsManager.getEnabledModels(),
+			agentLabel,
+		});
+		if (!resolution.ok) throw new Error(resolution.message);
+		if (!resolution.model) throw new Error(`Model not found: "${input}".`);
+		return resolution.model;
 	}
 
 	/** The session's working directory, through its extension context; `process.cwd()` when that is gone. */
@@ -321,7 +356,8 @@ export class SubagentService {
 	): Promise<SubagentRecord> {
 		this.assertLive();
 		const cwd = request.cwd ?? this.defaultCwd();
-		const registry = this.refreshDefinitions(cwd);
+		// Definitions, like all configuration, come from the session's project, whatever directory the agent works in.
+		const registry = this.refreshDefinitions();
 		const settings = this.current;
 		const resolution = resolveType(registry, settings);
 		if (!resolution.ok) throw new Error(resolution.message);
@@ -351,7 +387,8 @@ export class SubagentService {
 			fellBackFrom,
 			parent,
 		});
-		if (request.signal && record.blocking) this.stopOn(request.signal, record);
+		// A background Agent spawn outlives the tool call; a foreground or detached one stops with its signal.
+		if (request.signal && !(background && !request.detached)) this.stopOn(request.signal, record);
 		if (!request.detached && background) this.emit({ type: "created", record });
 		if (record.joinMode === "smart" || record.joinMode === "group") this.addToBatch(record);
 		this.launch(record, request.prompt, invocation.inheritContext);
@@ -432,11 +469,13 @@ export class SubagentService {
 			pendingSteers: [],
 			waiters: new Set(),
 		};
-		// Known at once, so a background spawn's result can name it before the child exists.
+		// Known at once, so a background spawn's result can name it before the child exists. The
+		// runner files it under the session's project, whatever directory the agent works in.
 		if (input.definition.outputTranscript ?? this.current.outputTranscript) {
-			record.transcriptPath = transcriptPath(record.cwd, this.session.sessionId, record.id);
+			record.transcriptPath = transcriptPath(this.defaultCwd(), this.session.sessionId, record.id);
 		}
 		this.records.set(record.id, record);
+		input.request.onCreated?.(record);
 		return record;
 	}
 
@@ -522,7 +561,7 @@ export class SubagentService {
 		const { worktree } = record;
 		// The child works in the copy; configuration, memory and the transcript stay with the project.
 		const outcome = await spawnChild(
-			{ ...request, cwd: worktree.workPath, configCwd: record.cwd, worktreeBase: record.cwd },
+			{ ...request, cwd: worktree.workPath, worktreeBase: record.cwd },
 			{ ...turn, inheritContext },
 			attach,
 		);
@@ -539,6 +578,8 @@ export class SubagentService {
 			agentDir: this.context.agentDir,
 			definition,
 			cwd: record.cwd,
+			// Configuration always loads from the session's project, as pi-subagents did for a spawn's `cwd`.
+			configCwd: this.defaultCwd(),
 			model: record.model,
 			thinking: invocation.thinking,
 			isolated: invocation.isolated,
@@ -652,6 +693,11 @@ export class SubagentService {
 			this.queue.splice(index, 1);
 			entry.start();
 		}
+	}
+
+	/** Any record by id, whoever owns it: the bus adapter tells "not found" from "not yours" with it. */
+	lookup(id: string): SubagentRecord | undefined {
+		return this.records.get(id);
 	}
 
 	/**
@@ -927,5 +973,6 @@ export function subagentServiceFor(session: AgentSession): SubagentService | und
 	if (!context) return undefined;
 	service = new SubagentService(session, context);
 	services.set(session, service);
+	bridgeServiceEvents(service);
 	return service;
 }

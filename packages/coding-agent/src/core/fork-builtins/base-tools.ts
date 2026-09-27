@@ -5,7 +5,8 @@
  * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`
  *   and `steer_subagent` next to `read`. `PI_FORK_BUILTINS=off` registers none of them. A caller's
  *   base tool of the same name stays. It also stores the session's subagent record, reading nothing
- *   from the session: the subagent service is built from that record on first use.
+ *   from the session: the subagent service is built from that record on first use. With an event
+ *   bus, it installs the `subagents:*` adapter on it.
  * - `forkBaseToolNames` names the registered fork tools. `AgentSession` activates them
  *   wherever it activates every extension tool: at construction and on `/reload`.
  * - `forkBaseToolsNeverCarried` names the fork tools a restored transcript never added.
@@ -26,6 +27,7 @@ import {
 	type AskUserQuestionToolOptions,
 	createAskUserQuestionToolDefinition,
 } from "./ask-user-question/ask-user-question.ts";
+import { installSubagentAdapter } from "./subagents/adapter/install.ts";
 import { lineageForBus } from "./subagents/runner/lineage.ts";
 import { registerSubagentSession } from "./subagents/service/service.ts";
 import { createAgentToolDefinition } from "./subagents/tools/agent.ts";
@@ -65,6 +67,7 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
 	addOwned(definitions, AGENT_TOOL_NAME, () => createAgentToolDefinition(options.session, subagents));
 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
 	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
+	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);
 }
 
 export function forkBaseToolNames(definitions: ReadonlyMap<string, ToolDefinition>): string[] {

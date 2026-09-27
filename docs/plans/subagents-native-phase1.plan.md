@@ -190,7 +190,7 @@ Every command runs from `/tmp/subagents-native` unless it names another director
 6. After T0 commits the evidence: run coding-agent three times, `node $E/failing-tests.mjs run /tmp/subagents-native packages/coding-agent /tmp/sn-impl/base-<n>.json`, n = 1 to 3. Run `./test.sh > /tmp/sn-impl/base-testsh.log 2>&1` once.
 7. `node -e 'const r=require("/tmp/sn-impl/base-1.json");console.log(r.numTotalTests,r.numFailedTests)'`. When `BASE` is `452d35e62`, it prints `4628 0`. Otherwise record the numbers in the results file and compare them with Appendix A. A new baseline failure is a precondition to report, not a regression. Then `echo /tmp/sn-impl/base-1.json > /tmp/sn-impl/latest.candidate`.
 
-**Regression rule.** With `S=$E/failing-tests.mjs` and `I=$E/test-identities.mjs`. The rule applies to code tasks: T1 to T8, and each T10 fix, whose task id is `T10-F<n>`. T9, T11 and T12 change no code under test; they run no candidate and leave the chain unchanged. Every run writes a new path: `/tmp/sn-impl/<task>-a<k>-<n>.json` and `/tmp/sn-impl/<task>-a<k>-testsh.log`, where `k` counts validation attempts from 1 (a review fix starts a new attempt) and `n` counts runs within the attempt. The run that satisfies rules 1 to 3 in the last attempt is the task's candidate: write its path to `/tmp/sn-impl/<task>.candidate`, then to `/tmp/sn-impl/latest.candidate`. The previous candidate is the path in `latest.candidate` when the task starts; setup step 7 seeds that file with `/tmp/sn-impl/base-1.json`.
+**Regression rule.** With `S=$E/failing-tests.mjs` and `I=$E/test-identities.mjs`. The rule applies to code tasks: T1 to T8, T8a, and each T10 fix, whose task id is `T10-F<n>`. T9, T11 and T12 change no code under test; they run no candidate and leave the chain unchanged. Every run writes a new path: `/tmp/sn-impl/<task>-a<k>-<n>.json` and `/tmp/sn-impl/<task>-a<k>-testsh.log`, where `k` counts validation attempts from 1 (a review fix starts a new attempt) and `n` counts runs within the attempt. The run that satisfies rules 1 to 3 in the last attempt is the task's candidate: write its path to `/tmp/sn-impl/<task>.candidate`, then to `/tmp/sn-impl/latest.candidate`. The previous candidate is the path in `latest.candidate` when the task starts; setup step 7 seeds that file with `/tmp/sn-impl/base-1.json`.
 1. After each code task, run coding-agent once. `node $S diff /tmp/sn-impl/base-1.json <run>` reports no new failure. `node $I /tmp/sn-impl/base-1.json <run>` and `node $I "$(cat /tmp/sn-impl/latest.candidate)" <run>` both exit 0; from T5 on, pass `$E/removed.txt` as their third argument. The run's `numTotalTests` equals the previous candidate's plus the tests the task added, and its `numPendingTests` equals base-1's (50 at `452d35e62`), so no new test is skipped.
 2. A failure absent from baseline run 1 triggers two more runs in the same attempt. It is tolerated only when base-2 or base-3 also shows it and the runs fail it no more often than the baseline did, or when it is a known flake below whose file passes alone three times in a row. Rule 1 then applies to a run without that failure, which must exist. Otherwise, stop and ask.
 3. Run `./test.sh > /tmp/sn-impl/<task>-a<k>-testsh.log 2>&1` once. Define `ids() { grep -E '(^| )FAIL |^✖ |ℹ fail ' "$1" | sed -E 's/ \([0-9.]+ ?m?s\)$//' | sort -u; }` and `pkgs() { grep -E '^> @earendil-works/.* test$' "$1" | sort; }`. Both `diff <(ids /tmp/sn-impl/base-testsh.log) <(ids <log>)` and `diff <(pkgs /tmp/sn-impl/base-testsh.log) <(pkgs <log>)` print nothing. On a difference, rerun once to a new log; stop and ask when it recurs.
@@ -405,6 +405,22 @@ Old-test mapping: `child-session-shutdown` (`test/child-session-shutdown.test.ts
 
 **Commit.** `feat(coding-agent): subagents bus adapter; skill-fork calls the service`.
 
+### T8a. Close the uncovered old-test files
+
+Amendment 3 added this task on 2026-09-27 (handoff D31). T9's mapping found three old test files with no covering test.
+
+**Changes.** New tests, and a fix only where a test exposes a defect:
+
+| Old file at `79a7c42` | New test |
+| --- | --- |
+| `test/e2e/tool-veto-reachability.e2e.test.ts` | A child's runtime veto blocks a call to a tool outside its scope, and a `beforeToolCall` installed before it still runs. In `test/suite/fork-subagents-runner.test.ts`. |
+| `test/print-mode.test.ts` | A notification whose delivery fails becomes a service warning, never an unhandled rejection. In `test/suite/fork-subagents-service.test.ts`. |
+| `test/e2e/usage-reaches-session-stats.e2e.test.ts` | Under `reportUsage`, the spend an `Agent` result carries reaches `session.getSessionStats()`, and a subagent result without usage adds nothing. In `test/suite/fork-subagents-tools.test.ts`. |
+
+**Validation.** Each new test passes and gets one mutation check. `npm run check` exits 0. Regression rule, with `$E/removed.txt`. Review gate.
+
+**Commit.** `fix(coding-agent): cover the subagent tool veto, failed notifications and reported session usage`.
+
 ### T9. Documentation
 
 **Changes.**
@@ -418,7 +434,7 @@ Old-test mapping: `child-session-shutdown` (`test/child-session-shutdown.test.ts
 - For each key in `settings.ts`'s key list, `grep -cF "<key>" packages/coding-agent/src/core/fork-builtins/subagents/README.md` prints at least 1.
 - For each term `Agent`, `get_subagent_result`, `steer_subagent`, `forkBuiltins.subagents`, `excludeTools`, `2026-09-27`, `session: this`, `grep -cF` on the ADR prints at least 1.
 - `git -C /Users/paolof/Developer/ai/pi-subagents ls-tree -r --name-only 79a7c42 test | grep -E '\.test\.ts$'` lists 116 files, and for each, `grep -cF "<file>" $E/checklist.md` prints exactly 1.
-- `node $E/check-checklist.mjs $E/checklist.md "$(cat /tmp/sn-impl/T8.candidate)"` exits 0, and exits 1 on a copy of the checklist with one identity misspelled.
+- `node $E/check-checklist.mjs $E/checklist.md "$(cat /tmp/sn-impl/T8a.candidate)"` exits 0, and exits 1 on a copy of the checklist with one identity misspelled.
 
 **Commit.** `docs: native subagents phase 1 README, ADR-0009 amendment and test checklist`.
 
@@ -453,11 +469,11 @@ It prints one JSON line and exits 0 on a match, 1 on a mismatch, 2 on bad input.
 
 ### T12. Record the results
 
-**Changes.** `docs/plans/subagents-native-phase1.results.md`: commits; one section `### T<n> <title>` per task from T1 to T9, and one for T11. Sections T1 to T8 open with `Candidate: <path from T<n>.candidate> (<numTotalTests> tests, <numFailedTests> failed, <numPendingTests> pending)` and `Mutations: <each mutation and its failing test>`. Every section from T1 to T9, and the T11 section, then holds `Review:` followed by that task's `- ` lines from `/tmp/sn-impl/reviews.md`, copied verbatim. The T11 section also holds the probe's three JSON lines. A `## Phase review` section holds `/tmp/sn-impl/phase-review.md` verbatim, followed by each `T10-F<n>` candidate and its review lines. Then the deviations.
+**Changes.** `docs/plans/subagents-native-phase1.results.md`: commits; one section `### T<n> <title>` per task from T1 to T9, with T8a after T8, and one for T11. Sections T1 to T8 and T8a open with `Candidate: <path from T<n>.candidate> (<numTotalTests> tests, <numFailedTests> failed, <numPendingTests> pending)` and `Mutations: <each mutation and its failing test>`. Every section from T1 to T9, T8a included, and the T11 section, then holds `Review:` followed by that task's `- ` lines from `/tmp/sn-impl/reviews.md`, copied verbatim. The T11 section also holds the probe's three JSON lines. A `## Phase review` section holds `/tmp/sn-impl/phase-review.md` verbatim, followed by each `T10-F<n>` candidate and its review lines. Then the deviations.
 
 **Validation.** With `R=docs/plans/subagents-native-phase1.results.md`:
 - `for h in $(git log --format=%h $BASE..HEAD); do grep -qF "$h" $R || echo "missing $h"; done` prints nothing.
-- `for t in T1 T2 T3 T4 T5 T6 T7 T8 T9 T11; do awk -v t="### $t" '$0 ~ "^"t"([^0-9]|$)"{f=1;next} /^#{2,3} /{f=0} f' $R > /tmp/sn-impl/sec.txt; grep -q '^Review:' /tmp/sn-impl/sec.txt || echo "$t lacks Review"; case $t in T9|T11) continue;; esac; c=$(sed -n 's/^Candidate: \([^ ]*\).*/\1/p' /tmp/sn-impl/sec.txt); [ "$c" = "$(cat /tmp/sn-impl/$t.candidate)" ] && test -f "$c" || echo "$t candidate wrong"; grep -qE '^Mutations: [^ ]' /tmp/sn-impl/sec.txt || echo "$t lacks Mutations"; done` prints nothing.
+- `for t in T1 T2 T3 T4 T5 T6 T7 T8 T8a T9 T11; do awk -v t="### $t" '$0 ~ "^"t"( |$)"{f=1;next} /^#{2,3} /{f=0} f' $R > /tmp/sn-impl/sec.txt; grep -q '^Review:' /tmp/sn-impl/sec.txt || echo "$t lacks Review"; case $t in T9|T11) continue;; esac; c=$(sed -n 's/^Candidate: \([^ ]*\).*/\1/p' /tmp/sn-impl/sec.txt); [ "$c" = "$(cat /tmp/sn-impl/$t.candidate)" ] && test -f "$c" || echo "$t candidate wrong"; grep -qE '^Mutations: [^ ]' /tmp/sn-impl/sec.txt || echo "$t lacks Mutations"; done` prints nothing.
 - `grep -E '^- ' /tmp/sn-impl/reviews.md | grep -vxFf $R` prints nothing: every review line is in the results file verbatim.
 - `grep -v '^$' /tmp/sn-impl/phase-review.md | grep -vxFf $R` prints nothing: the phase review is in it verbatim.
 
@@ -783,3 +799,7 @@ The owner ruled D29 on 2026-09-27: the worktree snapshot commit runs with `--no-
 ### Amendment 2: 2026-09-27, during implementation
 
 The owner ruled D30 on 2026-09-27: a user or project agent switched off with `enabled: false` keeps its bare name, as in pi-subagents and T1's registry. T8's rewrite-map case now expects switching the colliding agent off to publish nothing, and deleting its file to publish `collided: false`.
+
+### Amendment 3: 2026-09-27, during implementation
+
+The owner ruled D31 on 2026-09-27. T9's mapping of the old tests found three files with no covering test, so task T8a adds their tests before T9. The regression rule and T12 name T8a, T9's checklist check reads T8a's candidate, and T12's section match now needs a space after the task id, so `### T8a` never reads as part of `### T8`.

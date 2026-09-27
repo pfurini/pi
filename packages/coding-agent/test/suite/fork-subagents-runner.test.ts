@@ -26,6 +26,8 @@ import {
 	TURN_LIMIT_STEER,
 	teardownChild,
 } from "../../src/core/fork-builtins/subagents/runner/run.ts";
+import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
+import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
 import type { Skill } from "../../src/core/skills/frontmatter.ts";
 import { createTestResourceLoader } from "../utilities.ts";
@@ -84,7 +86,7 @@ function request(harness: Harness, definition: AgentDefinition, overrides: Parti
 		persist: false,
 		sessionName: `${definition.name}#test`,
 		forkBaseToolNames: ["ask_user_question", "vcc_recall"],
-		lineage: { owner: {}, parentRecord: {}, depth: 1 },
+		lineage: { owner: {} as SubagentService, parentRecord: {} as SubagentRecord, depth: 1 },
 		transcript: { enabled: false, agentId: "agent-test", rootSessionId: harness.session.sessionId },
 		...overrides,
 	};
@@ -405,8 +407,8 @@ describe("child transcripts and sessions", () => {
 
 	it("records the child's lineage for its loader's event bus", async () => {
 		const harness = await parent();
-		const owner = {};
-		const parentRecord = {};
+		const owner = {} as SubagentService;
+		const parentRecord = {} as SubagentRecord;
 		// The agent file's isolation and allowed_subagents reach the lineage even when the call sets neither.
 		const { child } = await create(harness, agent({ isolated: true, allowedSubagents: ["Explore"] }), {
 			lineage: { owner, parentRecord, depth: 2 },

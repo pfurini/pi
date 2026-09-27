@@ -20,6 +20,7 @@ import { createAgentSession } from "../../../sdk.ts";
 import { getDefaultSessionDir, SessionManager } from "../../../session-manager.ts";
 import { SettingsManager } from "../../../settings-manager.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
+import { addUsage, emptyUsage } from "../service/usage.ts";
 import { type ChildLineage, setLineage } from "./lineage.ts";
 import { readOnlyMemoryBlock, readWriteMemoryBlock } from "./memory.ts";
 import { buildChildSystemPrompt, buildParentContext, detectEnvironment, preloadSkills } from "./prompt.ts";
@@ -233,30 +234,6 @@ export interface TurnOutcome {
 	turns: number;
 }
 
-export function emptyUsage(): Usage {
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
-}
-
-export function addUsage(total: Usage, delta: Usage): void {
-	total.input += delta.input;
-	total.output += delta.output;
-	total.cacheRead += delta.cacheRead;
-	total.cacheWrite += delta.cacheWrite;
-	total.totalTokens += delta.totalTokens;
-	total.cost.input += delta.cost.input;
-	total.cost.output += delta.cost.output;
-	total.cost.cacheRead += delta.cost.cacheRead;
-	total.cost.cacheWrite += delta.cost.cacheWrite;
-	total.cost.total += delta.cost.total;
-}
-
 function assistantText(content: unknown): string {
 	if (!Array.isArray(content)) return "";
 	return content
@@ -286,7 +263,13 @@ export async function runTurn(child: Child, turn: TurnRequest): Promise<TurnOutc
 					content: [{ type: "text", text: TURN_LIMIT_STEER }],
 					timestamp: Date.now(),
 				});
-			} else if (maxTurns !== undefined && steered && turns >= maxTurns + turn.graceTurns) {
+			} else if (
+				maxTurns !== undefined &&
+				steered &&
+				turns >= maxTurns + turn.graceTurns &&
+				event.toolResults.length > 0
+			) {
+				// Only a turn that called tools continues; one that answered finishes as `steered` on its own.
 				hardAborted = true;
 				void session.abort();
 			}

@@ -5,12 +5,14 @@
  * the child runs as, under that agent's `allowed_subagents`, `isolated` and depth.
  */
 import type { EventBus } from "../../../event-bus.ts";
+import type { SubagentRecord } from "../service/records.ts";
+import type { SubagentService } from "../service/service.ts";
 
 export interface ChildLineage {
 	/** The subagent service that built the child. */
-	owner: object;
+	owner: SubagentService;
 	/** The record the child runs as; a spawn from the child's session has it as its parent. */
-	parentRecord: object;
+	parentRecord: SubagentRecord;
 	/** The child's nesting depth: the main session is 0, its subagents 1. */
 	depth: number;
 	allowedSubagents?: "all" | string[];

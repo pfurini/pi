@@ -9,7 +9,6 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ToolCall } from "@earendil-works/pi-ai";
 import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
@@ -21,7 +20,7 @@ import {
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, call, held, router, say, text, textOf } from "./fork-subagents-fixtures.ts";
+import { type Behavior, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
@@ -72,12 +71,6 @@ function serviceOf(harness: Harness): SubagentService {
 	if (!service) throw new Error("no subagent service");
 	return service;
 }
-
-/** One assistant turn that calls one tool. */
-const use =
-	(name: string, args: (context: Context) => ToolCall["arguments"]): Behavior =>
-	(context) =>
-		fauxAssistantMessage([fauxToolCall(name, args(context))], { stopReason: "toolUse" });
 
 /** The text of every tool result a session received from `name`, in order. */
 function toolResults(session: AgentSession | undefined, name: string): string[] {

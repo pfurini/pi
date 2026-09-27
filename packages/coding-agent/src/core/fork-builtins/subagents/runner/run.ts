@@ -72,7 +72,7 @@ export interface ChildRequest {
 	customTools?: ToolDefinition[];
 	/** Who owns the child; the runner adds the agent's `allowed_subagents` and the effective isolation. */
 	lineage: Pick<ChildLineage, "owner" | "parentRecord" | "depth">;
-	/** Write the `.output` transcript; `output_transcript:` in the agent file wins over `enabled`. */
+	/** Write the `.output` transcript, filed under `configCwd`; `output_transcript:` in the agent file wins over `enabled`. */
 	transcript: { enabled: boolean; agentId: string; rootSessionId: string };
 	onActivity?: (activity: ChildActivity) => void;
 }
@@ -91,10 +91,10 @@ export interface Child {
 	teardown?: Promise<void>;
 }
 
-/** `session_dir:` verbatim (relative to the child's cwd), else `.subagents/` below the parent's session directory or Pi's default. */
+/** `session_dir:` verbatim (relative to the project, so never inside a worktree copy), else `.subagents/` below the parent's session directory or Pi's default. */
 function childSessionDir(request: ChildRequest, settingsManager: SettingsManager): string {
 	const configured = request.definition.sessionDir;
-	if (configured) return resolve(request.cwd, expandTildePath(configured));
+	if (configured) return resolve(request.configCwd ?? request.cwd, expandTildePath(configured));
 	const envDir = process.env[ENV_SESSION_DIR];
 	const base =
 		request.parent.sessionManager.getSessionDir() ||
@@ -202,7 +202,7 @@ export async function createChild(request: ChildRequest): Promise<Child> {
 		});
 		const enabled = definition.outputTranscript ?? request.transcript.enabled;
 		const path = enabled
-			? transcriptPath(request.cwd, request.transcript.rootSessionId, request.transcript.agentId)
+			? transcriptPath(configCwd, request.transcript.rootSessionId, request.transcript.agentId)
 			: undefined;
 		const transcript = path
 			? writeTranscript(session, path, request.transcript.agentId, request.cwd, session.messages.length)

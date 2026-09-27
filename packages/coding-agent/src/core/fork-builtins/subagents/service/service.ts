@@ -12,6 +12,10 @@
  * here, which aborts every running and queued child, reports each as `aborted`, and tears down
  * every child, finished ones included.
  *
+ * An `isolation: "worktree"` run works in a git worktree of its directory (T7). Its changes land
+ * on a `pi-agent-<id>` branch when the run ends, however it ends; a failed git step keeps the
+ * worktree, and the result names it.
+ *
  * An agent with `allowed_subagents` delegates through a `NestedRuntime` (T6). Its records live here
  * with it as their parent: they are one level deeper, carry no handle, occupy no pool slot, add
  * their usage to every ancestor, stay unreachable from the session's own lookups, and end when
@@ -35,6 +39,7 @@ import type { AgentDefinition } from "../definitions/types.ts";
 import type { ChildLineage } from "../runner/lineage.ts";
 import { type Child, type ChildRequest, runTurn, spawnChild, type TurnOutcome, teardownChild } from "../runner/run.ts";
 import { transcriptPath } from "../runner/transcript.ts";
+import { createWorktree, describeWorktreeOutcome, finishWorktree, worktreeBase } from "../runner/worktree.ts";
 import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
 import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
 import { createNestedToolDefinitions, NestedRuntime } from "./nested.ts";
@@ -331,6 +336,8 @@ export class SubagentService {
 		const model =
 			request.model ??
 			(await this.resolveModel(definition, invocation.modelInput, invocation.modelFromParams, host));
+		// Outside a repository the spawn fails here, before any record exists.
+		if (invocation.isolation === "worktree") await worktreeBase(cwd);
 		this.assertLive();
 		const background = request.detached ? request.detached.isBackground : invocation.runInBackground;
 		const record = this.createRecord({
@@ -503,9 +510,25 @@ export class SubagentService {
 			},
 		};
 		if (record.child) return runTurn(record.child, turn);
-		return spawnChild(this.childRequest(record, settings), { ...turn, inheritContext }, (child) =>
-			this.attachChild(record, child),
+		const request = this.childRequest(record, settings);
+		const attach = (child: Child) => this.attachChild(record, child);
+		if (record.invocation.isolation !== "worktree") return spawnChild(request, { ...turn, inheritContext }, attach);
+		try {
+			record.worktree = await createWorktree(record.cwd, record.id);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return { status: "error", text: "", error: message, usage: emptyUsage(), turns: 0 };
+		}
+		const { worktree } = record;
+		// The child works in the copy; configuration, memory and the transcript stay with the project.
+		const outcome = await spawnChild(
+			{ ...request, cwd: worktree.workPath, configCwd: record.cwd, worktreeBase: record.cwd },
+			{ ...turn, inheritContext },
+			attach,
 		);
+		record.worktreeOutcome = await finishWorktree(worktree, `pi-agent: ${record.description.slice(0, 200)}`);
+		const note = describeWorktreeOutcome(record.worktreeOutcome, worktree.repo);
+		return note ? { ...outcome, text: outcome.text ? `${outcome.text}\n\n---\n${note}` : note } : outcome;
 	}
 
 	private childRequest(record: SubagentRecord, settings: SubagentSettings): ChildRequest {
@@ -762,6 +785,9 @@ export class SubagentService {
 		if (!record) throw new Error(notFound(ref));
 		if (!isTerminal(record) || record.run) throw new Error(`Agent "${ref}" is still running; steer it instead.`);
 		if (!record.child) throw new Error(`Agent "${ref}" has no session to resume.`);
+		// Its session's working directory was the worktree, which the run's end removed or handed over.
+		if (record.worktree)
+			throw new Error(`Agent "${ref}" ran in an isolated worktree and cannot be resumed; start a new agent.`);
 		record.status = "queued";
 		record.result = undefined;
 		record.error = undefined;

@@ -6,6 +6,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { Child, ChildActivity } from "../runner/run.ts";
+import type { Worktree, WorktreeOutcome } from "../runner/worktree.ts";
 import type { InvocationConfig } from "../settings/models.ts";
 import type { JoinMode } from "../settings/settings.ts";
 
@@ -56,6 +57,10 @@ export interface SubagentRecord {
 	readonly fellBackFrom?: string;
 	sessionFile?: string;
 	transcriptPath?: string;
+	/** The worktree an `isolation: "worktree"` run works in, from its start. */
+	worktree?: Worktree;
+	/** What happened to the worktree when the run ended. */
+	worktreeOutcome?: WorktreeOutcome;
 	/** Tool calls, scoping warnings and extension errors, in order. */
 	readonly activity: ChildActivity[];
 	/** The live child session, until the record is evicted or the owner ends. */

@@ -4,11 +4,12 @@
  * `<active_agent`, and its first user message names its task.
  */
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, type ToolCall } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
 	type Context,
 	fauxAssistantMessage,
+	fauxToolCall,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 import type { AgentSession } from "../../src/core/agent-session.ts";
@@ -70,6 +71,12 @@ export function held(reply: () => AssistantMessage = () => fauxAssistantMessage(
 	};
 	return { behavior, release, requests: () => requests };
 }
+
+/** One assistant turn that calls one tool. */
+export const use =
+	(name: string, args: (context: Context) => ToolCall["arguments"]): Behavior =>
+	(context) =>
+		fauxAssistantMessage([fauxToolCall(name, args(context))], { stopReason: "toolUse" });
 
 export const say =
 	(text: string): Behavior =>

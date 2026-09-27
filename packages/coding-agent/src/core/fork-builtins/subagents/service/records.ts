@@ -52,6 +52,8 @@ export interface SubagentRecord {
 	readonly model?: Model<Api>;
 	/** The working directory the child runs in. */
 	readonly cwd: string;
+	/** The requested type when it resolved to the fallback agent instead. */
+	readonly fellBackFrom?: string;
 	sessionFile?: string;
 	transcriptPath?: string;
 	/** Tool calls, scoping warnings and extension errors, in order. */

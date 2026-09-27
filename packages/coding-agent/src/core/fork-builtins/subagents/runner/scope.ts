@@ -22,9 +22,10 @@ import type { LoadExtensionsResult } from "../../../extensions/types.ts";
 import type { DefaultResourceLoader } from "../../../resource-loader.ts";
 import { allToolNames } from "../../../tools/index.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
+import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../tools/names.ts";
 
 /** The subagent tools a child receives only as its owner's injected nested tools (T6). */
-export const SUBAGENT_TOOL_NAMES: readonly string[] = ["Agent", "get_subagent_result", "steer_subagent"];
+export const SUBAGENT_TOOL_NAMES: readonly string[] = [AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME];
 
 /** What an omitted `tools:` or `*` selects: pi-subagents' seven built-ins. */
 export const DEFAULT_CHILD_TOOLS: readonly string[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -73,7 +74,8 @@ export function hasWriteTools(definition: AgentDefinition): boolean {
 	return ["write", "edit"].some((name) => selected.has(name) && !denied.has(name));
 }
 
-function selectedPlainTools(tools: readonly string[] | undefined): Set<string> {
+/** The plain tool names `tools:` selects: `*` and an omitted list mean Pi's seven coding tools; `ext:` selectors are left out. */
+export function selectedPlainTools(tools: readonly string[] | undefined): Set<string> {
 	const entries = tools ?? ["*"];
 	const selected = new Set<string>();
 	for (const entry of entries) {

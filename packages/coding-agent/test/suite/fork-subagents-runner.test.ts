@@ -376,7 +376,7 @@ describe("child transcripts and sessions", () => {
 
 		const custom = await create(harness, agent({ sessionDir: "custom-sessions" }), { persist: true });
 		await runTurn(custom.child, { prompt: "persist", graceTurns: 5 });
-		expect(custom.child.session.sessionFile?.startsWith(join(harness.tempDir, "custom-sessions") + "/")).toBe(true);
+		expect(custom.child.session.sessionFile?.startsWith(`${join(harness.tempDir, "custom-sessions")}/`)).toBe(true);
 		expect(custom.child.session.sessionFile).not.toContain(".subagents");
 	});
 
@@ -388,7 +388,7 @@ describe("child transcripts and sessions", () => {
 		harness.setResponses([fauxAssistantMessage("kept")]);
 		const { child } = await create(harness, agent(), { persist: true });
 		await runTurn(child, { prompt: "persist", graceTurns: 5 });
-		expect(child.session.sessionFile?.startsWith(join(parentSessions, ".subagents") + "/")).toBe(true);
+		expect(child.session.sessionFile?.startsWith(`${join(parentSessions, ".subagents")}/`)).toBe(true);
 	});
 
 	it("reports a failing startup as an error with its cause and disposes the child's loader", async () => {

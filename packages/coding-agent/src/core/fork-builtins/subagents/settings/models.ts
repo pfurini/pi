@@ -10,7 +10,15 @@ import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { resolveModelScopeFromModels } from "../../../model-resolver.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 
-const THINKING_LEVELS: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const THINKING_LEVELS: readonly ModelThinkingLevel[] = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
 
 export function isThinkingLevel(value: unknown): value is ModelThinkingLevel {
 	return THINKING_LEVELS.includes(value as ModelThinkingLevel);

@@ -23,6 +23,7 @@ import { type AgentRegistry, buildAgentRegistry, resolveSpawnType } from "../def
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { ChildLineage } from "../runner/lineage.ts";
 import { type Child, type ChildRequest, runTurn, spawnChild, type TurnOutcome, teardownChild } from "../runner/run.ts";
+import { transcriptPath } from "../runner/transcript.ts";
 import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
 import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
 import { GroupJoin, NotificationQueue } from "./notifications.ts";
@@ -44,6 +45,11 @@ const SWEEP_INTERVAL_MS = 60_000;
 /** Background spawns this close together count as one turn's batch for `smart` joins. */
 const BATCH_WINDOW_MS = 100;
 
+/** What every lookup of an unknown or evicted agent reports. */
+export function notFound(ref: string): string {
+	return `Agent not found: "${ref}". It may have been cleaned up.`;
+}
+
 /** What the service needs besides its session: the per-session record `addForkBaseTools` stores (T5). */
 export interface SubagentSessionContext {
 	agentDir: string;
@@ -52,6 +58,47 @@ export interface SubagentSessionContext {
 	lineage?: ChildLineage;
 	/** The fork base tools the session registers now, read at each spawn so it follows `/reload`. */
 	forkBaseToolNames(): string[];
+	/** Warnings found before the service existed, such as while the tool description was built. */
+	warnings?: string[];
+}
+
+/**
+ * The agent registry a session sees: user agents, project agents when the project is trusted,
+ * and the agents the session's skills bundle. Pure over its inputs; the service and the tool
+ * description both use it.
+ */
+export function loadAgentRegistry(input: {
+	session: AgentSession;
+	agentDir: string;
+	eventBus?: EventBus;
+	cwd: string;
+	settings: SubagentSettings;
+}): { registry: AgentRegistry; warnings: string[] } {
+	const files = loadAgentFiles({
+		agentDir: input.agentDir,
+		cwd: input.cwd,
+		projectTrusted: input.session.settingsManager.isProjectTrusted(),
+		strict: input.settings.strictAgentFiles,
+	});
+	const skills = input.eventBus ? getSkillSetController(input.eventBus).getSnapshot().skills : [];
+	const bundled = loadSkillAgents(skills);
+	return {
+		registry: buildAgentRegistry({
+			userAgents: files.agents,
+			skillAgents: bundled.agents,
+			disableDefaultAgents: input.settings.disableDefaultAgents,
+		}),
+		warnings: [...files.warnings, ...bundled.warnings],
+	};
+}
+
+/** The session's working directory, through its extension context; `process.cwd()` when that is gone. */
+export function sessionCwd(session: AgentSession): string {
+	try {
+		return session.extensionRunner.createContext().cwd;
+	} catch {
+		return process.cwd();
+	}
 }
 
 export interface SubagentServiceOptions {
@@ -86,7 +133,7 @@ export interface SpawnRequest {
 	 * decides whether it takes a background slot. Without it, `run_in_background` decides.
 	 */
 	detached?: { isBackground?: boolean };
-	/** Aborting it stops the agent, as a caller's cancel stops a foreground run. */
+	/** Aborting it stops a blocking agent, as a caller's cancel stops a foreground run; a background one outlives it. */
 	signal?: AbortSignal;
 	toolCallId?: string;
 }
@@ -123,7 +170,8 @@ export class SubagentService {
 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
 		this.session = session;
 		this.context = context;
-		this.current = this.readSettings();
+		this.current = this.reloadSettings();
+		for (const warning of context.warnings?.splice(0) ?? []) this.warn(warning);
 		this.registryCache = buildAgentRegistry({ userAgents: new Map() });
 		this.notifications = new NotificationQueue(session, {
 			othersRunning: (delivered) =>
@@ -175,26 +223,29 @@ export class SubagentService {
 		}
 	}
 
+	/** Every distinct warning so far, oldest first, including those raised before anyone subscribed. */
+	get warnings(): readonly string[] {
+		return [...this.warned];
+	}
+
 	/** Reports each distinct warning once for the life of the service. */
-	private warn(message: string): void {
+	warn(message: string): void {
 		if (this.warned.has(message)) return;
 		this.warned.add(message);
 		this.emit({ type: "warning", message });
 	}
 
-	private readSettings(): SubagentSettings {
+	/** Rereads the settings, as every spawn does, and returns them. */
+	reloadSettings(): SubagentSettings {
 		const { settings, warnings } = readSubagentSettings(this.session.settingsManager);
 		for (const warning of warnings) this.warn(warning);
+		this.current = settings;
 		return settings;
 	}
 
 	/** The session's working directory, through its extension context; `process.cwd()` when that is gone. */
 	defaultCwd(): string {
-		try {
-			return this.session.extensionRunner.createContext().cwd;
-		} catch {
-			return process.cwd();
-		}
+		return sessionCwd(this.session);
 	}
 
 	/**
@@ -202,21 +253,16 @@ export class SubagentService {
 	 * trusted, and the agents the session's skills bundle. Existing records keep their definitions.
 	 */
 	refreshDefinitions(cwd = this.defaultCwd()): AgentRegistry {
-		this.current = this.readSettings();
-		const files = loadAgentFiles({
+		this.reloadSettings();
+		const { registry, warnings } = loadAgentRegistry({
+			session: this.session,
 			agentDir: this.context.agentDir,
+			eventBus: this.context.eventBus,
 			cwd,
-			projectTrusted: this.session.settingsManager.isProjectTrusted(),
-			strict: this.current.strictAgentFiles,
+			settings: this.current,
 		});
-		const skills = this.context.eventBus ? getSkillSetController(this.context.eventBus).getSnapshot().skills : [];
-		const bundled = loadSkillAgents(skills);
-		for (const warning of [...files.warnings, ...bundled.warnings]) this.warn(warning);
-		this.registryCache = buildAgentRegistry({
-			userAgents: files.agents,
-			skillAgents: bundled.agents,
-			disableDefaultAgents: this.current.disableDefaultAgents,
-		});
+		for (const warning of warnings) this.warn(warning);
+		this.registryCache = registry;
 		this.emit({ type: "definitions", registry: this.registryCache });
 		return this.registryCache;
 	}
@@ -232,7 +278,7 @@ export class SubagentService {
 		const settings = this.current;
 		const resolution = resolveSpawnType(registry, request.type, settings.fallbackSubagent);
 		if (!resolution.ok) throw new Error(resolution.message);
-		const { definition } = resolution;
+		const { definition, fellBackFrom } = resolution;
 		const invocation = resolveInvocationConfig(definition, request.params ?? {}, {
 			worktreeAllowed: settings.worktreeIsolation,
 			defaultRunInBackground: settings.backgroundByDefault,
@@ -249,8 +295,9 @@ export class SubagentService {
 			model,
 			isBackground: background,
 			blocking: !request.detached && !background,
+			fellBackFrom,
 		});
-		if (request.signal) this.stopOn(request.signal, record);
+		if (request.signal && record.blocking) this.stopOn(request.signal, record);
 		if (!request.detached && background) this.emit({ type: "created", record });
 		if (record.joinMode === "smart" || record.joinMode === "group") this.addToBatch(record);
 		this.launch(record, request.prompt, invocation.inheritContext);
@@ -284,6 +331,7 @@ export class SubagentService {
 		model?: Model<Api>;
 		isBackground?: boolean;
 		blocking: boolean;
+		fellBackFrom?: string;
 	}): SubagentRecord {
 		const taken = new Set(this.tombstones.names());
 		for (const record of this.records.values()) {
@@ -316,10 +364,15 @@ export class SubagentService {
 			invocation: input.invocation,
 			model: input.model,
 			cwd: input.cwd,
+			fellBackFrom: input.fellBackFrom,
 			activity: [],
 			pendingSteers: [],
 			waiters: new Set(),
 		};
+		// Known at once, so a background spawn's result can name it before the child exists.
+		if (input.definition.outputTranscript ?? this.current.outputTranscript) {
+			record.transcriptPath = transcriptPath(record.cwd, this.session.sessionId, record.id);
+		}
 		this.records.set(record.id, record);
 		return record;
 	}
@@ -531,7 +584,7 @@ export class SubagentService {
 	 */
 	waitForResult(ref: string, signal?: AbortSignal): Promise<SubagentRecord> {
 		const record = this.get(ref);
-		if (!record) return Promise.reject(new Error(`Agent not found: "${ref}"`));
+		if (!record) return Promise.reject(new Error(notFound(ref)));
 		if (isTerminal(record) && !record.run) return Promise.resolve(record);
 		if (signal?.aborted) return Promise.reject(signal.reason);
 		return new Promise<SubagentRecord>((resolve, reject) => {
@@ -626,7 +679,7 @@ export class SubagentService {
 	): SubagentRecord {
 		this.assertLive();
 		const record = this.get(ref);
-		if (!record) throw new Error(`Agent not found: "${ref}"`);
+		if (!record) throw new Error(notFound(ref));
 		if (!isTerminal(record) || record.run) throw new Error(`Agent "${ref}" is still running; steer it instead.`);
 		if (!record.child) throw new Error(`Agent "${ref}" has no session to resume.`);
 		record.status = "queued";
@@ -713,4 +766,53 @@ export class SubagentService {
 		}
 		this.listeners.clear();
 	}
+}
+
+const sessionRecords = new WeakMap<AgentSession, SubagentSessionContext>();
+const services = new WeakMap<AgentSession, SubagentService>();
+
+/**
+ * Stores the per-session record `addForkBaseTools` builds at each registration, without reading
+ * the session, and returns the stored record. A later registration (`/reload`) updates the same
+ * record, so a service built earlier sees the current fork base tools.
+ */
+export function registerSubagentSession(
+	session: AgentSession,
+	context: SubagentSessionContext,
+): SubagentSessionContext {
+	const existing = sessionRecords.get(session);
+	if (existing) return Object.assign(existing, context);
+	sessionRecords.set(session, context);
+	return context;
+}
+
+/** Reports a warning through the session's service, or holds it on the per-session record until the service exists. */
+export function reportSubagentWarning(session: AgentSession, message: string): void {
+	const service = services.get(session);
+	if (service) service.warn(message);
+	else {
+		const context = sessionRecords.get(session);
+		if (!context) return;
+		context.warnings ??= [];
+		context.warnings.push(message);
+	}
+}
+
+/** The per-session record of a session; undefined when fork built-ins are off for it. */
+export function subagentSessionRecord(session: AgentSession): SubagentSessionContext | undefined {
+	return sessionRecords.get(session);
+}
+
+/**
+ * The session's subagent service, built on first use from its per-session record: the first
+ * subagent tool call, RPC request or skill-fork spawn. Undefined for a session with no record.
+ */
+export function subagentServiceFor(session: AgentSession): SubagentService | undefined {
+	let service = services.get(session);
+	if (service) return service;
+	const context = sessionRecords.get(session);
+	if (!context) return undefined;
+	service = new SubagentService(session, context);
+	services.set(session, service);
+	return service;
 }

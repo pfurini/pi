@@ -5632,6 +5632,7 @@ export class AgentSession {
 		}
 		// Fork: ask_user_question and vcc_recall are base tools like read (ADR-0009).
 		addForkBaseTools(this._baseToolDefinitions, {
+			session: this,
 			agentDir: this._agentDir,
 			eventBus: this._resourceLoader.getEventBus?.(),
 			getExternalEditorCommand: () => this.settingsManager.getExternalEditorCommand(),

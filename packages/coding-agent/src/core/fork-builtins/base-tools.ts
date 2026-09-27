@@ -2,8 +2,10 @@
  * Fork-owned: the base tools the fork adds to every `AgentSession` (ADR-0009).
  * `agent-session.ts` keeps thin call sites into this module (ADR-0003).
  *
- * - `addForkBaseTools` registers `ask_user_question` and `vcc_recall` next to `read`.
- *   `PI_FORK_BUILTINS=off` registers neither. A caller's base tool of the same name stays.
+ * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`
+ *   and `steer_subagent` next to `read`. `PI_FORK_BUILTINS=off` registers none of them. A caller's
+ *   base tool of the same name stays. It also stores the session's subagent record, reading nothing
+ *   from the session: the subagent service is built from that record on first use.
  * - `forkBaseToolNames` names the registered fork tools. `AgentSession` activates them
  *   wherever it activates every extension tool: at construction and on `/reload`.
  * - `forkBaseToolsNeverCarried` names the fork tools a restored transcript never added.
@@ -11,23 +13,33 @@
  *
  * The rule: a fork base tool is active unless the allowlist or the exclude list removes it.
  * `--no-builtin-tools`, a `defaultTools` setting and a caller's `baseToolsOverride` turn off
- * Pi's own tools. Those act on files and the shell, and these two tools do neither, so they
+ * Pi's own tools. Those act on files and the shell, and these tools do neither, so they
  * stay active, as extension tools do. A deactivation lasts until `/reload`. A resumed session
  * or a tree navigation keeps it when the transcript recorded the removal. It activates a tool
  * the transcript never carried, such as one that did not exist when the transcript was written.
  */
 import type { SystemMessage, TranscriptMessages } from "@earendil-works/pi-ai";
+import type { AgentSession } from "../agent-session.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import {
 	ASK_USER_QUESTION_TOOL_NAME,
 	type AskUserQuestionToolOptions,
 	createAskUserQuestionToolDefinition,
 } from "./ask-user-question/ask-user-question.ts";
+import { lineageForBus } from "./subagents/runner/lineage.ts";
+import { registerSubagentSession } from "./subagents/service/service.ts";
+import { createAgentToolDefinition } from "./subagents/tools/agent.ts";
+import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "./subagents/tools/names.ts";
+import { createResultToolDefinition } from "./subagents/tools/result.ts";
+import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
 import { forkBuiltinsEnabled } from "./switch.ts";
 import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
 
 /** What the fork's base tools need from the session. */
-export type ForkBaseToolOptions = AskUserQuestionToolOptions;
+export interface ForkBaseToolOptions extends AskUserQuestionToolOptions {
+	/** The session the tools belong to. Registration stores it and reads none of its properties. */
+	session: AgentSession;
+}
 
 /** The definitions this module created, so activation never touches a caller's tool of the same name. */
 const forkOwned = new WeakSet<ToolDefinition>();
@@ -43,6 +55,16 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
 	if (!forkBuiltinsEnabled()) return;
 	addOwned(definitions, ASK_USER_QUESTION_TOOL_NAME, () => createAskUserQuestionToolDefinition(options));
 	addOwned(definitions, VCC_RECALL_TOOL_NAME, createRecallToolDefinition);
+	// A child session finds its owner through its loader's bus (plan Section 2.1 "Child lineage").
+	const subagents = registerSubagentSession(options.session, {
+		agentDir: options.agentDir,
+		eventBus: options.eventBus,
+		lineage: lineageForBus(options.eventBus),
+		forkBaseToolNames: () => forkBaseToolNames(definitions),
+	});
+	addOwned(definitions, AGENT_TOOL_NAME, () => createAgentToolDefinition(options.session, subagents));
+	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
+	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
 }
 
 export function forkBaseToolNames(definitions: ReadonlyMap<string, ToolDefinition>): string[] {

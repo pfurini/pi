@@ -1,7 +1,6 @@
 /**
- * Fork-owned: the per-session subagent service (plan T4) on real parent and child sessions.
- * A router response lets the faux provider answer the parent and every child regardless of
- * order: a child's request carries `<active_agent`, and its first user message names its task.
+ * Fork-owned: the per-session subagent service (plan T4) on real parent and child sessions. The
+ * faux router in `fork-subagents-fixtures.ts` answers the parent and every child regardless of order.
  * Old pi-subagents tests at 79a7c42 this covers: agent-manager, agent-manager-gc,
  * agent-ended-statuses, background-by-default, background-resume-wiring, foreground-concurrency,
  * foreground-concurrency-wiring, foreground-result-retrieval, group-join, notification-boundary,
@@ -13,16 +12,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupSessionResources, getCurrentSystemPrompt, type Usage } from "@earendil-works/pi-ai";
-import {
-	type AssistantMessage,
-	type Context,
-	fauxAssistantMessage,
-	fauxText,
-	fauxToolCall,
-	registerFauxProvider,
-	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai/compat";
+import { cleanupSessionResources, type Usage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import {
@@ -32,7 +23,6 @@ import {
 	createAgentSessionServices,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { NOTIFICATION_CUSTOM_TYPE } from "../../src/core/fork-builtins/subagents/service/notifications.ts";
 import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
 import {
 	SESSION_ENDED_ERROR,
@@ -44,9 +34,8 @@ import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
+import { type Behavior, held, notices, router, say, sleep } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
-
-type Behavior = (context: Context, options?: SimpleStreamOptions) => AssistantMessage | Promise<AssistantMessage>;
 
 const harnesses: Harness[] = [];
 const services: SubagentService[] = [];
@@ -60,59 +49,6 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0)) await cleanup();
 	vi.unstubAllEnvs();
 });
-
-function textOf(content: unknown): string {
-	if (typeof content === "string") return content;
-	return Array.isArray(content)
-		? content.map((part) => (part?.type === "text" ? part.text : "")).join("")
-		: JSON.stringify(content ?? "");
-}
-
-/**
- * Answers every request: a child by its task keyword and turn index, the parent through `parent`.
- * The last behavior of a script repeats; a task with no script answers `reply to <first task>`.
- */
-function router(script: Record<string, Behavior[]>, parent: Behavior = () => fauxAssistantMessage("noted")): Behavior {
-	return (context, options) => {
-		if (!getCurrentSystemPrompt(context.messages).includes("<active_agent")) return parent(context, options);
-		// The newest user message that names a task wins, so a resume can bring its own script.
-		const users = context.messages
-			.filter((message) => message.role === "user")
-			.map((message) => textOf(message.content));
-		const task = users[0] ?? "";
-		const key = users
-			.reverse()
-			.map((text) => Object.keys(script).find((candidate) => text.includes(candidate)))
-			.find((candidate) => candidate !== undefined);
-		const turn = context.messages.filter((message) => message.role === "assistant").length;
-		const steps = key ? script[key] : undefined;
-		return steps
-			? steps[Math.min(turn, steps.length - 1)](context, options)
-			: fauxAssistantMessage(`reply to ${task}`);
-	};
-}
-
-/** A response held until `release()`, or answered empty when the request is aborted. */
-function held(reply: () => AssistantMessage = () => fauxAssistantMessage("released")) {
-	let release!: () => void;
-	const released = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	let requests = 0;
-	const behavior: Behavior = (_context, options) => {
-		requests++;
-		return new Promise<AssistantMessage>((resolve) => {
-			void released.then(() => resolve(reply()));
-			options?.signal?.addEventListener("abort", () => resolve(fauxAssistantMessage("")), { once: true });
-		});
-	};
-	return { behavior, release, requests: () => requests };
-}
-
-const say =
-	(text: string): Behavior =>
-	() =>
-		fauxAssistantMessage(text);
 
 async function parent(
 	subagents: Record<string, unknown> = {},
@@ -157,14 +93,6 @@ const foreground = (task: string, extra: Record<string, unknown> = {}) => ({
 	description: task,
 	params: { run_in_background: false, ...extra },
 });
-
-function notices(session: AgentSession): string[] {
-	return session.messages
-		.filter((message) => message.role === "custom" && message.customType === NOTIFICATION_CUSTOM_TYPE)
-		.map((message) => textOf(message.role === "custom" ? message.content : ""));
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("notifications", () => {
 	it("delivers one notification after the parent settles, and none for a result fetched first", async () => {

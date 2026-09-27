@@ -4,22 +4,33 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AgentSession } from "../../src/core/agent-session.ts";
 import type { ToolDefinition } from "../../src/core/extensions/types.ts";
 import { addForkBaseTools, forkBaseToolNames } from "../../src/core/fork-builtins/base-tools.ts";
 
-const NAMES = ["ask_user_question", "vcc_recall"];
+const NAMES = ["ask_user_question", "vcc_recall", "Agent", "get_subagent_result", "steer_subagent"];
+
+/** Registration never touches the session; the subagent service is built on the first Agent call. */
+const unusedSession = new Proxy(
+	{},
+	{
+		get() {
+			throw new Error("registration read the session");
+		},
+	},
+) as AgentSession;
 
 afterEach(() => vi.unstubAllEnvs());
 
 /** Base definitions as `AgentSession` builds them, optionally seeded with a caller's tools. */
 function definitions(seed: ToolDefinition[] = []): Map<string, ToolDefinition> {
 	const map = new Map(seed.map((definition) => [definition.name, definition]));
-	addForkBaseTools(map, { agentDir: mkdtempSync(join(tmpdir(), "pi-fork-base-tools-")) });
+	addForkBaseTools(map, { session: unusedSession, agentDir: mkdtempSync(join(tmpdir(), "pi-fork-base-tools-")) });
 	return map;
 }
 
 describe("addForkBaseTools", () => {
-	it("registers ask_user_question and vcc_recall, both named for activation", () => {
+	it("registers the ask_user_question, vcc_recall and subagent tools, all named for activation", () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "on");
 		const map = definitions();
 		expect([...map.keys()]).toEqual(NAMES);
@@ -38,6 +49,6 @@ describe("addForkBaseTools", () => {
 		const callers = { name: "vcc_recall" } as ToolDefinition;
 		const map = definitions([callers]);
 		expect(map.get("vcc_recall")).toBe(callers);
-		expect(forkBaseToolNames(map)).toEqual(["ask_user_question"]);
+		expect(forkBaseToolNames(map)).toEqual(NAMES.filter((name) => name !== "vcc_recall"));
 	});
 });

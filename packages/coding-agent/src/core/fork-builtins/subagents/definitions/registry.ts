@@ -80,11 +80,13 @@ function skillEntry(definition: AgentDefinition, name: string): AgentDefinition 
 	return { ...definition, name, hidden: true };
 }
 
-/** Enabled, listed agent types: the Agent tool's type list. Skill agents are hidden here. */
+/** Enabled, listed agents by registry key: the Agent tool's type list. Skill agents are hidden here. */
+export function listedAgents(registry: AgentRegistry): Array<[string, AgentDefinition]> {
+	return [...registry.agents].filter(([, definition]) => definition.enabled && !definition.hidden);
+}
+
 export function listedAgentTypes(registry: AgentRegistry): string[] {
-	return [...registry.agents]
-		.filter(([, definition]) => definition.enabled && !definition.hidden)
-		.map(([name]) => name);
+	return listedAgents(registry).map(([name]) => name);
 }
 
 /**

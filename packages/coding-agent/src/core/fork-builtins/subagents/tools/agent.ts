@@ -20,6 +20,7 @@ import {
 	loadAgentRegistry,
 	notFound,
 	reportSubagentWarning,
+	requireService,
 	type SubagentService,
 	type SubagentSessionContext,
 	sessionCwd,
@@ -34,7 +35,6 @@ import {
 	formatMs,
 	formatTokens,
 	partialOutputSuffix,
-	requireService,
 	textResult,
 } from "./common.ts";
 import { buildAgentToolDescription } from "./description.ts";

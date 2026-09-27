@@ -11,21 +11,33 @@
  * The service ends with its session: the session's `dispose()` runs the cleanup hook registered
  * here, which aborts every running and queued child, reports each as `aborted`, and tears down
  * every child, finished ones included.
+ *
+ * An agent with `allowed_subagents` delegates through a `NestedRuntime` (T6). Its records live here
+ * with it as their parent: they are one level deeper, carry no handle, occupy no pool slot, add
+ * their usage to every ancestor, stay unreachable from the session's own lookups, and end when
+ * their parent's run ends.
  */
 import { randomUUID } from "node:crypto";
 import { registerSessionResourceCleanup, type Usage } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
+import type { ToolDefinition } from "../../../extensions/types.ts";
 import { getSkillSetController } from "../../../skills/skill-set-events.ts";
 import { loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
-import { type AgentRegistry, buildAgentRegistry, resolveSpawnType } from "../definitions/registry.ts";
+import {
+	type AgentRegistry,
+	buildAgentRegistry,
+	resolveSpawnType,
+	type SpawnTypeResolution,
+} from "../definitions/registry.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { ChildLineage } from "../runner/lineage.ts";
 import { type Child, type ChildRequest, runTurn, spawnChild, type TurnOutcome, teardownChild } from "../runner/run.ts";
 import { transcriptPath } from "../runner/transcript.ts";
 import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
 import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
+import { createNestedToolDefinitions, NestedRuntime } from "./nested.ts";
 import { GroupJoin, NotificationQueue } from "./notifications.ts";
 import {
 	assignHandle,
@@ -39,6 +51,9 @@ import { addUsage, emptyUsage, PendingUsage } from "./usage.ts";
 
 /** The error of an agent its session's end cut short. */
 export const SESSION_ENDED_ERROR = "The session ended before the agent finished.";
+
+/** The error of a nested agent its parent's end cut short (R6). */
+export const PARENT_ENDED_ERROR = "The parent agent finished before this agent did.";
 
 const RETENTION_MS = 10 * 60_000;
 const SWEEP_INTERVAL_MS = 60_000;
@@ -272,19 +287,50 @@ export class SubagentService {
 	 * when the type or the caller's model is refused. A foreground caller then awaits `waitForResult`.
 	 */
 	async spawn(request: SpawnRequest): Promise<SubagentRecord> {
+		return this.spawnRecord(request, (registry, settings) =>
+			resolveSpawnType(registry, request.type, settings.fallbackSubagent),
+		);
+	}
+
+	/**
+	 * @internal `NestedRuntime` spawns through here, after its permission checks. `parent` owns the
+	 * record, and `resolveType` applies the parent's allowlist instead of `fallbackSubagent`.
+	 */
+	spawnOwned(
+		parent: SubagentRecord,
+		request: SpawnRequest,
+		resolveType: (registry: AgentRegistry) => SpawnTypeResolution,
+	): Promise<SubagentRecord> {
+		return this.spawnRecord(request, resolveType, parent);
+	}
+
+	/** The nested runtime of an agent: what it may spawn and reach. */
+	nested(parent: SubagentRecord): NestedRuntime {
+		return new NestedRuntime(this, parent);
+	}
+
+	private async spawnRecord(
+		request: SpawnRequest,
+		resolveType: (registry: AgentRegistry, settings: SubagentSettings) => SpawnTypeResolution,
+		parent?: SubagentRecord,
+	): Promise<SubagentRecord> {
 		this.assertLive();
 		const cwd = request.cwd ?? this.defaultCwd();
 		const registry = this.refreshDefinitions(cwd);
 		const settings = this.current;
-		const resolution = resolveSpawnType(registry, request.type, settings.fallbackSubagent);
+		const resolution = resolveType(registry, settings);
 		if (!resolution.ok) throw new Error(resolution.message);
 		const { definition, fellBackFrom } = resolution;
 		const invocation = resolveInvocationConfig(definition, request.params ?? {}, {
 			worktreeAllowed: settings.worktreeIsolation,
-			defaultRunInBackground: settings.backgroundByDefault,
+			// A nested spawn blocks its parent's turn unless it asks for the background.
+			defaultRunInBackground: parent ? false : settings.backgroundByDefault,
 		});
+		// A nested agent inherits the model of the agent that delegated, not the session's (R6).
+		const host = parent?.child?.session ?? this.session;
 		const model =
-			request.model ?? (await this.resolveModel(definition, invocation.modelInput, invocation.modelFromParams));
+			request.model ??
+			(await this.resolveModel(definition, invocation.modelInput, invocation.modelFromParams, host));
 		this.assertLive();
 		const background = request.detached ? request.detached.isBackground : invocation.runInBackground;
 		const record = this.createRecord({
@@ -296,6 +342,7 @@ export class SubagentService {
 			isBackground: background,
 			blocking: !request.detached && !background,
 			fellBackFrom,
+			parent,
 		});
 		if (request.signal && record.blocking) this.stopOn(request.signal, record);
 		if (!request.detached && background) this.emit({ type: "created", record });
@@ -308,11 +355,12 @@ export class SubagentService {
 		definition: AgentDefinition,
 		modelInput: string | undefined,
 		fromCaller: boolean,
+		host: AgentSession,
 	): Promise<Model<Api> | undefined> {
 		const resolution = resolveSpawnModel({
 			modelInput,
 			fromCaller,
-			parentModel: this.session.model,
+			parentModel: host.model,
 			available: modelInput ? await this.session.modelRuntime.getAvailable() : [],
 			scopeModels: this.current.scopeModels,
 			enabledModels: this.session.settingsManager.getEnabledModels(),
@@ -332,15 +380,22 @@ export class SubagentService {
 		isBackground?: boolean;
 		blocking: boolean;
 		fellBackFrom?: string;
+		parent?: SubagentRecord;
 	}): SubagentRecord {
-		const taken = new Set(this.tombstones.names());
-		for (const record of this.records.values()) {
-			if (record.handle) taken.add(record.handle);
-			if (record.alias) taken.add(record.alias);
+		const { parent } = input;
+		// Handles name the session's own agents; a nested one is reached by id through its parent.
+		let handle: string | undefined;
+		let alias: string | undefined;
+		if (!parent) {
+			const taken = new Set(this.tombstones.names());
+			for (const record of this.records.values()) {
+				if (record.handle) taken.add(record.handle);
+				if (record.alias) taken.add(record.alias);
+			}
+			handle = assignHandle(handleBase(input.definition.name), taken);
+			taken.add(handle);
+			alias = input.request.name ? assignHandle(handleBase(input.request.name), taken) : undefined;
 		}
-		const handle = assignHandle(handleBase(input.definition.name), taken);
-		taken.add(handle);
-		const alias = input.request.name ? assignHandle(handleBase(input.request.name), taken) : undefined;
 		const record: SubagentRecord = {
 			id: randomUUID().slice(0, 17),
 			type: input.definition.name,
@@ -355,11 +410,12 @@ export class SubagentService {
 			turns: 0,
 			compactionCount: 0,
 			startedAt: Date.now(),
-			depth: 1,
+			depth: parent ? parent.depth + 1 : 1,
+			parent,
 			isBackground: input.isBackground,
 			blocking: input.blocking,
 			resultConsumed: false,
-			joinMode: input.isBackground && !input.request.detached ? this.current.defaultJoinMode : undefined,
+			joinMode: input.isBackground && !input.request.detached && !parent ? this.current.defaultJoinMode : undefined,
 			toolCallId: input.request.toolCallId,
 			invocation: input.invocation,
 			model: input.model,
@@ -456,6 +512,7 @@ export class SubagentService {
 		const { definition, invocation } = record;
 		return {
 			parent: this.session,
+			inheritFrom: record.parent?.child?.session,
 			agentDir: this.context.agentDir,
 			definition,
 			cwd: record.cwd,
@@ -465,6 +522,7 @@ export class SubagentService {
 			persist: definition.persistSession ?? (record.parent ? false : settings.rememberAgents),
 			sessionName: `${definition.name}#${record.id.slice(0, 8)}`,
 			forkBaseToolNames: this.context.forkBaseToolNames(),
+			customTools: this.nestedToolsFor(record, settings),
 			lineage: { owner: this, parentRecord: record, depth: record.depth },
 			transcript: { enabled: settings.outputTranscript, agentId: record.id, rootSessionId: this.session.sessionId },
 			onActivity: (activity) => {
@@ -472,6 +530,12 @@ export class SubagentService {
 				if (activity.type === "tool_end") record.toolUses++;
 			},
 		};
+	}
+
+	/** The nested tools of a permitted agent below the depth cap; none otherwise (T6). */
+	private nestedToolsFor(record: SubagentRecord, settings: SubagentSettings): ToolDefinition[] | undefined {
+		const runtime = this.nested(record);
+		return runtime.refusal(settings) === undefined ? createNestedToolDefinitions(runtime) : undefined;
 	}
 
 	private attachChild(record: SubagentRecord, child: Child): void {
@@ -486,8 +550,9 @@ export class SubagentService {
 		for (const message of record.pendingSteers.splice(0)) this.deliverSteer(record, message);
 	}
 
+	/** A nested agent's spend counts in every ancestor's total, and once in the session's. */
 	private addRecordUsage(record: SubagentRecord, usage: Usage): void {
-		addUsage(record.usage, usage);
+		for (let owner: SubagentRecord | undefined = record; owner; owner = owner.parent) addUsage(owner.usage, usage);
 		if (this.current.reportUsage) this.pendingUsage.add(usage);
 	}
 
@@ -503,7 +568,15 @@ export class SubagentService {
 		if (pool) this.running[pool]--;
 		if (!record.isBackground) record.resultConsumed = true;
 		this.finish(record);
+		this.abortChildren(record);
 		this.drain();
+	}
+
+	/** A parent's run ended: its running and queued children end with it, and theirs in turn as they settle (R6). */
+	private abortChildren(parent: SubagentRecord): void {
+		for (const record of this.records.values()) {
+			if (record.parent === parent) this.endRecord(record, "aborted", PARENT_ENDED_ERROR);
+		}
 	}
 
 	/** Reports a run's end, notifies when due, and wakes the waiters. */
@@ -558,10 +631,14 @@ export class SubagentService {
 		}
 	}
 
-	/** A top-level record by id, handle or alias; nested records are unreachable from the session (T6). */
-	get(ref: string): SubagentRecord | undefined {
+	/**
+	 * A record by id, handle or alias among the session's own agents, or by id among the agents
+	 * `owner` spawned. A nested record is unreachable from the session (T6).
+	 */
+	get(ref: string, owner?: SubagentRecord): SubagentRecord | undefined {
 		const byId = this.records.get(ref);
-		if (byId) return byId.parent ? undefined : byId;
+		if (byId) return byId.parent === owner ? byId : undefined;
+		if (owner) return undefined;
 		const wanted = ref.toLowerCase();
 		return [...this.records.values()].find(
 			(record) => !record.parent && (record.handle === wanted || record.alias === wanted),
@@ -582,8 +659,8 @@ export class SubagentService {
 	 * Resolves with the record once its current run ends. Aborting `signal` rejects only this wait:
 	 * the agent keeps running, its result stays unread, and its notification still arrives.
 	 */
-	waitForResult(ref: string, signal?: AbortSignal): Promise<SubagentRecord> {
-		const record = this.get(ref);
+	waitForResult(ref: string, signal?: AbortSignal, owner?: SubagentRecord): Promise<SubagentRecord> {
+		const record = this.get(ref, owner);
 		if (!record) return Promise.reject(new Error(notFound(ref)));
 		if (isTerminal(record) && !record.run) return Promise.resolve(record);
 		if (signal?.aborted) return Promise.reject(signal.reason);
@@ -602,16 +679,16 @@ export class SubagentService {
 	}
 
 	/** Marks a finished agent's result as read, which drops its notification. False for a running or unknown agent. */
-	consume(ref: string): boolean {
-		const record = this.get(ref);
+	consume(ref: string, owner?: SubagentRecord): boolean {
+		const record = this.get(ref, owner);
 		if (!record || !isTerminal(record) || record.run) return false;
 		record.resultConsumed = true;
 		return true;
 	}
 
 	/** Steers a running or queued agent; a queued one receives the message when its child starts. */
-	steer(ref: string, message: string): boolean {
-		const record = this.get(ref);
+	steer(ref: string, message: string, owner?: SubagentRecord): boolean {
+		const record = this.get(ref, owner);
 		if (!record || isTerminal(record)) return false;
 		if (record.child) this.deliverSteer(record, message);
 		else record.pendingSteers.push(message);
@@ -626,23 +703,26 @@ export class SubagentService {
 	}
 
 	/** Stops a running or queued agent; it ends `stopped`, keeping any partial output. */
-	stop(ref: string): boolean {
-		const record = this.get(ref);
-		return record ? this.stopRecord(record) : false;
+	stop(ref: string, owner?: SubagentRecord): boolean {
+		const record = this.get(ref, owner);
+		return record ? this.endRecord(record, "stopped") : false;
 	}
 
-	private stopRecord(record: SubagentRecord): boolean {
+	/** Ends a running or queued agent as `stopped` (a caller) or `aborted` (an owner's end), keeping partial output. */
+	private endRecord(record: SubagentRecord, status: "stopped" | "aborted", error?: string): boolean {
 		if (record.status === "queued" && !record.run) {
 			this.queue = this.queue.filter((entry) => entry.record !== record);
 			this.detachSignal(record);
-			record.status = "stopped";
+			record.status = status;
+			record.error = error;
 			record.completedAt = Date.now();
 			if (record.blocking) record.resultConsumed = true;
 			this.finish(record);
 			return true;
 		}
 		if (record.status !== "running") return false;
-		record.status = "stopped";
+		record.status = status;
+		record.error = error;
 		record.completedAt = Date.now();
 		record.abort?.abort();
 		return true;
@@ -655,10 +735,10 @@ export class SubagentService {
 	private stopOn(signal: AbortSignal, record: SubagentRecord): void {
 		this.detachSignal(record);
 		if (signal.aborted) {
-			queueMicrotask(() => this.stopRecord(record));
+			queueMicrotask(() => this.endRecord(record, "stopped"));
 			return;
 		}
-		const onAbort = () => this.stopRecord(record);
+		const onAbort = () => this.endRecord(record, "stopped");
 		signal.addEventListener("abort", onAbort, { once: true });
 		record.detachSignal = () => signal.removeEventListener("abort", onAbort);
 	}
@@ -675,10 +755,10 @@ export class SubagentService {
 	resume(
 		ref: string,
 		prompt: string,
-		options: { background: boolean; signal?: AbortSignal; toolCallId?: string },
+		options: { background: boolean; signal?: AbortSignal; toolCallId?: string; owner?: SubagentRecord },
 	): SubagentRecord {
 		this.assertLive();
-		const record = this.get(ref);
+		const record = this.get(ref, options.owner);
 		if (!record) throw new Error(notFound(ref));
 		if (!isTerminal(record) || record.run) throw new Error(`Agent "${ref}" is still running; steer it instead.`);
 		if (!record.child) throw new Error(`Agent "${ref}" has no session to resume.`);
@@ -691,7 +771,7 @@ export class SubagentService {
 		record.isBackground = options.background;
 		// The new run answers a new tool call, and joins this turn's batch like a fresh spawn.
 		record.toolCallId = options.toolCallId;
-		record.joinMode = options.background ? this.current.defaultJoinMode : undefined;
+		record.joinMode = options.background && !record.parent ? this.current.defaultJoinMode : undefined;
 		this.detachSignal(record);
 		if (options.signal) this.stopOn(options.signal, record);
 		if (options.background) this.emit({ type: "created", record });
@@ -801,6 +881,13 @@ export function reportSubagentWarning(session: AgentSession, message: string): v
 /** The per-session record of a session; undefined when fork built-ins are off for it. */
 export function subagentSessionRecord(session: AgentSession): SubagentSessionContext | undefined {
 	return sessionRecords.get(session);
+}
+
+/** The session's subagent service. `addForkBaseTools` registers the session before any tool exists. */
+export function requireService(session: AgentSession): SubagentService {
+	const service = subagentServiceFor(session);
+	if (!service) throw new Error("This session has no subagent service.");
+	return service;
 }
 
 /**

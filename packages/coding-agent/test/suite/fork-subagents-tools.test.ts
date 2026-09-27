@@ -7,7 +7,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,13 +18,23 @@ import {
 	subagentSessionRecord,
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, held, notices, router, say, sleep, textOf } from "./fork-subagents-fixtures.ts";
+import {
+	agentId,
+	type Behavior,
+	call,
+	held,
+	notices,
+	router,
+	say,
+	sleep,
+	text,
+	textOf,
+} from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
 
 const harnesses: Harness[] = [];
-let calls = 0;
 
 afterEach(() => {
 	for (const harness of harnesses.splice(0)) harness.cleanup();
@@ -65,32 +74,12 @@ async function parent(
 	return harness;
 }
 
-/** Runs an active tool as the agent loop would, with the session's extension context. */
-async function call(
-	harness: Harness,
-	name: string,
-	args: Record<string, unknown>,
-	signal?: AbortSignal,
-): Promise<AgentToolResult<unknown>> {
-	const tool = harness.session.agent.state.tools.find((candidate) => candidate.name === name);
-	if (!tool) throw new Error(`${name} is not active`);
-	return tool.execute(`call-${++calls}`, args, signal);
-}
-
-const text = (result: AgentToolResult<unknown>) => textOf(result.content);
-
 const task = (prompt: string, extra: Record<string, unknown> = {}) => ({
 	subagent_type: "worker",
 	prompt,
 	description: prompt,
 	...extra,
 });
-
-function agentId(result: AgentToolResult<unknown>): string {
-	const id = /^Agent ID: (\S+)$/m.exec(text(result))?.[1];
-	if (!id) throw new Error(`no agent id in: ${text(result)}`);
-	return id;
-}
 
 function serviceOf(harness: Harness): SubagentService {
 	const service = subagentServiceFor(harness.session);

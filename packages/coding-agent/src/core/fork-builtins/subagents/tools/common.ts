@@ -1,21 +1,13 @@
 /**
- * Fork-owned: what the three subagent tools share (plan T5): the session's service, the text
- * result that carries unreported subagent spend, and the wording of outcomes and stats.
+ * Fork-owned: what the subagent tools share (plan T5): the text result that carries unreported
+ * subagent spend, and the wording of outcomes and stats. The nested tools (T6) use it too.
  * pi-subagents `src/index.ts`, `src/status-note.ts` and `src/ui/agent-widget.ts` at 79a7c42 are
  * the behavior reference.
  */
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { AgentSession } from "../../../agent-session.ts";
 import type { SubagentRecord, SubagentStatus } from "../service/records.ts";
-import { type SubagentService, subagentServiceFor } from "../service/service.ts";
+import type { SubagentService } from "../service/service.ts";
 import { displayTokens } from "../service/usage.ts";
-
-/** The session's subagent service. `addForkBaseTools` registers the session before any tool exists. */
-export function requireService(session: AgentSession): SubagentService {
-	const service = subagentServiceFor(session);
-	if (!service) throw new Error("This session has no subagent service.");
-	return service;
-}
 
 /**
  * A text result. Under `reportUsage` it carries the subagent spend the session has not counted

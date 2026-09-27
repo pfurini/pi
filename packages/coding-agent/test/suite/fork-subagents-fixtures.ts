@@ -3,6 +3,7 @@
  * faux provider answer the parent and every child regardless of order: a child's request carries
  * `<active_agent`, and its first user message names its task.
  */
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
@@ -12,6 +13,7 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import { NOTIFICATION_CUSTOM_TYPE } from "../../src/core/fork-builtins/subagents/service/notifications.ts";
+import type { Harness } from "./harness.ts";
 
 export type Behavior = (
 	context: Context,
@@ -82,3 +84,26 @@ export function notices(session: AgentSession): string[] {
 }
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let calls = 0;
+
+/** Runs an active tool as the agent loop would, with the session's extension context. */
+export async function call(
+	harness: Harness,
+	name: string,
+	args: Record<string, unknown>,
+	signal?: AbortSignal,
+): Promise<AgentToolResult<unknown>> {
+	const tool = harness.session.agent.state.tools.find((candidate) => candidate.name === name);
+	if (!tool) throw new Error(`${name} is not active`);
+	return tool.execute(`call-${++calls}`, args, signal);
+}
+
+export const text = (result: AgentToolResult<unknown>) => textOf(result.content);
+
+/** The id a background spawn's result names. */
+export function agentId(result: AgentToolResult<unknown>): string {
+	const id = /^Agent ID: (\S+)$/m.exec(text(result))?.[1];
+	if (!id) throw new Error(`no agent id in: ${text(result)}`);
+	return id;
+}

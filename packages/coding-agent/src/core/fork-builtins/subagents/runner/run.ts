@@ -44,6 +44,11 @@ export type ChildActivity =
 
 export interface ChildRequest {
 	parent: AgentSession;
+	/**
+	 * The session a nested child inherits its conversation (`inherit_context`) and appended system
+	 * prompt from: the agent that delegated. Absent for a top-level child, which inherits from `parent`.
+	 */
+	inheritFrom?: AgentSession;
 	agentDir: string;
 	definition: AgentDefinition;
 	/** The child's working directory: the parent's, a caller's, or a worktree copy. */
@@ -131,7 +136,7 @@ export async function createChild(request: ChildRequest): Promise<Child> {
 		definition,
 		request.cwd,
 		env,
-		definition.promptMode === "append" ? parent.systemPrompt : undefined,
+		definition.promptMode === "append" ? (request.inheritFrom ?? parent).systemPrompt : undefined,
 		{ memoryBlock, skillBlocks, worktreeBase: request.worktreeBase },
 	);
 	const scope = resolveToolScope({
@@ -350,7 +355,8 @@ export async function spawnChild(
 		};
 	}
 	onChild?.(child);
-	const context = turn.inheritContext ? buildParentContext(request.parent.sessionManager.getBranch()) : "";
+	const source = request.inheritFrom ?? request.parent;
+	const context = turn.inheritContext ? buildParentContext(source.sessionManager.getBranch()) : "";
 	return { ...(await runTurn(child, { ...turn, prompt: context + turn.prompt })), child };
 }
 

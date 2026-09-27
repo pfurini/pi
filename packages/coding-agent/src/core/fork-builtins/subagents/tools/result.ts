@@ -13,7 +13,7 @@ import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { statusNote } from "../service/notifications.ts";
 import { isTerminal, type SubagentRecord } from "../service/records.ts";
-import { notFound } from "../service/service.ts";
+import { notFound, requireService } from "../service/service.ts";
 import {
 	contextPercent,
 	displayName,
@@ -22,7 +22,6 @@ import {
 	formatMs,
 	formatTokens,
 	partialOutputSuffix,
-	requireService,
 	textResult,
 } from "./common.ts";
 import { GET_RESULT_TOOL_NAME } from "./names.ts";

@@ -57,6 +57,17 @@ describe("enableInContent", () => {
 		expect(enableInContent(ENABLED)).toEqual({ content: ENABLED, changed: false });
 	});
 
+	// T18-F6: a key the edit cannot remove was reported as not disabled.
+	it("refuses a disabled key it cannot rewrite, rather than write a file that stays disabled or no longer parses", () => {
+		for (const source of [
+			'---\ndescription: x\n"enabled": false\n---\nbody\n',
+			"---\ndescription: x\nenabled:\n  false\n---\nbody\n",
+		]) {
+			expect(loaderSeesDisabled(source), JSON.stringify(source)).toBe(true);
+			expect(enableInContent(source)).toEqual({ content: source, changed: false, cannotRewrite: true });
+		}
+	});
+
 	it("leaves the body and other frontmatter keys untouched", () => {
 		const { content } = enableInContent(
 			"---\ndescription: Scout\nenabled: false\n# a comment\nmodel: haiku\n---\n\nLine 1.\n\nLine 2.\n",
@@ -181,6 +192,9 @@ describe("read and write paths agree", () => {
 		["key after description", HAND_AUTHORED_DISABLED],
 		["key last", "---\ndescription: Scout\ndisplay_name: S\nenabled: false\n---\n\nBody.\n"],
 		["CRLF", "---\r\ndescription: Scout\r\nenabled: false\r\n---\r\n\r\nBody.\r\n"],
+		// T18-F6: a comment or another YAML spelling of false left the agent disabled.
+		["key with a comment", "---\ndescription: Scout\nenabled: false # off for now\n---\n\nBody.\n"],
+		["capitalized False", "---\ndescription: Scout\nenabled: False\n---\n\nBody.\n"],
 	];
 
 	for (const [label, content] of shapes) {

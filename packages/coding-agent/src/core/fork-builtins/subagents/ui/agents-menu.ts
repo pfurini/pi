@@ -303,8 +303,13 @@ async function disable(
 
 /** Removes `enabled: false`; a stub that then says nothing is deleted, which restores the default. */
 function enable(env: AgentsMenuEnvironment, name: string, file: AgentFile, dirs: AgentFileDirectories): void {
-	const { content, changed } = enableInContent(readFileSync(file.path, "utf8"));
-	if (isEmptyStub(content)) {
+	const { content, changed, cannotRewrite } = enableInContent(readFileSync(file.path, "utf8"));
+	if (cannotRewrite) {
+		env.ui.notify(
+			`Cannot enable ${name}: ${file.path} spells its enabled key in a way this menu cannot rewrite.`,
+			"error",
+		);
+	} else if (isEmptyStub(content)) {
 		change(env, file.path, `Enabled ${name} (removed ${file.path})`, () => removeAgentFile(file, dirs));
 	} else if (changed) {
 		change(env, file.path, `Enabled ${name} (${file.path})`, () => writeAgentFile(file, content, dirs));

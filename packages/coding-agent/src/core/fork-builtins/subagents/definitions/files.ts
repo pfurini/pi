@@ -115,8 +115,8 @@ export function removeAgentFile(file: AgentFile, directories: AgentFileDirectori
 
 /** A `---` fence line, without its line ending. */
 const FENCE = /^---[ \t]*$/;
-/** A line setting `enabled: false`, ignoring trailing blanks. */
-const ENABLED_FALSE = /^enabled:[ \t]*false[ \t]*$/;
+/** A one-line `enabled:` whose YAML value is false, ignoring blanks and a trailing comment (T18-F6). */
+const ENABLED_FALSE = /^enabled[ \t]*:[ \t]*(?:false|False|FALSE)[ \t]*(?:#.*)?$/;
 /** A line setting the `enabled` key to any value. */
 const ENABLED_KEY = /^enabled[ \t]*:/;
 
@@ -163,15 +163,30 @@ export function disableInContent(content: string): { content: string; outcome: D
 	return { content: edited, outcome: "disabled" };
 }
 
-/** Removes `enabled: false` wherever it sits in the block; `changed` is false when nothing was removed. */
-export function enableInContent(content: string): { content: string; changed: boolean } {
+/** Whether the loader reads this file, and reads it as enabled. */
+function readsEnabled(content: string): boolean {
+	try {
+		return parseFrontmatter(content).frontmatter.enabled !== false;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Removes the `enabled:` line of a file the loader reads as disabled, wherever it sits in the block;
+ * `changed` is false when the file is not disabled. `cannotRewrite` marks a disabled file whose key
+ * this edit cannot remove, such as a quoted key or a value on the next line, so no file that stays
+ * disabled or no longer parses is ever written (T18-F6).
+ */
+export function enableInContent(content: string): { content: string; changed: boolean; cannotRewrite?: true } {
 	const block = frontmatterBlock(content);
-	if (!block) return { content, changed: false };
+	if (!block || !isDisabledContent(content)) return { content, changed: false };
 	const kept = block.lines.filter(
 		(line, index) => !(index > 0 && index < block.close && ENABLED_FALSE.test(line.replace(/\r?\n$/, ""))),
 	);
-	if (kept.length === block.lines.length) return { content, changed: false };
-	return { content: kept.join(""), changed: true };
+	const edited = kept.join("");
+	if (!readsEnabled(edited)) return { content, changed: false, cannotRewrite: true };
+	return { content: edited, changed: true };
 }
 
 /** The stub that disables a default agent, once enabled again: an empty frontmatter block. */

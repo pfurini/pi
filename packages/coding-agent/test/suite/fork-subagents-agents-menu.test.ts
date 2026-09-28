@@ -272,6 +272,20 @@ describe("/agents", () => {
 		expect(sha(path)).toBe(before);
 	});
 
+	// T18-F6: a disabled file the edit cannot rewrite was reported as not disabled.
+	it("reports a disabled key it cannot rewrite on Enable, and leaves the file as it was", async () => {
+		const { harness, projectAgents } = await session();
+		const path = writeProjectAgent(projectAgents, "scout", SCOUT.replace("---\n", '---\n"enabled": false\n'));
+		const before = readFileSync(path, "utf8");
+		const scripted = await bind(harness);
+		await agents(harness, scripted, { select: [pick("Agent types"), pick("Enable")], custom: ["scout"] });
+		expect(scripted.log.notes).toContainEqual({
+			message: `Cannot enable scout: ${path} spells its enabled key in a way this menu cannot rewrite.`,
+			type: "error",
+		});
+		expect(readFileSync(path, "utf8")).toBe(before);
+	});
+
 	it("writes an edit only when the text changed, and deletes only after a confirm", async () => {
 		const { harness, projectAgents } = await session();
 		const path = writeProjectAgent(projectAgents, "scout");

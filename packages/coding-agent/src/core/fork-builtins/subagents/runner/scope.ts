@@ -14,9 +14,9 @@
  * Children leave `allowedToolNames` unset, because it is fixed at construction and would drop
  * tools that extensions register later; scope goes through `excludeTools` and the active set.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { LoadExtensionsResult } from "../../../extensions/types.ts";
 import type { DefaultResourceLoader } from "../../../resource-loader.ts";
@@ -202,19 +202,42 @@ export interface ExtensionPlan {
 	check(loader: DefaultResourceLoader): ScopeWarning[];
 }
 
+/** The real path, symlinks resolved and in the disk's own case; the path itself when it does not exist. */
+function realOrSelf(path: string): string {
+	try {
+		return realpathSync.native(path);
+	} catch {
+		return path;
+	}
+}
+
+function isInside(path: string, root: string): boolean {
+	const rel = relative(root, path);
+	// A directory named like `..helpers` is inside; only `..` itself or a `../` prefix leaves the root.
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
 /**
  * Which extensions a child loads. `false` or `isolated` loads none: `noExtensions` skips path
  * extensions and the override drops the inline built-ins, which load under `noExtensions` too
  * (ADR-0009). A list keeps the named ones (a path entry loads that file; `*` keeps all), and
- * `exclude_extensions` wins. The override sees inline built-ins because they load first.
+ * `exclude_extensions` wins. The override sees inline built-ins because they load first. In an
+ * untrusted project, a path that resolves inside the project is refused: an explicit path bypasses
+ * the loader's own trust gate.
  */
-export function resolveExtensionPlan(definition: AgentDefinition, isolated: boolean, cwd: string): ExtensionPlan {
+export function resolveExtensionPlan(
+	definition: AgentDefinition,
+	isolated: boolean,
+	cwd: string,
+	projectTrusted: boolean,
+): ExtensionPlan {
 	const agent = definition.name;
 	const extensions = isolated ? false : definition.extensions;
 	const exclude = new Set(isolated ? [] : (definition.excludeExtensions ?? []).map((name) => name.toLowerCase()));
 	const { extNames } = parseExtSelectors(isolated ? [] : (definition.tools ?? []));
 	const keep = new Set<string>();
 	const paths: string[] = [];
+	const refused: string[] = [];
 	let wildcard = extensions === true;
 	for (const entry of Array.isArray(extensions) ? extensions : []) {
 		if (entry === "*") {
@@ -227,6 +250,10 @@ export function resolveExtensionPlan(definition: AgentDefinition, isolated: bool
 		}
 		const expanded = entry === "~" || entry.startsWith("~/") ? join(homedir(), entry.slice(1)) : entry;
 		const absolute = isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+		if (!projectTrusted && isInside(realOrSelf(absolute), realOrSelf(cwd))) {
+			refused.push(entry);
+			continue;
+		}
 		paths.push(absolute);
 		for (const name of extensionNames(absolute)) keep.add(name);
 	}
@@ -246,7 +273,10 @@ export function resolveExtensionPlan(definition: AgentDefinition, isolated: bool
 			};
 		},
 		check(loader) {
-			const messages: string[] = [];
+			const messages = refused.map(
+				(entry) =>
+					`extension path "${entry}" for agent "${agent}" is inside an untrusted project; it was not loaded`,
+			);
 			if (exclude.size > 0 && extensions === false) {
 				messages.push(`exclude_extensions has no effect for agent "${agent}": extensions: false loads nothing`);
 			}

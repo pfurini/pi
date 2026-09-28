@@ -1,6 +1,6 @@
 // Fork-owned: child tool and extension scoping (plan T3, D22). The suite test
 // test/suite/fork-subagents-runner.test.ts checks the same rules on real child sessions.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -143,22 +143,52 @@ describe("child extension plan", () => {
 		expect(extensionNames(join(packageDir, "src", "index.ts"))).toEqual(["src", "pi-notify"]);
 	});
 
+	it("refuses every spelling of a path inside an untrusted project, and keeps one outside", () => {
+		const project = realpathSync(mkdtempSync(join(tmpdir(), "pi-sn-trust-")));
+		const outside = mkdtempSync(join(tmpdir(), "pi-sn-outside-"));
+		roots.push(project, outside);
+		mkdirSync(join(project, "..helpers"));
+		writeFileSync(join(project, "..helpers", "h.ts"), "");
+		writeFileSync(join(outside, "o.ts"), "");
+		// A case-insensitive disk also finds the project under another case.
+		const recased = project.replace("pi-sn-trust-", "PI-SN-TRUST-");
+		const spellings = ["./..helpers/h.ts", join(project, "..helpers", "h.ts")];
+		if (existsSync(recased)) spellings.push(join(recased, "..helpers", "h.ts"));
+		const plan = resolveExtensionPlan(
+			agent({ extensions: [...spellings, join(outside, "o.ts")] }),
+			false,
+			project,
+			false,
+		);
+		expect(plan.additionalExtensionPaths).toEqual([join(outside, "o.ts")]);
+		plan.extensionsOverride(base());
+		expect(plan.check(loaded(base())).map((warning) => warning.message)).toEqual(
+			expect.arrayContaining(
+				spellings.map(
+					(entry) =>
+						`extension path "${entry}" for agent "worker" is inside an untrusted project; it was not loaded`,
+				),
+			),
+		);
+	});
+
 	it("loads nothing for extensions: false or isolated, and keeps listed names with the exclusion winning", () => {
 		const discovered = base("<inline:tokensave>", "/x/extensions/mcp.ts", "/x/extensions/notes.ts");
-		const none = resolveExtensionPlan(agent({ extensions: false }), false, "/x");
+		const none = resolveExtensionPlan(agent({ extensions: false }), false, "/x", true);
 		expect(none.noExtensions).toBe(true);
 		expect(pathsOf(none.extensionsOverride(discovered))).toEqual([]);
-		expect(pathsOf(resolveExtensionPlan(agent(), true, "/x").extensionsOverride(discovered))).toEqual([]);
+		expect(pathsOf(resolveExtensionPlan(agent(), true, "/x", true).extensionsOverride(discovered))).toEqual([]);
 
 		const listed = resolveExtensionPlan(
 			agent({ extensions: ["MCP", "tokensave"], excludeExtensions: ["tokensave"] }),
 			false,
 			"/x",
+			true,
 		);
 		expect(pathsOf(listed.extensionsOverride(discovered))).toEqual(["/x/extensions/mcp.ts"]);
-		const all = resolveExtensionPlan(agent({ excludeExtensions: ["notes"] }), false, "/x");
+		const all = resolveExtensionPlan(agent({ excludeExtensions: ["notes"] }), false, "/x", true);
 		expect(pathsOf(all.extensionsOverride(discovered))).toEqual(["<inline:tokensave>", "/x/extensions/mcp.ts"]);
-		const wildcard = resolveExtensionPlan(agent({ extensions: ["*", "./local/extra.ts"] }), false, "/x");
+		const wildcard = resolveExtensionPlan(agent({ extensions: ["*", "./local/extra.ts"] }), false, "/x", true);
 		expect(wildcard.additionalExtensionPaths).toEqual(["/x/local/extra.ts"]);
 		expect(pathsOf(wildcard.extensionsOverride(discovered))).toHaveLength(3);
 	});
@@ -172,6 +202,7 @@ describe("child extension plan", () => {
 			}),
 			false,
 			"/x",
+			true,
 		);
 		const result = plan.extensionsOverride(
 			base("<inline:tokensave>", "/x/extensions/mcp.ts", "/x/extensions/notes.ts"),
@@ -182,7 +213,12 @@ describe("child extension plan", () => {
 			'extension "notes" is in both extensions: and exclude_extensions: for agent "worker"; the exclusion wins',
 			'ext:tokensave referenced by agent "worker", but extension "tokensave" is not loaded (check extensions: and exclude_extensions:)',
 		]);
-		const contradictory = resolveExtensionPlan(agent({ extensions: false, excludeExtensions: ["mcp"] }), false, "/x");
+		const contradictory = resolveExtensionPlan(
+			agent({ extensions: false, excludeExtensions: ["mcp"] }),
+			false,
+			"/x",
+			true,
+		);
 		contradictory.extensionsOverride(base("/x/extensions/mcp.ts"));
 		expect(contradictory.check(loaded(base())).map((warning) => warning.message)).toEqual([
 			'exclude_extensions has no effect for agent "worker": extensions: false loads nothing',

@@ -332,6 +332,34 @@ describe("child turns", () => {
 	});
 });
 
+describe("child extensions in an untrusted project", () => {
+	it("loads no extension path inside the project, and warns", async () => {
+		const harness = await parent();
+		const marker = join(harness.tempDir, "helper-loaded");
+		const helpers = join(harness.tempDir, ".pi", "helpers");
+		mkdirSync(helpers, { recursive: true });
+		writeFileSync(
+			join(helpers, "helper.ts"),
+			`import { writeFileSync } from "node:fs";\nexport default function () {\n\twriteFileSync(${JSON.stringify(marker)}, "loaded");\n}\n`,
+		);
+		const global = agent({
+			extensions: ["./.pi/helpers/helper.ts"],
+			source: { kind: "global", sourcePath: join(harness.tempDir, "agents", "worker.md") },
+		});
+		await create(harness, global);
+		expect(existsSync(marker)).toBe(true);
+		rmSync(marker);
+		harness.settingsManager.setProjectTrusted(false);
+		const untrusted = await create(harness, global);
+		expect(existsSync(marker)).toBe(false);
+		expect(untrusted.activity).toContainEqual({
+			type: "extension-error",
+			message:
+				'extension path "./.pi/helpers/helper.ts" for agent "worker" is inside an untrusted project; it was not loaded',
+		});
+	});
+});
+
 describe("child memory in an untrusted project", () => {
 	it("reads and creates no project or local memory, keeps user memory, and warns", async () => {
 		const harness = await parent();

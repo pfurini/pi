@@ -156,7 +156,7 @@ export async function createChild(request: ChildRequest): Promise<Child> {
 		injectedToolNames: (request.customTools ?? []).map((tool) => tool.name),
 		memory,
 	});
-	const plan = resolveExtensionPlan(definition, isolated, configCwd);
+	const plan = resolveExtensionPlan(definition, isolated, configCwd, parent.settingsManager.isProjectTrusted());
 	// A child shares the parent's repository, so its project trust follows the parent's.
 	const settingsManager = SettingsManager.create(configCwd, request.agentDir, {
 		projectTrusted: parent.settingsManager.isProjectTrusted(),

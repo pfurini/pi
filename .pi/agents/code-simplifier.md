@@ -1,7 +1,8 @@
 ---
 name: code-simplifier
 description: Finds avoidable machinery and quality debt in changed code across four angles — reuse, machinery, efficiency, altitude — and proposes the smaller or cheaper form that preserves the required outcome and meaningful invariants. Use after implementation, in a review polish phase, or during PR review; dispatch one instance for all angles, or one instance per angle with an assigned angle for large diffs. Requires evidence that an existing or smaller primitive can carry the behavior. Advisory only — reports findings for the orchestrator to apply; never modifies files or commits.
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
+thinking: high
 color: green
 persistSession: true
 output_transcript: true

@@ -2,6 +2,8 @@
 name: code-reviewer
 description: Finds high-confidence defects and explicit repository-rule violations in changed code. Use after implementation, before commits, or during PR review. Requires a reachable failure path or a cited project rule, inspects direct callers and consumers beyond the diff, and stays silent on preferences, speculative risks, and concerns owned by specialist reviewers. Advisory only — does not modify files or commit.
 color: green
+model: openai-codex/gpt-6-sol
+thinking: high
 persistSession: true
 output_transcript: true
 ---

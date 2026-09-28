@@ -1,8 +1,8 @@
 ---
 name: plan-reviewer
 description: Adversarially reviews planning artifacts (implementation plans, PRDs) along one assigned attack angle - traceability to the source PRD, unstated assumptions, completeness, feasibility of cited patterns, or validation coverage. Use during plan review fan-out; dispatch one instance per angle with its attack brief. Advisory only - reports findings, never modifies the artifact.
-model: openai-codex/gpt-5.6-sol
-thinking: medium
+model: openai-codex/gpt-6-astra
+thinking: high
 color: red
 persistSession: true
 output_transcript: true

@@ -566,6 +566,22 @@ describe("ownership", () => {
 		expect(existsSync(tempDir)).toBe(true);
 	});
 
+	it("never evicts a queued record, however long it waits", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const gate = held();
+		const harness = await parent({ defaultJoinMode: "async", maxConcurrent: 1 }, { hold: [gate.behavior] });
+		const subagents = service(harness);
+		await subagents.spawn(background("hold on"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const queued = await subagents.spawn(background("wait in line"));
+		expect(queued.status).toBe("queued");
+		vi.advanceTimersByTime(11 * 60_000);
+		expect(subagents.get(queued.id)).toBe(queued);
+		expect(queued.status).toBe("queued");
+		gate.release();
+		expect((await subagents.waitForResult(queued.id)).status).toBe("completed");
+	});
+
 	it("keeps a finished record 10 minutes, then evicts it with a tombstone, and never evicts a running one", async () => {
 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
 		const gate = held();

@@ -8,7 +8,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type CreateAgentSessionRuntimeFactory,
@@ -90,6 +91,27 @@ function writeSlowStartExtension(harness: Harness): void {
 		join(dir, "slow-start.ts"),
 		'export default async function (pi) {\n\tawait new Promise((resolve) => setTimeout(resolve, 300));\n\tpi.on("session_shutdown", async () => {\n\t\tawait new Promise((resolve) => setTimeout(resolve, 100));\n\t\tglobalThis.__sn2Presentation.shutdownDone = true;\n\t});\n}\n',
 	);
+}
+
+/** A UI context that renders the widgets it is given at 200 columns. Own properties only, as below. */
+function widgetUi() {
+	const content = new Map<string, (tui: TUI, theme: Theme) => Component>();
+	const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
+	const tui = { requestRender: () => {} } as unknown as TUI;
+	const ui = {
+		notify: () => {},
+		setStatus: () => {},
+		onTerminalInput: () => () => {},
+		setWidget: (key: string, factory: ((tui: TUI, theme: Theme) => Component) | undefined) => {
+			if (factory) content.set(key, factory);
+			else content.delete(key);
+		},
+	} as unknown as ExtensionUIContext;
+	const widgets = {
+		keys: () => [...content.keys()],
+		text: (key: string) => content.get(key)?.(tui, plainTheme).render(200).join("\n") ?? "",
+	};
+	return { ui, widgets };
 }
 
 /** A UI context that records the `subagents` status. Own properties only: the runner spreads the context it wraps. */
@@ -248,6 +270,48 @@ describe("presentation factory", () => {
 		await bound(unbuilt, "print");
 		expect(drawn(unbuilt)).toContain("1.0k token · 1.0s");
 		expect(existingSubagentService(unbuilt.session)).toBeUndefined();
+	});
+
+	it("shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode", async () => {
+		const gate = held(() => fauxAssistantMessage("rpc done"));
+		const scan = () =>
+			fauxAssistantMessage([fauxText("Scanning the repository"), fauxToolCall("read", { path: "missing.txt" })], {
+				stopReason: "toolUse",
+			});
+		const bus = createEventBus();
+		const harness = await parent({ "rpc task": [scan, gate.behavior] }, {}, bus);
+		const { ui, widgets } = widgetUi();
+		await harness.session.bindExtensions({ uiContext: ui, mode: "tui" });
+		const requestId = "rpc-widget";
+		const replied = new Promise((resolve) => bus.on(`subagents:rpc:spawn:reply:${requestId}`, resolve));
+		bus.emit("subagents:rpc:spawn", {
+			requestId,
+			type: "worker",
+			prompt: "rpc task",
+			options: { description: "rpc task", isBackground: true },
+		});
+		expect(await replied).toMatchObject({ success: true });
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		await vi.waitFor(() => {
+			const text = widgets.text("agents");
+			expect(text).toContain("● Agents");
+			expect(text).toContain("rpc task");
+			expect(text).toContain("⎿  Scanning the repository");
+		});
+		gate.release();
+		await vi.waitFor(() => expect(widgets.text("agents")).toMatch(/✓ worker {2}rpc task · ↻2 · 1 tool use/));
+		// Quit unbinds the UI, which removes the widget.
+		await harness.session.shutdown();
+		expect(widgets.keys()).toEqual([]);
+
+		const rpcGate = held();
+		const remote = await parent({ hold: [rpcGate.behavior] });
+		const remoteUi = widgetUi();
+		await remote.session.bindExtensions({ uiContext: remoteUi.ui, mode: "rpc" });
+		agentId(await call(remote, "Agent", background("hold rpc")));
+		await vi.waitFor(() => expect(rpcGate.requests()).toBe(1), CHILD_START);
+		expect(remoteUi.widgets.keys()).toEqual([]);
+		rpcGate.release();
 	});
 
 	it("binds each of two sessions on one event bus to its own agents", async () => {

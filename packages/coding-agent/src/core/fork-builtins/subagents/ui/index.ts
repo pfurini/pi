@@ -6,10 +6,11 @@
  * demand (P5).
  *
  * In `tui` and `rpc` mode it builds the session's service at `session_start` and keeps the status
- * line `subagents` current (P7, P8). Every `session_shutdown` unbinds the UI. A reason other than
- * `reload` then awaits the service's bounded `shutdown()`, so quit and session replacement wait for
- * the children's teardown (R4, P6); it never builds a service to do so. `/reload` keeps the service
- * and its agents. The `subagent-notification` renderer (`notification.ts`) draws completion notices.
+ * line `subagents` current (P7, P8); in `tui` mode it also shows the `agents` widget (`widget.ts`).
+ * Every `session_shutdown` unbinds the UI. A reason other than `reload` then awaits the service's
+ * bounded `shutdown()`, so quit and session replacement wait for the children's teardown (R4, P6);
+ * it never builds a service to do so. `/reload` keeps the service and its agents. The
+ * `subagent-notification` renderer (`notification.ts`) draws completion notices.
  */
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
@@ -23,6 +24,7 @@ import { NOTIFICATION_CUSTOM_TYPE } from "../service/notifications.ts";
 import type { SubagentService } from "../service/service.ts";
 import { existingSubagentService, subagentServiceFor } from "../service/sessions.ts";
 import { notificationRenderer } from "./notification.ts";
+import { AgentWidget } from "./widget.ts";
 
 const STATUS_KEY = "subagents";
 
@@ -79,6 +81,7 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 
 	let session: AgentSession | undefined;
 	let unbind: (() => void) | undefined;
+	let widget: AgentWidget | undefined;
 
 	const resolve = (ctx: ExtensionContext): AgentSession | undefined => {
 		if (session) return session;
@@ -101,8 +104,18 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 		const service = subagentServiceFor(bound);
 		if (!service) return;
 		unbind?.();
-		unbind = bindStatus(service, ctx);
+		const unbindStatus = bindStatus(service, ctx);
+		// RPC ignores widget factories (P7).
+		widget = ctx.mode === "tui" ? new AgentWidget(service, ctx.ui) : undefined;
+		unbind = () => {
+			widget?.dispose();
+			widget = undefined;
+			unbindStatus();
+		};
 	});
+
+	// A parent turn ages the widget's finished agents.
+	pi.on("tool_execution_start", () => widget?.onParentTurn());
 
 	pi.on("session_shutdown", async (event, ctx) => {
 		unbind?.();

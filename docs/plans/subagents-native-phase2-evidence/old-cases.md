@@ -15,7 +15,7 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 6 | test/agent-color.test.ts > renderAgentNameLabel > resets the background when the caller paints none | T7.4 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel resets the background when the caller paints none |
 | 7 | test/agent-color.test.ts > renderAgentNameLabel > preserves existing theme styling without a valid color | T7.5 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel preserves existing theme styling without a valid color |
 | 8 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the registered Agent tool call header with the display name and color | T8.11 | test/suite/fork-subagents-rendering.test.ts > Agent call rendering renders the call header with the agent's display name in its color |
-| 9 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the above-editor Agent widget with the display name and color | T10.10 |  |
+| 9 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the above-editor Agent widget with the display name and color | T10.10 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's display name in its color |
 | 10 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the FleetView row with the display name and color | T12.11 |  |
 | 11 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the conversation viewer header with the display name and color | T11.16 |  |
 | 12 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when it is the first frontmatter line | T13.1 |  |
@@ -72,37 +72,37 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 63 | test/agent-widget.test.ts > formatSessionTokens > applies threshold colors (<70 dim, 70–85 warning, ≥85 error) | T7.6 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens applies threshold colors (<70 dim, 70–85 warning, ≥85 error) |
 | 64 | test/agent-widget.test.ts > formatSessionTokens > annotates compaction count alongside percent | T7.7 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens annotates compaction count alongside percent |
 | 65 | test/agent-widget.test.ts > formatSessionTokens > preserves the outer style after nested annotation styles reset | T7.7 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset |
-| 66 | test/agent-widget.test.ts > renderRunningAgentStatus > renders running status as separate component lines | T10.1 |  |
-| 67 | test/agent-widget.test.ts > AgentWidget > shows foreground agents in 'all' mode (and by default) | T10.2 |  |
-| 68 | test/agent-widget.test.ts > AgentWidget > hides nested children in every coordinator widget mode | T10.2 |  |
+| 66 | test/agent-widget.test.ts > renderRunningAgentStatus > renders running status as separate component lines | T10.1 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders running status as separate component lines |
+| 67 | test/agent-widget.test.ts > AgentWidget > shows foreground agents in 'all' mode (and by default) | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows foreground agents in 'all' mode (and by default) |
+| 68 | test/agent-widget.test.ts > AgentWidget > hides nested children in every coordinator widget mode | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget hides nested children in every coordinator widget mode |
 | 69 | test/agent-widget.test.ts > AgentWidget > hides a workflow's agents in every coordinator widget mode | Dropped: workflow runs are gone (R1) |  |
-| 70 | test/agent-widget.test.ts > AgentWidget > excludes foreground agents in 'background' mode | T10.2 |  |
-| 71 | test/agent-widget.test.ts > AgentWidget > renders background agents in 'background' mode | T10.2 |  |
-| 72 | test/agent-widget.test.ts > AgentWidget > keeps agents with no isBackground flag in 'background' mode | T10.2 |  |
-| 73 | test/agent-widget.test.ts > AgentWidget > names the model and thinking on a running row under showModel | T10.3 |  |
-| 74 | test/agent-widget.test.ts > AgentWidget > renders the row exactly as before when showModel is off | T10.3 |  |
-| 75 | test/agent-widget.test.ts > AgentWidget > carries the short label, never the canonical id, onto the row | T10.3 |  |
-| 76 | test/agent-widget.test.ts > AgentWidget > discloses a level the run did not honor | T10.3 |  |
-| 77 | test/agent-widget.test.ts > AgentWidget > keeps queued agents on one summary line and finished agents visible | T10.4 |  |
-| 78 | test/agent-widget.test.ts > AgentWidget > renders nothing in 'off' mode | T10.2 |  |
+| 70 | test/agent-widget.test.ts > AgentWidget > excludes foreground agents in 'background' mode | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget excludes foreground agents in 'background' mode |
+| 71 | test/agent-widget.test.ts > AgentWidget > renders background agents in 'background' mode | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders background agents in 'background' mode |
+| 72 | test/agent-widget.test.ts > AgentWidget > keeps agents with no isBackground flag in 'background' mode | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps detached agents, spawned over RPC, in 'background' mode; test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode |
+| 73 | test/agent-widget.test.ts > AgentWidget > names the model and thinking on a running row under showModel | T10.3 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel names the model and thinking on a running row under showModel |
+| 74 | test/agent-widget.test.ts > AgentWidget > renders the row exactly as before when showModel is off | T10.3 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel renders the row exactly as before when showModel is off |
+| 75 | test/agent-widget.test.ts > AgentWidget > carries the short label, never the canonical id, onto the row | T10.3 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel carries the short label, never the canonical id, onto the row |
+| 76 | test/agent-widget.test.ts > AgentWidget > discloses a level the run did not honor | T10.3 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor |
+| 77 | test/agent-widget.test.ts > AgentWidget > keeps queued agents on one summary line and finished agents visible | T10.4 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps queued agents on one summary line and finished agents visible |
+| 78 | test/agent-widget.test.ts > AgentWidget > renders nothing in 'off' mode | T10.2 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders nothing in 'off' mode |
 | 79 | test/agent-widget.test.ts > formatCost > keeps the precision that distinguishes one run from another | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another |
 | 80 | test/agent-widget.test.ts > formatCost > never pads a round figure with noise, nor cuts it below cents | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents |
 | 81 | test/agent-widget.test.ts > formatCost > shows nothing when there is nothing to show | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost shows nothing when there is nothing to show |
 | 82 | test/agent-widget.test.ts > formatCost > says a real but tiny cost is tiny, not zero | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost says a real but tiny cost is tiny, not zero |
 | 83 | test/agent-widget.test.ts > formatCost > marks the figure as an estimate | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost marks the figure as an estimate |
-| 84 | test/agent-widget.test.ts > AgentWidget cost display > shows the cost beside the token count when enabled | T10.5 |  |
-| 85 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost when disabled | T10.5 |  |
-| 86 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost for an unpriced model, even when enabled | T10.5 |  |
-| 87 | test/agent-widget.test.ts > AgentWidget cost display > keeps the cost visible after the agent finishes | T10.5 |  |
-| 88 | test/agent-widget.test.ts > AgentWidget cost display > shows stats for an agent nobody is tracking live | T10.5 |  |
-| 89 | test/agent-widget.test.ts > AgentWidget cost display > defaults to hiding it | T10.5 |  |
-| 90 | test/agent-widget.test.ts > AgentWidget overflow accounting > never exceeds the line cap, for any fleet shape | T10.6 |  |
-| 91 | test/agent-widget.test.ts > AgentWidget overflow accounting > never prints a footer that miscounts what it hid, for any fleet shape | T10.6 |  |
-| 92 | test/agent-widget.test.ts > AgentWidget overflow accounting > keeps the queued summary visible when the running agents fill the widget | T10.6 |  |
-| 93 | test/agent-widget.test.ts > AgentWidget overflow accounting > counts everything it hid — the footer total matches what is missing | T10.6 |  |
-| 94 | test/agent-widget.test.ts > AgentWidget overflow accounting > gives the queued summary priority over finished lines | T10.6 |  |
-| 95 | test/agent-widget.test.ts > AgentWidget overflow accounting > renders everything with no footer when the fleet fits | T10.6 |  |
-| 96 | test/agent-widget.test.ts > AgentWidget overflow accounting > shows the completion line again after a finished agent is resumed | T10.6 |  |
+| 84 | test/agent-widget.test.ts > AgentWidget cost display > shows the cost beside the token count when enabled | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows the cost beside the token count when enabled |
+| 85 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost when disabled | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost when disabled |
+| 86 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost for an unpriced model, even when enabled | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost for an unpriced model, even when enabled |
+| 87 | test/agent-widget.test.ts > AgentWidget cost display > keeps the cost visible after the agent finishes | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display keeps the cost visible after the agent finishes |
+| 88 | test/agent-widget.test.ts > AgentWidget cost display > shows stats for an agent nobody is tracking live | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows stats for an agent whose child session does not exist yet |
+| 89 | test/agent-widget.test.ts > AgentWidget cost display > defaults to hiding it | T10.5 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display defaults to hiding it |
+| 90 | test/agent-widget.test.ts > AgentWidget overflow accounting > never exceeds the line cap, for any fleet shape | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never exceeds the line cap, for any fleet shape |
+| 91 | test/agent-widget.test.ts > AgentWidget overflow accounting > never prints a footer that miscounts what it hid, for any fleet shape | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never prints a footer that miscounts what it hid, for any fleet shape |
+| 92 | test/agent-widget.test.ts > AgentWidget overflow accounting > keeps the queued summary visible when the running agents fill the widget | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting keeps the queued summary visible when the running agents fill the widget |
+| 93 | test/agent-widget.test.ts > AgentWidget overflow accounting > counts everything it hid — the footer total matches what is missing | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting counts everything it hid — the footer total matches what is missing |
+| 94 | test/agent-widget.test.ts > AgentWidget overflow accounting > gives the queued summary priority over finished lines | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting gives the queued summary priority over finished lines |
+| 95 | test/agent-widget.test.ts > AgentWidget overflow accounting > renders everything with no footer when the fleet fits | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting renders everything with no footer when the fleet fits |
+| 96 | test/agent-widget.test.ts > AgentWidget overflow accounting > shows the completion line again after a finished agent is resumed | T10.6 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting shows the completion line again after a finished agent is resumed |
 | 97 | test/conversation-viewer.test.ts > ConversationViewer invocation line > names the model with its provider | T11.1 |  |
 | 98 | test/conversation-viewer.test.ts > ConversationViewer invocation line > falls back to the short label when no canonical id was captured | T11.1 |  |
 | 99 | test/conversation-viewer.test.ts > ConversationViewer invocation line > discloses a model and level the run did not honor | T11.1 |  |
@@ -236,12 +236,12 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 227 | test/fleet-list.test.ts > FleetList workflow rows > freezes a finished run's clock the way an agent's is frozen | Dropped: workflow runs are gone (R1) |  |
 | 228 | test/fleet-wiring.test.ts > FleetView wiring (real extension lifecycle) > captures terminal input on tool_execution_start (fleet hooked into the UI) | T12.12 |  |
 | 229 | test/fleet-wiring.test.ts > FleetView wiring (real extension lifecycle) > registers the belowEditor widget once a spawned agent has a session, then clears it on shutdown | T12.1 |  |
-| 230 | test/perf/no-fs-on-render.perf.test.ts > a rendered frame touches no filesystem > AgentWidget.render | T10.9 |  |
+| 230 | test/perf/no-fs-on-render.perf.test.ts > a rendered frame touches no filesystem > AgentWidget.render | T10.9 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget touches no file while it renders a frame |
 | 231 | test/perf/no-fs-on-render.perf.test.ts > a rendered frame touches no filesystem > ConversationViewer.render | T11.15 |  |
 | 232 | test/perf/render-invariants.perf.test.ts > ConversationViewer — cost stays linear in transcript length > does ~10x the work for 10x the messages (raw wrap path) | T11.14 |  |
 | 233 | test/perf/render-invariants.perf.test.ts > ConversationViewer — cost stays linear in transcript length > does ~10x the work for 10x the messages (markdown path) | T11.14 |  |
 | 234 | test/perf/render-invariants.perf.test.ts > ConversationViewer — cost stays linear in transcript length > re-renders without re-parsing: the markdown cache survives a frame | T11.10 |  |
-| 235 | test/perf/render-invariants.perf.test.ts > AgentWidget — one frame does not rescan per agent > asks the manager for the agent list a constant number of times | T10.9 |  |
+| 235 | test/perf/render-invariants.perf.test.ts > AgentWidget — one frame does not rescan per agent > asks the manager for the agent list a constant number of times | T10.9 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget asks the service for the agent list a constant number of times per frame |
 
 ## Notes
 

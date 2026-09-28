@@ -3,21 +3,17 @@
  * `~/.pi/agent-memory` fallback). Scopes: `user` is `<agentDir>/agent-memory/<name>/`, `project`
  * is `<cwd>/.pi/agent-memory/<name>/`, `local` is `<cwd>/.pi/agent-memory-local/<name>/`. An agent
  * that can write gets a read-write block and a created directory; any other gets a read-only block.
- * Symlinked memory directories and files are refused.
+ *
+ * Memory refuses a symlink at every path component below its scope root, `MEMORY.md` included
+ * (P14, F15): the agent directory for `user`, the project directory for `project` and `local`. A
+ * read-write agent then fails to start, naming the link; a read-only agent gets no memory content.
+ * The scope root itself may be a symlink.
  */
-import { existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, type Stats } from "node:fs";
+import { join, relative, sep } from "node:path";
 import type { MemoryScope } from "../definitions/types.ts";
 
 const MAX_MEMORY_LINES = 200;
-
-function isSymlink(path: string): boolean {
-	try {
-		return lstatSync(path).isSymbolicLink();
-	} catch {
-		return false;
-	}
-}
 
 /** The memory directory of an agent; refuses a name that could leave it. */
 export function memoryDir(agentName: string, scope: MemoryScope, cwd: string, agentDir: string): string {
@@ -28,10 +24,32 @@ export function memoryDir(agentName: string, scope: MemoryScope, cwd: string, ag
 	return join(cwd, ".pi", scope === "project" ? "agent-memory" : "agent-memory-local", agentName);
 }
 
-/** The first 200 lines of `MEMORY.md`, or undefined when it is absent or symlinked. */
+/**
+ * The first symlink among the existing path components from below the scope root down to
+ * `<dir>/MEMORY.md`, or undefined. Checking stops at the first missing or unreadable component:
+ * nothing below it can be reached, and the caller then finds no memory there.
+ */
+function symlinkBelowRoot(dir: string, scope: MemoryScope, cwd: string, agentDir: string): string | undefined {
+	const root = scope === "user" ? agentDir : cwd;
+	let path = root;
+	for (const part of [...relative(root, dir).split(sep), "MEMORY.md"]) {
+		path = join(path, part);
+		let stat: Stats | undefined;
+		try {
+			stat = lstatSync(path, { throwIfNoEntry: false });
+		} catch {
+			return undefined;
+		}
+		if (!stat) return undefined;
+		if (stat.isSymbolicLink()) return path;
+	}
+	return undefined;
+}
+
+/** The first 200 lines of `MEMORY.md`, or undefined when it is absent. The caller refused symlinks. */
 function readMemoryIndex(dir: string): string | undefined {
 	const file = join(dir, "MEMORY.md");
-	if (isSymlink(dir) || !existsSync(file) || isSymlink(file)) return undefined;
+	if (!existsSync(file)) return undefined;
 	let content: string;
 	try {
 		content = readFileSync(file, "utf-8");
@@ -47,11 +65,11 @@ function readMemoryIndex(dir: string): string | undefined {
 /** The read-write block. Creates the directory, so the agent can write at once. */
 export function readWriteMemoryBlock(agentName: string, scope: MemoryScope, cwd: string, agentDir: string): string {
 	const dir = memoryDir(agentName, scope, cwd, agentDir);
-	if (existsSync(dir)) {
-		if (isSymlink(dir)) throw new Error(`Refusing to use a symlinked memory directory: ${dir}`);
-	} else {
-		mkdirSync(dir, { recursive: true });
-	}
+	const link = symlinkBelowRoot(dir, scope, cwd, agentDir);
+	// Refused before anything is created, so nothing lands in the link's target.
+	if (link === dir) throw new Error(`Refusing to use a symlinked memory directory: ${dir}`);
+	if (link) throw new Error(`Refusing to use subagent memory behind a symlink: ${link}`);
+	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	const existing = readMemoryIndex(dir);
 	return `# Agent Memory
 
@@ -80,9 +98,10 @@ This memory persists across sessions. Use it to build up knowledge over time.${
 - You have Read, Write, and Edit tools available for managing memory files.`;
 }
 
-/** The read-only block. Creates nothing: the agent can only consume memories others wrote. */
+/** The read-only block. Creates nothing: the agent can only consume memories others wrote. A symlinked path gives none. */
 export function readOnlyMemoryBlock(agentName: string, scope: MemoryScope, cwd: string, agentDir: string): string {
-	const existing = readMemoryIndex(memoryDir(agentName, scope, cwd, agentDir));
+	const dir = memoryDir(agentName, scope, cwd, agentDir);
+	const existing = symlinkBelowRoot(dir, scope, cwd, agentDir) ? undefined : readMemoryIndex(dir);
 	return `# Agent Memory (read-only)
 
 Memory scope: ${scope}

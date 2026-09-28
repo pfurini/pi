@@ -269,6 +269,15 @@ describe("the agents widget", () => {
 		expect(lines[5]).toMatch(/^└─ ✗ worker {2}cut description · \d+\.\ds aborted$/);
 	});
 
+	// T18-F4 review: a child's provider error reached the terminal with its escape sequences.
+	it("prints a finished agent's error without its escape sequences", () => {
+		const lines = mount(
+			source([view("fail", { status: "error", error: "before\u001b]52;c;aW5qZWN0ZWQ=\u0007after" })]),
+		).lines();
+		expect(lines[1]).toMatch(/error: beforeafter$/);
+		expect(lines.join("\n")).not.toContain("\u001b]52");
+	});
+
 	it("keeps a completed agent for one parent turn and an error for two", async () => {
 		const fake = source([view("ok", { status: "completed" }), view("fail", { status: "error" })]);
 		const mounted = mount(fake);

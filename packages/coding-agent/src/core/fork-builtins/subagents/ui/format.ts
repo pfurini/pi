@@ -12,6 +12,7 @@ export {
 	activeTools,
 	describeActivity,
 	describeModel,
+	displayText,
 	invocationTags,
 	promptModeLabel,
 	responseText,

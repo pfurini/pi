@@ -6,9 +6,20 @@
  * which `ui/format.ts` re-exports for the other surfaces.
  */
 import type { AgentMessage, AgentToolResult } from "@earendil-works/pi-agent-core";
+import { stripAnsi } from "../../../../utils/ansi.ts";
+import { sanitizeBinaryOutput } from "../../../../utils/shell.ts";
 import type { SubagentStatus, SubagentView } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
 import { displayTokens } from "../usage.ts";
+
+/**
+ * Text a child produced, safe to print: no escape sequence, control character or carriage return,
+ * as Pi's own tool rows show tool output (`core/tools/render-utils.ts`). A child can read a file
+ * holding, say, an OSC 52 clipboard write; the model-facing text keeps it (T18-F4).
+ */
+export function displayText(text: string): string {
+	return sanitizeBinaryOutput(stripAnsi(text)).replace(/\r/g, "");
+}
 
 /** Tool names as the activity text reads them. */
 const TOOL_ACTIONS: Readonly<Record<string, string>> = {
@@ -44,7 +55,8 @@ export function describeActivity(tools: readonly string[], responseText?: string
 	if (tools.length > 0) {
 		const groups = new Map<string, number>();
 		for (const tool of tools) {
-			const action = TOOL_ACTIONS[tool] ?? tool;
+			// A child's model names its tool calls; an unknown name prints safely.
+			const action = TOOL_ACTIONS[tool] ?? displayText(tool);
 			groups.set(action, (groups.get(action) ?? 0) + 1);
 		}
 		const parts = [...groups].map(([action, count]) =>
@@ -52,7 +64,7 @@ export function describeActivity(tools: readonly string[], responseText?: string
 		);
 		return `${parts.join(", ")}…`;
 	}
-	const line = responseText
+	const line = (responseText === undefined ? undefined : displayText(responseText))
 		?.split("\n")
 		.find((candidate) => candidate.trim())
 		?.trim();

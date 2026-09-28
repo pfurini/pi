@@ -142,6 +142,16 @@ describe("turns, status and activity", () => {
 		expect(describeActivity([])).toBe("thinking…");
 	});
 
+	// T18-F4: the activity line is the child's streaming text, which kept its escape sequences.
+	it("describes the activity without the child's escape sequences", () => {
+		expect(describeActivity([], "before\u001b]52;c;aW5qZWN0ZWQ=\u0007after\r")).toBe("beforeafter");
+		expect(describeActivity([], "\u001b[2J\u001b[H")).toBe("thinking…");
+		// A lone control character is no escape sequence, and still never reaches the terminal.
+		expect(describeActivity([], "a\u0007b\u0000c")).toBe("abc");
+		// A child's model names its tool calls, so an unknown name is its text too.
+		expect(describeActivity(["probe\u001b]52;c;aW5qZWN0ZWQ=\u0007"])).toBe("probe…");
+	});
+
 	it("labels a model briefly for rows and fully for headers", () => {
 		expect(describeModel({ provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5" })).toEqual({
 			name: "haiku 4.5",

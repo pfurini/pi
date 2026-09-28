@@ -9,7 +9,7 @@
 import { Text } from "@earendil-works/pi-tui";
 import type { MessageRenderer } from "../../../extensions/types.ts";
 import type { NotificationDetails } from "../service/notifications.ts";
-import { type FormatTheme, formatCost, formatMs, formatTokenCount, formatTurns } from "./format.ts";
+import { displayText, type FormatTheme, formatCost, formatMs, formatTokenCount, formatTurns } from "./format.ts";
 
 /** Characters of the result's first line a collapsed notification shows. */
 const COLLAPSED_PREVIEW = 80;
@@ -20,7 +20,7 @@ function renderOne(details: NotificationDetails, expanded: boolean, theme: Forma
 	const failed = details.status === "error" || details.status === "stopped" || details.status === "aborted";
 	const icon = failed ? theme.fg("error", "✗") : theme.fg("success", "✓");
 	const statusText = failed ? details.status : details.status === "steered" ? "completed (steered)" : "completed";
-	let text = `${icon} ${theme.bold(details.description)} ${theme.fg("dim", statusText)}`;
+	let text = `${icon} ${theme.bold(displayText(details.description))} ${theme.fg("dim", statusText)}`;
 
 	const parts: string[] = [];
 	if (details.turnCount > 0) parts.push(formatTurns(details.turnCount, details.maxTurns));
@@ -33,13 +33,14 @@ function renderOne(details: NotificationDetails, expanded: boolean, theme: Forma
 		text += `\n  ${parts.map((part) => theme.fg("dim", part)).join(` ${theme.fg("dim", "·")} `)}`;
 	}
 
+	// The preview is the child's output: it prints with no escape sequence (T18-F4).
+	const preview = displayText(details.resultPreview);
 	if (expanded) {
-		for (const line of details.resultPreview.split("\n").slice(0, EXPANDED_LINES)) {
+		for (const line of preview.split("\n").slice(0, EXPANDED_LINES)) {
 			text += `\n${theme.fg("dim", `  ${line}`)}`;
 		}
 	} else {
-		const preview = details.resultPreview.split("\n")[0]?.slice(0, COLLAPSED_PREVIEW) ?? "";
-		text += `\n  ${theme.fg("dim", `⎿  ${preview}`)}`;
+		text += `\n  ${theme.fg("dim", `⎿  ${preview.split("\n")[0]?.slice(0, COLLAPSED_PREVIEW) ?? ""}`)}`;
 	}
 
 	if (details.outputFile) text += `\n  ${theme.fg("muted", `transcript: ${details.outputFile}`)}`;

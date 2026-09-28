@@ -247,6 +247,32 @@ describe("Agent result rendering", () => {
 		).toBe("Unknown agent type");
 	});
 
+	// T18-F4: the row printed the agent's output with its escape sequences.
+	it("prints a result's text without its escape sequences", async () => {
+		const harness = await parent();
+		const payload = "before\u001b]52;c;aW5qZWN0ZWQ=\u0007after";
+		const out = renderResult(
+			harness,
+			{ content: [{ type: "text", text: payload }], details: details({}) },
+			{ expanded: true },
+		);
+		expect(out).not.toContain("\u001b]52");
+		expect(out).not.toContain("\u0007");
+		expect(plain(out)).toContain("beforeafter");
+		expect(
+			renderResult(harness, { content: [{ type: "text", text: payload }], details: {} }, { isError: true }),
+		).toBe("beforeafter");
+		// A child's provider error becomes the run's error, and the row prints it (T18-F4 review).
+		for (const status of ["error", "aborted"] as const) {
+			const failed = renderResult(harness, {
+				content: [{ type: "text", text: "failed" }],
+				details: details({ status, error: payload }),
+			});
+			expect(failed, status).not.toContain("\u001b]52");
+			expect(plain(failed), status).toContain(": beforeafter");
+		}
+	});
+
 	it("names the model even when the child inherited the parent's", async () => {
 		const harness = await parent();
 		const result = await execute(harness, task("inherit task"));

@@ -13,7 +13,15 @@ import { resolveAgentKey } from "../definitions/registry.ts";
 import { existingSubagentService } from "../service/sessions.ts";
 import type { AgentToolDetails } from "../tools/details.ts";
 import { renderAgentNameLabel, resolveAgentColor } from "./colors.ts";
-import { fgPreservingNestedStyles, formatCost, formatMs, formatSessionTokens, formatTurns, SPINNER } from "./format.ts";
+import {
+	displayText,
+	fgPreservingNestedStyles,
+	formatCost,
+	formatMs,
+	formatSessionTokens,
+	formatTurns,
+	SPINNER,
+} from "./format.ts";
 
 /** How long one spinner frame shows. */
 const SPINNER_FRAME_MS = 80;
@@ -120,13 +128,13 @@ function renderResultRow(
 			);
 		case "error":
 			return new Text(
-				`${finishedHead(theme.fg("error", "✗"), details, theme)}\n${theme.fg("error", `  ⎿  Error: ${details.error ?? "unknown"}`)}`,
+				`${finishedHead(theme.fg("error", "✗"), details, theme)}\n${theme.fg("error", `  ⎿  Error: ${displayText(details.error ?? "unknown")}`)}`,
 				0,
 				0,
 			);
 		case "aborted":
 			return new Text(
-				`${finishedHead(theme.fg("error", "✗"), details, theme)}\n${theme.fg("warning", `  ⎿  Aborted${details.error ? `: ${details.error}` : ""}`)}`,
+				`${finishedHead(theme.fg("error", "✗"), details, theme)}\n${theme.fg("warning", `  ⎿  Aborted${details.error ? `: ${displayText(details.error)}` : ""}`)}`,
 				0,
 				0,
 			);
@@ -159,7 +167,8 @@ export function withAgentToolRenderers(definition: ToolDefinition, session: Agen
 	};
 	definition.renderResult = (result, { expanded, isPartial }, theme, context) => {
 		const details = result.details as AgentToolDetails | undefined;
-		const text = textOf(result.content);
+		// The result carries the agent's output as the model reads it; the row prints it safely (T18-F4).
+		const text = displayText(textOf(result.content));
 		// A failure before the agent started, or a result without details, shows its text (#199).
 		if (context.isError || !details?.status) return new Text(text, 0, 0);
 		const state = context.state as RowState | undefined;

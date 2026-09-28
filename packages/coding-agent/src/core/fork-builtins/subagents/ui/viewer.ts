@@ -37,6 +37,7 @@ import { type BadgeTheme, renderAgentName } from "./colors.ts";
 import {
 	activeTools,
 	describeActivity,
+	displayText,
 	type FormatTheme,
 	fgPreservingNestedStyles,
 	formatCost,
@@ -117,13 +118,16 @@ export interface ConversationViewerOptions {
 type ContentPart = { type?: string; text?: string; name?: string };
 type ViewerMessage = { role: string; content?: unknown; command?: string; output?: string };
 
+/** A message's text, safe to print: the child's output keeps no escape sequence (T18-F4). */
 function textOf(content: unknown): string {
-	if (typeof content === "string") return content;
+	if (typeof content === "string") return displayText(content);
 	if (!Array.isArray(content)) return "";
-	return (content as ContentPart[])
-		.filter((part) => part.type === "text" && typeof part.text === "string")
-		.map((part) => part.text)
-		.join("\n");
+	return displayText(
+		(content as ContentPart[])
+			.filter((part) => part.type === "text" && typeof part.text === "string")
+			.map((part) => part.text)
+			.join("\n"),
+	);
 }
 
 /**
@@ -449,7 +453,7 @@ export class ConversationViewer implements Component {
 	private steer(message: string): void {
 		void this.source.steer(this.view.id, message).then((outcome) => {
 			if (this.closed) return;
-			if (outcome.kind === "failed") this.steerError = `Failed to steer agent: ${outcome.error}`;
+			if (outcome.kind === "failed") this.steerError = `Failed to steer agent: ${displayText(outcome.error)}`;
 			else if (outcome.kind === "refused") this.steerError = `Could not steer agent: ${outcome.reason}`;
 			else return;
 			this.tui.requestRender();
@@ -527,7 +531,8 @@ export class ConversationViewer implements Component {
 					);
 				}
 				for (const part of parts) {
-					if (part.type === "toolCall") lines.push(theme.fg("muted", `  [Tool: ${part.name ?? "unknown"}]`));
+					if (part.type === "toolCall")
+						lines.push(theme.fg("muted", `  [Tool: ${displayText(part.name ?? "unknown")}]`));
 				}
 			} else if (message.role === "toolResult") {
 				const { text, elided } = capResult(textOf(message.content).trim());
@@ -541,8 +546,8 @@ export class ConversationViewer implements Component {
 				);
 				if (elided) lines.push(theme.fg("dim", truncationNote(elided)));
 			} else if (message.role === "bashExecution") {
-				lines.push(theme.fg("muted", `  $ ${message.command ?? ""}`));
-				const output = message.output?.trim();
+				lines.push(theme.fg("muted", `  $ ${displayText(message.command ?? "")}`));
+				const output = message.output === undefined ? undefined : displayText(message.output).trim();
 				if (output) {
 					// Command output is never Markdown; it takes the same cap as a tool result.
 					const { text, elided } = capResult(output);

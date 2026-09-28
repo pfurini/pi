@@ -41,6 +41,17 @@ describe("the notification renderer", () => {
 		expect(expanded.join("\n")).not.toContain("⎿");
 	});
 
+	// T18-F4: the preview is the child's output, which reached the terminal with its escape sequences.
+	it("prints the description and the result without escape sequences", () => {
+		const payload = "before\u001b]52;c;aW5qZWN0ZWQ=\u0007after";
+		for (const expanded of [false, true]) {
+			const out = render(agent(payload, { resultPreview: payload }), false, expanded);
+			expect(out).not.toContain("\u001b");
+			expect(out).not.toContain("\u0007");
+			expect(out.match(/beforeafter/g)).toHaveLength(2);
+		}
+	});
+
 	it("marks error, stopped and aborted with ✗, every other status with ✓, and steered as completed (steered)", () => {
 		const heading = (status: string) =>
 			renderNotification(agent("task", { status }), false, tagged, false).split("\n")[0];

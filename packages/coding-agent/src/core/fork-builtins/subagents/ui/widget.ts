@@ -19,6 +19,7 @@ import { type BadgeTheme, renderAgentName } from "./colors.ts";
 import {
 	activeTools,
 	describeActivity,
+	displayText,
 	type FormatTheme,
 	fgPreservingNestedStyles,
 	formatCost,
@@ -215,7 +216,7 @@ export class AgentWidget {
 				break;
 			case "error":
 				icon = theme.fg("error", "✗");
-				outcome = theme.fg("error", ` error${view.error ? `: ${view.error.slice(0, 60)}` : ""}`);
+				outcome = theme.fg("error", ` error${view.error ? `: ${displayText(view.error).slice(0, 60)}` : ""}`);
 				break;
 			default:
 				icon = theme.fg("error", "✗");

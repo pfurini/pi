@@ -336,6 +336,25 @@ describe("the conversation viewer", () => {
 		expect(strip(header)).toMatch(/● {2}Code Reviewer {3}test agent · 3 tools · \d+\.\ds \(running\) · 1\.2k token/);
 	});
 
+	// T18-F4: a child's output reached the terminal with its escape sequences.
+	it("prints a child's messages without their escape sequences, in every Markdown mode", () => {
+		const payload = "before\u001b]52;c;aW5qZWN0ZWQ=\u0007mid\u001b[2Aafter";
+		const messages: Message[] = [
+			{ role: "user", content: payload },
+			...assistant(payload),
+			...result(payload),
+			{ role: "bashExecution", command: "cat", output: payload } as unknown as Message,
+		];
+		for (const viewerMarkdown of ["off", "assistant", "all"] as const) {
+			const { viewer } = mount({ messages, settings: { viewerMarkdown }, rows: 200, theme: plainTheme });
+			const out = viewer.render(120).join("\n");
+			expect(out, viewerMarkdown).not.toContain("\u001b]52");
+			expect(out, viewerMarkdown).not.toContain("\u0007");
+			expect(out, viewerMarkdown).not.toContain("\u001b[2A");
+			expect(out.match(/beforemidafter/g)?.length, viewerMarkdown).toBeGreaterThanOrEqual(4);
+		}
+	});
+
 	describe("render width safety", () => {
 		const widths = [40, 80, 120, 216];
 		const fits = (messages: Message[], fields: ViewFields = {}, sizes = widths) => {
@@ -781,6 +800,20 @@ describe("the conversation viewer", () => {
 			expect(strip(viewer.render(80).join("\n"))).toContain("Failed to steer agent: Extension command not allowed");
 			viewer.handleInput(KEY.down);
 			expect(strip(viewer.render(80).join("\n"))).not.toContain("Failed to steer agent");
+		});
+
+		// T18-F4 review: a steer's failure is the child's text, which kept its escape sequences.
+		it("shows a failed steer's error without its escape sequences", async () => {
+			const { viewer, fake, tui } = mount({ theme: plainTheme });
+			fake.steer.mockResolvedValueOnce({ kind: "failed", error: "before\u001b]52;c;aW5qZWN0ZWQ=\u0007after" });
+			viewer.handleInput(KEY.enter);
+			for (const character of "hurry") viewer.handleInput(character);
+			viewer.handleInput(KEY.enter);
+			tui.requestRender.mockClear();
+			await vi.waitFor(() => expect(tui.requestRender).toHaveBeenCalled());
+			const out = viewer.render(80).join("\n");
+			expect(out).toContain("Failed to steer agent: beforeafter");
+			expect(out).not.toContain("\u001b]52");
 		});
 	});
 

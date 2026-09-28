@@ -1,0 +1,126 @@
+[
+	{
+		"id": "P1",
+		"what": "the service imports the adapter again",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "import { NestedRuntime } from \"./nested.ts\";",
+		"new": "import { NestedRuntime } from \"./nested.ts\";\nimport { AGENT_ENDED_CHANNEL } from \"../adapter/events.ts\";\nvoid AGENT_ENDED_CHANNEL;",
+		"files": ["test/fork-builtins/subagents/layering.test.ts"],
+		"expect": [
+			"test/fork-builtins/subagents/layering.test.ts > subagents module layering imports only from its own or a lower layer",
+			"test/fork-builtins/subagents/layering.test.ts > subagents module layering has no value import cycle"
+		]
+	},
+	{
+		"id": "P2",
+		"what": "a child's loader answers no child query",
+		"path": "src/core/fork-builtins/subagents/runner/lineage.ts",
+		"old": "(query as ChildSessionQuery).child = true;",
+		"new": "void query;",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": ["test/suite/fork-subagents-presentation.test.ts > presentation factory registers nothing in a child session"]
+	},
+	{
+		"id": "P3",
+		"what": "the adapter answers no bind request",
+		"path": "src/core/fork-builtins/subagents/adapter/install.ts",
+		"old": "if (request.sessionManager === session.sessionManager) request.session = session;",
+		"new": "void request;",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": [
+			"test/suite/fork-subagents-presentation.test.ts > presentation factory binds a top-level session and lists a running agent in the widget"
+		]
+	},
+	{
+		"id": "P4",
+		"what": "quit does not await the child teardown",
+		"path": "src/core/fork-builtins/subagents/ui/index.ts",
+		"old": "await (bound ? existingSubagentService(bound) : undefined)?.shutdown();",
+		"new": "void (bound ? existingSubagentService(bound) : undefined)?.shutdown();",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": [
+			"test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for every child's session_shutdown handlers"
+		]
+	},
+	{
+		"id": "P5",
+		"what": "/reload ends the agents",
+		"path": "src/core/fork-builtins/subagents/ui/index.ts",
+		"old": "if (event.reason === \"reload\") return;",
+		"new": "",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": [
+			"test/suite/fork-subagents-presentation.test.ts > presentation factory keeps the service and its running agent across /reload"
+		]
+	},
+	{
+		"id": "P6",
+		"what": "the subagent keys leave FORK_KEYBINDINGS",
+		"path": "src/core/fork-builtins/keybindings.ts",
+		"old": "\t...SUBAGENT_KEYBINDINGS,\n",
+		"new": "\t...(false ? SUBAGENT_KEYBINDINGS : {}),\n",
+		"files": ["test/fork-builtins/keybindings.test.ts"],
+		"expect": [
+			"test/fork-builtins/keybindings.test.ts > fork keybindings puts every fork id into Pi's keybinding table with its default",
+			"test/fork-builtins/keybindings.test.ts > fork keybindings takes a user's binding for a subagent key from keybindings.json"
+		]
+	},
+	{
+		"id": "P7",
+		"what": "FORK_OWNED_BUILTINS omits the factory",
+		"path": "src/core/fork-builtins.ts",
+		"old": "\t{ name: \"subagents\", factory: subagentsPresentation, hidden: true },\n",
+		"new": "",
+		"files": ["test/fork-builtins.test.ts"],
+		"expect": [
+			"test/fork-builtins.test.ts > fork built-in extensions registers the subagents presentation as a fork-owned built-in, with no tool"
+		]
+	},
+	{
+		"id": "P8",
+		"what": "a child that attaches after dispose is torn down unawaited",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "\t\t\tthis.teardowns.push(teardownChild(child));\n\t\t\treturn;",
+		"new": "\t\t\tvoid teardownChild(child);\n\t\t\treturn;",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": ["test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting"]
+	},
+	{
+		"id": "P9",
+		"what": "shutdown does not wait for children still starting",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "\t\t\tPromise.allSettled(starting),\n",
+		"new": "\t\t\tPromise.resolve(starting),\n",
+		"files": ["test/suite/fork-subagents-presentation.test.ts"],
+		"expect": ["test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting"]
+	},
+	{
+		"id": "P10",
+		"what": "shutdown waits for a starting child without a bound",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "timer = setTimeout(resolve, this.startupWaitMs);",
+		"new": "timer = setTimeout(resolve, 2 ** 30);",
+		"files": ["test/suite/fork-subagents-service.test.ts"],
+		"expect": [
+			"test/suite/fork-subagents-service.test.ts > ownership waits for a starting child only up to its bound, and tears it down when it attaches later"
+		]
+	},
+	{
+		"id": "P11",
+		"what": "the service re-exports presentation code",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "import { NestedRuntime } from \"./nested.ts\";",
+		"new": "import { NestedRuntime } from \"./nested.ts\";\nexport { SUBAGENT_KEYBINDING_IDS } from \"../ui/keybindings.ts\";",
+		"files": ["test/fork-builtins/subagents/layering.test.ts"],
+		"expect": ["test/fork-builtins/subagents/layering.test.ts > subagents module layering imports only from its own or a lower layer"]
+	},
+	{
+		"id": "P12",
+		"what": "the service imports presentation code for its side effects",
+		"path": "src/core/fork-builtins/subagents/service/service.ts",
+		"old": "import { NestedRuntime } from \"./nested.ts\";",
+		"new": "import { NestedRuntime } from \"./nested.ts\";\nimport \"../ui/keybindings.ts\";",
+		"files": ["test/fork-builtins/subagents/layering.test.ts"],
+		"expect": ["test/fork-builtins/subagents/layering.test.ts > subagents module layering imports only from its own or a lower layer"]
+	}
+]

@@ -1,0 +1,1435 @@
+diff --git a/packages/coding-agent/src/core/fork-builtins.ts b/packages/coding-agent/src/core/fork-builtins.ts
+index a85f6ce31..f57226dfb 100644
+--- a/packages/coding-agent/src/core/fork-builtins.ts
++++ b/packages/coding-agent/src/core/fork-builtins.ts
+@@ -20,6 +20,7 @@
+ import { createRequire } from "node:module";
+ import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
+ import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
++import subagentsPresentation from "./fork-builtins/subagents/ui/index.ts";
+ import { forkBuiltinsEnabled } from "./fork-builtins/switch.ts";
+ import pluginTokensave from "./fork-builtins/tokensave/index.ts";
+ 
+@@ -28,6 +29,7 @@ export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
+ /** Fork-owned built-ins that live in this package and register without a package resolution. */
+ export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [
+ 	{ name: "tokensave", factory: pluginTokensave, hidden: true },
++	{ name: "subagents", factory: subagentsPresentation, hidden: true },
+ ];
+ 
+ const requireFromHere = createRequire(import.meta.url);
+diff --git a/packages/coding-agent/src/core/fork-builtins/base-tools.ts b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+index d5b0657dd..160b4677b 100644
+--- a/packages/coding-agent/src/core/fork-builtins/base-tools.ts
++++ b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+@@ -27,13 +27,16 @@ import {
+ 	type AskUserQuestionToolOptions,
+ 	createAskUserQuestionToolDefinition,
+ } from "./ask-user-question/ask-user-question.ts";
++import { bridgeServiceEvents } from "./subagents/adapter/events.ts";
+ import { installSubagentAdapter } from "./subagents/adapter/install.ts";
++import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "./subagents/names.ts";
+ import { lineageForBus } from "./subagents/runner/lineage.ts";
+ import { registerSubagentSession } from "./subagents/service/service.ts";
+ import { createAgentToolDefinition } from "./subagents/tools/agent.ts";
+-import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "./subagents/tools/names.ts";
++import { createNestedToolDefinitions } from "./subagents/tools/nested.ts";
+ import { createResultToolDefinition } from "./subagents/tools/result.ts";
+ import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
++import { withAgentToolRenderers } from "./subagents/ui/tool-renderers.ts";
+ import { forkBuiltinsEnabled } from "./switch.ts";
+ import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
+ 
+@@ -63,8 +66,14 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
+ 		eventBus: options.eventBus,
+ 		lineage: lineageForBus(options.eventBus),
+ 		forkBaseToolNames: () => forkBaseToolNames(definitions),
++		// The wiring layer injects what the headless service must not import (F14).
++		createNestedTools: createNestedToolDefinitions,
++		onServiceCreated: bridgeServiceEvents,
+ 	});
+-	addOwned(definitions, AGENT_TOOL_NAME, () => createAgentToolDefinition(options.session, subagents));
++	// The renderers live with the presentation (ui/); the tool definition stays headless.
++	addOwned(definitions, AGENT_TOOL_NAME, () =>
++		withAgentToolRenderers(createAgentToolDefinition(options.session, subagents)),
++	);
+ 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
+ 	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
+ 	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);
+diff --git a/packages/coding-agent/src/core/fork-builtins/keybindings.ts b/packages/coding-agent/src/core/fork-builtins/keybindings.ts
+new file mode 100644
+index 000000000..d69651184
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/keybindings.ts
+@@ -0,0 +1,12 @@
++/**
++ * Fork-owned: every keybinding the fork's built-ins add (D37). `core/keybindings.ts` spreads
++ * `FORK_KEYBINDINGS` into `KEYBINDINGS` through its two fork lines, so a later built-in adds its keys
++ * here, with no edit of an upstream-owned file.
++ */
++import { ASK_USER_QUESTION_KEYBINDINGS } from "./ask-user-question/keybindings.ts";
++import { SUBAGENT_KEYBINDINGS } from "./subagents/ui/keybindings.ts";
++
++export const FORK_KEYBINDINGS = {
++	...ASK_USER_QUESTION_KEYBINDINGS,
++	...SUBAGENT_KEYBINDINGS,
++};
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/adapter/events.ts b/packages/coding-agent/src/core/fork-builtins/subagents/adapter/events.ts
+index 578d5aa1c..2885a8268 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/adapter/events.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/adapter/events.ts
+@@ -11,8 +11,8 @@
+ import type { EventBus } from "../../../event-bus.ts";
+ import type { SubagentRecord, TerminalStatus } from "../service/records.ts";
+ import type { SubagentService } from "../service/service.ts";
+-import { displayTokens } from "../service/usage.ts";
+ import type { SubagentSettings } from "../settings/settings.ts";
++import { displayTokens } from "../usage.ts";
+ import { publishRewriteMaps } from "./skill-agents.ts";
+ 
+ export const AGENT_ENDED_CHANNEL = "subagents:agent-ended";
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/adapter/install.ts b/packages/coding-agent/src/core/fork-builtins/subagents/adapter/install.ts
+index 75675b637..7a0bfb6ee 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/adapter/install.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/adapter/install.ts
+@@ -9,14 +9,23 @@
+ import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
+ import type { AgentSession } from "../../../agent-session.ts";
+ import type { EventBus } from "../../../event-bus.ts";
++import { PRESENTATION_BIND_CHANNEL, type PresentationBindRequest } from "../binding.ts";
+ import { serveRpc } from "./rpc.ts";
+ import { publishSessionRewriteMaps, serveSkillAgents } from "./skill-agents.ts";
+ 
+ const installed = new WeakSet<AgentSession>();
+ 
++/** Answers the presentation factory of the session that owns the asking context's session manager. */
++function servePresentation(session: AgentSession, bus: EventBus): () => void {
++	return bus.on(PRESENTATION_BIND_CHANNEL, (raw) => {
++		const request = raw as PresentationBindRequest;
++		if (request.sessionManager === session.sessionManager) request.session = session;
++	});
++}
++
+ export function installSubagentAdapter(session: AgentSession, bus: EventBus): void {
+ 	if (!installed.has(session)) {
+-		const offs = [serveRpc(session, bus), serveSkillAgents(session, bus)];
++		const offs = [serveRpc(session, bus), serveSkillAgents(session, bus), servePresentation(session, bus)];
+ 		const unregister = registerSessionResourceCleanup((sessionId) => {
+ 			if (sessionId !== session.sessionId) return;
+ 			for (const off of offs) off();
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/binding.ts b/packages/coding-agent/src/core/fork-builtins/subagents/binding.ts
+new file mode 100644
+index 000000000..ea68edbb1
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/binding.ts
+@@ -0,0 +1,26 @@
++/**
++ * Fork-owned: how the presentation factory (`ui/`) finds its session (probe). The factory receives
++ * only an extension API, whose `pi.events` forwards to the loader's event bus. Base tools install the
++ * bus adapter on that same bus, so the factory asks over it:
++ *
++ * - At load, it emits a `ChildSessionQuery`. The runner answers on every child loader's bus, so a
++ *   child session's factory registers nothing.
++ * - At `session_start` or `session_shutdown`, it emits a `PresentationBindRequest` with its context's
++ *   session manager. The adapter of the session that owns that manager answers with the session.
++ *
++ * Both channels are private to this module; emit is synchronous, so the answer is set on return.
++ */
++import type { AgentSession } from "../../agent-session.ts";
++
++export const CHILD_SESSION_QUERY_CHANNEL = "fork-subagents:child-session-query";
++export const PRESENTATION_BIND_CHANNEL = "fork-subagents:presentation-bind";
++
++export interface ChildSessionQuery {
++	child: boolean;
++}
++
++export interface PresentationBindRequest {
++	/** The asking context's session manager, which tells apart sessions that share one bus. */
++	readonly sessionManager: unknown;
++	session?: AgentSession;
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/names.ts b/packages/coding-agent/src/core/fork-builtins/subagents/names.ts
+similarity index 100%
+rename from packages/coding-agent/src/core/fork-builtins/subagents/tools/names.ts
+rename to packages/coding-agent/src/core/fork-builtins/subagents/names.ts
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/runner/lineage.ts b/packages/coding-agent/src/core/fork-builtins/subagents/runner/lineage.ts
+index a33720be1..13290870b 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/runner/lineage.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/runner/lineage.ts
+@@ -5,6 +5,7 @@
+  * the child runs as, under that agent's `allowed_subagents`, `isolated` and depth.
+  */
+ import type { EventBus } from "../../../event-bus.ts";
++import { CHILD_SESSION_QUERY_CHANNEL, type ChildSessionQuery } from "../binding.ts";
+ import type { SubagentRecord } from "../service/records.ts";
+ import type { SubagentService } from "../service/service.ts";
+ 
+@@ -22,6 +23,12 @@ export interface ChildLineage {
+ const lineages = new WeakMap<EventBus, ChildLineage>();
+ 
+ export function setLineage(bus: EventBus, lineage: ChildLineage): void {
++	// Once per bus: the child's presentation factory asks while it loads, before the child session exists.
++	if (!lineages.has(bus)) {
++		bus.on(CHILD_SESSION_QUERY_CHANNEL, (query) => {
++			(query as ChildSessionQuery).child = true;
++		});
++	}
+ 	lineages.set(bus, lineage);
+ }
+ 
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/runner/run.ts b/packages/coding-agent/src/core/fork-builtins/subagents/runner/run.ts
+index 446a736ca..25300b55f 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/runner/run.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/runner/run.ts
+@@ -20,7 +20,7 @@ import { createAgentSession } from "../../../sdk.ts";
+ import { getDefaultSessionDir, SessionManager } from "../../../session-manager.ts";
+ import { SettingsManager } from "../../../settings-manager.ts";
+ import type { AgentDefinition } from "../definitions/types.ts";
+-import { addUsage, emptyUsage } from "../service/usage.ts";
++import { addUsage, emptyUsage } from "../usage.ts";
+ import { type ChildLineage, setLineage } from "./lineage.ts";
+ import { readOnlyMemoryBlock, readWriteMemoryBlock } from "./memory.ts";
+ import { buildChildSystemPrompt, buildParentContext, detectEnvironment, preloadSkills } from "./prompt.ts";
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/runner/scope.ts b/packages/coding-agent/src/core/fork-builtins/subagents/runner/scope.ts
+index c447b1334..5aa7c8abe 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/runner/scope.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/runner/scope.ts
+@@ -22,7 +22,7 @@ import type { LoadExtensionsResult } from "../../../extensions/types.ts";
+ import type { DefaultResourceLoader } from "../../../resource-loader.ts";
+ import { allToolNames } from "../../../tools/index.ts";
+ import type { AgentDefinition } from "../definitions/types.ts";
+-import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../tools/names.ts";
++import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../names.ts";
+ 
+ /** The subagent tools a child receives only as its owner's injected nested tools (T6). */
+ export const SUBAGENT_TOOL_NAMES: readonly string[] = [AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME];
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service/nested.ts b/packages/coding-agent/src/core/fork-builtins/subagents/service/nested.ts
+index 6c0b2f504..2fbb9ef2b 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/service/nested.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/service/nested.ts
+@@ -8,24 +8,18 @@
+  * lookup sees only the records this agent spawned. A nested spawn blocks unless it asks for the
+  * background, occupies no pool slot, and ends when its parent's run ends.
+  *
+- * The runner injects the three nested tools into a permitted agent's child session as custom
++ * `tools/nested.ts` builds the three nested tools; the runner injects them into a permitted agent's child session as custom
+  * tools, so they override the child's own base tools of the same names. T8 serves a child
+  * session's RPC and skill-fork spawns through the same runtime.
+  */
+-import { type TSchema, Type } from "typebox";
+-import type { ToolDefinition } from "../../../extensions/types.ts";
+ import {
+ 	type AgentRegistry,
+ 	listedAgentTypes,
+ 	resolveAgentKey,
+ 	type SpawnTypeResolution,
+ } from "../definitions/registry.ts";
+-import { THINKING_LEVELS } from "../settings/models.ts";
+ import type { SubagentSettings } from "../settings/settings.ts";
+-import { errorText, foregroundOutcomeNote, partialOutputSuffix } from "../tools/common.ts";
+-import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../tools/names.ts";
+-import { statusNote } from "./notifications.ts";
+-import { isTerminal, type SubagentRecord } from "./records.ts";
++import type { SubagentRecord } from "./records.ts";
+ import type { SpawnRequest, SubagentService } from "./service.ts";
+ 
+ export class NestedRuntime {
+@@ -111,164 +105,3 @@ export class NestedRuntime {
+ 		return this.service.resume(ref, prompt, { ...options, owner: this.parent });
+ 	}
+ }
+-
+-function nestedText(text: string) {
+-	return { content: [{ type: "text" as const, text }], details: undefined };
+-}
+-
+-/**
+- * A nested result has no headline, so a note on a short outcome leads the text. `inline` is a
+- * foreground spawn or a resume, which hands back everything; `fetched` is a background child's
+- * result, which the parent may poll again.
+- */
+-function formatNested(record: SubagentRecord, position: "inline" | "fetched"): string {
+-	if (record.status === "error")
+-		return `Agent failed: ${record.error ?? "unknown error"}${partialOutputSuffix(record)}`;
+-	if (!isTerminal(record)) return `Agent ${record.id} is ${record.status}.`;
+-	const text = record.result?.trim() || record.error?.trim() || "No output.";
+-	const note = position === "inline" ? foregroundOutcomeNote(record.status) : statusNote(record.status);
+-	return note ? `Nested agent${note}.\n\n${text}` : text;
+-}
+-
+-function notOwned(ref: string): string {
+-	return `Nested agent not found or not owned by this parent: "${ref}".`;
+-}
+-
+-/** The arguments Pi validates against the nested `Agent` schema. */
+-interface NestedAgentParams {
+-	prompt: string;
+-	description: string;
+-	subagent_type: string;
+-	model?: string;
+-	thinking?: string;
+-	max_turns?: number;
+-	run_in_background?: boolean;
+-	resume?: string;
+-	isolated?: boolean;
+-	inherit_context?: boolean;
+-	isolation?: "off" | "worktree";
+-}
+-
+-function nestedAgentParameters(types: string[], worktreeIsolation: boolean): TSchema {
+-	return Type.Object({
+-		prompt: Type.String({ description: "Self-contained task for the nested agent." }),
+-		description: Type.String({ description: "Short 3-5 word task description." }),
+-		subagent_type: Type.String({
+-			description: `Allowed nested agent type. Available: ${types.join(", ") || "none"}.`,
+-		}),
+-		model: Type.Optional(Type.String({ description: "Optional provider/model override." })),
+-		thinking: Type.Optional(Type.String({ description: `Optional thinking level: ${THINKING_LEVELS.join(", ")}.` })),
+-		max_turns: Type.Optional(Type.Number({ minimum: 1 })),
+-		run_in_background: Type.Optional(
+-			Type.Boolean({
+-				description:
+-					"Defaults to false for nested spawns — the call blocks and returns the child's result inline. Set true only for work you will collect later with get_subagent_result; a detached child is stopped when you finish.",
+-			}),
+-		),
+-		resume: Type.Optional(Type.String({ description: "Resume a nested agent owned by this parent." })),
+-		isolated: Type.Optional(Type.Boolean()),
+-		inherit_context: Type.Optional(Type.Boolean()),
+-		...(worktreeIsolation && {
+-			isolation: Type.Optional(
+-				Type.Union([Type.Literal("off"), Type.Literal("worktree")], {
+-					description: 'Isolation mode. Default "off". "worktree" gives the nested agent its own git worktree.',
+-				}),
+-			),
+-		}),
+-	});
+-}
+-
+-const NESTED_RESULT_PARAMETERS = Type.Object({
+-	agent_id: Type.String(),
+-	wait: Type.Optional(Type.Boolean()),
+-});
+-
+-const NESTED_STEER_PARAMETERS = Type.Object({
+-	agent_id: Type.String(),
+-	message: Type.String(),
+-});
+-
+-/** The three tools a permitted agent's child session receives, bound to `runtime`'s parent record. */
+-export function createNestedToolDefinitions(runtime: NestedRuntime): ToolDefinition[] {
+-	const settings = runtime.service.settings;
+-	const agent: ToolDefinition = {
+-		name: AGENT_TOOL_NAME,
+-		label: "Agent",
+-		description:
+-			"Launch a child-safe nested subagent for bounded delegated work. " +
+-			"Only use agent types allowed by this parent agent; nesting is depth-limited.",
+-		parameters: nestedAgentParameters(runtime.allowedTypes(runtime.service.registry), settings.worktreeIsolation),
+-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+-			const args = params as NestedAgentParams;
+-			if (args.resume) {
+-				if (!runtime.get(args.resume)) return nestedText(notOwned(args.resume));
+-				try {
+-					const record = runtime.resume(args.resume, args.prompt, { background: false, signal });
+-					await runtime.waitForResult(record.id);
+-					return nestedText(formatNested(record, "inline"));
+-				} catch (error) {
+-					return nestedText(errorText(error));
+-				}
+-			}
+-			let record: SubagentRecord;
+-			try {
+-				record = await runtime.spawn({
+-					type: args.subagent_type,
+-					prompt: args.prompt,
+-					description: args.description,
+-					params: args,
+-					cwd: ctx.cwd,
+-					signal,
+-					toolCallId,
+-				});
+-			} catch (error) {
+-				return nestedText(errorText(error));
+-			}
+-			if (record.isBackground) return nestedText(`Nested agent started in background. Agent ID: ${record.id}`);
+-			await runtime.waitForResult(record.id);
+-			return nestedText(formatNested(record, "inline"));
+-		},
+-	};
+-
+-	const result: ToolDefinition<typeof NESTED_RESULT_PARAMETERS> = {
+-		name: GET_RESULT_TOOL_NAME,
+-		label: "Get Nested Agent Result",
+-		description: "Check or wait for a background nested agent owned by this parent.",
+-		parameters: NESTED_RESULT_PARAMETERS,
+-		async execute(_toolCallId, params, signal) {
+-			const record = runtime.get(params.agent_id);
+-			if (!record) return nestedText(notOwned(params.agent_id));
+-			if (params.wait) {
+-				try {
+-					await runtime.waitForResult(record.id, signal);
+-				} catch (error) {
+-					if (!signal?.aborted) return nestedText(errorText(error));
+-					return nestedText(`Stopped waiting for nested agent ${record.id}; it is still ${record.status}.`);
+-				}
+-			}
+-			return nestedText(formatNested(record, "fetched"));
+-		},
+-	};
+-
+-	const steer: ToolDefinition<typeof NESTED_STEER_PARAMETERS> = {
+-		name: STEER_TOOL_NAME,
+-		label: "Steer Nested Agent",
+-		description: "Send guidance to a running nested agent owned by this parent.",
+-		parameters: NESTED_STEER_PARAMETERS,
+-		async execute(_toolCallId, params) {
+-			const record = runtime.get(params.agent_id);
+-			if (!record || isTerminal(record)) {
+-				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
+-			}
+-			const waiting = !record.child;
+-			runtime.steer(record.id, params.message);
+-			return nestedText(
+-				waiting
+-					? `Steering message queued for nested agent ${record.id}.`
+-					: `Steering message sent to nested agent ${record.id}.`,
+-			);
+-		},
+-	};
+-
+-	return [agent, result, steer];
+-}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service/notifications.ts b/packages/coding-agent/src/core/fork-builtins/subagents/service/notifications.ts
+index 97940de1a..9fb342789 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/service/notifications.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/service/notifications.ts
+@@ -12,8 +12,8 @@
+  * late delivers the finished ones at its timeout and re-batches the stragglers.
+  */
+ import type { AgentSession } from "../../../agent-session.ts";
++import { displayTokens } from "../usage.ts";
+ import { isTerminal, type SubagentRecord } from "./records.ts";
+-import { displayTokens } from "./usage.ts";
+ 
+ export const NOTIFICATION_CUSTOM_TYPE = "subagent-notification";
+ 
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service/service.ts b/packages/coding-agent/src/core/fork-builtins/subagents/service/service.ts
+index 20259ca69..d026285f8 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/service/service.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/service/service.ts
+@@ -28,7 +28,6 @@ import type { AgentSession } from "../../../agent-session.ts";
+ import type { EventBus } from "../../../event-bus.ts";
+ import type { ToolDefinition } from "../../../extensions/types.ts";
+ import { getSkillSetController } from "../../../skills/skill-set-events.ts";
+-import { bridgeServiceEvents } from "../adapter/events.ts";
+ import { type AgentFileLoad, loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
+ import {
+ 	type AgentRegistry,
+@@ -51,7 +50,8 @@ import { transcriptPath } from "../runner/transcript.ts";
+ import { createWorktree, describeWorktreeOutcome, finishWorktree, worktreeBase } from "../runner/worktree.ts";
+ import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
+ import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
+-import { createNestedToolDefinitions, NestedRuntime } from "./nested.ts";
++import { addUsage, emptyUsage, PendingUsage } from "../usage.ts";
++import { NestedRuntime } from "./nested.ts";
+ import { GroupJoin, NotificationQueue } from "./notifications.ts";
+ import {
+ 	assignHandle,
+@@ -61,7 +61,6 @@ import {
+ 	type Tombstone,
+ 	TombstoneStore,
+ } from "./records.ts";
+-import { addUsage, emptyUsage, PendingUsage } from "./usage.ts";
+ 
+ /** The error of an agent its session's end cut short. */
+ export const SESSION_ENDED_ERROR = "The session ended before the agent finished.";
+@@ -89,6 +88,10 @@ export interface SubagentSessionContext {
+ 	forkBaseToolNames(): string[];
+ 	/** Warnings found before the service existed, such as while the tool description was built. */
+ 	warnings?: string[];
++	/** Builds the nested tools of a permitted agent; `base-tools.ts` passes `tools/nested.ts`'s builder. */
++	createNestedTools?(runtime: NestedRuntime): ToolDefinition[];
++	/** Called once with the service when it is built; `base-tools.ts` attaches the bus adapter's event bridge. */
++	onServiceCreated?(service: SubagentService): void;
+ }
+ 
+ /**
+@@ -140,6 +143,8 @@ export interface SubagentServiceOptions {
+ 	groupTimeoutMs?: number;
+ 	/** How long the rest of a partially delivered group waits. */
+ 	stragglerTimeoutMs?: number;
++	/** How long `shutdown()` waits for children still starting; `CHILD_SHUTDOWN_TIMEOUT_MS` by default. */
++	startupWaitMs?: number;
+ }
+ 
+ export type SubagentEvent =
+@@ -207,6 +212,9 @@ export class SubagentService {
+ 	private registryCache: AgentRegistry;
+ 	private agentFilesCache?: AgentFileLoad;
+ 	private disposed = false;
++	/** The child teardowns `dispose()` started; `shutdown()` awaits them. */
++	private readonly teardowns: Promise<void>[] = [];
++	private readonly startupWaitMs: number;
+ 
+ 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
+ 		this.session = session;
+@@ -227,6 +235,7 @@ export class SubagentService {
+ 			options.groupTimeoutMs ?? 30_000,
+ 			options.stragglerTimeoutMs ?? 15_000,
+ 		);
++		this.startupWaitMs = options.startupWaitMs ?? CHILD_SHUTDOWN_TIMEOUT_MS;
+ 		this.sweepTimer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
+ 		this.sweepTimer.unref?.();
+ 		// Compared at cleanup time: the session's own id is the one its dispose() reports.
+@@ -634,7 +643,7 @@ export class SubagentService {
+ 	/** The nested tools of a permitted agent below the depth cap; none otherwise (T6). */
+ 	private nestedToolsFor(record: SubagentRecord, settings: SubagentSettings): ToolDefinition[] | undefined {
+ 		const runtime = this.nested(record);
+-		return runtime.refusal(settings) === undefined ? createNestedToolDefinitions(runtime) : undefined;
++		return runtime.refusal(settings) === undefined ? this.context.createNestedTools?.(runtime) : undefined;
+ 	}
+ 
+ 	private attachChild(record: SubagentRecord, child: Child): void {
+@@ -643,7 +652,7 @@ export class SubagentService {
+ 		record.transcriptPath = child.transcriptPath;
+ 		// The owner ended while the child was being built: nothing may keep it.
+ 		if (this.disposed) {
+-			void teardownChild(child);
++			this.teardowns.push(teardownChild(child));
+ 			return;
+ 		}
+ 		for (const message of record.pendingSteers.splice(0)) this.deliverSteer(record, message);
+@@ -976,7 +985,7 @@ export class SubagentService {
+ 		for (const record of ended) record.abort?.abort();
+ 		for (const record of this.records.values()) this.detachSignal(record);
+ 		for (const record of this.records.values()) {
+-			if (record.child) void teardownChild(record.child);
++			if (record.child) this.teardowns.push(teardownChild(record.child));
+ 			record.child = undefined;
+ 			if (!record.run) {
+ 				for (const waiter of [...record.waiters]) waiter();
+@@ -985,6 +994,32 @@ export class SubagentService {
+ 		}
+ 		this.listeners.clear();
+ 	}
++
++	/**
++	 * Ends every agent as `dispose()` does, then waits at most `startupWaitMs` for children still
++	 * starting, and resolves once every teardown started by then has settled: each child's
++	 * `session_shutdown` handlers ran or hit their 3 s bound, and its session and loader are disposed.
++	 * A child that attaches after the wait is torn down when it attaches; `shutdown()` does not wait
++	 * for it. The presentation factory awaits `shutdown()` from the parent's `session_shutdown` (D21).
++	 */
++	async shutdown(): Promise<void> {
++		const starting = [...this.records.values()].flatMap((record) =>
++			record.run && !record.child ? [record.run] : [],
++		);
++		this.dispose();
++		// A child still being built attaches after dispose(), which starts its teardown there (attachChild).
++		let timer: ReturnType<typeof setTimeout> | undefined;
++		await Promise.race([
++			Promise.allSettled(starting),
++			new Promise<void>((resolve) => {
++				timer = setTimeout(resolve, this.startupWaitMs);
++				timer.unref?.();
++			}),
++		]);
++		clearTimeout(timer);
++		// Read after the wait, so it holds the teardowns of children that attached during it.
++		await Promise.allSettled(this.teardowns);
++	}
+ }
+ 
+ const sessionRecords = new WeakMap<AgentSession, SubagentSessionContext>();
+@@ -1040,6 +1075,11 @@ export function subagentServiceFor(session: AgentSession): SubagentService | und
+ 	if (!context) return undefined;
+ 	service = new SubagentService(session, context);
+ 	services.set(session, service);
+-	bridgeServiceEvents(service);
++	context.onServiceCreated?.(service);
+ 	return service;
+ }
++
++/** The session's subagent service when one was built; never builds one. */
++export function existingSubagentService(session: AgentSession): SubagentService | undefined {
++	return services.get(session);
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/agent.ts b/packages/coding-agent/src/core/fork-builtins/subagents/tools/agent.ts
+index 0537dc994..a2e566929 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/tools/agent.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/tools/agent.ts
+@@ -19,6 +19,7 @@ import { type TSchema, Type } from "typebox";
+ import type { AgentSession } from "../../../agent-session.ts";
+ import type { ToolDefinition } from "../../../extensions/types.ts";
+ import { type AgentRegistry, buildAgentRegistry, listedAgentTypes } from "../definitions/registry.ts";
++import { AGENT_TOOL_NAME } from "../names.ts";
+ import { WorktreeStartError } from "../runner/worktree.ts";
+ import type { SubagentRecord } from "../service/records.ts";
+ import {
+@@ -43,7 +44,6 @@ import {
+ 	textResult,
+ } from "./common.ts";
+ import { buildAgentToolDescription } from "./description.ts";
+-import { AGENT_TOOL_NAME } from "./names.ts";
+ 
+ /** The arguments Pi validates against the schema `parameters` returns. */
+ interface AgentToolParams {
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/common.ts b/packages/coding-agent/src/core/fork-builtins/subagents/tools/common.ts
+index 8f24ef7e3..a12e20a14 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/tools/common.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/tools/common.ts
+@@ -7,7 +7,7 @@
+ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+ import type { SubagentRecord, SubagentStatus } from "../service/records.ts";
+ import type { SubagentService } from "../service/service.ts";
+-import { displayTokens } from "../service/usage.ts";
++import { displayTokens } from "../usage.ts";
+ 
+ /**
+  * A text result. Under `reportUsage` it carries the subagent spend the session has not counted
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/nested.ts b/packages/coding-agent/src/core/fork-builtins/subagents/tools/nested.ts
+new file mode 100644
+index 000000000..ac6f2a3ea
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/tools/nested.ts
+@@ -0,0 +1,174 @@
++/**
++ * Fork-owned: the three nested tools a permitted agent's child session receives (plan T6), bound to
++ * one `NestedRuntime`. `base-tools.ts` hands `createNestedToolDefinitions` to the service through the
++ * session context, so the service layer builds no tool definition itself.
++ */
++import { type TSchema, Type } from "typebox";
++import type { ToolDefinition } from "../../../extensions/types.ts";
++import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../names.ts";
++import type { NestedRuntime } from "../service/nested.ts";
++import { statusNote } from "../service/notifications.ts";
++import { isTerminal, type SubagentRecord } from "../service/records.ts";
++import { THINKING_LEVELS } from "../settings/models.ts";
++import { errorText, foregroundOutcomeNote, partialOutputSuffix } from "./common.ts";
++
++function nestedText(text: string) {
++	return { content: [{ type: "text" as const, text }], details: undefined };
++}
++
++/**
++ * A nested result has no headline, so a note on a short outcome leads the text. `inline` is a
++ * foreground spawn or a resume, which hands back everything; `fetched` is a background child's
++ * result, which the parent may poll again.
++ */
++function formatNested(record: SubagentRecord, position: "inline" | "fetched"): string {
++	if (record.status === "error")
++		return `Agent failed: ${record.error ?? "unknown error"}${partialOutputSuffix(record)}`;
++	if (!isTerminal(record)) return `Agent ${record.id} is ${record.status}.`;
++	const text = record.result?.trim() || record.error?.trim() || "No output.";
++	const note = position === "inline" ? foregroundOutcomeNote(record.status) : statusNote(record.status);
++	return note ? `Nested agent${note}.\n\n${text}` : text;
++}
++
++function notOwned(ref: string): string {
++	return `Nested agent not found or not owned by this parent: "${ref}".`;
++}
++
++/** The arguments Pi validates against the nested `Agent` schema. */
++interface NestedAgentParams {
++	prompt: string;
++	description: string;
++	subagent_type: string;
++	model?: string;
++	thinking?: string;
++	max_turns?: number;
++	run_in_background?: boolean;
++	resume?: string;
++	isolated?: boolean;
++	inherit_context?: boolean;
++	isolation?: "off" | "worktree";
++}
++
++function nestedAgentParameters(types: string[], worktreeIsolation: boolean): TSchema {
++	return Type.Object({
++		prompt: Type.String({ description: "Self-contained task for the nested agent." }),
++		description: Type.String({ description: "Short 3-5 word task description." }),
++		subagent_type: Type.String({
++			description: `Allowed nested agent type. Available: ${types.join(", ") || "none"}.`,
++		}),
++		model: Type.Optional(Type.String({ description: "Optional provider/model override." })),
++		thinking: Type.Optional(Type.String({ description: `Optional thinking level: ${THINKING_LEVELS.join(", ")}.` })),
++		max_turns: Type.Optional(Type.Number({ minimum: 1 })),
++		run_in_background: Type.Optional(
++			Type.Boolean({
++				description:
++					"Defaults to false for nested spawns — the call blocks and returns the child's result inline. Set true only for work you will collect later with get_subagent_result; a detached child is stopped when you finish.",
++			}),
++		),
++		resume: Type.Optional(Type.String({ description: "Resume a nested agent owned by this parent." })),
++		isolated: Type.Optional(Type.Boolean()),
++		inherit_context: Type.Optional(Type.Boolean()),
++		...(worktreeIsolation && {
++			isolation: Type.Optional(
++				Type.Union([Type.Literal("off"), Type.Literal("worktree")], {
++					description: 'Isolation mode. Default "off". "worktree" gives the nested agent its own git worktree.',
++				}),
++			),
++		}),
++	});
++}
++
++const NESTED_RESULT_PARAMETERS = Type.Object({
++	agent_id: Type.String(),
++	wait: Type.Optional(Type.Boolean()),
++});
++
++const NESTED_STEER_PARAMETERS = Type.Object({
++	agent_id: Type.String(),
++	message: Type.String(),
++});
++
++/** The three tools a permitted agent's child session receives, bound to `runtime`'s parent record. */
++export function createNestedToolDefinitions(runtime: NestedRuntime): ToolDefinition[] {
++	const settings = runtime.service.settings;
++	const agent: ToolDefinition = {
++		name: AGENT_TOOL_NAME,
++		label: "Agent",
++		description:
++			"Launch a child-safe nested subagent for bounded delegated work. " +
++			"Only use agent types allowed by this parent agent; nesting is depth-limited.",
++		parameters: nestedAgentParameters(runtime.allowedTypes(runtime.service.registry), settings.worktreeIsolation),
++		async execute(toolCallId, params, signal, _onUpdate, ctx) {
++			const args = params as NestedAgentParams;
++			if (args.resume) {
++				if (!runtime.get(args.resume)) return nestedText(notOwned(args.resume));
++				try {
++					const record = runtime.resume(args.resume, args.prompt, { background: false, signal });
++					await runtime.waitForResult(record.id);
++					return nestedText(formatNested(record, "inline"));
++				} catch (error) {
++					return nestedText(errorText(error));
++				}
++			}
++			let record: SubagentRecord;
++			try {
++				record = await runtime.spawn({
++					type: args.subagent_type,
++					prompt: args.prompt,
++					description: args.description,
++					params: args,
++					cwd: ctx.cwd,
++					signal,
++					toolCallId,
++				});
++			} catch (error) {
++				return nestedText(errorText(error));
++			}
++			if (record.isBackground) return nestedText(`Nested agent started in background. Agent ID: ${record.id}`);
++			await runtime.waitForResult(record.id);
++			return nestedText(formatNested(record, "inline"));
++		},
++	};
++
++	const result: ToolDefinition<typeof NESTED_RESULT_PARAMETERS> = {
++		name: GET_RESULT_TOOL_NAME,
++		label: "Get Nested Agent Result",
++		description: "Check or wait for a background nested agent owned by this parent.",
++		parameters: NESTED_RESULT_PARAMETERS,
++		async execute(_toolCallId, params, signal) {
++			const record = runtime.get(params.agent_id);
++			if (!record) return nestedText(notOwned(params.agent_id));
++			if (params.wait) {
++				try {
++					await runtime.waitForResult(record.id, signal);
++				} catch (error) {
++					if (!signal?.aborted) return nestedText(errorText(error));
++					return nestedText(`Stopped waiting for nested agent ${record.id}; it is still ${record.status}.`);
++				}
++			}
++			return nestedText(formatNested(record, "fetched"));
++		},
++	};
++
++	const steer: ToolDefinition<typeof NESTED_STEER_PARAMETERS> = {
++		name: STEER_TOOL_NAME,
++		label: "Steer Nested Agent",
++		description: "Send guidance to a running nested agent owned by this parent.",
++		parameters: NESTED_STEER_PARAMETERS,
++		async execute(_toolCallId, params) {
++			const record = runtime.get(params.agent_id);
++			if (!record || isTerminal(record)) {
++				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
++			}
++			const waiting = !record.child;
++			runtime.steer(record.id, params.message);
++			return nestedText(
++				waiting
++					? `Steering message queued for nested agent ${record.id}.`
++					: `Steering message sent to nested agent ${record.id}.`,
++			);
++		},
++	};
++
++	return [agent, result, steer];
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/result.ts b/packages/coding-agent/src/core/fork-builtins/subagents/tools/result.ts
+index f4d444ddf..e8aa44d99 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/tools/result.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/tools/result.ts
+@@ -11,6 +11,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
+ import { Type } from "typebox";
+ import type { AgentSession } from "../../../agent-session.ts";
+ import type { ToolDefinition } from "../../../extensions/types.ts";
++import { GET_RESULT_TOOL_NAME } from "../names.ts";
+ import { statusNote } from "../service/notifications.ts";
+ import { isTerminal, type SubagentRecord } from "../service/records.ts";
+ import { notFound, requireService } from "../service/service.ts";
+@@ -24,7 +25,6 @@ import {
+ 	partialOutputSuffix,
+ 	textResult,
+ } from "./common.ts";
+-import { GET_RESULT_TOOL_NAME } from "./names.ts";
+ 
+ const RESULT_PARAMETERS = Type.Object({
+ 	agent_id: Type.String({
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/tools/steer.ts b/packages/coding-agent/src/core/fork-builtins/subagents/tools/steer.ts
+index a4dd75fa4..6ca0b69d6 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/tools/steer.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/tools/steer.ts
+@@ -6,10 +6,10 @@
+ import { Type } from "typebox";
+ import type { AgentSession } from "../../../agent-session.ts";
+ import type { ToolDefinition } from "../../../extensions/types.ts";
++import { STEER_TOOL_NAME } from "../names.ts";
+ import { isTerminal } from "../service/records.ts";
+ import { notFound, requireService } from "../service/service.ts";
+ import { contextPercent, formatCost, formatTokens, textResult } from "./common.ts";
+-import { STEER_TOOL_NAME } from "./names.ts";
+ 
+ const STEER_PARAMETERS = Type.Object({
+ 	agent_id: Type.String({
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/ui/index.ts b/packages/coding-agent/src/core/fork-builtins/subagents/ui/index.ts
+new file mode 100644
+index 000000000..16def2f9c
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/ui/index.ts
+@@ -0,0 +1,75 @@
++/**
++ * Fork-owned: the subagents presentation factory (probe). `FORK_OWNED_BUILTINS` lists it, so every
++ * `DefaultResourceLoader` loads it. In a child session it registers nothing. In a top-level session
++ * it finds its session through the bus (`../binding.ts`) at `session_start`, or at `session_shutdown`
++ * when no mode ever bound the session. Its `session_shutdown` handler awaits the service's child
++ * teardown, except on `/reload`, which keeps the service and its agents.
++ */
++import { Text } from "@earendil-works/pi-tui";
++import type { AgentSession } from "../../../agent-session.ts";
++import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
++import {
++	CHILD_SESSION_QUERY_CHANNEL,
++	type ChildSessionQuery,
++	PRESENTATION_BIND_CHANNEL,
++	type PresentationBindRequest,
++} from "../binding.ts";
++import { NOTIFICATION_CUSTOM_TYPE } from "../service/notifications.ts";
++import { isTerminal } from "../service/records.ts";
++import { existingSubagentService, subagentServiceFor } from "../service/service.ts";
++
++export default function subagentsPresentation(pi: ExtensionAPI): void {
++	// A child's presentation is its parent's: the child registers no command, renderer or handler.
++	const query: ChildSessionQuery = { child: false };
++	pi.events.emit(CHILD_SESSION_QUERY_CHANNEL, query);
++	if (query.child) return;
++
++	let session: AgentSession | undefined;
++	let unbind: (() => void) | undefined;
++
++	const resolve = (ctx: ExtensionContext): AgentSession | undefined => {
++		if (session) return session;
++		const request: PresentationBindRequest = { sessionManager: ctx.sessionManager };
++		pi.events.emit(PRESENTATION_BIND_CHANNEL, request);
++		session = request.session;
++		return session;
++	};
++
++	pi.registerMessageRenderer(NOTIFICATION_CUSTOM_TYPE, (message, _options, theme) => {
++		const text = typeof message.content === "string" ? message.content : "";
++		return new Text(theme.fg("dim", text.split("\n")[0] ?? ""), 0, 0);
++	});
++
++	pi.registerCommand("agents", {
++		description: "Manage subagents",
++		handler: async (_args, ctx) => {
++			const bound = resolve(ctx);
++			const service = bound ? subagentServiceFor(bound) : undefined;
++			ctx.ui.notify(`${service?.list().length ?? 0} agents`, "info");
++		},
++	});
++
++	pi.on("session_start", (_event, ctx) => {
++		const bound = resolve(ctx);
++		if (!bound || ctx.mode !== "tui") return;
++		const service = subagentServiceFor(bound);
++		if (!service) return;
++		const render = () => {
++			const live = service.list().filter((record) => !isTerminal(record));
++			ctx.ui.setWidget(
++				"agents",
++				live.length ? live.map((record) => `${record.type}: ${record.description}`) : undefined,
++			);
++		};
++		unbind = service.subscribe(render);
++	});
++
++	pi.on("session_shutdown", async (event, ctx) => {
++		unbind?.();
++		unbind = undefined;
++		// `/reload` keeps the session, its service and its agents (phase 1 plan M3).
++		if (event.reason === "reload") return;
++		const bound = resolve(ctx);
++		await (bound ? existingSubagentService(bound) : undefined)?.shutdown();
++	});
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/ui/keybindings.ts b/packages/coding-agent/src/core/fork-builtins/subagents/ui/keybindings.ts
+new file mode 100644
+index 000000000..62cce53e3
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/ui/keybindings.ts
+@@ -0,0 +1,35 @@
++/**
++ * Fork-owned: the conversation viewer's own keys (D37). `fork-builtins/keybindings.ts` merges them into
++ * `FORK_KEYBINDINGS`, which `core/keybindings.ts` spreads into `KEYBINDINGS`, so users rebind them in
++ * `keybindings.json` like any other Pi key. Every other key the presentation handles reuses an
++ * existing id.
++ */
++import type { KeybindingDefinition } from "@earendil-works/pi-tui";
++
++export const SUBAGENT_KEYBINDING_IDS = {
++	stop: "app.subagents.stop",
++	markdownMode: "app.subagents.markdownMode",
++	top: "app.subagents.top",
++	bottom: "app.subagents.bottom",
++} as const;
++
++type SubagentKeybindingId = (typeof SUBAGENT_KEYBINDING_IDS)[keyof typeof SUBAGENT_KEYBINDING_IDS];
++
++declare module "@earendil-works/pi-tui" {
++	interface Keybindings {
++		"app.subagents.stop": true;
++		"app.subagents.markdownMode": true;
++		"app.subagents.top": true;
++		"app.subagents.bottom": true;
++	}
++}
++
++export const SUBAGENT_KEYBINDINGS = {
++	[SUBAGENT_KEYBINDING_IDS.stop]: { defaultKeys: "x", description: "Stop the viewed subagent (press twice)" },
++	[SUBAGENT_KEYBINDING_IDS.markdownMode]: {
++		defaultKeys: "m",
++		description: "Cycle the subagent viewer's Markdown mode",
++	},
++	[SUBAGENT_KEYBINDING_IDS.top]: { defaultKeys: "home", description: "Scroll the subagent viewer to the top" },
++	[SUBAGENT_KEYBINDING_IDS.bottom]: { defaultKeys: "end", description: "Scroll the subagent viewer to the bottom" },
++} satisfies Record<SubagentKeybindingId, KeybindingDefinition>;
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/ui/tool-renderers.ts b/packages/coding-agent/src/core/fork-builtins/subagents/ui/tool-renderers.ts
+new file mode 100644
+index 000000000..8b87a3170
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/ui/tool-renderers.ts
+@@ -0,0 +1,34 @@
++/**
++ * Fork-owned: the `Agent` tool's call and result rows (probe). `base-tools.ts` attaches them to the
++ * headless definition, so `tools/` imports no presentation code. The definition's `description` and
++ * `parameters` are lazy getters that read the session; attaching in place keeps registration from
++ * reading it.
++ */
++import { Text } from "@earendil-works/pi-tui";
++import type { ToolDefinition } from "../../../extensions/types.ts";
++
++interface AgentCallArgs {
++	description?: string;
++	subagent_type?: string;
++}
++
++function textOf(content: unknown): string {
++	return Array.isArray(content)
++		? content.map((part) => (part?.type === "text" && typeof part.text === "string" ? part.text : "")).join("")
++		: "";
++}
++
++/** Sets `renderCall` and `renderResult` on `definition` in place and returns it. */
++export function withAgentToolRenderers(definition: ToolDefinition): ToolDefinition {
++	definition.renderCall = (args, theme) => {
++		const { description, subagent_type } = args as AgentCallArgs;
++		const title = theme.fg("toolTitle", theme.bold(subagent_type ?? "Agent"));
++		return new Text(description ? `${title}  ${theme.fg("muted", description)}` : title, 0, 0);
++	};
++	definition.renderResult = (result, { expanded }, theme) => {
++		const lines = textOf(result.content).split("\n");
++		const shown = expanded ? lines : lines.slice(0, 1);
++		return new Text(theme.fg("dim", shown.join("\n")), 0, 0);
++	};
++	return definition;
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service/usage.ts b/packages/coding-agent/src/core/fork-builtins/subagents/usage.ts
+similarity index 100%
+rename from packages/coding-agent/src/core/fork-builtins/subagents/service/usage.ts
+rename to packages/coding-agent/src/core/fork-builtins/subagents/usage.ts
+diff --git a/packages/coding-agent/src/core/keybindings.ts b/packages/coding-agent/src/core/keybindings.ts
+index ee0a4c659..fd588c984 100644
+--- a/packages/coding-agent/src/core/keybindings.ts
++++ b/packages/coding-agent/src/core/keybindings.ts
+@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from "fs";
+ import { join } from "path";
+ import { getAgentDir } from "../config.ts";
+ import { stripBom } from "../utils/text.ts";
+-import { ASK_USER_QUESTION_KEYBINDINGS } from "./fork-builtins/ask-user-question/keybindings.ts";
++import { FORK_KEYBINDINGS } from "./fork-builtins/keybindings.ts";
+ 
+ export interface AppKeybindings {
+ 	"app.interrupt": true;
+@@ -78,7 +78,7 @@ const windowsKeybindings = useWindowsKeybindings();
+ 
+ export const KEYBINDINGS = {
+ 	...TUI_KEYBINDINGS,
+-	...ASK_USER_QUESTION_KEYBINDINGS,
++	...FORK_KEYBINDINGS,
+ 	"tui.editor.undo": {
+ 		...TUI_KEYBINDINGS["tui.editor.undo"],
+ 		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+diff --git a/packages/coding-agent/test/fork-builtins.test.ts b/packages/coding-agent/test/fork-builtins.test.ts
+index a9733e527..3ff3db23f 100644
+--- a/packages/coding-agent/test/fork-builtins.test.ts
++++ b/packages/coding-agent/test/fork-builtins.test.ts
+@@ -82,6 +82,18 @@ describe("fork built-in extensions", () => {
+ 		expect(builtIn?.commands.has("tokensave-mode")).toBe(true);
+ 	});
+ 
++	it("registers the subagents presentation as a fork-owned built-in, with no tool", async () => {
++		vi.stubEnv("PI_FORK_BUILTINS", "on");
++		const subject = loader([]);
++		await subject.reload();
++
++		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:subagents>");
++		expect(builtIn?.hidden).toBe(true);
++		expect(builtIn?.commands.has("agents")).toBe(true);
++		expect(builtIn?.messageRenderers.has("subagent-notification")).toBe(true);
++		expect(builtIn?.tools.size).toBe(0);
++	});
++
+ 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {
+ 		vi.stubEnv("PI_FORK_BUILTINS", "off");
+ 		const subject = loader();
+diff --git a/packages/coding-agent/test/fork-builtins/keybindings.test.ts b/packages/coding-agent/test/fork-builtins/keybindings.test.ts
+new file mode 100644
+index 000000000..6024c5e1c
+--- /dev/null
++++ b/packages/coding-agent/test/fork-builtins/keybindings.test.ts
+@@ -0,0 +1,40 @@
++/**
++ * Fork-owned: the fork's keybindings reach Pi's keybinding table through `FORK_KEYBINDINGS` (D37), so
++ * users rebind them in `keybindings.json` like any other Pi key.
++ */
++import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, describe, expect, it } from "vitest";
++import { FORK_KEYBINDINGS } from "../../src/core/fork-builtins/keybindings.ts";
++import { KEYBINDINGS, KeybindingsManager } from "../../src/core/keybindings.ts";
++
++const dirs: string[] = [];
++
++afterEach(() => {
++	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
++});
++
++describe("fork keybindings", () => {
++	it("puts every fork id into Pi's keybinding table with its default", () => {
++		for (const [id, definition] of Object.entries(FORK_KEYBINDINGS)) {
++			expect(KEYBINDINGS[id as keyof typeof KEYBINDINGS], id).toEqual(definition);
++		}
++		const manager = new KeybindingsManager();
++		expect(manager.getKeys("app.subagents.stop")).toEqual(["x"]);
++		expect(manager.getKeys("app.subagents.markdownMode")).toEqual(["m"]);
++		expect(manager.getKeys("app.subagents.top")).toEqual(["home"]);
++		expect(manager.getKeys("app.subagents.bottom")).toEqual(["end"]);
++		expect(manager.getKeys("app.askUserQuestion.notes")).toEqual(["n"]);
++	});
++
++	it("takes a user's binding for a subagent key from keybindings.json", () => {
++		const agentDir = mkdtempSync(join(tmpdir(), "pi-fork-keys-"));
++		dirs.push(agentDir);
++		writeFileSync(join(agentDir, "keybindings.json"), JSON.stringify({ "app.subagents.stop": "s" }));
++		const manager = KeybindingsManager.create(agentDir);
++		expect(manager.getKeys("app.subagents.stop")).toEqual(["s"]);
++		expect(manager.matches("s", "app.subagents.stop")).toBe(true);
++		expect(manager.matches("x", "app.subagents.stop")).toBe(false);
++	});
++});
+diff --git a/packages/coding-agent/test/fork-builtins/subagents/layering.test.ts b/packages/coding-agent/test/fork-builtins/subagents/layering.test.ts
+new file mode 100644
+index 000000000..d54ac60e3
+--- /dev/null
++++ b/packages/coding-agent/test/fork-builtins/subagents/layering.test.ts
+@@ -0,0 +1,102 @@
++/**
++ * Fork-owned: the subagents module's layering (phase 1 review F14). Value imports only point down:
++ * the module root, `definitions/` and `settings/` (0), `runner/` (1), `service/` (2), `tools/` and
++ * `adapter/` (3), `ui/` (4). No value import cycle exists. Imports, re-exports and side-effect imports
++ * count; type-only ones are erased and exempt.
++ */
++import { readdirSync, readFileSync, statSync } from "node:fs";
++import { dirname, join, relative, resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++
++const ROOT = resolve(__dirname, "../../../src/core/fork-builtins/subagents");
++
++const LAYERS: Record<string, number> = {
++	definitions: 0,
++	settings: 0,
++	runner: 1,
++	service: 2,
++	tools: 3,
++	adapter: 3,
++	ui: 4,
++};
++
++function files(dir: string): string[] {
++	return readdirSync(dir).flatMap((name) => {
++		const path = join(dir, name);
++		if (statSync(path).isDirectory()) return files(path);
++		return path.endsWith(".ts") ? [path] : [];
++	});
++}
++
++function layerOf(path: string): number {
++	const top = relative(ROOT, path).split("/");
++	return top.length === 1 ? 0 : (LAYERS[top[0]] ?? Number.NaN);
++}
++
++/** Whether `import { … }` or `export { … }` names only types, so the statement is erased. */
++function onlyTypes(names: string): boolean {
++	const inner = names.trim();
++	return (
++		inner.startsWith("{") &&
++		inner
++			.slice(1, -1)
++			.split(",")
++			.every((name) => !name.trim() || /^type\s/.test(name.trim()))
++	);
++}
++
++/** The module files each file imports or re-exports at run time, side-effect imports included. */
++function valueImports(): Map<string, string[]> {
++	const graph = new Map<string, string[]>();
++	for (const file of files(ROOT)) {
++		const source = readFileSync(file, "utf8");
++		const specs: string[] = [];
++		for (const [, typeOnly, names, spec] of source.matchAll(
++			// `[^;]` keeps a match inside one statement, so `export type X = …;` never swallows a later re-export.
++			/^(?:import|export)\s+(type\s+)?([^;]*?)\s+from\s+"([^"]+)";/gm,
++		)) {
++			if (!typeOnly && !onlyTypes(names)) specs.push(spec);
++		}
++		for (const [, spec] of source.matchAll(/^import\s+"([^"]+)";/gm)) specs.push(spec);
++		const edges = specs
++			.filter((spec) => spec.startsWith("."))
++			.map((spec) => resolve(dirname(file), spec))
++			.filter((target) => target.startsWith(`${ROOT}/`));
++		graph.set(file, edges);
++	}
++	return graph;
++}
++
++describe("subagents module layering", () => {
++	it("imports only from its own or a lower layer", () => {
++		const upward: string[] = [];
++		for (const [file, edges] of valueImports()) {
++			for (const target of edges) {
++				if (!(layerOf(target) <= layerOf(file)))
++					upward.push(`${relative(ROOT, file)} -> ${relative(ROOT, target)}`);
++			}
++		}
++		expect(upward).toEqual([]);
++	});
++
++	it("has no value import cycle", () => {
++		const graph = valueImports();
++		const cycles: string[] = [];
++		const state = new Map<string, "open" | "done">();
++		const stack: string[] = [];
++		const visit = (node: string) => {
++			if (state.get(node) === "done") return;
++			if (state.get(node) === "open") {
++				cycles.push([...stack.slice(stack.indexOf(node)), node].map((path) => relative(ROOT, path)).join(" -> "));
++				return;
++			}
++			state.set(node, "open");
++			stack.push(node);
++			for (const next of graph.get(node) ?? []) visit(next);
++			stack.pop();
++			state.set(node, "done");
++		};
++		for (const node of graph.keys()) visit(node);
++		expect(cycles).toEqual([]);
++	});
++});
+diff --git a/packages/coding-agent/test/fork-builtins/subagents/service.test.ts b/packages/coding-agent/test/fork-builtins/subagents/service.test.ts
+index 49fb1e826..ac5af8b00 100644
+--- a/packages/coding-agent/test/fork-builtins/subagents/service.test.ts
++++ b/packages/coding-agent/test/fork-builtins/subagents/service.test.ts
+@@ -15,7 +15,7 @@ import {
+ 	type Tombstone,
+ 	TombstoneStore,
+ } from "../../../src/core/fork-builtins/subagents/service/records.ts";
+-import { displayTokens, emptyUsage, PendingUsage } from "../../../src/core/fork-builtins/subagents/service/usage.ts";
++import { displayTokens, emptyUsage, PendingUsage } from "../../../src/core/fork-builtins/subagents/usage.ts";
+ 
+ afterEach(() => {
+ 	vi.useRealTimers();
+diff --git a/packages/coding-agent/test/suite/fork-subagents-nested.test.ts b/packages/coding-agent/test/suite/fork-subagents-nested.test.ts
+index 56fe5ac52..6724ea220 100644
+--- a/packages/coding-agent/test/suite/fork-subagents-nested.test.ts
++++ b/packages/coding-agent/test/suite/fork-subagents-nested.test.ts
+@@ -18,7 +18,7 @@ import {
+ 	type SubagentService,
+ 	subagentServiceFor,
+ } from "../../src/core/fork-builtins/subagents/service/service.ts";
+-import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
++import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
+ import type { Settings } from "../../src/core/settings-manager.ts";
+ import { type Behavior, CHILD_START, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
+ import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
+diff --git a/packages/coding-agent/test/suite/fork-subagents-presentation.test.ts b/packages/coding-agent/test/suite/fork-subagents-presentation.test.ts
+new file mode 100644
+index 000000000..0aff4bfad
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-subagents-presentation.test.ts
+@@ -0,0 +1,174 @@
++/**
++ * Fork-owned: the subagents presentation factory (probe) on real parent and child sessions. The
++ * parent loads the factory through the harness with a shared event bus, as a DefaultResourceLoader
++ * would; children load it through their own DefaultResourceLoader from FORK_OWNED_BUILTINS.
++ */
++import { mkdirSync, writeFileSync } from "node:fs";
++import { join } from "node:path";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { createEventBus } from "../../src/core/event-bus.ts";
++import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
++import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/service.ts";
++import subagentsPresentation from "../../src/core/fork-builtins/subagents/ui/index.ts";
++import type { Settings } from "../../src/core/settings-manager.ts";
++import { agentId, CHILD_START, call, held, router } from "./fork-subagents-fixtures.ts";
++import { createHarness, type Harness } from "./harness.ts";
++
++type Probe = { shutdownDone: boolean };
++const probe = (): Probe => (globalThis as { __sn2Presentation?: Probe }).__sn2Presentation as Probe;
++
++const harnesses: Harness[] = [];
++
++afterEach(() => {
++	for (const harness of harnesses.splice(0)) harness.cleanup();
++	vi.unstubAllEnvs();
++	delete (globalThis as { __sn2Presentation?: Probe }).__sn2Presentation;
++});
++
++async function parent(script: Parameters<typeof router>[0]) {
++	vi.stubEnv("PI_FORK_BUILTINS", "on");
++	(globalThis as { __sn2Presentation?: Probe }).__sn2Presentation = { shutdownDone: false };
++	const harness = await createHarness({
++		eventBus: createEventBus(),
++		extensionFactories: [{ name: "subagents", factory: subagentsPresentation }],
++		settings: { forkBuiltins: { subagents: { defaultJoinMode: "async" } } } as unknown as Partial<Settings>,
++	});
++	harnesses.push(harness);
++	mkdirSync(join(harness.tempDir, "agents"), { recursive: true });
++	// Extensions load, so the child's loader runs its fork built-ins and the extension below.
++	writeFileSync(
++		join(harness.tempDir, "agents", "worker.md"),
++		"---\ndescription: test worker\ntools: read\n---\nYou are a test worker.",
++	);
++	harness.setResponses(Array.from({ length: 50 }, () => router(script)));
++	return harness;
++}
++
++/** A child extension whose `session_shutdown` handler takes 300 ms, then records that it finished. */
++function writeSlowShutdownExtension(harness: Harness): void {
++	const dir = join(harness.tempDir, "extensions");
++	mkdirSync(dir, { recursive: true });
++	writeFileSync(
++		join(dir, "slow-shutdown.ts"),
++		'export default function (pi) {\n\tpi.on("session_shutdown", async () => {\n\t\tawait new Promise((resolve) => setTimeout(resolve, 300));\n\t\tglobalThis.__sn2Presentation.shutdownDone = true;\n\t});\n}\n',
++	);
++}
++
++/** A child extension that takes 300 ms to load, so its child is still starting when the parent quits. */
++function writeSlowStartExtension(harness: Harness): void {
++	const dir = join(harness.tempDir, "extensions");
++	mkdirSync(dir, { recursive: true });
++	writeFileSync(
++		join(dir, "slow-start.ts"),
++		'export default async function (pi) {\n\tawait new Promise((resolve) => setTimeout(resolve, 300));\n\tpi.on("session_shutdown", async () => {\n\t\tawait new Promise((resolve) => setTimeout(resolve, 100));\n\t\tglobalThis.__sn2Presentation.shutdownDone = true;\n\t});\n}\n',
++	);
++}
++
++/** A TUI context that records the `agents` widget. Own properties only: the runner spreads the context it wraps. */
++function recordingUi() {
++	const widgets: Array<string[] | undefined> = [];
++	const ui = {
++		notify: () => {},
++		setStatus: () => {},
++		onTerminalInput: () => () => {},
++		setWidget: (id: string, content: string[] | undefined) => {
++			if (id === "agents") widgets.push(content);
++		},
++	} as unknown as ExtensionUIContext;
++	return { ui, widgets };
++}
++
++describe("presentation factory", () => {
++	it("registers nothing in a child session", async () => {
++		const gate = held();
++		const harness = await parent({ hold: [gate.behavior] });
++		const started = await call(harness, "Agent", {
++			prompt: "hold",
++			description: "hold",
++			subagent_type: "worker",
++			run_in_background: true,
++		});
++		const service = subagentServiceFor(harness.session);
++		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
++		const child = service?.get(agentId(started))?.child;
++		const factory = child?.loader
++			.getExtensions()
++			.extensions.find((extension) => extension.path === "<inline:subagents>");
++		expect(factory, "the child loads the fork built-in").toBeDefined();
++		expect(factory?.commands.size).toBe(0);
++		expect(factory?.handlers.size).toBe(0);
++		expect(factory?.messageRenderers.size).toBe(0);
++		gate.release();
++	});
++
++	it("binds a top-level session and lists a running agent in the widget", async () => {
++		const gate = held();
++		const harness = await parent({ hold: [gate.behavior] });
++		const { ui, widgets } = recordingUi();
++		await harness.session.bindExtensions({ uiContext: ui, mode: "tui" });
++		const started = await call(harness, "Agent", {
++			prompt: "hold",
++			description: "held task",
++			subagent_type: "worker",
++			run_in_background: true,
++		});
++		await vi.waitFor(() => expect(widgets.at(-1)).toEqual(["worker: held task"]), CHILD_START);
++		gate.release();
++		await subagentServiceFor(harness.session)?.waitForResult(agentId(started));
++		await vi.waitFor(() => expect(widgets.at(-1)).toBeUndefined());
++	});
++
++	it("makes quit wait for every child's session_shutdown handlers", async () => {
++		const gate = held();
++		const harness = await parent({ hold: [gate.behavior] });
++		writeSlowShutdownExtension(harness);
++		await harness.session.bindExtensions({ mode: "print" });
++		await call(harness, "Agent", {
++			prompt: "hold",
++			description: "hold",
++			subagent_type: "worker",
++			run_in_background: true,
++		});
++		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
++		await harness.session.shutdown();
++		expect(probe().shutdownDone).toBe(true);
++	});
++
++	it("makes quit wait for a child that is still starting", async () => {
++		const harness = await parent({});
++		writeSlowStartExtension(harness);
++		await harness.session.bindExtensions({ mode: "print" });
++		const started = await call(harness, "Agent", {
++			prompt: "start",
++			description: "start",
++			subagent_type: "worker",
++			run_in_background: true,
++		});
++		expect(
++			subagentServiceFor(harness.session)?.get(agentId(started))?.child,
++			"the child is still starting",
++		).toBeUndefined();
++		await harness.session.shutdown();
++		expect(probe().shutdownDone).toBe(true);
++	});
++
++	it("keeps the service and its running agent across /reload", async () => {
++		const gate = held();
++		const harness = await parent({ hold: [gate.behavior] });
++		await harness.session.bindExtensions({ mode: "print" });
++		const started = await call(harness, "Agent", {
++			prompt: "hold",
++			description: "hold",
++			subagent_type: "worker",
++			run_in_background: true,
++		});
++		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
++		const service = subagentServiceFor(harness.session);
++		await harness.session.reload();
++		expect(subagentServiceFor(harness.session)).toBe(service);
++		expect(service?.isDisposed).toBe(false);
++		expect(service?.get(agentId(started))?.status).toBe("running");
++		gate.release();
++		await expect(service?.waitForResult(agentId(started))).resolves.toMatchObject({ status: "completed" });
++	});
++});
+diff --git a/packages/coding-agent/test/suite/fork-subagents-service.test.ts b/packages/coding-agent/test/suite/fork-subagents-service.test.ts
+index e54674439..7f1f934d4 100644
+--- a/packages/coding-agent/test/suite/fork-subagents-service.test.ts
++++ b/packages/coding-agent/test/suite/fork-subagents-service.test.ts
+@@ -29,7 +29,7 @@ import {
+ 	SubagentService,
+ 	type SubagentServiceOptions,
+ } from "../../src/core/fork-builtins/subagents/service/service.ts";
+-import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
++import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
+ import { ModelRuntime } from "../../src/core/model-runtime.ts";
+ import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
+ import { SessionManager } from "../../src/core/session-manager.ts";
+@@ -566,6 +566,44 @@ describe("ownership", () => {
+ 		expect(existsSync(tempDir)).toBe(true);
+ 	});
+ 
++	it("waits for a starting child only up to its bound, and tears it down when it attaches later", async () => {
++		const harness = await parent();
++		let open!: () => void;
++		const opened = new Promise<void>((resolve) => {
++			open = resolve;
++		});
++		const gate = { opened, shutdowns: 0 };
++		(globalThis as { __sn2Gate?: typeof gate }).__sn2Gate = gate;
++		cleanups.push(() => {
++			open();
++			delete (globalThis as { __sn2Gate?: typeof gate }).__sn2Gate;
++		});
++		// Extensions load for this agent, so its child's loader runs the gated extension below.
++		writeFileSync(
++			join(harness.tempDir, "agents", "gated.md"),
++			"---\ndescription: gated\ntools: read\n---\nYou are gated.",
++		);
++		mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
++		writeFileSync(
++			join(harness.tempDir, "extensions", "gate.ts"),
++			'export default async function (pi) {\n\tawait globalThis.__sn2Gate.opened;\n\tpi.on("session_shutdown", () => {\n\t\tglobalThis.__sn2Gate.shutdowns++;\n\t});\n}\n',
++		);
++		const subagents = service(harness, { startupWaitMs: 200 });
++		const record = await subagents.spawn({
++			type: "gated",
++			prompt: "gated task",
++			description: "gated task",
++			params: { run_in_background: true },
++		});
++		const started = Date.now();
++		await subagents.shutdown();
++		expect(Date.now() - started).toBeLessThan(2000);
++		expect(record.child, "the child is still starting").toBeUndefined();
++		expect(gate.shutdowns).toBe(0);
++		open();
++		await vi.waitFor(() => expect(gate.shutdowns).toBe(1), CHILD_START);
++	});
++
+ 	it("never evicts a queued record, however long it waits", async () => {
+ 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+ 		const gate = held();

@@ -6,10 +6,11 @@
 import { Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
+import { STEER_TOOL_NAME } from "../names.ts";
 import { isTerminal } from "../service/records.ts";
-import { notFound, requireService } from "../service/service.ts";
+import { notFound } from "../service/service.ts";
+import { requireService } from "../service/sessions.ts";
 import { contextPercent, formatCost, formatTokens, textResult } from "./common.ts";
-import { STEER_TOOL_NAME } from "./names.ts";
 
 const STEER_PARAMETERS = Type.Object({
 	agent_id: Type.String({

@@ -29,12 +29,8 @@ import type { AgentSession } from "../agent-session.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { NestedRuntime } from "../fork-builtins/subagents/service/nested.ts";
 import type { SubagentRecord } from "../fork-builtins/subagents/service/records.ts";
-import {
-	type SpawnRequest,
-	type SubagentService,
-	subagentServiceFor,
-	subagentSessionRecord,
-} from "../fork-builtins/subagents/service/service.ts";
+import type { SpawnRequest, SubagentService } from "../fork-builtins/subagents/service/service.ts";
+import { subagentServiceFor, subagentSessionRecord } from "../fork-builtins/subagents/service/sessions.ts";
 
 const SUBAGENTS_PING = "subagents:rpc:ping";
 const SUBAGENTS_SPAWN = "subagents:rpc:spawn";
@@ -421,7 +417,7 @@ export class SkillForkClient {
 				prompt,
 				description: `skill ${basename(dirname(skillId))}`,
 				model: options.model ? await runtime.service.resolveCallerModel(options.model, type) : undefined,
-				detached: { isBackground: options.isBackground },
+				mode: options.isBackground ? "detached-background" : "detached",
 			};
 			const record = runtime.nested ? await runtime.nested.spawn(request) : await runtime.service.spawn(request);
 			void runtime.service.waitForResult(record.id, undefined, runtime.owner).then(

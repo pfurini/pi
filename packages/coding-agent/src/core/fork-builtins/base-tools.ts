@@ -27,11 +27,13 @@ import {
 	type AskUserQuestionToolOptions,
 	createAskUserQuestionToolDefinition,
 } from "./ask-user-question/ask-user-question.ts";
+import { bridgeServiceEvents } from "./subagents/adapter/events.ts";
 import { installSubagentAdapter } from "./subagents/adapter/install.ts";
+import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "./subagents/names.ts";
 import { lineageForBus } from "./subagents/runner/lineage.ts";
-import { registerSubagentSession } from "./subagents/service/service.ts";
+import { registerSubagentSession } from "./subagents/service/sessions.ts";
 import { createAgentToolDefinition } from "./subagents/tools/agent.ts";
-import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "./subagents/tools/names.ts";
+import { createNestedToolDefinitions } from "./subagents/tools/nested.ts";
 import { createResultToolDefinition } from "./subagents/tools/result.ts";
 import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
 import { forkBuiltinsEnabled } from "./switch.ts";
@@ -63,6 +65,9 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
 		eventBus: options.eventBus,
 		lineage: lineageForBus(options.eventBus),
 		forkBaseToolNames: () => forkBaseToolNames(definitions),
+		// The wiring layer injects what the headless service must not import (F14).
+		createNestedTools: createNestedToolDefinitions,
+		onServiceCreated: bridgeServiceEvents,
 	});
 	addOwned(definitions, AGENT_TOOL_NAME, () => createAgentToolDefinition(options.session, subagents));
 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));

@@ -20,7 +20,7 @@ import { createAgentSession } from "../../../sdk.ts";
 import { getDefaultSessionDir, SessionManager } from "../../../session-manager.ts";
 import { SettingsManager } from "../../../settings-manager.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
-import { addUsage, emptyUsage } from "../service/usage.ts";
+import { addUsage, emptyUsage } from "../usage.ts";
 import { type ChildLineage, setLineage } from "./lineage.ts";
 import { readOnlyMemoryBlock, readWriteMemoryBlock } from "./memory.ts";
 import { buildChildSystemPrompt, buildParentContext, detectEnvironment, preloadSkills } from "./prompt.ts";

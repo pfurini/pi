@@ -13,7 +13,8 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as worktreeModule from "../../src/core/fork-builtins/subagents/runner/worktree.ts";
 import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
-import { type SubagentService, subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import {
 	agentId,
@@ -269,7 +270,9 @@ describe("worktree isolation through the service", () => {
 		const records = serviceOf(harness).list();
 		for (const record of records) await serviceOf(harness).waitForResult(record.id);
 		expect(
-			records.map((record) => `${record.isBackground ? "background" : "foreground"} ${record.status}`).sort(),
+			records
+				.map((record) => `${record.mode === "background" ? "background" : "foreground"} ${record.status}`)
+				.sort(),
 		).toEqual(["background error", "foreground error"]);
 		await sleep(400);
 		expect(notices(harness.session)).toEqual([]);

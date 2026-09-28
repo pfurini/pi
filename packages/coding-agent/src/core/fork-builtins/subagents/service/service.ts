@@ -2,11 +2,12 @@
  * Fork-owned: the subagent service of one `AgentSession` (D18, D21; plan T4). pi-subagents
  * `src/agent-manager.ts` and `src/index.ts` at 79a7c42 are the behavior reference.
  *
- * The service owns its records, two concurrency pools, the queue, steering, stopping, resuming
- * and result waits. Every spawn reloads agent definitions and settings first. Only top-level
- * records occupy pool slots: the background pool counts every background record, detached ones
- * included, and the foreground pool counts only spawns a caller awaits inline. A finished record
- * stays 10 minutes, then its child is torn down and a persisted one leaves a tombstone.
+ * The service owns its records, steering, stopping, resuming and result waits. Every spawn reloads
+ * agent definitions and settings first. Its parts live beside it: `queue.ts` holds the two
+ * concurrency pools and the queue, `retention.ts` the eviction of finished records and their
+ * tombstones, `joins.ts` the batching of background completions, and `sessions.ts` which session
+ * owns which service. The service imports no tool, adapter or presentation code (F14): the wiring
+ * layer injects the nested tools and the event bridge through `SubagentSessionContext`.
  *
  * The service ends with its session: the session's `dispose()` runs the cleanup hook registered
  * here, which aborts every running and queued child, reports each as `aborted`, and tears down
@@ -28,11 +29,11 @@ import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { getSkillSetController } from "../../../skills/skill-set-events.ts";
-import { bridgeServiceEvents } from "../adapter/events.ts";
-import { type AgentFileLoad, loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
+import type { AgentFileLoad, SkillAgentSource } from "../definitions/load.ts";
 import {
 	type AgentRegistry,
 	buildAgentRegistry,
+	loadAgentRegistry,
 	resolveSpawnType,
 	type SpawnTypeResolution,
 } from "../definitions/registry.ts";
@@ -51,28 +52,19 @@ import { transcriptPath } from "../runner/transcript.ts";
 import { createWorktree, describeWorktreeOutcome, finishWorktree, worktreeBase } from "../runner/worktree.ts";
 import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
 import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
-import { createNestedToolDefinitions, NestedRuntime } from "./nested.ts";
-import { GroupJoin, NotificationQueue } from "./notifications.ts";
-import {
-	assignHandle,
-	handleBase,
-	isTerminal,
-	type SubagentRecord,
-	type Tombstone,
-	TombstoneStore,
-} from "./records.ts";
-import { addUsage, emptyUsage, PendingUsage } from "./usage.ts";
+import { addUsage, emptyUsage, PendingUsage } from "../usage.ts";
+import { GroupJoin, SpawnBatch } from "./joins.ts";
+import { NestedRuntime } from "./nested.ts";
+import { NotificationQueue } from "./notifications.ts";
+import { type Pool, SpawnQueue } from "./queue.ts";
+import { assignHandle, handleBase, inBackground, isTerminal, type SpawnMode, type SubagentRecord } from "./records.ts";
+import { Retention, type Tombstone } from "./retention.ts";
 
 /** The error of an agent its session's end cut short. */
 export const SESSION_ENDED_ERROR = "The session ended before the agent finished.";
 
 /** The error of a nested agent its parent's end cut short (R6). */
 export const PARENT_ENDED_ERROR = "The parent agent finished before this agent did.";
-
-const RETENTION_MS = 10 * 60_000;
-const SWEEP_INTERVAL_MS = 60_000;
-/** Background spawns this close together count as one turn's batch for `smart` joins. */
-const BATCH_WINDOW_MS = 100;
 
 /** What every lookup of an unknown or evicted agent reports. */
 export function notFound(ref: string): string {
@@ -89,41 +81,15 @@ export interface SubagentSessionContext {
 	forkBaseToolNames(): string[];
 	/** Warnings found before the service existed, such as while the tool description was built. */
 	warnings?: string[];
+	/** Builds the nested tools of a permitted agent; `base-tools.ts` passes `tools/nested.ts`'s builder. */
+	createNestedTools?(runtime: NestedRuntime): ToolDefinition[];
+	/** Called once with the service when it is built; `base-tools.ts` attaches the bus adapter's event bridge. */
+	onServiceCreated?(service: SubagentService): void;
 }
 
-/**
- * The agent registry a session sees: user agents, project agents when the project is trusted,
- * and the agents the session's skills bundle. Pure over its inputs; the service and the tool
- * description both use it. Given `files` already loaded from the same project, it sweeps no
- * agent directory.
- */
-export function loadAgentRegistry(input: {
-	session: AgentSession;
-	agentDir: string;
-	eventBus?: EventBus;
-	cwd: string;
-	settings: SubagentSettings;
-	files?: AgentFileLoad;
-}): { registry: AgentRegistry; warnings: string[]; files: AgentFileLoad } {
-	const files =
-		input.files ??
-		loadAgentFiles({
-			agentDir: input.agentDir,
-			cwd: input.cwd,
-			projectTrusted: input.session.settingsManager.isProjectTrusted(),
-			strict: input.settings.strictAgentFiles,
-		});
-	const skills = input.eventBus ? getSkillSetController(input.eventBus).getSnapshot().skills : [];
-	const bundled = loadSkillAgents(skills);
-	return {
-		registry: buildAgentRegistry({
-			userAgents: files.agents,
-			skillAgents: bundled.agents,
-			disableDefaultAgents: input.settings.disableDefaultAgents,
-		}),
-		warnings: [...files.warnings, ...bundled.warnings],
-		files,
-	};
+/** The skills loaded on a session's event bus, whose bundled agents join its registry; none without a bus. */
+export function busSkills(eventBus: EventBus | undefined): readonly SkillAgentSource[] {
+	return eventBus ? getSkillSetController(eventBus).getSnapshot().skills : [];
 }
 
 /** The session's working directory, through its extension context; `process.cwd()` when that is gone. */
@@ -164,10 +130,10 @@ export interface SpawnRequest {
 	/** The working directory; defaults to the session's. */
 	cwd?: string;
 	/**
-	 * A detached spawn (RPC, skill-fork) blocks nobody and so takes no foreground slot; `isBackground`
-	 * decides whether it takes a background slot. Without it, `run_in_background` decides.
+	 * A detached spawn (RPC, skill-fork) blocks nobody and so takes no foreground slot;
+	 * `detached-background` also takes a background slot. Without it, `run_in_background` decides.
 	 */
-	detached?: { isBackground?: boolean };
+	mode?: Extract<SpawnMode, "detached" | "detached-background">;
 	/**
 	 * Aborting it stops the agent: a foreground run, or a detached one whose caller passed it. A
 	 * background `Agent` spawn outlives the tool call's signal.
@@ -178,30 +144,18 @@ export interface SpawnRequest {
 	onCreated?: (record: SubagentRecord) => void;
 }
 
-type Pool = "background" | "foreground";
-
-interface QueueEntry {
-	record: SubagentRecord;
-	pool: Pool;
-	start: () => void;
-}
-
 export class SubagentService {
 	private readonly session: AgentSession;
 	private readonly context: SubagentSessionContext;
 	private readonly records = new Map<string, SubagentRecord>();
-	private readonly tombstones = new TombstoneStore();
-	private readonly running: Record<Pool, number> = { background: 0, foreground: 0 };
-	private queue: QueueEntry[] = [];
+	private readonly retention = new Retention(this.records);
+	private readonly queue = new SpawnQueue(() => this.current);
 	private readonly listeners = new Set<(event: SubagentEvent) => void>();
 	private readonly warned = new Set<string>();
 	private readonly pendingUsage = new PendingUsage();
 	private readonly notifications: NotificationQueue;
 	private readonly groups: GroupJoin;
-	private batch: string[] = [];
-	private batchTimer?: ReturnType<typeof setTimeout>;
-	private batchCount = 0;
-	private readonly sweepTimer: ReturnType<typeof setInterval>;
+	private readonly batch: SpawnBatch;
 	private readonly unregisterCleanup: () => void;
 	private current: SubagentSettings;
 	private registryCache: AgentRegistry;
@@ -217,7 +171,8 @@ export class SubagentService {
 		this.notifications = new NotificationQueue(session, {
 			othersRunning: (delivered) =>
 				[...this.records.values()].some(
-					(record) => !record.parent && record.isBackground && !delivered.has(record.id) && !isTerminal(record),
+					(record) =>
+						!record.parent && inBackground(record.mode) && !delivered.has(record.id) && !isTerminal(record),
 				),
 			showCost: () => this.current.showCost,
 			onError: (error) => this.warn(`A subagent notification failed: ${String(error)}`),
@@ -227,8 +182,11 @@ export class SubagentService {
 			options.groupTimeoutMs ?? 30_000,
 			options.stragglerTimeoutMs ?? 15_000,
 		);
-		this.sweepTimer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
-		this.sweepTimer.unref?.();
+		this.batch = new SpawnBatch(
+			this.groups,
+			(id) => this.records.get(id),
+			(record) => this.notifyIfDue(record),
+		);
 		// Compared at cleanup time: the session's own id is the one its dispose() reports.
 		this.unregisterCleanup = registerSessionResourceCleanup((sessionId) => {
 			if (sessionId === this.session.sessionId) this.dispose();
@@ -329,10 +287,10 @@ export class SubagentService {
 	refreshDefinitions(cwd = this.defaultCwd()): AgentRegistry {
 		this.reloadSettings();
 		const { registry, warnings, files } = loadAgentRegistry({
-			session: this.session,
 			agentDir: this.context.agentDir,
-			eventBus: this.context.eventBus,
 			cwd,
+			projectTrusted: this.session.settingsManager.isProjectTrusted(),
+			skills: busSkills(this.context.eventBus),
 			settings: this.current,
 		});
 		for (const warning of warnings) this.warn(warning);
@@ -401,22 +359,21 @@ export class SubagentService {
 		if (parent && parent.status !== "running") {
 			throw new Error(`Agent "${parent.definition.name}" is not running; it cannot spawn subagents.`);
 		}
-		const background = request.detached ? request.detached.isBackground : invocation.runInBackground;
+		const mode: SpawnMode = request.mode ?? (invocation.runInBackground ? "background" : "foreground");
 		const record = this.createRecord({
 			definition,
 			request,
 			cwd,
 			invocation,
 			model,
-			isBackground: background,
-			blocking: !request.detached && !background,
+			mode,
 			fellBackFrom,
 			parent,
 		});
 		// A background Agent spawn outlives the tool call; a foreground or detached one stops with its signal.
-		if (request.signal && !(background && !request.detached)) this.stopOn(request.signal, record);
-		if (!request.detached && background) this.emit({ type: "created", record });
-		if (record.joinMode === "smart" || record.joinMode === "group") this.addToBatch(record);
+		if (request.signal && mode !== "background") this.stopOn(request.signal, record);
+		if (mode === "background") this.emit({ type: "created", record });
+		if (record.joinMode === "smart" || record.joinMode === "group") this.batch.add(record);
 		this.launch(record, request.prompt, invocation.inheritContext);
 		return record;
 	}
@@ -448,8 +405,7 @@ export class SubagentService {
 		cwd: string;
 		invocation: SubagentRecord["invocation"];
 		model?: Model<Api>;
-		isBackground?: boolean;
-		blocking: boolean;
+		mode: SpawnMode;
 		fellBackFrom?: string;
 		parent?: SubagentRecord;
 	}): SubagentRecord {
@@ -458,7 +414,7 @@ export class SubagentService {
 		let handle: string | undefined;
 		let alias: string | undefined;
 		if (!parent) {
-			const taken = new Set(this.tombstones.names());
+			const taken = new Set(this.retention.tombstones.names());
 			for (const record of this.records.values()) {
 				if (record.handle) taken.add(record.handle);
 				if (record.alias) taken.add(record.alias);
@@ -483,10 +439,9 @@ export class SubagentService {
 			startedAt: Date.now(),
 			depth: parent ? parent.depth + 1 : 1,
 			parent,
-			isBackground: input.isBackground,
-			blocking: input.blocking,
+			mode: input.mode,
 			resultConsumed: false,
-			joinMode: input.isBackground && !input.request.detached && !parent ? this.current.defaultJoinMode : undefined,
+			joinMode: input.mode === "background" && !parent ? this.current.defaultJoinMode : undefined,
 			toolCallId: input.request.toolCallId,
 			invocation: input.invocation,
 			model: input.model,
@@ -506,25 +461,12 @@ export class SubagentService {
 		return record;
 	}
 
-	private poolFor(record: SubagentRecord, resuming: boolean): Pool | undefined {
-		if (record.parent) return undefined;
-		if (record.isBackground) return "background";
-		// A foreground resume reuses its session and takes no foreground slot, as in pi-subagents.
-		if (record.blocking && !resuming && this.current.maxConcurrentForeground > 0) return "foreground";
-		return undefined;
-	}
-
-	private hasRoom(pool: Pool): boolean {
-		const limit = pool === "background" ? this.current.maxConcurrent : this.current.maxConcurrentForeground;
-		return limit === 0 || this.running[pool] < limit;
-	}
-
 	private launch(record: SubagentRecord, prompt: string, inheritContext: boolean, resuming = false): void {
-		const pool = this.poolFor(record, resuming);
+		const pool = this.queue.poolFor(record, resuming);
 		const start = () => this.start(record, prompt, inheritContext, pool);
-		if (pool && !this.hasRoom(pool)) {
+		if (pool && !this.queue.hasRoom(pool)) {
 			record.status = "queued";
-			this.queue.push({ record, pool, start });
+			this.queue.enqueue(record, pool, start);
 			return;
 		}
 		start();
@@ -533,7 +475,7 @@ export class SubagentService {
 	private start(record: SubagentRecord, prompt: string, inheritContext: boolean, pool: Pool | undefined): void {
 		record.status = "running";
 		record.startedAt = Date.now();
-		if (pool) this.running[pool]++;
+		this.queue.take(pool);
 		const abort = new AbortController();
 		record.abort = abort;
 		this.emit({ type: "started", record });
@@ -634,7 +576,7 @@ export class SubagentService {
 	/** The nested tools of a permitted agent below the depth cap; none otherwise (T6). */
 	private nestedToolsFor(record: SubagentRecord, settings: SubagentSettings): ToolDefinition[] | undefined {
 		const runtime = this.nested(record);
-		return runtime.refusal(settings) === undefined ? createNestedToolDefinitions(runtime) : undefined;
+		return runtime.refusal(settings) === undefined ? this.context.createNestedTools?.(runtime) : undefined;
 	}
 
 	private attachChild(record: SubagentRecord, child: Child): void {
@@ -664,11 +606,11 @@ export class SubagentService {
 		record.completedAt ??= Date.now();
 		record.abort = undefined;
 		this.detachSignal(record);
-		if (pool) this.running[pool]--;
-		if (!record.isBackground) record.resultConsumed = true;
+		this.queue.release(pool);
+		if (!inBackground(record.mode)) record.resultConsumed = true;
 		this.finish(record);
 		this.abortChildren(record);
-		this.drain();
+		this.queue.drain();
 	}
 
 	/** Ends every agent below `ancestor` and waits for their runs, at most the child shutdown bound. */
@@ -708,46 +650,9 @@ export class SubagentService {
 	}
 
 	private notifyIfDue(record: SubagentRecord): void {
-		if (record.parent || !record.isBackground || record.resultConsumed) return;
-		if (this.batch.includes(record.id)) return;
+		if (record.parent || !inBackground(record.mode) || record.resultConsumed) return;
+		if (this.batch.holds(record)) return;
 		if (this.groups.complete(record) === "pass") this.notifications.park(record.id, [record]);
-	}
-
-	private addToBatch(record: SubagentRecord): void {
-		this.batch.push(record.id);
-		clearTimeout(this.batchTimer);
-		this.batchTimer = setTimeout(() => this.finalizeBatch(), BATCH_WINDOW_MS);
-		this.batchTimer.unref?.();
-	}
-
-	/** Two or more `smart` or `group` agents spawned in one window share a notification. */
-	private finalizeBatch(): void {
-		const ids = this.batch;
-		this.batch = [];
-		this.batchTimer = undefined;
-		const members = ids.map((id) => this.records.get(id)).filter((record) => record !== undefined);
-		if (members.length >= 2) {
-			this.groups.register(`batch-${++this.batchCount}`, ids);
-			for (const record of members) {
-				if (isTerminal(record) && !record.run && !record.resultConsumed) this.groups.complete(record);
-			}
-			return;
-		}
-		for (const record of members) {
-			if (isTerminal(record) && !record.run) this.notifyIfDue(record);
-		}
-	}
-
-	private drain(): void {
-		for (let index = 0; index < this.queue.length; ) {
-			const entry = this.queue[index];
-			if (!this.hasRoom(entry.pool)) {
-				index++;
-				continue;
-			}
-			this.queue.splice(index, 1);
-			entry.start();
-		}
 	}
 
 	/** Any record by id, whoever owns it: the bus adapter tells "not found" from "not yours" with it. */
@@ -776,7 +681,7 @@ export class SubagentService {
 
 	/** Evicted persisted agents a later phase can reopen by handle, newest first. */
 	listTombstones(): Tombstone[] {
-		return this.tombstones.list();
+		return this.retention.tombstones.list();
 	}
 
 	/**
@@ -847,12 +752,12 @@ export class SubagentService {
 	/** Ends a running or queued agent as `stopped` (a caller) or `aborted` (an owner's end), keeping partial output. */
 	private endRecord(record: SubagentRecord, status: "stopped" | "aborted", error?: string): boolean {
 		if (record.status === "queued" && !record.run) {
-			this.queue = this.queue.filter((entry) => entry.record !== record);
+			this.queue.remove(record);
 			this.detachSignal(record);
 			record.status = status;
 			record.error = error;
 			record.completedAt = Date.now();
-			if (record.blocking) record.resultConsumed = true;
+			if (record.mode === "foreground") record.resultConsumed = true;
 			this.finish(record);
 			return true;
 		}
@@ -907,14 +812,14 @@ export class SubagentService {
 		record.completedAt = undefined;
 		record.resultConsumed = false;
 		record.endReported = undefined;
-		record.isBackground = options.background;
+		record.mode = options.background ? "background" : "foreground";
 		// The new run answers a new tool call, and joins this turn's batch like a fresh spawn.
 		record.toolCallId = options.toolCallId;
 		record.joinMode = options.background && !record.parent ? this.current.defaultJoinMode : undefined;
 		this.detachSignal(record);
 		if (options.signal) this.stopOn(options.signal, record);
 		if (options.background) this.emit({ type: "created", record });
-		if (record.joinMode === "smart" || record.joinMode === "group") this.addToBatch(record);
+		if (record.joinMode === "smart" || record.joinMode === "group") this.batch.add(record);
 		this.launch(record, prompt, false, true);
 		return record;
 	}
@@ -922,26 +827,6 @@ export class SubagentService {
 	/** Subagent spend not yet reported to the session, when `reportUsage` is on. */
 	takeReportedUsage(): Usage | undefined {
 		return this.pendingUsage.take();
-	}
-
-	private sweep(now = Date.now()): void {
-		for (const record of [...this.records.values()]) {
-			if (!isTerminal(record) || record.run || (record.completedAt ?? now) > now - RETENTION_MS) continue;
-			if (record.handle && record.sessionFile && !record.parent) {
-				this.tombstones.add({
-					handle: record.handle,
-					alias: record.alias,
-					id: record.id,
-					type: record.type,
-					description: record.description,
-					sessionFile: record.sessionFile,
-					completedAt: record.completedAt ?? now,
-				});
-			}
-			this.records.delete(record.id);
-			if (record.child) void teardownChild(record.child);
-			record.child = undefined;
-		}
 	}
 
 	private assertLive(): void {
@@ -957,12 +842,12 @@ export class SubagentService {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.unregisterCleanup();
-		clearInterval(this.sweepTimer);
-		clearTimeout(this.batchTimer);
+		this.retention.dispose();
+		this.batch.dispose();
 		this.groups.dispose();
 		this.notifications.dispose();
 		const ended = [...this.records.values()].filter((record) => !isTerminal(record) || record.run);
-		this.queue = [];
+		this.queue.clear();
 		for (const record of ended) {
 			if (!isTerminal(record)) {
 				record.status = "aborted";
@@ -985,61 +870,4 @@ export class SubagentService {
 		}
 		this.listeners.clear();
 	}
-}
-
-const sessionRecords = new WeakMap<AgentSession, SubagentSessionContext>();
-const services = new WeakMap<AgentSession, SubagentService>();
-
-/**
- * Stores the per-session record `addForkBaseTools` builds at each registration, without reading
- * the session, and returns the stored record. A later registration (`/reload`) updates the same
- * record, so a service built earlier sees the current fork base tools.
- */
-export function registerSubagentSession(
-	session: AgentSession,
-	context: SubagentSessionContext,
-): SubagentSessionContext {
-	const existing = sessionRecords.get(session);
-	if (existing) return Object.assign(existing, context);
-	sessionRecords.set(session, context);
-	return context;
-}
-
-/** Reports a warning through the session's service, or holds it on the per-session record until the service exists. */
-export function reportSubagentWarning(session: AgentSession, message: string): void {
-	const service = services.get(session);
-	if (service) service.warn(message);
-	else {
-		const context = sessionRecords.get(session);
-		if (!context) return;
-		context.warnings ??= [];
-		context.warnings.push(message);
-	}
-}
-
-/** The per-session record of a session; undefined when fork built-ins are off for it. */
-export function subagentSessionRecord(session: AgentSession): SubagentSessionContext | undefined {
-	return sessionRecords.get(session);
-}
-
-/** The session's subagent service. `addForkBaseTools` registers the session before any tool exists. */
-export function requireService(session: AgentSession): SubagentService {
-	const service = subagentServiceFor(session);
-	if (!service) throw new Error("This session has no subagent service.");
-	return service;
-}
-
-/**
- * The session's subagent service, built on first use from its per-session record: the first
- * subagent tool call, RPC request or skill-fork spawn. Undefined for a session with no record.
- */
-export function subagentServiceFor(session: AgentSession): SubagentService | undefined {
-	let service = services.get(session);
-	if (service) return service;
-	const context = sessionRecords.get(session);
-	if (!context) return undefined;
-	service = new SubagentService(session, context);
-	services.set(session, service);
-	bridgeServiceEvents(service);
-	return service;
 }

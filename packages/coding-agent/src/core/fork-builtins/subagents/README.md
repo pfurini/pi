@@ -127,7 +127,7 @@ A child is an `AgentSession` built from the parent's model runtime, with its own
 
 ## Nesting, lineage and visibility
 
-An agent with `allowed_subagents` receives the three tools as custom tools bound to its own record (`service/nested.ts`), unless it is isolated or at `maxSubagentDepth`. Types resolve strictly against its allowlist. A nested agent sits one level deeper, has no handle, takes no pool slot and runs in the foreground by default. Its default model comes from the agent that spawned it. Under `inherit_context`, its conversation comes from that agent too, and under `prompt_mode: append`, its appended prompt. Its usage counts in every ancestor's total.
+An agent with `allowed_subagents` receives the three tools as custom tools (`tools/nested.ts`) bound to its own record's runtime (`service/nested.ts`), unless it is isolated or at `maxSubagentDepth`. Types resolve strictly against its allowlist. A nested agent sits one level deeper, has no handle, takes no pool slot and runs in the foreground by default. Its default model comes from the agent that spawned it. Under `inherit_context`, its conversation comes from that agent too, and under `prompt_mode: append`, its appended prompt. Its usage counts in every ancestor's total.
 
 Before building a child, the runner stores the child's lineage for the child loader's event bus. The lineage holds the owning service, the record the child runs as, and its depth. The child's own adapter and skill-fork client read the lineage. A child's RPC and skill-fork spawns are therefore nested spawns of that agent, under the same rules.
 

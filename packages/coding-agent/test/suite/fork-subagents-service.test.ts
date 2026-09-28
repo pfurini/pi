@@ -29,7 +29,7 @@ import {
 	SubagentService,
 	type SubagentServiceOptions,
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
-import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
+import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
 import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
@@ -225,7 +225,7 @@ describe("pools", () => {
 				type: "worker",
 				prompt: "busy detached",
 				description: "d",
-				detached: { isBackground: true },
+				mode: "detached-background",
 			}),
 		);
 		await vi.waitFor(() => expect(gate.requests()).toBe(10));
@@ -244,7 +244,7 @@ describe("pools", () => {
 		const first = await subagents.spawn(foreground("hold one"));
 		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
 		const second = await subagents.spawn(foreground("hold two"));
-		const detached = await subagents.spawn({ type: "worker", prompt: "free", description: "free", detached: {} });
+		const detached = await subagents.spawn({ type: "worker", prompt: "free", description: "free", mode: "detached" });
 		expect(first.status).toBe("running");
 		expect(second.status).toBe("queued");
 		expect(detached.status).toBe("running");

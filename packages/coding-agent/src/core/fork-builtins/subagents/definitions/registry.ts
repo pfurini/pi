@@ -6,8 +6,15 @@
  * one skill claims it. Skill agents are hidden from listings and stay spawnable by exact name.
  * pi-subagents `src/agent-types.ts` at 79a7c42 is the behavior reference.
  */
+import type { SubagentSettings } from "../settings/settings.ts";
 import { DEFAULT_AGENTS, GENERAL_PURPOSE_AGENT } from "./defaults.ts";
-import type { BundledAgent } from "./load.ts";
+import {
+	type AgentFileLoad,
+	type BundledAgent,
+	loadAgentFiles,
+	loadSkillAgents,
+	type SkillAgentSource,
+} from "./load.ts";
 import { type AgentDefinition, QUALIFIED_SEPARATOR } from "./types.ts";
 
 /** `fallbackSubagent` value that refuses an unresolved type instead of substituting one. */
@@ -78,6 +85,41 @@ export function buildAgentRegistry(inputs: AgentRegistryInputs): AgentRegistry {
 
 function skillEntry(definition: AgentDefinition, name: string): AgentDefinition {
 	return { ...definition, name, hidden: true };
+}
+
+/**
+ * The agent registry a session sees: user agents, project agents when the project is trusted,
+ * and the agents the session's skills bundle. Pure over its inputs; the service and the tool
+ * description both use it. Given `files` already loaded from the same project, it sweeps no
+ * agent directory.
+ */
+export function loadAgentRegistry(input: {
+	agentDir: string;
+	cwd: string;
+	projectTrusted: boolean;
+	/** The session's loaded skills, whose bundled agents join the registry. */
+	skills: readonly SkillAgentSource[];
+	settings: Pick<SubagentSettings, "strictAgentFiles" | "disableDefaultAgents">;
+	files?: AgentFileLoad;
+}): { registry: AgentRegistry; warnings: string[]; files: AgentFileLoad } {
+	const files =
+		input.files ??
+		loadAgentFiles({
+			agentDir: input.agentDir,
+			cwd: input.cwd,
+			projectTrusted: input.projectTrusted,
+			strict: input.settings.strictAgentFiles,
+		});
+	const bundled = loadSkillAgents(input.skills);
+	return {
+		registry: buildAgentRegistry({
+			userAgents: files.agents,
+			skillAgents: bundled.agents,
+			disableDefaultAgents: input.settings.disableDefaultAgents,
+		}),
+		warnings: [...files.warnings, ...bundled.warnings],
+		files,
+	};
 }
 
 /** Enabled, listed agents by registry key: the Agent tool's type list. Skill agents are hidden here. */

@@ -11,8 +11,8 @@
 import type { EventBus } from "../../../event-bus.ts";
 import type { SubagentRecord, TerminalStatus } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
-import { displayTokens } from "../service/usage.ts";
 import type { SubagentSettings } from "../settings/settings.ts";
+import { displayTokens } from "../usage.ts";
 import { publishRewriteMaps } from "./skill-agents.ts";
 
 export const AGENT_ENDED_CHANNEL = "subagents:agent-ended";

@@ -13,12 +13,9 @@ import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-work
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
-import {
-	PARENT_ENDED_ERROR,
-	type SubagentService,
-	subagentServiceFor,
-} from "../../src/core/fork-builtins/subagents/service/service.ts";
-import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/service/usage.ts";
+import { PARENT_ENDED_ERROR, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
+import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { type Behavior, CHILD_START, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";

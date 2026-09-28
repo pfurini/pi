@@ -7,7 +7,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { SubagentRecord, SubagentStatus } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
-import { displayTokens } from "../service/usage.ts";
+import { displayTokens } from "../usage.ts";
 
 /**
  * A text result. Under `reportUsage` it carries the subagent spend the session has not counted

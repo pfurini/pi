@@ -14,11 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "../../src/core/extensions/types.ts";
 import * as definitionLoads from "../../src/core/fork-builtins/subagents/definitions/load.ts";
 import { lineageForBus } from "../../src/core/fork-builtins/subagents/runner/lineage.ts";
-import {
-	type SubagentService,
-	subagentServiceFor,
-	subagentSessionRecord,
-} from "../../src/core/fork-builtins/subagents/service/service.ts";
+import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { subagentServiceFor, subagentSessionRecord } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import {
 	agentId,

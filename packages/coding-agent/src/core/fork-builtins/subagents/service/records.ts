@@ -1,6 +1,6 @@
 /**
- * Fork-owned: subagent records, their handles and the tombstones evicted records leave behind
- * (pi-subagents `src/types.ts`, `src/mention.ts` and `src/agent-manager.ts` at 79a7c42).
+ * Fork-owned: subagent records and their handles (pi-subagents `src/types.ts`, `src/mention.ts` and
+ * `src/agent-manager.ts` at 79a7c42). `retention.ts` holds the tombstones evicted records leave behind.
  */
 import type { Usage } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
@@ -12,6 +12,19 @@ import type { JoinMode } from "../settings/settings.ts";
 
 export type SubagentStatus = "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
 export type TerminalStatus = Exclude<SubagentStatus, "queued" | "running">;
+
+/**
+ * How a run was spawned. An `Agent` call runs `foreground`, where its caller awaits the result inline
+ * and it takes a foreground slot, or `background`, where it takes a background slot and notifies on
+ * completion. A `detached` spawn (RPC, skill-fork) blocks nobody and takes no slot;
+ * `detached-background` takes a background slot and notifies, but joins no batch.
+ */
+export type SpawnMode = "foreground" | "background" | "detached" | "detached-background";
+
+/** Whether a run of this mode takes a background slot and notifies on completion. */
+export function inBackground(mode: SpawnMode): boolean {
+	return mode === "background" || mode === "detached-background";
+}
 
 export interface SubagentRecord {
 	readonly id: string;
@@ -39,10 +52,8 @@ export interface SubagentRecord {
 	readonly depth: number;
 	/** The agent that spawned this one; absent for the session's own agents. */
 	readonly parent?: SubagentRecord;
-	/** Occupies the background pool and notifies on completion. Undefined for a detached spawn that did not say. */
-	isBackground?: boolean;
-	/** A caller awaits this agent inline; occupies the foreground pool. */
-	readonly blocking: boolean;
+	/** How the current run was spawned: which pool it takes and whether it notifies on completion. */
+	mode: SpawnMode;
 	/** The model saw the result, so no notification is due. */
 	resultConsumed: boolean;
 	/** Set for a background run: how its notification joins others. */
@@ -105,41 +116,4 @@ export function assignHandle(base: string, taken: ReadonlySet<string>): string {
 	let candidate = base;
 	for (let n = 2; taken.has(candidate) || RESERVED_HANDLES.has(candidate); n++) candidate = `${base}-${n}`;
 	return candidate;
-}
-
-/** What an evicted persisted agent leaves, so phase 3's mentions can reopen its session by handle. */
-export interface Tombstone {
-	handle: string;
-	alias?: string;
-	id: string;
-	type: string;
-	description: string;
-	sessionFile: string;
-	completedAt: number;
-}
-
-/** At most 100 tombstones, keyed by handle; the oldest completion leaves first. */
-export class TombstoneStore {
-	static readonly LIMIT = 100;
-	private readonly entries = new Map<string, Tombstone>();
-
-	add(entry: Tombstone): void {
-		this.entries.set(entry.handle, entry);
-		while (this.entries.size > TombstoneStore.LIMIT) {
-			const oldest = [...this.entries.values()].reduce((a, b) => (a.completedAt <= b.completedAt ? a : b));
-			this.entries.delete(oldest.handle);
-		}
-	}
-
-	/** Newest first. */
-	list(): Tombstone[] {
-		return [...this.entries.values()].sort((a, b) => b.completedAt - a.completedAt);
-	}
-
-	/** Names the tombstones still hold, so a new agent never takes one. */
-	names(): string[] {
-		return [...this.entries.values()].flatMap((entry) =>
-			entry.alias ? [entry.handle, entry.alias] : [entry.handle],
-		);
-	}
 }

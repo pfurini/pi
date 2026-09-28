@@ -22,7 +22,7 @@ import type { LoadExtensionsResult } from "../../../extensions/types.ts";
 import type { DefaultResourceLoader } from "../../../resource-loader.ts";
 import { allToolNames } from "../../../tools/index.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
-import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../tools/names.ts";
+import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../names.ts";
 
 /** The subagent tools a child receives only as its owner's injected nested tools (T6). */
 export const SUBAGENT_TOOL_NAMES: readonly string[] = [AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME];

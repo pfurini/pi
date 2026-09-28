@@ -23,8 +23,8 @@ import {
 	SESSION_ENDED_ERROR,
 	type SubagentEvent,
 	type SubagentService,
-	subagentServiceFor,
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import type { LoadedSkill } from "../../src/core/skills/frontmatter.ts";
 import {

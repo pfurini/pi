@@ -3,19 +3,18 @@
 // runs the service on real sessions. Old pi-subagents tests at 79a7c42 this covers:
 // group-join, usage, agent-manager-gc (tombstones), status-note-wiring (status notes).
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { GroupJoin } from "../../../src/core/fork-builtins/subagents/service/joins.ts";
 import {
 	formatTaskNotification,
-	GroupJoin,
 	notificationMessage,
 } from "../../../src/core/fork-builtins/subagents/service/notifications.ts";
 import {
 	assignHandle,
 	handleBase,
 	type SubagentRecord,
-	type Tombstone,
-	TombstoneStore,
 } from "../../../src/core/fork-builtins/subagents/service/records.ts";
-import { displayTokens, emptyUsage, PendingUsage } from "../../../src/core/fork-builtins/subagents/service/usage.ts";
+import { type Tombstone, TombstoneStore } from "../../../src/core/fork-builtins/subagents/service/retention.ts";
+import { displayTokens, emptyUsage, PendingUsage } from "../../../src/core/fork-builtins/subagents/usage.ts";
 
 afterEach(() => {
 	vi.useRealTimers();

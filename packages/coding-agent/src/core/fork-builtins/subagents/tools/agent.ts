@@ -18,18 +18,23 @@
 import { type TSchema, Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
-import { type AgentRegistry, buildAgentRegistry, listedAgentTypes } from "../definitions/registry.ts";
+import {
+	type AgentRegistry,
+	buildAgentRegistry,
+	listedAgentTypes,
+	loadAgentRegistry,
+} from "../definitions/registry.ts";
+import { AGENT_TOOL_NAME } from "../names.ts";
 import { WorktreeStartError } from "../runner/worktree.ts";
 import type { SubagentRecord } from "../service/records.ts";
 import {
-	loadAgentRegistry,
+	busSkills,
 	notFound,
-	reportSubagentWarning,
-	requireService,
 	type SubagentService,
 	type SubagentSessionContext,
 	sessionCwd,
 } from "../service/service.ts";
+import { reportSubagentWarning, requireService } from "../service/sessions.ts";
 import { THINKING_LEVELS } from "../settings/models.ts";
 import { readSubagentSettings } from "../settings/settings.ts";
 import {
@@ -43,7 +48,6 @@ import {
 	textResult,
 } from "./common.ts";
 import { buildAgentToolDescription } from "./description.ts";
-import { AGENT_TOOL_NAME } from "./names.ts";
 
 /** The arguments Pi validates against the schema `parameters` returns. */
 interface AgentToolParams {
@@ -130,7 +134,13 @@ function buildSurface(
 	const cwd = sessionCwd(session);
 	let loaded: { registry: AgentRegistry; warnings: string[] };
 	try {
-		loaded = loadAgentRegistry({ session, agentDir: context.agentDir, eventBus: context.eventBus, cwd, settings });
+		loaded = loadAgentRegistry({
+			agentDir: context.agentDir,
+			cwd,
+			projectTrusted: session.settingsManager.isProjectTrusted(),
+			skills: busSkills(context.eventBus),
+			settings,
+		});
 	} catch (error) {
 		// `strictAgentFiles` fails a spawn, never the session that builds this description.
 		loaded = {
@@ -258,7 +268,7 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 				record.fellBackFrom === undefined
 					? ""
 					: `Note: Unknown agent type "${record.fellBackFrom}" — using ${record.type}.\n\n`;
-			if (record.isBackground) {
+			if (record.mode === "background") {
 				return textResult(
 					service,
 					`${note}${launchedText(record, "started", service.settings.maxConcurrent)}\nDo not duplicate this agent's work.`,

@@ -16,12 +16,8 @@ import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
 import type { NestedRuntime } from "../service/nested.ts";
 import type { SubagentRecord } from "../service/records.ts";
-import {
-	type SpawnRequest,
-	type SubagentService,
-	subagentServiceFor,
-	subagentSessionRecord,
-} from "../service/service.ts";
+import type { SpawnRequest, SubagentService } from "../service/service.ts";
+import { subagentServiceFor, subagentSessionRecord } from "../service/sessions.ts";
 import { flushSpawnReply, markSpawnPending } from "./events.ts";
 
 /** Bumped when the envelope or a channel's contract changes; 3 adds `agent-ended` and `capabilities.skillAgents`. */
@@ -153,7 +149,7 @@ export function serveRpc(session: AgentSession, bus: EventBus): () => void {
 					},
 					model: await spawnModel(scope.service, raw.model, agentType),
 					cwd: spawnCwd(raw.cwd),
-					detached: { isBackground: optional(raw.isBackground, isBoolean) },
+					mode: optional(raw.isBackground, isBoolean) ? "detached-background" : "detached",
 					signal: raw.signal instanceof AbortSignal ? raw.signal : undefined,
 					// Held so the spawn's reply reaches the bus before the agent's terminal event.
 					onCreated: (record) => {

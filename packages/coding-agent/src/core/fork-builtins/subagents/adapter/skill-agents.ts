@@ -19,8 +19,9 @@ import {
 	skillAgentsQueryReplyChannel,
 } from "../../../skills/runtime.ts";
 import { SKILLS_CHANGED_CHANNEL } from "../../../skills/skill-set-events.ts";
-import type { SkillAliasDecision } from "../definitions/registry.ts";
-import { loadAgentRegistry, reportSubagentWarning, sessionCwd, subagentSessionRecord } from "../service/service.ts";
+import { loadAgentRegistry, type SkillAliasDecision } from "../definitions/registry.ts";
+import { busSkills, sessionCwd } from "../service/service.ts";
+import { reportSubagentWarning, subagentSessionRecord } from "../service/sessions.ts";
 import { readSubagentSettings } from "../settings/settings.ts";
 
 interface MapsState {
@@ -76,9 +77,9 @@ export function publishSessionRewriteMaps(session: AgentSession, bus: EventBus):
 	try {
 		const { settings } = readSubagentSettings(session.settingsManager);
 		const { registry } = loadAgentRegistry({
-			session,
 			agentDir: context.agentDir,
-			eventBus: bus,
+			projectTrusted: session.settingsManager.isProjectTrusted(),
+			skills: busSkills(bus),
 			// A child's agents come from its owner's project, as its spawns resolve them, wherever it works.
 			cwd: context.lineage ? context.lineage.owner.defaultCwd() : sessionCwd(session),
 			settings,

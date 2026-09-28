@@ -129,6 +129,8 @@ export type SubagentEvent =
 	| { type: "created" | "started" | "ended"; record: SubagentView }
 	/** A run waits for a pool slot; the presentation counts it. The bus adapter bridges no event for it. */
 	| { type: "queued"; record: SubagentView }
+	/** A running agent's tools, turns or usage changed; live displays refresh on it (F12). Not bridged either. */
+	| { type: "progress"; record: SubagentView }
 	| { type: "steered"; record: SubagentView; message: string }
 	| { type: "compacted"; record: SubagentView; reason: "manual" | "threshold" | "overflow"; tokensBefore: number }
 	| { type: "definitions"; registry: AgentRegistry }
@@ -586,6 +588,7 @@ export class SubagentService {
 			onUsage: (usage: Usage) => this.addRecordUsage(record, usage),
 			onTurnEnd: (turns: number) => {
 				record.turns = turns;
+				this.emit({ type: "progress", record });
 			},
 			onCompaction: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => {
 				record.compactionCount++;
@@ -645,6 +648,7 @@ export class SubagentService {
 			onActivity: (activity) => {
 				record.activity.push(activity);
 				if (activity.type === "tool_end") record.toolUses++;
+				if (activity.type === "tool_start" || activity.type === "tool_end") this.emit({ type: "progress", record });
 			},
 		};
 	}
@@ -667,11 +671,16 @@ export class SubagentService {
 			return;
 		}
 		for (const message of record.pendingSteers.splice(0)) this.deliverSteer(record, message);
+		// The effective model is known now, and live displays can follow the child's conversation.
+		this.emit({ type: "progress", record });
 	}
 
 	/** A nested agent's spend counts in every ancestor's total, and once in the session's. */
 	private addRecordUsage(record: SubagentRecord, usage: Usage): void {
-		for (let owner: SubagentRecord | undefined = record; owner; owner = owner.parent) addUsage(owner.usage, usage);
+		for (let owner: SubagentRecord | undefined = record; owner; owner = owner.parent) {
+			addUsage(owner.usage, usage);
+			this.emit({ type: "progress", record: owner });
+		}
 		if (this.current.reportUsage) this.pendingUsage.add(usage);
 	}
 

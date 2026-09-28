@@ -36,6 +36,7 @@ import { createAgentToolDefinition } from "./subagents/tools/agent.ts";
 import { createNestedToolDefinitions } from "./subagents/tools/nested.ts";
 import { createResultToolDefinition } from "./subagents/tools/result.ts";
 import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
+import { withAgentToolRenderers } from "./subagents/ui/tool-renderers.ts";
 import { forkBuiltinsEnabled } from "./switch.ts";
 import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
 
@@ -69,7 +70,10 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
 		createNestedTools: createNestedToolDefinitions,
 		onServiceCreated: bridgeServiceEvents,
 	});
-	addOwned(definitions, AGENT_TOOL_NAME, () => createAgentToolDefinition(options.session, subagents));
+	// The renderers live with the presentation (ui/); the tool definition stays headless.
+	addOwned(definitions, AGENT_TOOL_NAME, () =>
+		withAgentToolRenderers(createAgentToolDefinition(options.session, subagents), options.session),
+	);
 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
 	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
 	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);

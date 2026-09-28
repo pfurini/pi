@@ -15,6 +15,7 @@
  * the agent, and the call's abort signal stops it. A background spawn returns its id at once and
  * notifies on completion.
  */
+import type { AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import { type TSchema, Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
@@ -48,6 +49,7 @@ import {
 	textResult,
 } from "./common.ts";
 import { buildAgentToolDescription } from "./description.ts";
+import { type AgentToolDetails, agentToolDetails, detailedResult } from "./details.ts";
 
 /** The arguments Pi validates against the schema `parameters` returns. */
 interface AgentToolParams {
@@ -162,6 +164,81 @@ function buildSurface(
 	};
 }
 
+/** At most one live update per window (P10); a tool row renders its component every frame between updates. */
+const PROGRESS_INTERVAL_MS = 100;
+
+/**
+ * Sends `onUpdate` while a foreground agent runs (F12, P10): whenever its status, activity, turns,
+ * tool uses or usage changed, at most once per 100 ms. A change inside the window goes out when the
+ * window ends, with the details as they are then. Returns the stopper.
+ */
+function followProgress(
+	service: SubagentService,
+	id: string,
+	onUpdate: AgentToolUpdateCallback<AgentToolDetails>,
+): () => void {
+	let last: string | undefined;
+	let sentAt = Number.NEGATIVE_INFINITY;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const send = () => {
+		timer = undefined;
+		const view = service.lookup(id);
+		if (!view) return;
+		const details = agentToolDetails(service, view);
+		// The spinner and the elapsed time move at render time; an update carries only real changes.
+		const key = JSON.stringify([
+			details.status,
+			details.activity,
+			details.turns,
+			details.toolUses,
+			details.tokens,
+			details.cost,
+			details.contextPercent,
+			details.compactions,
+			details.modelName,
+			details.tags,
+			details.queuePosition,
+		]);
+		if (key === last) return;
+		last = key;
+		sentAt = Date.now();
+		onUpdate({ content: [{ type: "text", text: `${details.toolUses} tool uses...` }], details });
+	};
+	// The child's streaming response changes the activity text between progress events.
+	let offConversation: (() => void) | undefined;
+	const schedule = () => {
+		offConversation ??= service.conversation(id)?.subscribe(schedule);
+		if (timer) return;
+		const wait = sentAt + PROGRESS_INTERVAL_MS - Date.now();
+		if (wait <= 0) send();
+		else timer = setTimeout(send, wait);
+	};
+	schedule();
+	const off = service.subscribe((event) => {
+		// A queued call's place moves whenever another agent starts, stops or ends.
+		if (("record" in event && event.record.id === id) || service.lookup(id)?.status === "queued") schedule();
+	});
+	return () => {
+		off();
+		offConversation?.();
+		clearTimeout(timer);
+	};
+}
+
+/** Waits for a foreground run, following its progress when the caller takes updates. */
+async function waitInForeground(
+	service: SubagentService,
+	id: string,
+	onUpdate: AgentToolUpdateCallback<AgentToolDetails> | undefined,
+): Promise<void> {
+	const stop = onUpdate ? followProgress(service, id, onUpdate) : undefined;
+	try {
+		await service.waitForResult(id);
+	} finally {
+		stop?.();
+	}
+}
+
 /** What a background spawn or resume returns: the id and how to follow up. */
 function launchedText(record: SubagentView, verb: "started" | "resumed", maxConcurrent: number): string {
 	const queued = record.status === "queued";
@@ -203,6 +280,7 @@ async function resume(
 	ref: string,
 	toolCallId: string,
 	signal: AbortSignal | undefined,
+	onUpdate: AgentToolUpdateCallback<AgentToolDetails> | undefined,
 ) {
 	const existing = service.get(ref);
 	if (!existing) return textResult(service, notFound(ref));
@@ -214,9 +292,12 @@ async function resume(
 	} catch (error) {
 		return textResult(service, errorText(error));
 	}
-	if (background) return textResult(service, launchedText(record, "resumed", service.settings.maxConcurrent));
-	await service.waitForResult(record.id);
-	return textResult(service, finishedText(record, service.settings.showCost));
+	if (background) {
+		const text = launchedText(record, "resumed", service.settings.maxConcurrent);
+		return detailedResult(service, text, agentToolDetails(service, record, "background"));
+	}
+	await waitInForeground(service, record.id, onUpdate);
+	return detailedResult(service, finishedText(record, service.settings.showCost), agentToolDetails(service, record));
 }
 
 export function createAgentToolDefinition(session: AgentSession, context: SubagentSessionContext): ToolDefinition {
@@ -242,10 +323,10 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 			return built().parameters;
 		},
 
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const args = params as AgentToolParams;
 			const service = requireService(session);
-			if (args.resume) return resume(service, args, args.resume, toolCallId, signal);
+			if (args.resume) return resume(service, args, args.resume, toolCallId, signal, onUpdate);
 			let record: SubagentView;
 			try {
 				record = await service.spawn({
@@ -269,13 +350,18 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 					? ""
 					: `Note: Unknown agent type "${record.fellBackFrom}" — using ${record.type}.\n\n`;
 			if (record.mode === "background") {
-				return textResult(
+				return detailedResult(
 					service,
 					`${note}${launchedText(record, "started", service.settings.maxConcurrent)}\nDo not duplicate this agent's work.`,
+					agentToolDetails(service, record, "background"),
 				);
 			}
-			await service.waitForResult(record.id);
-			return textResult(service, note + finishedText(record, service.settings.showCost));
+			await waitInForeground(service, record.id, onUpdate);
+			return detailedResult(
+				service,
+				note + finishedText(record, service.settings.showCost),
+				agentToolDetails(service, record),
+			);
 		},
 	};
 }

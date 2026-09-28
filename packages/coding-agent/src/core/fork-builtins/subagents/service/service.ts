@@ -3,11 +3,15 @@
  * `src/agent-manager.ts` and `src/index.ts` at 79a7c42 are the behavior reference.
  *
  * The service owns its records, steering, stopping, resuming and result waits. Every spawn reloads
- * agent definitions and settings first. Its parts live beside it: `queue.ts` holds the two
- * concurrency pools and the queue, `retention.ts` the eviction of finished records and their
- * tombstones, `joins.ts` the batching of background completions, and `sessions.ts` which session
- * owns which service. The service imports no tool, adapter or presentation code (F14): the wiring
- * layer injects the nested tools and the event bridge through `SubagentSessionContext`.
+ * agent definitions and settings first. Its parts live beside it:
+ *
+ * - `queue.ts` holds the two concurrency pools and the queue;
+ * - `retention.ts` evicts finished records and keeps their tombstones;
+ * - `joins.ts` batches background completions;
+ * - `sessions.ts` records which session owns which service.
+ *
+ * The service imports no tool, adapter or presentation code (F14). The wiring layer injects the
+ * nested tools and the event bridge through `SubagentSessionContext`.
  *
  * The service ends with its session: the session's `dispose()` runs the cleanup hook registered
  * here, which aborts every running and queued child, reports each as `aborted`, and tears down

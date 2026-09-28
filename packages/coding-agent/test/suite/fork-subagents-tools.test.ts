@@ -7,6 +7,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,7 +67,7 @@ async function session(
 	const harness = await createHarness({
 		...options,
 		cwd,
-		settings: { forkBuiltins: { subagents } } as unknown as Partial<Settings>,
+		settings: { ...options.settings, forkBuiltins: { subagents } } as unknown as Partial<Settings>,
 	});
 	harnesses.push(harness);
 	return harness;
@@ -149,6 +150,91 @@ describe("Agent", () => {
 		for (let index = 1; index < 5; index++) ids.push(agentId(await call(harness, "Agent", task(`tally ${index}`))));
 		for (const id of ids) await serviceOf(harness).waitForResult(id);
 		expect(sweeps).toHaveBeenCalledTimes(5);
+	});
+
+	it("holds a notice for the next prompt when the parent is aborted inside a tool call", async () => {
+		const quick = held(() => fauxAssistantMessage("quick result"));
+		let waiting = false;
+		// Ends its batch on its own result, so the aborted run's last message is this tool result.
+		const factory = (pi: ExtensionAPI) => {
+			pi.registerTool({
+				name: "wait_for_stop",
+				label: "Wait",
+				description: "Waits until the run stops",
+				parameters: Type.Object({}),
+				execute: (_id, _params, signal) =>
+					new Promise<AgentToolResult<unknown>>((resolve) => {
+						waiting = true;
+						const stop = () =>
+							resolve({ content: [{ type: "text", text: "stopped" }], details: {}, terminate: true });
+						if (signal?.aborted) stop();
+						else signal?.addEventListener("abort", stop, { once: true });
+					}),
+			});
+		};
+		const harness = await session(
+			{ defaultJoinMode: "async" },
+			{ extensionFactories: [{ name: "waiter", factory }] },
+		);
+		let parentCalls = 0;
+		harness.setResponses(
+			Array.from({ length: 300 }, () =>
+				router({ quick: [quick.behavior] }, () =>
+					++parentCalls === 1
+						? fauxAssistantMessage([fauxToolCall("wait_for_stop", {})], { stopReason: "toolUse" })
+						: fauxAssistantMessage("parent done"),
+				),
+			),
+		);
+		const busy = harness.session.prompt("wait for the stop");
+		await vi.waitFor(() => expect(waiting).toBe(true), CHILD_START);
+		const id = agentId(await call(harness, "Agent", task("quick task")));
+		await vi.waitFor(() => expect(quick.requests()).toBe(1), CHILD_START);
+		quick.release();
+		await serviceOf(harness).waitForResult(id);
+		await harness.session.abort();
+		await busy;
+		expect(harness.session.messages.at(-1)?.role).toBe("toolResult");
+		// Interrupted: the notice waits for the next prompt instead of starting a turn.
+		await sleep(300);
+		expect(parentCalls).toBe(1);
+		await harness.session.prompt("next question");
+		expect(parentCalls).toBe(2);
+		expect(notices(harness.session)).toHaveLength(1);
+		expect(notices(harness.session)[0]).toContain(`<task-id>${id}</task-id>`);
+	});
+
+	it("holds a notice for the next prompt when an abort cancels the parent's retry", async () => {
+		const quick = held(() => fauxAssistantMessage("quick result"));
+		const harness = await session(
+			{ defaultJoinMode: "async" },
+			{ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 60_000 } } },
+		);
+		let parentCalls = 0;
+		harness.setResponses(
+			Array.from({ length: 300 }, () =>
+				router({ quick: [quick.behavior] }, () =>
+					++parentCalls === 1
+						? fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" })
+						: fauxAssistantMessage("parent done"),
+				),
+			),
+		);
+		const busy = harness.session.prompt("work until it fails");
+		await vi.waitFor(() => expect(harness.session.isRetrying).toBe(true), CHILD_START);
+		const id = agentId(await call(harness, "Agent", task("quick task")));
+		await vi.waitFor(() => expect(quick.requests()).toBe(1), CHILD_START);
+		quick.release();
+		await serviceOf(harness).waitForResult(id);
+		await harness.session.abort();
+		await busy;
+		// Interrupted: the notice waits for the next prompt instead of starting a turn.
+		await sleep(300);
+		expect(parentCalls).toBe(1);
+		await harness.session.prompt("next question");
+		expect(parentCalls).toBe(2);
+		expect(notices(harness.session)).toHaveLength(1);
+		expect(notices(harness.session)[0]).toContain(`<task-id>${id}</task-id>`);
 	});
 
 	it("returns an unknown type under fallbackSubagent none as text naming the available types, and starts nothing", async () => {

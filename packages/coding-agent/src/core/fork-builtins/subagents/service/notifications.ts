@@ -5,10 +5,11 @@
  * A completion that lands while the parent runs is parked and delivered once the parent settles,
  * so the model does not get a stale notice for a result it already fetched. While the parent is
  * idle, a completion is delivered after a short hold that each new arrival re-arms. After a run the
- * user interrupted, a notice rides on the next prompt instead of starting a turn. Delivery goes
- * through `session.sendCustomMessage` with `discardIf`, so a result read before the notice is
- * injected drops it. Grouped agents share one notice; a group whose member is late delivers the
- * finished ones at its timeout and re-batches the stragglers.
+ * user interrupted, a notice rides on the next prompt instead of starting a turn. An aborted run
+ * counts, and so does a retry that an abort cancelled; an abort during post-run compaction goes
+ * undetected. Delivery goes through `session.sendCustomMessage` with `discardIf`, so a result read
+ * before the notice is injected drops it. Grouped agents share one notice; a group whose member is
+ * late delivers the finished ones at its timeout and re-batches the stragglers.
  */
 import type { AgentSession } from "../../../agent-session.ts";
 import { isTerminal, type SubagentRecord } from "./records.ts";
@@ -18,6 +19,9 @@ export const NOTIFICATION_CUSTOM_TYPE = "subagent-notification";
 
 /** The hold before an idle parent is notified; each arrival re-arms it. */
 const IDLE_HOLD_MS = 200;
+
+/** `auto_retry_end.finalError` when an abort cancels a retry (`AgentSession._finishCancelledRetry`). */
+const RETRY_CANCELLED = "Retry cancelled";
 
 function escapeXml(text: string): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -254,7 +258,12 @@ export class NotificationQueue {
 				clearTimeout(this.idleTimer);
 			} else if (event.type === "agent_end") {
 				const last = event.messages.at(-1);
-				if (last?.role === "assistant" && last.stopReason === "aborted") this.interrupted = true;
+				// An aborted run can end on a tool result (a batch that terminates), so the run's own signal counts too.
+				const aborted = session.agent.signal?.aborted === true;
+				if (aborted || (last?.role === "assistant" && last.stopReason === "aborted")) this.interrupted = true;
+			} else if (event.type === "auto_retry_end" && event.finalError === RETRY_CANCELLED) {
+				// An abort during the retry backoff ends the run with no agent_end of its own.
+				this.interrupted = true;
 			} else if (event.type === "agent_settled") {
 				this.runActive = false;
 				if (this.pending.size > 0) this.flush();

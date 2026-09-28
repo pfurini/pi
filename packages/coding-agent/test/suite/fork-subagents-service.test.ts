@@ -30,6 +30,7 @@ import {
 	SubagentService,
 	type SubagentServiceOptions,
 } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { invocationTags } from "../../src/core/fork-builtins/subagents/ui/format.ts";
 import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
 import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
@@ -417,6 +418,58 @@ describe("waits, steering, stopping and resuming", () => {
 });
 
 describe("definitions, usage and statuses", () => {
+	it("keeps a caller's model the agent file outranked only when it names another model", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const harness = await createHarness({ models: [{ id: "faux-a" }, { id: "faux-b" }] });
+		harnesses.push(harness);
+		mkdirSync(join(harness.tempDir, "agents"), { recursive: true });
+		writeFileSync(
+			join(harness.tempDir, "agents", "pinned.md"),
+			"---\ndescription: pinned\ntools: read\nextensions: false\nmodel: faux-b\n---\nPinned.",
+		);
+		harness.setResponses(Array.from({ length: 20 }, () => router({})));
+		const subagents = service(harness);
+		const spawn = (model: string) =>
+			subagents.spawn({
+				type: "pinned",
+				prompt: `pinned for ${model}`,
+				description: "pinned",
+				params: { run_in_background: false, model },
+			});
+		const honored = await spawn("FAUX-B");
+		const other = await spawn("faux-a");
+		const unknown = await spawn("no-such-model");
+		for (const record of [honored, other, unknown]) await subagents.waitForResult(record.id);
+		expect(honored.invocation.overridden).toBeUndefined();
+		expect(other.invocation.overridden?.model).toBe("faux-a");
+		expect(unknown.invocation.overridden?.model).toBe("no-such-model");
+		expect(invocationTags(honored).modelName).toBe("faux-b");
+		expect(invocationTags(other).modelName).toBe("faux-b (asked faux-a)");
+	});
+
+	it("records the model and thinking level the child session runs with", async () => {
+		const harness = await parent({ defaultJoinMode: "async" });
+		// No model: the child inherits the parent's. The faux model has no reasoning, so Pi clamps `high` to `off`.
+		writeFileSync(
+			join(harness.tempDir, "agents", "thinker.md"),
+			"---\ndescription: thinks\ntools: read\nextensions: false\nthinking: high\n---\nThink.",
+		);
+		const subagents = service(harness);
+		const record = await subagents.spawn(foreground("think hard"));
+		const thinker = await subagents.spawn({ ...foreground("think deep"), type: "thinker" });
+		await subagents.waitForResult(record.id);
+		await subagents.waitForResult(thinker.id);
+		const parentModel = harness.session.model;
+		expect(parentModel).toBeDefined();
+		expect(record.effective.model?.id).toBe(parentModel?.id);
+		expect(thinker.effective.model?.id).toBe(parentModel?.id);
+		expect([thinker.invocation.thinking, thinker.effective.thinking]).toEqual(["high", "off"]);
+		expect(invocationTags(thinker)).toMatchObject({
+			modelId: `${parentModel?.provider}/${parentModel?.id}`,
+			tags: ["thinking: off (asked high)"],
+		});
+	});
+
 	it("warns when an agent inherits a parent model outside enabledModels, and still runs it", async () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "on");
 		const harness = await createHarness({

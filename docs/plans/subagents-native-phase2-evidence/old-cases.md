@@ -7,13 +7,13 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 
 | # | Old test | Status | Covering tests |
 | --- | --- | --- | --- |
-| 1 | test/agent-color.test.ts > resolveAgentColor > resolves Claude Code names and Agency Agents aliases | T7.1 |  |
-| 2 | test/agent-color.test.ts > resolveAgentColor > normalizes six-digit hex and rejects unsupported values | T7.1 |  |
-| 3 | test/agent-color.test.ts > renderAgentNameLabel > renders a padded truecolor badge with readable foreground | T7.2 |  |
-| 4 | test/agent-color.test.ts > renderAgentNameLabel > judges contrast against the effective color in 256-color mode | T7.3 |  |
-| 5 | test/agent-color.test.ts > renderAgentNameLabel > restores an enclosing tool background after the badge | T7.4 |  |
-| 6 | test/agent-color.test.ts > renderAgentNameLabel > resets the background when the caller paints none | T7.4 |  |
-| 7 | test/agent-color.test.ts > renderAgentNameLabel > preserves existing theme styling without a valid color | T7.5 |  |
+| 1 | test/agent-color.test.ts > resolveAgentColor > resolves Claude Code names and Agency Agents aliases | T7.1 | test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor resolves Claude Code names and Agency Agents aliases |
+| 2 | test/agent-color.test.ts > resolveAgentColor > normalizes six-digit hex and rejects unsupported values | T7.1 | test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor normalizes six-digit hex and rejects unsupported values |
+| 3 | test/agent-color.test.ts > renderAgentNameLabel > renders a padded truecolor badge with readable foreground | T7.2 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel renders a padded truecolor badge with readable foreground |
+| 4 | test/agent-color.test.ts > renderAgentNameLabel > judges contrast against the effective color in 256-color mode | T7.3 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel judges contrast against the effective color in 256-color mode |
+| 5 | test/agent-color.test.ts > renderAgentNameLabel > restores an enclosing tool background after the badge | T7.4 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel restores an enclosing tool background after the badge |
+| 6 | test/agent-color.test.ts > renderAgentNameLabel > resets the background when the caller paints none | T7.4 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel resets the background when the caller paints none |
+| 7 | test/agent-color.test.ts > renderAgentNameLabel > preserves existing theme styling without a valid color | T7.5 | test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel preserves existing theme styling without a valid color |
 | 8 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the registered Agent tool call header with the display name and color | T8.11 |  |
 | 9 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the above-editor Agent widget with the display name and color | T10.10 |  |
 | 10 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the FleetView row with the display name and color | T12.11 |  |
@@ -69,9 +69,9 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 60 | test/agent-model-display.test.ts > Agent tool result — effective model > discloses a spelling that names no available model at all | T8.7 |  |
 | 61 | test/agent-model-display.test.ts > Agent tool result — effective model > says nothing about a request that was honored | T8.7 |  |
 | 62 | test/agent-model-display.test.ts > Agent tool result — resume > renders the reopened session's settings, not the resume call's | T8.8 |  |
-| 63 | test/agent-widget.test.ts > formatSessionTokens > applies threshold colors (<70 dim, 70–85 warning, ≥85 error) | T7.6 |  |
-| 64 | test/agent-widget.test.ts > formatSessionTokens > annotates compaction count alongside percent | T7.7 |  |
-| 65 | test/agent-widget.test.ts > formatSessionTokens > preserves the outer style after nested annotation styles reset | T7.7 |  |
+| 63 | test/agent-widget.test.ts > formatSessionTokens > applies threshold colors (<70 dim, 70–85 warning, ≥85 error) | T7.6 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens applies threshold colors (<70 dim, 70–85 warning, ≥85 error) |
+| 64 | test/agent-widget.test.ts > formatSessionTokens > annotates compaction count alongside percent | T7.7 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens annotates compaction count alongside percent |
+| 65 | test/agent-widget.test.ts > formatSessionTokens > preserves the outer style after nested annotation styles reset | T7.7 | test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset |
 | 66 | test/agent-widget.test.ts > renderRunningAgentStatus > renders running status as separate component lines | T10.1 |  |
 | 67 | test/agent-widget.test.ts > AgentWidget > shows foreground agents in 'all' mode (and by default) | T10.2 |  |
 | 68 | test/agent-widget.test.ts > AgentWidget > hides nested children in every coordinator widget mode | T10.2 |  |
@@ -85,11 +85,11 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 76 | test/agent-widget.test.ts > AgentWidget > discloses a level the run did not honor | T10.3 |  |
 | 77 | test/agent-widget.test.ts > AgentWidget > keeps queued agents on one summary line and finished agents visible | T10.4 |  |
 | 78 | test/agent-widget.test.ts > AgentWidget > renders nothing in 'off' mode | T10.2 |  |
-| 79 | test/agent-widget.test.ts > formatCost > keeps the precision that distinguishes one run from another | T7.8 |  |
-| 80 | test/agent-widget.test.ts > formatCost > never pads a round figure with noise, nor cuts it below cents | T7.8 |  |
-| 81 | test/agent-widget.test.ts > formatCost > shows nothing when there is nothing to show | T7.8 |  |
-| 82 | test/agent-widget.test.ts > formatCost > says a real but tiny cost is tiny, not zero | T7.8 |  |
-| 83 | test/agent-widget.test.ts > formatCost > marks the figure as an estimate | T7.8 |  |
+| 79 | test/agent-widget.test.ts > formatCost > keeps the precision that distinguishes one run from another | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another |
+| 80 | test/agent-widget.test.ts > formatCost > never pads a round figure with noise, nor cuts it below cents | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents |
+| 81 | test/agent-widget.test.ts > formatCost > shows nothing when there is nothing to show | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost shows nothing when there is nothing to show |
+| 82 | test/agent-widget.test.ts > formatCost > says a real but tiny cost is tiny, not zero | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost says a real but tiny cost is tiny, not zero |
+| 83 | test/agent-widget.test.ts > formatCost > marks the figure as an estimate | T7.8 | test/fork-builtins/subagents/ui-format.test.ts > formatCost marks the figure as an estimate |
 | 84 | test/agent-widget.test.ts > AgentWidget cost display > shows the cost beside the token count when enabled | T10.5 |  |
 | 85 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost when disabled | T10.5 |  |
 | 86 | test/agent-widget.test.ts > AgentWidget cost display > shows no cost for an unpriced model, even when enabled | T10.5 |  |
@@ -184,9 +184,9 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 175 | test/cost-display.test.ts > cost display > the completion notification > does not total a single agent — the line above already says it | T9.5 |  |
 | 176 | test/cost-display.test.ts > cost display > the completion notification > shows no total, and no per-agent cost, when unpriced | T9.5 |  |
 | 177 | test/cost-display.test.ts > cost display > the completion notification > shows nothing when the setting is off | T9.5 |  |
-| 178 | test/fleet-list.test.ts > formatFleetElapsed > renders integer seconds (no decimal, no suffix) | T7.9 |  |
-| 179 | test/fleet-list.test.ts > formatFleetElapsed > floors negatives to 0s | T7.9 |  |
-| 180 | test/fleet-list.test.ts > formatFleetTokens > prefixes a down-arrow and uses plural 'tokens' | T7.10 |  |
+| 178 | test/fleet-list.test.ts > formatFleetElapsed > renders integer seconds (no decimal, no suffix) | T7.9 | test/fork-builtins/subagents/ui-format.test.ts > elapsed time writes tenths of a second, and FleetView's whole seconds |
+| 179 | test/fleet-list.test.ts > formatFleetElapsed > floors negatives to 0s | T7.9 | test/fork-builtins/subagents/ui-format.test.ts > elapsed time floors FleetView's elapsed time at 0s |
+| 180 | test/fleet-list.test.ts > formatFleetTokens > prefixes a down-arrow and uses plural 'tokens' | T7.10 | test/fork-builtins/subagents/ui-format.test.ts > token counts writes `33.8k token`, and FleetView's `↓ 13.1k tokens` |
 | 181 | test/fleet-list.test.ts > FleetList navigation > does not register a widget when there are no agents | T12.1 |  |
 | 182 | test/fleet-list.test.ts > FleetList navigation > hides nested child records from the coordinator fleet | T12.2 |  |
 | 183 | test/fleet-list.test.ts > FleetList navigation > activates on ↓ at an empty prompt, consuming the key | T12.3 |  |

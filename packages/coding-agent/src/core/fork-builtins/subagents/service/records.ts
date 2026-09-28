@@ -2,7 +2,7 @@
  * Fork-owned: subagent records and their handles (pi-subagents `src/types.ts`, `src/mention.ts` and
  * `src/agent-manager.ts` at 79a7c42). `retention.ts` holds the tombstones evicted records leave behind.
  */
-import type { Usage } from "@earendil-works/pi-ai";
+import type { ModelThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { Child, ChildActivity } from "../runner/run.ts";
@@ -28,6 +28,12 @@ export function inBackground(mode: SpawnMode): boolean {
 
 /** A usage total nobody outside the service may change. */
 export type ReadonlyUsage = Readonly<Omit<Usage, "cost">> & { readonly cost: Readonly<Usage["cost"]> };
+
+/** What a child session runs with; empty until the child attaches. */
+export interface EffectiveInvocation {
+	readonly model?: Model<Api>;
+	readonly thinking?: ModelThinkingLevel;
+}
 
 /**
  * What the service hands out for an agent (F13): its public methods and events carry this read-only
@@ -69,7 +75,10 @@ export interface SubagentView {
 	/** The tool call the current run answers; a resume replaces it. */
 	readonly toolCallId?: string;
 	readonly invocation: Readonly<InvocationConfig>;
+	/** The model the spawn resolved; absent when the child inherits its parent's. */
 	readonly model?: Model<Api>;
+	/** The model and thinking level the child session runs with, read when it attaches (P22). */
+	readonly effective: EffectiveInvocation;
 	/** The working directory the child runs in. */
 	readonly cwd: string;
 	/** The requested type when it resolved to the fallback agent instead. */
@@ -106,6 +115,7 @@ export interface SubagentRecord extends SubagentView {
 	worktreePath?: string;
 	worktreeOutcome?: WorktreeOutcome;
 	readonly activity: ChildActivity[];
+	effective: EffectiveInvocation;
 	/** The worktree an `isolation: "worktree"` run works in, from its start. */
 	worktree?: Worktree;
 	/** Settles once the run's worktree exists, with the error when it could not be created. */

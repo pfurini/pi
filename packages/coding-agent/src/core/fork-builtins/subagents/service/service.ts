@@ -51,7 +51,13 @@ import {
 } from "../runner/run.ts";
 import { transcriptPath } from "../runner/transcript.ts";
 import { createWorktree, describeWorktreeOutcome, finishWorktree, worktreeBase } from "../runner/worktree.ts";
-import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
+import {
+	type InvocationConfig,
+	type InvocationParams,
+	resolveInvocationConfig,
+	resolveModel,
+	resolveSpawnModel,
+} from "../settings/models.ts";
 import { readSubagentSettings, type SubagentSettings } from "../settings/settings.ts";
 import { addUsage, emptyUsage, PendingUsage } from "../usage.ts";
 import { GroupJoin, SpawnBatch } from "./joins.ts";
@@ -397,6 +403,7 @@ export class SubagentService {
 		const model =
 			request.model ??
 			(await this.resolveModel(definition, invocation.modelInput, invocation.modelFromParams, host));
+		const disclosed = await this.withHonoredModelDropped(invocation, model);
 		// Outside a repository the spawn fails here, before any record exists.
 		if (invocation.isolation === "worktree") await worktreeBase(cwd);
 		this.assertLive();
@@ -410,7 +417,7 @@ export class SubagentService {
 			definition,
 			request,
 			cwd,
-			invocation,
+			invocation: disclosed,
 			model,
 			mode,
 			fellBackFrom,
@@ -422,6 +429,25 @@ export class SubagentService {
 		if (record.joinMode === "smart" || record.joinMode === "group") this.batch.add(record);
 		this.launch(record, request.prompt, invocation.inheritContext);
 		return record;
+	}
+
+	/**
+	 * An agent file's `model` outranked the caller's, but the caller's spelling may name the same model
+	 * (`haiku` for `anthropic/claude-haiku-4-5`). Then the request was honored, and nothing discloses it
+	 * (#182). A spelling that names another model, or none, stays in `overridden.model`.
+	 */
+	private async withHonoredModelDropped(
+		invocation: InvocationConfig,
+		model: Model<Api> | undefined,
+	): Promise<InvocationConfig> {
+		const asked = invocation.overridden?.model;
+		if (!asked || !model) return invocation;
+		const resolved = resolveModel(asked, await this.session.modelRuntime.getAvailable());
+		if (typeof resolved === "string" || resolved.provider !== model.provider || resolved.id !== model.id) {
+			return invocation;
+		}
+		const thinking = invocation.overridden?.thinking;
+		return { ...invocation, overridden: thinking === undefined ? undefined : { thinking } };
 	}
 
 	private async resolveModel(
@@ -495,6 +521,7 @@ export class SubagentService {
 			cwd: input.cwd,
 			fellBackFrom: input.fellBackFrom,
 			activity: [],
+			effective: {},
 			pendingSteers: [],
 			waiters: new Set(),
 		};
@@ -632,6 +659,8 @@ export class SubagentService {
 		record.child = child;
 		record.sessionFile = child.session.sessionFile;
 		record.transcriptPath = child.transcriptPath;
+		// What the child runs with, after Pi resolved an inherited model and clamped the level (P22).
+		record.effective = { model: child.session.model, thinking: child.session.thinkingLevel };
 		// The owner ended while the child was being built: nothing may keep it.
 		if (this.disposed) {
 			this.teardowns.push(teardownChild(child));

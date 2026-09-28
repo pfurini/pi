@@ -9,7 +9,8 @@
  *   loads any extension path.
  * - Fork-owned modules live under `src/core/fork-builtins/<name>/` and have no upstream. Each
  *   entry of `FORK_OWNED_BUILTINS` registers through an inline factory, with no package resolution.
- *   The fork-owned built-in is tokensave (pi-tokensave).
+ *   The inline factories are tokensave (pi-tokensave) and the subagents presentation
+ *   (`subagents/ui/index.ts`).
  *
  * `ask_user_question` and `vcc_recall` are fork-owned base tools instead: `AgentSession`
  * registers them next to `read` (`fork-builtins/base-tools.ts`), so no loader affects them.

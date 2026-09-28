@@ -10,7 +10,7 @@ import type { NestedRuntime } from "../service/nested.ts";
 import { statusNote } from "../service/notifications.ts";
 import { isTerminal, type SubagentView } from "../service/records.ts";
 import { THINKING_LEVELS } from "../settings/models.ts";
-import { errorText, foregroundOutcomeNote, partialOutputSuffix } from "./common.ts";
+import { errorText, foregroundOutcomeNote, partialOutputSuffix, unlessAborted } from "./common.ts";
 
 function nestedText(text: string) {
 	return { content: [{ type: "text" as const, text }], details: undefined };
@@ -156,12 +156,14 @@ export function createNestedToolDefinitions(runtime: NestedRuntime): ToolDefinit
 		label: "Steer Nested Agent",
 		description: "Send guidance to a running nested agent owned by this parent.",
 		parameters: NESTED_STEER_PARAMETERS,
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, signal) {
 			const record = runtime.get(params.agent_id);
 			if (!record || isTerminal(record)) {
 				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
 			}
-			const outcome = await runtime.steer(record.id, params.message);
+			const outcome = await unlessAborted(runtime.steer(record.id, params.message), signal);
+			if (!outcome)
+				return nestedText(`Stopped waiting to steer nested agent ${record.id}; the message may still reach it.`);
 			if (outcome.kind === "refused") {
 				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
 			}

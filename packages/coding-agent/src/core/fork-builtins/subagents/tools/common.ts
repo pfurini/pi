@@ -22,6 +22,30 @@ export function errorText(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Resolves with `promise`, or with undefined as soon as `signal` aborts. The promise keeps running:
+ * a steer waits for the child's `input` handlers, and one that never returns must not hold the
+ * call, and with it the parent's Esc and quit (T18-F3).
+ */
+export function unlessAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T | undefined> {
+	if (!signal) return promise;
+	if (signal.aborted) return Promise.resolve(undefined);
+	return new Promise<T | undefined>((resolve, reject) => {
+		const onAbort = () => resolve(undefined);
+		signal.addEventListener("abort", onAbort, { once: true });
+		promise.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error: unknown) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+	});
+}
+
 /** `33.8k token`, or "" when nothing was spent. */
 export function formatTokens(record: SubagentView): string {
 	const count = displayTokens(record.usage);

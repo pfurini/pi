@@ -1,7 +1,8 @@
 /**
  * Fork-owned: the `steer_subagent` base tool (plan T5). pi-subagents `src/index.ts:3027-3080` at
  * 79a7c42 is the behavior reference. A message to an agent whose child session does not exist yet
- * waits on the record and reaches the child when it starts. A finished agent cannot be steered.
+ * waits on the record and reaches the child when it starts. A finished agent cannot be steered. The
+ * call's abort ends the wait for a delivery the child has not confirmed.
  */
 import { Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
@@ -10,7 +11,7 @@ import { STEER_TOOL_NAME } from "../names.ts";
 import { isTerminal } from "../service/records.ts";
 import { notFound } from "../service/service.ts";
 import { requireService } from "../service/sessions.ts";
-import { formatCost, formatTokens, textResult } from "./common.ts";
+import { formatCost, formatTokens, textResult, unlessAborted } from "./common.ts";
 
 const STEER_PARAMETERS = Type.Object({
 	agent_id: Type.String({
@@ -32,7 +33,7 @@ export function createSteerToolDefinition(session: AgentSession): ToolDefinition
 		promptSnippet: "Send a steering message to redirect a running background agent",
 		parameters: STEER_PARAMETERS,
 
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, signal) {
 			const service = requireService(session);
 			const record = service.get(params.agent_id);
 			if (!record) return textResult(service, notFound(params.agent_id));
@@ -42,7 +43,10 @@ export function createSteerToolDefinition(session: AgentSession): ToolDefinition
 					`Agent "${params.agent_id}" is not running (status: ${record.status}). Cannot steer a non-running agent.`,
 				);
 			}
-			const outcome = await service.steer(record.id, params.message);
+			const outcome = await unlessAborted(service.steer(record.id, params.message), signal);
+			if (!outcome) {
+				return textResult(service, `Stopped waiting to steer agent ${record.id}; the message may still reach it.`);
+			}
 			if (outcome.kind === "refused") return textResult(service, outcome.reason);
 			if (outcome.kind === "failed") return textResult(service, `Failed to steer agent: ${outcome.error}`);
 			if (outcome.kind === "queued") {

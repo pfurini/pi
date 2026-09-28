@@ -494,6 +494,31 @@ describe("steer_subagent", () => {
 		await service.waitForResult(id);
 	});
 
+	// T18-F3: the steer awaited delivery with no signal, so a child's hung input handler held Esc and quit.
+	it("stops waiting on a steer the child's input handler never takes once the call is aborted", async () => {
+		const gate = held(() => fauxAssistantMessage("stuck done"));
+		const { harness } = await steerable({ "stuck task": [gate.behavior] });
+		const probe = { seen: false };
+		(globalThis as { __sn2SteerProbe?: typeof probe }).__sn2SteerProbe = probe;
+		writeFileSync(
+			join(harness.tempDir, "extensions", "hang-input.ts"),
+			'export default function (pi) {\n\tpi.on("input", (event) => {\n\t\tif (event.text !== "never taken") return undefined;\n\t\tglobalThis.__sn2SteerProbe.seen = true;\n\t\treturn new Promise(() => {});\n\t});\n}\n',
+		);
+		const id = agentId(
+			await call(harness, "Agent", { subagent_type: "commander", prompt: "stuck task", description: "stuck" }),
+		);
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const controller = new AbortController();
+		const pending = call(harness, "steer_subagent", { agent_id: id, message: "never taken" }, controller.signal);
+		await vi.waitFor(() => expect(probe.seen).toBe(true));
+		controller.abort();
+		const result = await Promise.race([pending, sleep(2_000).then(() => undefined)]);
+		delete (globalThis as { __sn2SteerProbe?: typeof probe }).__sn2SteerProbe;
+		expect(result && text(result)).toBe(`Stopped waiting to steer agent ${id}; the message may still reach it.`);
+		gate.release();
+		await serviceOf(harness).waitForResult(id);
+	});
+
 	it("announces one steered event for a steer that waits for its child, and delivers it when the child starts", async () => {
 		const gate = held(() => fauxAssistantMessage("first done"));
 		const seen: string[] = [];

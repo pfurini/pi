@@ -21,7 +21,18 @@ import {
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, CHILD_START, call, held, router, say, text, textOf, use } from "./fork-subagents-fixtures.ts";
+import {
+	type Behavior,
+	CHILD_START,
+	call,
+	held,
+	router,
+	say,
+	sleep,
+	text,
+	textOf,
+	use,
+} from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
@@ -268,6 +279,69 @@ describe("nested ownership", () => {
 		expect(toolResults(director.child?.session, "steer_subagent")[0]).toMatch(
 			new RegExp(`^Failed to steer nested agent ${id}: \\S`),
 		);
+	});
+
+	// T18-F3: the nested steer awaited delivery with no signal, so the delegating agent's run could not end.
+	it("ends a delegating agent's run while its nested steer waits on a child that never takes it", async () => {
+		const stuck = held(() => fauxAssistantMessage("never"));
+		const harness = await parent(
+			{},
+			{
+				directing: [
+					use("Agent", () => ({
+						subagent_type: "commander",
+						prompt: "orders task",
+						description: "orders",
+						run_in_background: true,
+					})),
+					async (context) => {
+						await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
+						return fauxAssistantMessage(
+							[fauxToolCall("steer_subagent", { agent_id: spawnedId(context), message: "never taken" })],
+							{ stopReason: "toolUse" },
+						);
+					},
+					say("director done"),
+				],
+				orders: [stuck.behavior],
+			},
+		);
+		const agents = join(harness.tempDir, "agents");
+		writeFileSync(
+			join(agents, "director.md"),
+			"---\ndescription: directs\ntools: read\nextensions: false\nallowed_subagents: commander\n---\nYou direct.",
+		);
+		// The commander loads the agent directory's extensions: one never returns from a steer's input.
+		writeFileSync(join(agents, "commander.md"), "---\ndescription: loads extensions\ntools: read\n---\nYou command.");
+		const probe = { seen: false };
+		(globalThis as { __sn2SteerProbe?: typeof probe }).__sn2SteerProbe = probe;
+		mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
+		writeFileSync(
+			join(harness.tempDir, "extensions", "hang-input.ts"),
+			'export default function (pi) {\n\tpi.on("input", (event) => {\n\t\tif (event.text !== "never taken") return undefined;\n\t\tglobalThis.__sn2SteerProbe.seen = true;\n\t\treturn new Promise(() => {});\n\t});\n}\n',
+		);
+		const controller = new AbortController();
+		const pending = call(
+			harness,
+			"Agent",
+			{ subagent_type: "director", prompt: "directing task", description: "directing", run_in_background: false },
+			controller.signal,
+		);
+		await vi.waitFor(() => expect(probe.seen).toBe(true), CHILD_START);
+		const director = serviceOf(harness)
+			.list()
+			.find((view) => view.prompt === "directing task");
+		if (!director) throw new Error("no director record");
+		controller.abort();
+		await pending;
+		const ended = await Promise.race([
+			serviceOf(harness)
+				.waitForResult(director.id)
+				.then(() => "ended"),
+			sleep(3_000).then(() => "still running"),
+		]);
+		delete (globalThis as { __sn2SteerProbe?: typeof probe }).__sn2SteerProbe;
+		expect(ended).toBe("ended");
 	});
 
 	it("lets no agent reach a nested agent it does not own, and hides it from the session", async () => {

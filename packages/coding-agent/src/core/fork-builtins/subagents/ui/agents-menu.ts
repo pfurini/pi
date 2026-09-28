@@ -2,11 +2,11 @@
  * Fork-owned: the `/agents` menu (plan T13). pi-subagents `src/index.ts` (`showAgentsMenu` and the
  * functions after it) at 79a7c42 is the behavior reference, without its workflow and schedule entries.
  *
- * The top menu offers `Running agents (N)` while any exist and `Agent types (N)`; every submenu
- * returns to it. Running agents open the conversation viewer. Agent types list in a `SettingsList`:
- * `•` a project file, `◦` a global one, `✕` a disabled agent, and the model on the right; skill
- * agents never show (ADR-0008). Each agent offers the actions that apply: edit, delete, reset to
- * default, eject, disable and enable.
+ * The top menu offers `Running agents (N)` while any exist, `Agent types (N)`, `Create new agent` and
+ * `Settings` (`settings-menu.ts`); every submenu returns to it. Running agents open the conversation
+ * viewer. Agent types list in a `SettingsList`: `•` a project file, `◦` a global one, `✕` a disabled
+ * agent, and the model on the right; skill agents never show (ADR-0008). Each agent offers the
+ * actions that apply: edit, delete, reset to default, eject, disable and enable.
  *
  * The menu reloads the definitions before it shows the roster, and after every file change (P19).
  * A reload that fails warns and keeps the last good roster. File changes refuse any symlink on the
@@ -14,14 +14,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import {
-	Container,
-	type SettingItem,
-	SettingsList,
-	type SettingsListTheme,
-	Spacer,
-	Text,
-} from "@earendil-works/pi-tui";
+import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import type { ExtensionUIContext } from "../../../extensions/types.ts";
 import { DEFAULT_AGENTS } from "../definitions/defaults.ts";
 import {
@@ -42,27 +35,16 @@ import type { AgentRegistry } from "../definitions/registry.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { SubagentService } from "../service/service.ts";
 import { type CreateWizardEnvironment, runCreateWizard } from "./create-wizard.ts";
-import type { FormatTheme } from "./format.ts";
 import { formatMs } from "./format.ts";
+import { type SettingsMenuEnvironment, settingsListTheme, showSettingsMenu } from "./settings-menu.ts";
 import { openConversationViewer, type ViewerSessionState } from "./viewer.ts";
 
-/** What the menu works with: the command's UI, the session's service, its project trust and its models. */
-export interface AgentsMenuEnvironment extends CreateWizardEnvironment {
+/** What the menu works with: the command's UI, the session's service and settings, its project trust and its models. */
+export interface AgentsMenuEnvironment extends CreateWizardEnvironment, SettingsMenuEnvironment {
 	ui: Pick<ExtensionUIContext, "select" | "input" | "confirm" | "editor" | "notify" | "custom">;
 	service: SubagentService;
 	projectTrusted(): boolean;
 	viewerState: ViewerSessionState;
-}
-
-/** Pi's settings-list look, built from the theme `ctx.ui.custom` passes. */
-export function settingsListTheme(theme: FormatTheme): SettingsListTheme {
-	return {
-		label: (text, selected) => (selected ? theme.fg("accent", text) : text),
-		value: (text, selected) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
-		description: (text) => theme.fg("dim", text),
-		cursor: theme.fg("accent", "→ "),
-		hint: (text) => theme.fg("dim", text),
-	};
 }
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -107,11 +89,12 @@ export async function showAgentsMenu(env: AgentsMenuEnvironment): Promise<void> 
 		const agents = env.service.list();
 		const options: string[] = [];
 		if (agents.length > 0) options.push(`Running agents (${agents.length})`);
-		options.push(`Agent types (${roster(registry).length})`, "Create new agent");
+		options.push(`Agent types (${roster(registry).length})`, "Create new agent", "Settings");
 		const choice = await env.ui.select("Agents", options);
 		if (!choice) return;
 		if (choice.startsWith("Running agents")) await showRunningAgents(env);
 		else if (choice.startsWith("Agent types")) await showAgentTypes(env);
+		else if (choice === "Settings") await showSettingsMenu(env);
 		else await createAgent(env);
 	}
 }

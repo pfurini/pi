@@ -12,7 +12,7 @@
  * bounded `shutdown()`, so quit and session replacement wait for the children's teardown (R4, P6);
  * it never builds a service to do so. `/reload` keeps the service and its agents. The
  * `subagent-notification` renderer (`notification.ts`) draws completion notices, and `/agents`
- * (`agents-menu.ts`) manages agents and their files in `tui` mode.
+ * (`agents-menu.ts`) manages agents, their files and the project's subagent settings in `tui` mode.
  */
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
@@ -136,7 +136,7 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 
 	// Only the interactive TUI shows the menus; RPC's `custom()` returns nothing (P7).
 	pi.registerCommand("agents", {
-		description: "Manage subagents: running agents, agent types and their files",
+		description: "Manage subagents: running agents, agent types, their files and settings",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("/agents needs the interactive TUI.", "info");
@@ -150,6 +150,7 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 				service,
 				projectTrusted: () => bound.settingsManager.isProjectTrusted(),
 				viewerState: viewerStateOf(bound),
+				settingsManager: bound.settingsManager,
 				model: () => ctx.model,
 				scopedModels: () => ctx.scopedModels,
 				modelRuntime: bound.modelRuntime,

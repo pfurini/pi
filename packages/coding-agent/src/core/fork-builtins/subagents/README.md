@@ -60,7 +60,7 @@ The `Agent` description follows `toolDescriptionMode`. `full` is the default, an
 
 ## Settings
 
-Settings live under `forkBuiltins.subagents` in Pi's global and project `settings.json` (D20). The project value wins, and project values apply only in a trusted project. The reader drops a value of the wrong type or out of range, with one warning per key. `writeProjectSubagentSettings` writes the project object; phase 2's `/agents` menu calls it. The writer refuses any value the reader would drop, naming its key, and refuses a symlinked `.pi` or `settings.json`. It replaces an existing file whole (`atomic-write.ts`), so a failed write leaves it byte-identical.
+Settings live under `forkBuiltins.subagents` in Pi's global and project `settings.json` (D20). The project value wins, and project values apply only in a trusted project. The reader drops a value of the wrong type or out of range, with one warning per key. `writeProjectSubagentSettings` writes the project object. The `/agents` settings menu (`ui/settings-menu.ts`) calls it with the project's own values plus the changed key, never a global value. The writer refuses any value the reader would drop, naming its key, and refuses a symlinked `.pi` or `settings.json`. It replaces an existing file whole (`atomic-write.ts`), so a failed write leaves it byte-identical.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

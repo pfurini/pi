@@ -184,6 +184,17 @@ export function readSubagentSettings(settingsManager: SettingsManager): {
 }
 
 /**
+ * The project's own valid subagent values, without defaults or global values: what the settings
+ * menu keeps when it saves one key (P17). Empty in an untrusted project, whose values the manager
+ * does not hold.
+ */
+export function projectSubagentValues(
+	settingsManager: Pick<SettingsManager, "getProjectSettings">,
+): Partial<SubagentSettings> {
+	return sanitizeSubagentSettings(subagentsSection(settingsManager.getProjectSettings()), "project").values;
+}
+
+/**
  * Replaces `forkBuiltins.subagents` in `<cwd>/.pi/settings.json` with `values`, under the settings
  * file lock, and leaves every other key as it was (P12). The `/agents` settings menu writes through it.
  * A session's `SettingsManager` sees the change after its next `reload()`.

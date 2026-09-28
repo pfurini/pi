@@ -367,7 +367,8 @@ export class SubagentService {
 		parent?: SubagentRecord,
 	): Promise<SubagentRecord> {
 		this.assertLive();
-		const cwd = request.cwd ?? this.defaultCwd();
+		// An owned spawn without a cwd (RPC or a fork skill on a child's bus) works where its delegating agent works.
+		const cwd = request.cwd ?? (parent?.child ? sessionCwd(parent.child.session) : this.defaultCwd());
 		// Definitions, like all configuration, come from the session's project, whatever directory the agent works in.
 		const registry = this.refreshDefinitions();
 		const settings = this.current;

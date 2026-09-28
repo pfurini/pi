@@ -598,6 +598,32 @@ describe("ownership across buses", () => {
 		expect(serviceOf(harness).get(okId)).toBeUndefined();
 	});
 
+	it("runs a child's RPC and fork-skill spawns in the child's directory, not the session's", async () => {
+		const { harness, bus } = await session({}, { alpha: [held().behavior] });
+		const work = join(harness.tempDir, "work");
+		mkdirSync(work);
+		const id = await spawnId(bus, {
+			type: "lead",
+			prompt: "alpha task",
+			options: { description: "alpha task", isBackground: true, cwd: work },
+		});
+		const lead = serviceOf(harness).get(id);
+		await vi.waitFor(() => expect(lead?.child).toBeDefined(), CHILD_START);
+		const child = lead?.child;
+		if (!lead || !child) throw new Error("no child session");
+		const nested = serviceOf(harness).nested(lead);
+		const rpcId = await spawnId(childBus(lead), { type: "worker", prompt: "nested task", options: {} });
+		expect(nested.get(rpcId)?.cwd).toBe(work);
+		const done = await new SkillForkClient(childBus(lead), { session: child.session }).spawn({
+			skillId: "/skills/forky/SKILL.md",
+			agentType: "worker",
+			prompt: "fork task",
+			options: {},
+			background: false,
+		});
+		expect(done.kind === "completed" ? nested.get(done.agentId)?.cwd : done.kind).toBe(work);
+	});
+
 	it("applies the same refusals and ownership to a context: fork skill run in a child", async () => {
 		const { harness, bus } = await session(
 			{},

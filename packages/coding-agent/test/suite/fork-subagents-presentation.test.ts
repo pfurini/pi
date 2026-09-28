@@ -31,7 +31,7 @@ import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import type { Theme } from "../../src/modes/interactive/theme/theme.ts";
-import { agentId, type Behavior, CHILD_START, call, held, router, sleep } from "./fork-subagents-fixtures.ts";
+import { agentId, type Behavior, CHILD_START, call, held, router, sleep, text } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 type Probe = { shutdownDone: boolean };
@@ -91,6 +91,13 @@ function writeSlowStartExtension(harness: Harness): void {
 		join(dir, "slow-start.ts"),
 		'export default async function (pi) {\n\tawait new Promise((resolve) => setTimeout(resolve, 300));\n\tpi.on("session_shutdown", async () => {\n\t\tawait new Promise((resolve) => setTimeout(resolve, 100));\n\t\tglobalThis.__sn2Presentation.shutdownDone = true;\n\t});\n}\n',
 	);
+}
+
+/** A child extension whose factory never resolves, so its child never finishes starting. */
+function writeHangingStartExtension(harness: Harness): void {
+	const dir = join(harness.tempDir, "extensions");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "hang.ts"), "export default function () {\n\treturn new Promise(() => {});\n}\n");
 }
 
 /** A UI context that renders the widgets it is given at 200 columns. Own properties only, as below. */
@@ -374,6 +381,32 @@ describe("presentation factory", () => {
 		expect(service && inspectRecord(service, agentId(started))?.child, "the child is still starting").toBeUndefined();
 		await harness.session.shutdown();
 		expect(probe().shutdownDone).toBe(true);
+	});
+
+	// T18-F1: the foreground wait took no signal, so a child stuck in startup held Esc and quit.
+	it("returns an aborted foreground call whose child never finishes starting, and quit still ends within the bound", async () => {
+		const harness = await parent({});
+		writeHangingStartExtension(harness);
+		await harness.session.bindExtensions({ mode: "print" });
+		const controller = new AbortController();
+		const pending = call(
+			harness,
+			"Agent",
+			{ prompt: "hang", description: "hang", subagent_type: "worker", run_in_background: false },
+			controller.signal,
+		);
+		const service = subagentServiceFor(harness.session);
+		if (!service) throw new Error("no subagent service");
+		await vi.waitFor(() => expect(service.list()).toHaveLength(1));
+		await sleep(100);
+		const [view] = service.list();
+		expect(inspectRecord(service, view.id)?.child, "the child is still starting").toBeUndefined();
+		controller.abort();
+		const result = await Promise.race([pending, sleep(2_000).then(() => undefined)]);
+		expect(result && text(result)).toMatch(/^Agent completed in .* \(STOPPED BY THE USER/);
+		const started = Date.now();
+		await harness.session.shutdown();
+		expect(Date.now() - started).toBeLessThan(5_000);
 	});
 
 	it("makes quit wait for the children of a session that never started", async () => {

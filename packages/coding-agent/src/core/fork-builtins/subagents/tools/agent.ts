@@ -12,7 +12,7 @@
  * whether the spawn is refused or its run, started at once, fails to create it: Pi marks a tool call
  * failed only when it throws, and a text result reads as an agent that ran (handoff D33;
  * pi-subagents #179). A queued run that fails later ends as an error. A foreground spawn waits for
- * the agent, and the call's abort signal stops it. A background spawn returns its id at once and
+ * the agent, and the call's abort signal stops it and returns at once, even while its child starts. A background spawn returns its id at once and
  * notifies on completion.
  */
 import type { AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
@@ -225,15 +225,24 @@ function followProgress(
 	};
 }
 
-/** Waits for a foreground run, following its progress when the caller takes updates. */
+/**
+ * Waits for a foreground run, following its progress when the caller takes updates. The call's
+ * abort stops the agent and ends the wait at once: a child whose startup never finishes cannot
+ * hold the call, and with it the parent's Esc and quit (T18-F1).
+ */
 async function waitInForeground(
 	service: SubagentService,
 	id: string,
+	signal: AbortSignal | undefined,
 	onUpdate: AgentToolUpdateCallback<AgentToolDetails> | undefined,
 ): Promise<void> {
 	const stop = onUpdate ? followProgress(service, id, onUpdate) : undefined;
 	try {
-		await service.waitForResult(id);
+		await service.waitForResult(id, signal);
+	} catch (error) {
+		if (!signal?.aborted) throw error;
+		// The spawn's own listener stops the agent; this also covers a signal that aborted before it.
+		service.stop(id);
 	} finally {
 		stop?.();
 	}
@@ -296,7 +305,7 @@ async function resume(
 		const text = launchedText(record, "resumed", service.settings.maxConcurrent);
 		return detailedResult(service, text, agentToolDetails(service, record, "background"));
 	}
-	await waitInForeground(service, record.id, onUpdate);
+	await waitInForeground(service, record.id, signal, onUpdate);
 	return detailedResult(service, finishedText(record, service.settings.showCost), agentToolDetails(service, record));
 }
 
@@ -356,7 +365,7 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 					agentToolDetails(service, record, "background"),
 				);
 			}
-			await waitInForeground(service, record.id, onUpdate);
+			await waitInForeground(service, record.id, signal, onUpdate);
 			return detailedResult(
 				service,
 				note + finishedText(record, service.settings.showCost),

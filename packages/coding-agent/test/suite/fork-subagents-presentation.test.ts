@@ -18,13 +18,18 @@ import {
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import { createEventBus, type EventBus } from "../../src/core/event-bus.ts";
-import type { ExtensionMode, ExtensionUIContext } from "../../src/core/extensions/types.ts";
+import type { ExtensionMode, ExtensionUIContext, MessageRenderer } from "../../src/core/extensions/types.ts";
+import { NOTIFICATION_CUSTOM_TYPE } from "../../src/core/fork-builtins/subagents/service/notifications.ts";
 import { inspectRecord } from "../../src/core/fork-builtins/subagents/service/service.ts";
-import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
+import {
+	existingSubagentService,
+	subagentServiceFor,
+} from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import subagentsPresentation from "../../src/core/fork-builtins/subagents/ui/index.ts";
 import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
+import type { Theme } from "../../src/modes/interactive/theme/theme.ts";
 import { agentId, type Behavior, CHILD_START, call, held, router, sleep } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -206,6 +211,43 @@ describe("presentation factory", () => {
 		await vi.waitFor(() => expect(printGate.requests()).toBe(1), CHILD_START);
 		expect(printStatuses).toEqual([]);
 		printGate.release();
+	});
+
+	it("draws a notification's cost from the bound session's service, and builds no service to draw one", async () => {
+		const details = {
+			id: "a",
+			description: "priced task",
+			status: "completed",
+			turnCount: 1,
+			toolUses: 0,
+			totalTokens: 1000,
+			totalCost: 0.0123,
+			durationMs: 1000,
+			resultPreview: "done",
+		};
+		const drawn = (harness: Harness) =>
+			harness.session.extensionRunner
+				.getMessageRenderer(NOTIFICATION_CUSTOM_TYPE)?.(
+					{ details } as Parameters<MessageRenderer>[0],
+					{ expanded: false, outputPad: 0 },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme,
+				)
+				?.render(200)
+				.join("\n");
+
+		const shown = await parent({}, { showCost: true });
+		await bound(shown, "tui");
+		expect(drawn(shown)).toContain("1.0k token · ~$0.0123 · 1.0s");
+
+		const hidden = await parent({}, { showCost: false });
+		await bound(hidden, "tui");
+		expect(drawn(hidden)).toContain("1.0k token · 1.0s");
+
+		// Print mode builds no service at session_start, and a render builds none either.
+		const unbuilt = await parent({}, { showCost: true });
+		await bound(unbuilt, "print");
+		expect(drawn(unbuilt)).toContain("1.0k token · 1.0s");
+		expect(existingSubagentService(unbuilt.session)).toBeUndefined();
 	});
 
 	it("binds each of two sessions on one event bus to its own agents", async () => {

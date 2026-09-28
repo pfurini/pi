@@ -580,9 +580,12 @@ export class SubagentService {
 		signal: AbortSignal,
 	): Promise<TurnOutcome> {
 		const settings = this.current;
+		const maxTurns = record.invocation.maxTurns ?? settings.defaultMaxTurns;
+		// Displays read the limit this run enforces, not a setting that changed since it started.
+		record.maxTurns = maxTurns > 0 ? maxTurns : undefined;
 		const turn = {
 			prompt,
-			maxTurns: record.invocation.maxTurns ?? settings.defaultMaxTurns,
+			maxTurns,
 			graceTurns: settings.graceTurns,
 			signal,
 			onUsage: (usage: Usage) => this.addRecordUsage(record, usage),

@@ -22,6 +22,7 @@ import { createHarness, type Harness } from "./harness.ts";
 const harnesses: Harness[] = [];
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 	for (const harness of harnesses.splice(0)) harness.cleanup();
 	vi.unstubAllEnvs();
@@ -215,6 +216,19 @@ describe("Agent progress", () => {
 		await vi.waitFor(() => expect(behind.at(-1)?.activity).toBe("queued — waiting for a foreground slot"));
 		gate.release();
 		await Promise.all([first, second, third]);
+	});
+
+	it("keeps the turn limit the run enforces in its details, though the setting changed since", async () => {
+		const gate = held(() => fauxAssistantMessage("limited done"));
+		const harness = await parent({ defaultMaxTurns: 7 }, { limited: [gate.behavior] });
+		const pending = execute(harness, task("limited task"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		vi.spyOn(harness.settingsManager, "getGlobalSettings").mockReturnValue({
+			forkBuiltins: { subagents: { defaultJoinMode: "async", defaultMaxTurns: 20 } },
+		} as unknown as Settings);
+		expect(serviceOf(harness).reloadSettings().defaultMaxTurns).toBe(20);
+		gate.release();
+		expect((await pending).details).toMatchObject({ status: "completed", maxTurns: 7 });
 	});
 });
 

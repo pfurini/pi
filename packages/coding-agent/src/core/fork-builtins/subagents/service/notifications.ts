@@ -81,11 +81,14 @@ export function formatTaskNotification(record: SubagentRecord, maxLength: number
 		.join("\n");
 }
 
-/** What phase 2's renderer draws; each entry previews one agent. */
+/** What the notification renderer (`ui/notification.ts`) draws; each entry previews one agent. */
 export interface NotificationDetails {
 	id: string;
 	description: string;
 	status: string;
+	turnCount: number;
+	/** The run's turn limit; absent when it has none. */
+	maxTurns?: number;
 	toolUses: number;
 	totalTokens: number;
 	totalCost: number;
@@ -101,6 +104,8 @@ function details(record: SubagentRecord, maxLength: number): NotificationDetails
 		id: record.id,
 		description: record.description,
 		status: record.status,
+		turnCount: record.turns,
+		maxTurns: record.maxTurns,
 		toolUses: record.toolUses,
 		totalTokens: displayTokens(record.usage),
 		totalCost: record.usage.cost.total,

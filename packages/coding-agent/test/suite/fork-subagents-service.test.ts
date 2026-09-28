@@ -23,6 +23,7 @@ import {
 	createAgentSessionServices,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import { NOTIFICATION_CUSTOM_TYPE } from "../../src/core/fork-builtins/subagents/service/notifications.ts";
 import type { SubagentView } from "../../src/core/fork-builtins/subagents/service/records.ts";
 import {
 	inspectRecord,
@@ -212,6 +213,59 @@ describe("notifications", () => {
 		await timed.waitForResult(slow.id);
 		await vi.waitFor(() => expect(notices(other.session)).toHaveLength(2));
 		expect(notices(other.session)[1]).toContain(slow.id);
+	});
+});
+
+describe("the background completion notification the model reads", () => {
+	/** The notice of one background run whose spend the test sets while the child is held: the faux provider prices nothing. */
+	async function noticeAfterSpending(showCost: boolean, cost: number): Promise<string> {
+		const gate = held(() => fauxAssistantMessage("spent"));
+		const harness = await parent({ showCost, defaultJoinMode: "async" }, { spend: [gate.behavior] });
+		const subagents = service(harness);
+		const spawned = await subagents.spawn(background("spend"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const record = inspectRecord(subagents, spawned.id);
+		if (!record) throw new Error("no record");
+		record.usage.cost.total = cost;
+		gate.release();
+		await subagents.waitForResult(spawned.id);
+		await vi.waitFor(() => expect(notices(harness.session)).toHaveLength(1));
+		return notices(harness.session)[0];
+	}
+
+	it("includes the cost in the usage block when enabled", async () => {
+		expect(await noticeAfterSpending(true, 0.0123)).toContain("<estimated_cost_usd>0.0123</estimated_cost_usd>");
+	});
+
+	it("omits it when disabled, because the notice is model context, not a display", async () => {
+		const text = await noticeAfterSpending(false, 0.0123);
+		expect(text).toContain("<total_tokens>");
+		expect(text).not.toContain("estimated_cost_usd");
+	});
+
+	it("omits it for a model with no pricing data", async () => {
+		const text = await noticeAfterSpending(true, 0);
+		expect(text).toContain("<total_tokens>");
+		expect(text).not.toContain("estimated_cost_usd");
+	});
+
+	it("hands the renderer the run's turns and the turn limit it enforced, though the setting changed since", async () => {
+		const gate = held(() => fauxAssistantMessage("limited result"));
+		const harness = await parent({ defaultJoinMode: "async", defaultMaxTurns: 7 }, { limited: [gate.behavior] });
+		const subagents = service(harness);
+		const spawned = await subagents.spawn(background("limited"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		vi.spyOn(harness.settingsManager, "getGlobalSettings").mockReturnValue({
+			forkBuiltins: { subagents: { defaultJoinMode: "async", defaultMaxTurns: 20 } },
+		} as unknown as Settings);
+		expect(subagents.reloadSettings().defaultMaxTurns).toBe(20);
+		gate.release();
+		await subagents.waitForResult(spawned.id);
+		await vi.waitFor(() => expect(notices(harness.session)).toHaveLength(1));
+		const notice = harness.session.messages.find(
+			(message) => message.role === "custom" && message.customType === NOTIFICATION_CUSTOM_TYPE,
+		);
+		expect(notice?.role === "custom" ? notice.details : undefined).toMatchObject({ turnCount: 1, maxTurns: 7 });
 	});
 });
 

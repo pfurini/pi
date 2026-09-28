@@ -79,6 +79,8 @@ export interface SubagentView {
 	readonly model?: Model<Api>;
 	/** The model and thinking level the child session runs with, read when it attaches (P22). */
 	readonly effective: EffectiveInvocation;
+	/** The turn limit the current run enforces, fixed when it starts; absent before a run and for a run without one. */
+	readonly maxTurns?: number;
 	/** The working directory the child runs in. */
 	readonly cwd: string;
 	/** The requested type when it resolved to the fallback agent instead. */
@@ -116,6 +118,7 @@ export interface SubagentRecord extends SubagentView {
 	worktreeOutcome?: WorktreeOutcome;
 	readonly activity: ChildActivity[];
 	effective: EffectiveInvocation;
+	maxTurns?: number;
 	/** The worktree an `isolation: "worktree"` run works in, from its start. */
 	worktree?: Worktree;
 	/** Settles once the run's worktree exists, with the error when it could not be created. */

@@ -157,7 +157,8 @@ export function agentToolDetails(
 	const mode = promptModeLabel(view);
 	const queuePosition = view.status === "queued" ? service.queuePosition(view.id) : undefined;
 	const ahead = queuePosition === undefined ? 0 : queuePosition - 1;
-	const maxTurns = view.invocation.maxTurns ?? settings.defaultMaxTurns;
+	// A queued agent has no run yet; a started one shows the limit its run enforces.
+	const maxTurns = view.status === "queued" ? (view.invocation.maxTurns ?? settings.defaultMaxTurns) : view.maxTurns;
 	const activity =
 		view.status === "queued"
 			? view.mode === "foreground"
@@ -176,7 +177,7 @@ export function agentToolDetails(
 		tags: mode ? [mode, ...tags] : tags,
 		toolUses: view.toolUses,
 		turns: view.turns,
-		maxTurns: maxTurns > 0 ? maxTurns : undefined,
+		maxTurns: maxTurns !== undefined && maxTurns > 0 ? maxTurns : undefined,
 		tokens: displayTokens(view.usage),
 		contextPercent: service.contextPercent(view.id),
 		compactions: view.compactionCount,

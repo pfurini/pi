@@ -29,6 +29,7 @@ function record(id: string, overrides: Partial<SubagentRecord> = {}): SubagentRe
 		result: `result ${id}`,
 		usage: { ...emptyUsage(), input: 10, output: 5, cacheWrite: 2, cacheRead: 100 },
 		toolUses: 3,
+		turns: 2,
 		startedAt: 1000,
 		completedAt: 3500,
 		...overrides,
@@ -133,6 +134,15 @@ describe("notification text", () => {
 		const group = notificationMessage([record("a"), record("b")], true, false);
 		expect(group.content.startsWith("Background agent group completed: 2 agent(s) finished (partial")).toBe(true);
 		expect(group.details.others?.map((entry) => entry.id)).toEqual(["b"]);
+	});
+
+	it("carries each agent's turns and the turn limit its run enforced", () => {
+		const limited = record("a", { turns: 4, maxTurns: 8 });
+		expect(notificationMessage([limited], false, false).details).toMatchObject({ turnCount: 4, maxTurns: 8 });
+		const group = notificationMessage([record("b"), limited], false, false);
+		expect(group.details).toMatchObject({ turnCount: 2 });
+		expect(group.details.maxTurns).toBeUndefined();
+		expect(group.details.others?.[0]).toMatchObject({ turnCount: 4, maxTurns: 8 });
 	});
 });
 

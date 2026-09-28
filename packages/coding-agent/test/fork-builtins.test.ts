@@ -90,6 +90,7 @@ describe("fork built-in extensions", () => {
 		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:subagents>");
 		expect(builtIn?.hidden).toBe(true);
 		expect(builtIn?.tools.size).toBe(0);
+		expect([...(builtIn?.messageRenderers.keys() ?? [])]).toEqual(["subagent-notification"]);
 	});
 
 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {

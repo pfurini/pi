@@ -9,7 +9,7 @@
  * line `subagents` current (P7, P8). Every `session_shutdown` unbinds the UI. A reason other than
  * `reload` then awaits the service's bounded `shutdown()`, so quit and session replacement wait for
  * the children's teardown (R4, P6); it never builds a service to do so. `/reload` keeps the service
- * and its agents.
+ * and its agents. The `subagent-notification` renderer (`notification.ts`) draws completion notices.
  */
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
@@ -19,8 +19,10 @@ import {
 	PRESENTATION_BIND_CHANNEL,
 	type PresentationBindRequest,
 } from "../binding.ts";
+import { NOTIFICATION_CUSTOM_TYPE } from "../service/notifications.ts";
 import type { SubagentService } from "../service/service.ts";
 import { existingSubagentService, subagentServiceFor } from "../service/sessions.ts";
+import { notificationRenderer } from "./notification.ts";
 
 const STATUS_KEY = "subagents";
 
@@ -85,6 +87,12 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 		session = request.session;
 		return session;
 	};
+
+	// A render never builds a service: without one, the notification shows no cost.
+	pi.registerMessageRenderer(
+		NOTIFICATION_CUSTOM_TYPE,
+		notificationRenderer(() => (session ? existingSubagentService(session) : undefined)?.settings.showCost === true),
+	);
 
 	pi.on("session_start", (_event, ctx) => {
 		const bound = resolve(ctx);

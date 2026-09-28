@@ -1,7 +1,8 @@
 ---
 name: type-design-analyzer
 description: Finds meaningful invariants that changed types fail to express or enforce. Use when a change introduces or modifies types, constructors, factories, mutation paths, state transitions, or public contracts. Reports only reachable invalid states with concrete consequences and proportional corrections; no numerical ratings or abstract domain-model advice. Advisory only — does not modify files or commit.
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
+thinking: high
 color: yellow
 persistSession: true
 output_transcript: true

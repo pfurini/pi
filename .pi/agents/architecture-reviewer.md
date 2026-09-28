@@ -1,7 +1,8 @@
 ---
 name: architecture-reviewer
 description: Finds structural issues in changed code that compound as requirements shift — wrong-direction or circular dependencies, broken module boundaries, god modules, scattered responsibilities, invalid-state-prone modeling repeated across modules, and mistimed abstraction. Use when a change adds modules, crosses package or layer boundaries, introduces shared state, or restructures responsibilities. Prioritizes by evolution impact: what cascades when requirements change. Advisory only — does not modify files or commit.
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
+thinking: high
 color: blue
 persistSession: true
 output_transcript: true

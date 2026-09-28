@@ -2,6 +2,8 @@
 name: security-reviewer
 description: Finds reachable security defects in changed code — broken authentication or authorization, injection, unsafe output, missing boundary validation, secret exposure, and unsafe process or filesystem use — with cross-layer verification before grading. Use when a change touches input handling, auth, persistence, spawned processes, network surface, secrets, or user-generated content rendering. Requires a concrete exploit path; verifies compensating layers before assigning severity. Advisory only — does not modify files or commit.
 color: red
+model: openai-codex/gpt-6-astra
+thinking: high
 persistSession: true
 output_transcript: true
 ---

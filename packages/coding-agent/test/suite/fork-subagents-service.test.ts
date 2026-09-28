@@ -357,6 +357,31 @@ describe("waits, steering, stopping and resuming", () => {
 });
 
 describe("definitions, usage and statuses", () => {
+	it("warns when an agent inherits a parent model outside enabledModels, and still runs it", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const harness = await createHarness({
+			models: [{ id: "faux-parent" }, { id: "faux-allowed" }],
+			settings: { forkBuiltins: { subagents: { scopeModels: true } } } as unknown as Partial<Settings>,
+		});
+		harnesses.push(harness);
+		mkdirSync(join(harness.tempDir, "agents"), { recursive: true });
+		writeFileSync(
+			join(harness.tempDir, "agents", "worker.md"),
+			"---\ndescription: test worker\ntools: read\nextensions: false\n---\nYou are a test worker.",
+		);
+		harness.setResponses(Array.from({ length: 10 }, () => router({})));
+		const [inherited, allowed] = harness.models;
+		harness.settingsManager.setEnabledModels([`${allowed.provider}/${allowed.id}`]);
+		const subagents = service(harness);
+		const record = await subagents.spawn(foreground("scoped task"));
+		await subagents.waitForResult(record.id);
+		expect(record.status).toBe("completed");
+		expect(record.model?.id).toBe(inherited.id);
+		expect(subagents.warnings).toContain(
+			`Agent "worker" using out-of-scope model "${inherited.provider}/${inherited.id}"`,
+		);
+	});
+
 	it("spawns an agent file added after the service started, and refreshes a disabled one, without touching records", async () => {
 		const harness = await parent({ fallbackSubagent: "none" }, { review: [say("reviewed")] });
 		const subagents = service(harness);

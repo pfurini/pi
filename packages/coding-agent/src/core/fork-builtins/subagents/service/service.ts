@@ -423,7 +423,8 @@ export class SubagentService {
 			modelInput,
 			fromCaller,
 			parentModel: host.model,
-			available: modelInput ? await this.session.modelRuntime.getAvailable() : [],
+			// The scope check needs the model list even for an inherited model, or it sees no scope at all.
+			available: modelInput || this.current.scopeModels ? await this.session.modelRuntime.getAvailable() : [],
 			scopeModels: this.current.scopeModels,
 			enabledModels: this.session.settingsManager.getEnabledModels(),
 			agentLabel: definition.displayName ?? definition.name,

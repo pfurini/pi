@@ -1,0 +1,119 @@
+[
+  {
+    "id": "T2-M1",
+    "cases": [
+      1,
+      4
+    ],
+    "what": "the service reports a rejected steer as delivered",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "return { kind: \"failed\", error: error instanceof Error ? error.message : String(error) };",
+    "new": "return { kind: \"delivered\" };",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts",
+      "test/suite/fork-subagents-nested.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running",
+      "test/suite/fork-subagents-nested.test.ts > nested ownership reports a nested steer the child refuses as a failed delivery"
+    ]
+  },
+  {
+    "id": "T2-M2",
+    "cases": [
+      1,
+      2
+    ],
+    "what": "steered is announced before the child accepts the steer",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\ttry {\n\t\t\tawait record.child.session.steer(message);",
+    "new": "\t\tthis.emit({ type: \"steered\", record, message });\n\t\ttry {\n\t\t\tawait record.child.session.steer(message);",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running",
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer the running child accepts"
+    ]
+  },
+  {
+    "id": "T2-M3",
+    "cases": [
+      2
+    ],
+    "what": "a delivered steer announces nothing",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\tthis.emit({ type: \"steered\", record, message });\n\t\treturn { kind: \"delivered\" };",
+    "new": "\t\treturn { kind: \"delivered\" };",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer the running child accepts"
+    ]
+  },
+  {
+    "id": "T2-M4",
+    "cases": [
+      3
+    ],
+    "what": "a queued steer announces nothing",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\t\tthis.emit({ type: \"steered\", record, message });\n\t\t\treturn { kind: \"queued\" };",
+    "new": "\t\t\treturn { kind: \"queued\" };",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer that waits for its child, and delivers it when the child starts"
+    ]
+  },
+  {
+    "id": "T2-M5",
+    "cases": [
+      1
+    ],
+    "what": "steer_subagent answers a failed steer as sent",
+    "path": "src/core/fork-builtins/subagents/tools/steer.ts",
+    "old": "\t\t\tif (outcome.kind === \"failed\") return textResult(service, `Failed to steer agent: ${outcome.error}`);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running"
+    ]
+  },
+  {
+    "id": "T2-M6",
+    "cases": [
+      4
+    ],
+    "what": "the nested steer answers a failed steer as sent",
+    "path": "src/core/fork-builtins/subagents/tools/nested.ts",
+    "old": "return nestedText(`Failed to steer nested agent ${record.id}: ${outcome.error}`);",
+    "new": "return nestedText(`Steering message sent to nested agent ${record.id}.`);",
+    "files": [
+      "test/suite/fork-subagents-nested.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-nested.test.ts > nested ownership reports a nested steer the child refuses as a failed delivery"
+    ]
+  },
+  {
+    "id": "T2-M7",
+    "cases": [
+      2
+    ],
+    "what": "a steer whose agent stopped during delivery still reports delivered",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\tif (this.disposed || isTerminal(record)) return notRunning();\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent refuses a steer whose agent stops while the steer is delivered, and announces nothing"
+    ]
+  }
+]

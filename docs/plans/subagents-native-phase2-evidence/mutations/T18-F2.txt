@@ -1,0 +1,6 @@
+T18-F2-M1 [1] the conversation omits the streaming message | 1 of 31 failed, caught
+    test/suite/fork-subagents-service.test.ts > the read-only surface includes the message a child is streaming, so its text grows before the message ends
+T18-F2-M2 [1] every streaming update is a new object | 1 of 31 failed, caught
+    test/suite/fork-subagents-service.test.ts > the read-only surface includes the message a child is streaming, so its text grows before the message ends
+restored | 0 of 31 failed
+clean: yes

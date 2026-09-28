@@ -1,0 +1,366 @@
+[
+  {
+    "id": "T9-M1",
+    "cases": [
+      1
+    ],
+    "what": "a collapsed notification shows 100 characters of the first line",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "const COLLAPSED_PREVIEW = 80;",
+    "new": "const COLLAPSED_PREVIEW = 100;",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows the result's first line up to 80 characters collapsed, and up to 30 lines expanded"
+    ]
+  },
+  {
+    "id": "T9-M2",
+    "cases": [
+      1
+    ],
+    "what": "an expanded notification shows 40 lines",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "const EXPANDED_LINES = 30;",
+    "new": "const EXPANDED_LINES = 40;",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows the result's first line up to 80 characters collapsed, and up to 30 lines expanded"
+    ]
+  },
+  {
+    "id": "T9-M3",
+    "cases": [
+      2
+    ],
+    "what": "a stopped agent is marked as completed",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": " || details.status === \"stopped\"",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer marks error, stopped and aborted with ✗, every other status with ✓, and steered as completed (steered)"
+    ]
+  },
+  {
+    "id": "T9-M4",
+    "cases": [
+      2
+    ],
+    "what": "a steered agent reads plain completed",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "\"completed (steered)\"",
+    "new": "\"completed\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer marks error, stopped and aborted with ✗, every other status with ✓, and steered as completed (steered)"
+    ]
+  },
+  {
+    "id": "T9-M5",
+    "cases": [
+      3
+    ],
+    "what": "the transcript line is dropped",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "if (details.outputFile) text",
+    "new": "if (!details.outputFile) text",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer names the transcript when the agent wrote one, and no transcript otherwise"
+    ]
+  },
+  {
+    "id": "T9-M6",
+    "cases": [
+      4
+    ],
+    "what": "the stats line drops the turn limit",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "formatTurns(details.turnCount, details.maxTurns)",
+    "new": "formatTurns(details.turnCount)",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows turns, tool uses, tokens and duration, and the cost only under showCost"
+    ]
+  },
+  {
+    "id": "T9-M7",
+    "cases": [
+      4,
+      5
+    ],
+    "what": "the renderer ignores showCost",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "const cost = showCost ? formatCost(details.totalCost) : \"\";",
+    "new": "const cost = formatCost(details.totalCost);",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts",
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows turns, tool uses, tokens and duration, and the cost only under showCost",
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows nothing when the setting is off",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one"
+    ]
+  },
+  {
+    "id": "T9-M8",
+    "cases": [
+      4
+    ],
+    "what": "the factory shows cost when no service exists",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "?.settings.showCost === true),",
+    "new": "?.settings.showCost !== false),",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one"
+    ]
+  },
+  {
+    "id": "T9-M9",
+    "cases": [
+      4
+    ],
+    "what": "a render builds the session's service",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "(session ? existingSubagentService(session) : undefined)?.settings.showCost",
+    "new": "(session ? subagentServiceFor(session) : undefined)?.settings.showCost",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one"
+    ]
+  },
+  {
+    "id": "T9-M10",
+    "cases": [
+      4
+    ],
+    "what": "the factory registers no notification renderer",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\tpi.registerMessageRenderer(\n\t\tNOTIFICATION_CUSTOM_TYPE,",
+    "new": "\t(() => {})(\n\t\tNOTIFICATION_CUSTOM_TYPE,",
+    "files": [
+      "test/fork-builtins.test.ts",
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins.test.ts > fork built-in extensions registers the subagents presentation as a fork-owned built-in, with no tool",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one"
+    ]
+  },
+  {
+    "id": "T9-M11",
+    "cases": [
+      4
+    ],
+    "what": "the details carry no turn count",
+    "path": "src/core/fork-builtins/subagents/service/notifications.ts",
+    "old": "turnCount: record.turns,",
+    "new": "turnCount: 0,",
+    "files": [
+      "test/fork-builtins/subagents/service.test.ts",
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/service.test.ts > notification text carries each agent's turns and the turn limit its run enforced",
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the turn limit it enforced, though the setting changed since"
+    ]
+  },
+  {
+    "id": "T9-M12",
+    "cases": [
+      4
+    ],
+    "what": "the details carry no turn limit",
+    "path": "src/core/fork-builtins/subagents/service/notifications.ts",
+    "old": "maxTurns: record.maxTurns,",
+    "new": "maxTurns: undefined,",
+    "files": [
+      "test/fork-builtins/subagents/service.test.ts",
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/service.test.ts > notification text carries each agent's turns and the turn limit its run enforced",
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the turn limit it enforced, though the setting changed since"
+    ]
+  },
+  {
+    "id": "T9-M13",
+    "cases": [
+      4
+    ],
+    "what": "the record's turn limit follows the live setting instead of the run's",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "record.maxTurns = maxTurns > 0 ? maxTurns : undefined;",
+    "new": "Object.defineProperty(record, \"maxTurns\", { get: () => this.current.defaultMaxTurns || undefined, configurable: true });",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts",
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the turn limit it enforced, though the setting changed since",
+      "test/suite/fork-subagents-rendering.test.ts > Agent progress keeps the turn limit the run enforces in its details, though the setting changed since"
+    ]
+  },
+  {
+    "id": "T9-M22",
+    "cases": [
+      4
+    ],
+    "what": "the Agent details read the live turn-limit setting",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "view.status === \"queued\" ? (view.invocation.maxTurns ?? settings.defaultMaxTurns) : view.maxTurns;",
+    "new": "view.invocation.maxTurns ?? settings.defaultMaxTurns;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent progress keeps the turn limit the run enforces in its details, though the setting changed since"
+    ]
+  },
+  {
+    "id": "T9-M14",
+    "cases": [
+      5
+    ],
+    "what": "a single agent gets a total line",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "if (showCost && all.length > 1) {",
+    "new": "if (showCost && all.length > 0) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification does not total a single agent — the line above already says it"
+    ]
+  },
+  {
+    "id": "T9-M15",
+    "cases": [
+      5
+    ],
+    "what": "the total line ignores showCost",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "if (showCost && all.length > 1) {",
+    "new": "if (all.length > 1) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows nothing when the setting is off"
+    ]
+  },
+  {
+    "id": "T9-M16",
+    "cases": [
+      5
+    ],
+    "what": "an unpriced group gets a total line",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "\t\tif (total) {",
+    "new": "\t\tif (true) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows no total, and no per-agent cost, when unpriced"
+    ]
+  },
+  {
+    "id": "T9-M17",
+    "cases": [
+      5
+    ],
+    "what": "a group renders only its first member",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "const all = [details, ...(details.others ?? [])];",
+    "new": "const all = [details];",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification totals a group, so nobody adds four figures by hand"
+    ]
+  },
+  {
+    "id": "T9-M18",
+    "cases": [
+      5
+    ],
+    "what": "the total line trails the rows",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "rendered.unshift(",
+    "new": "rendered.push(",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the completion notification totals a group, so nobody adds four figures by hand"
+    ]
+  },
+  {
+    "id": "T9-M19",
+    "cases": [
+      6
+    ],
+    "what": "the model's notice ignores showCost",
+    "path": "src/core/fork-builtins/subagents/service/notifications.ts",
+    "old": "const cost = showCost ? record.usage.cost.total : 0;",
+    "new": "const cost = record.usage.cost.total;",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads omits it when disabled, because the notice is model context, not a display"
+    ]
+  },
+  {
+    "id": "T9-M20",
+    "cases": [
+      6
+    ],
+    "what": "the model's notice names a zero cost",
+    "path": "src/core/fork-builtins/subagents/service/notifications.ts",
+    "old": "${cost > 0 ? `<estimated_cost_usd>",
+    "new": "${cost >= 0 ? `<estimated_cost_usd>",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads omits it for a model with no pricing data"
+    ]
+  },
+  {
+    "id": "T9-M21",
+    "cases": [
+      6
+    ],
+    "what": "the service never shows cost to the model",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "showCost: () => this.current.showCost,",
+    "new": "showCost: () => false,",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the background completion notification the model reads includes the cost in the usage block when enabled"
+    ]
+  }
+]

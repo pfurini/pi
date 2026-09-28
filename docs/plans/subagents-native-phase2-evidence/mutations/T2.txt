@@ -1,0 +1,19 @@
+T2-M1 [1,4] the service reports a rejected steer as delivered | 2 of 36 failed, caught
+    test/suite/fork-subagents-nested.test.ts > nested ownership reports a nested steer the child refuses as a failed delivery
+    test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running
+T2-M2 [1,2] steered is announced before the child accepts the steer | 3 of 27 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running
+    test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer the running child accepts
+    test/suite/fork-subagents-tools.test.ts > steer_subagent refuses a steer whose agent stops while the steer is delivered, and announces nothing
+T2-M3 [2] a delivered steer announces nothing | 1 of 27 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer the running child accepts
+T2-M4 [3] a queued steer announces nothing | 1 of 27 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent announces one steered event for a steer that waits for its child, and delivers it when the child starts
+T2-M5 [1] steer_subagent answers a failed steer as sent | 1 of 27 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent reports a steer the child refuses, announces no steered event, and leaves the agent running
+T2-M6 [4] the nested steer answers a failed steer as sent | 1 of 9 failed, caught
+    test/suite/fork-subagents-nested.test.ts > nested ownership reports a nested steer the child refuses as a failed delivery
+T2-M7 [2] a steer whose agent stopped during delivery still reports delivered | 1 of 27 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent refuses a steer whose agent stops while the steer is delivered, and announces nothing
+restored | 0 of 36 failed
+clean: yes

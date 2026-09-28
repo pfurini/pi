@@ -1,0 +1,232 @@
+[
+  {
+    "id": "T18-F4-M1",
+    "cases": [
+      1
+    ],
+    "what": "displayText returns the text unchanged",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\treturn sanitizeBinaryOutput(stripAnsi(text)).replace(/\\r/g, \"\");",
+    "new": "\treturn text;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts",
+      "test/fork-builtins/subagents/ui-notification.test.ts",
+      "test/suite/fork-subagents-rendering.test.ts",
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode",
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences",
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences",
+      "test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M2",
+    "cases": [
+      1
+    ],
+    "what": "displayText strips escapes but keeps control characters",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\treturn sanitizeBinaryOutput(stripAnsi(text)).replace(/\\r/g, \"\");",
+    "new": "\treturn stripAnsi(text).replace(/\\r/g, \"\");",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M3",
+    "cases": [
+      1
+    ],
+    "what": "the activity keeps the child's escapes",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "(responseText === undefined ? undefined : displayText(responseText))",
+    "new": "responseText",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M4",
+    "cases": [
+      1
+    ],
+    "what": "the viewer prints a string message raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\tif (typeof content === \"string\") return displayText(content);",
+    "new": "\tif (typeof content === \"string\") return content;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode"
+    ]
+  },
+  {
+    "id": "T18-F4-M5",
+    "cases": [
+      1
+    ],
+    "what": "the viewer prints message parts raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\treturn displayText(\n",
+    "new": "\treturn String(\n",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode"
+    ]
+  },
+  {
+    "id": "T18-F4-M6",
+    "cases": [
+      1
+    ],
+    "what": "the viewer prints bash output raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "message.output === undefined ? undefined : displayText(message.output).trim();",
+    "new": "message.output?.trim();",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode"
+    ]
+  },
+  {
+    "id": "T18-F4-M7",
+    "cases": [
+      1
+    ],
+    "what": "the result row prints the text raw",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "\t\tconst text = displayText(textOf(result.content));",
+    "new": "\t\tconst text = textOf(result.content);",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M8",
+    "cases": [
+      1
+    ],
+    "what": "the notification prints the preview raw",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "\tconst preview = displayText(details.resultPreview);",
+    "new": "\tconst preview = details.resultPreview;",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M9",
+    "cases": [
+      1
+    ],
+    "what": "the notification prints the description raw",
+    "path": "src/core/fork-builtins/subagents/ui/notification.ts",
+    "old": "theme.bold(displayText(details.description))",
+    "new": "theme.bold(details.description)",
+    "files": [
+      "test/fork-builtins/subagents/ui-notification.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M10",
+    "cases": [
+      1
+    ],
+    "what": "an unknown tool name prints raw",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "const action = TOOL_ACTIONS[tool] ?? displayText(tool);",
+    "new": "const action = TOOL_ACTIONS[tool] ?? tool;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M11",
+    "cases": [
+      1
+    ],
+    "what": "the result row prints an error raw",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "Error: ${displayText(details.error ?? \"unknown\")}",
+    "new": "Error: ${details.error ?? \"unknown\"}",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M12",
+    "cases": [
+      1
+    ],
+    "what": "the result row prints an abort's error raw",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": ": ${displayText(details.error)}",
+    "new": ": ${details.error}",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M13",
+    "cases": [
+      1
+    ],
+    "what": "the widget prints an error raw",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "${displayText(view.error).slice(0, 60)}",
+    "new": "${view.error.slice(0, 60)}",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget prints a finished agent's error without its escape sequences"
+    ]
+  },
+  {
+    "id": "T18-F4-M14",
+    "cases": [
+      1
+    ],
+    "what": "the viewer prints a steer's failure raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "`Failed to steer agent: ${displayText(outcome.error)}`",
+    "new": "`Failed to steer agent: ${outcome.error}`",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows a failed steer's error without its escape sequences"
+    ]
+  }
+]

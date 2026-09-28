@@ -1,0 +1,152 @@
+T12-M1 [1] an empty fleet still registers the widget | 3 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation registers no widget when no agent has a session
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores all input and hides while fleetView is off
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation re-arms its refresh tick when the list shows again
+T12-M2 [1,12] the factory builds no FleetView | 1 of 14 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit
+T12-M3 [1] quit leaves FleetView | 2 of 14 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode
+    test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit
+T12-M4 [2] nested agents show | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation hides nested agents from the session's fleet
+T12-M5 [2] agents without a session show | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation registers no widget when no agent has a session
+T12-M6 [3] only cursorDown activates | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation also activates on tui.editor.cursorLeft, ctrl+b included
+T12-M7 [3] the list activates over editor text | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation does not activate when the prompt holds text, so typing is preserved
+T12-M8 [3] key releases count as presses | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row
+T12-M9 [3] cursorDown does not activate | 18 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation activates on tui.editor.cursorDown at an empty prompt, consuming the key
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.up above main, returning to the prompt
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.cancel
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components still activates when the prompt editor has focus
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components assumes the editor when focus is unknown (no TUI yet, or nothing focused)
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer returns the cursor to the viewed agent after the viewer closes, even when the list reordered
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer steers through the service with the agent's id
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer hands the viewer the Markdown setting and the session's viewer state
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer keeps the viewer open and the agent listed when the viewed agent finishes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose
+T12-M10 [4] any focus counts as the editor | 2 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal the activation key from a focused selector
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active
+T12-M11 [4] an unknown focus blocks the list | 17 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation activates on tui.editor.cursorDown at an empty prompt, consuming the key
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation also activates on tui.editor.cursorLeft, ctrl+b included
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.up above main, returning to the prompt
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.cancel
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components assumes the editor when focus is unknown (no TUI yet, or nothing focused)
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer returns the cursor to the viewed agent after the viewer closes, even when the list reordered
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer steers through the service with the agent's id
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer hands the viewer the Markdown setting and the session's viewer state
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer keeps the viewer open and the agent listed when the viewed agent finishes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose
+T12-M12 [4] only an unknown focus counts as the editor | 2 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components still activates when the prompt editor has focus
+T12-M13 [5] the selection is not clamped | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends
+T12-M14 [5] up at main stays open | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.up above main, returning to the prompt
+T12-M15 [5] cancel keeps the list open | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.cancel
+T12-M16 [5] other keys are consumed | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation passes other keys through and closes
+T12-M17 [6] fleetView is ignored | 2 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores all input and hides while fleetView is off
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation re-arms its refresh tick when the list shows again
+T12-M18 [6] the tick never re-arms | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation re-arms its refresh tick when the list shows again
+T12-M19 [7] the selected description keeps the plain color | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+T12-M20 [7] the selected badge is repainted instead of bolded | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+T12-M21 [7] the selected stats stay dim | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+T12-M22 [8] agents list newest first | 7 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering orders agents earliest-launched first
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes
+T12-M23 [8] all agents show at once | 2 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering collapses overflow into a '↓ N more' indicator
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+T12-M24 [8] rows are not clamped to the width | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering never emits a line wider than the terminal
+T12-M25 [8] the window ignores the selection | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+T12-M26 [8] stats are not right-aligned | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders main and agent rows with markers, name, description and right-aligned stats
+T12-M27 [9] confirm on main opens nothing but stays active | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes the list on tui.select.confirm at main, opening no viewer
+T12-M28 [9] the cursor stays where the viewer left it | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer returns the cursor to the viewed agent after the viewer closes, even when the list reordered
+T12-M29 [9] the viewed agent drops out when it finishes | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer keeps the viewer open and the agent listed when the viewed agent finishes
+T12-M30 [9] finished agents linger 10 s | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer lingers a finished agent for 4 s, then drops it
+T12-M31 [9] the viewer gets a fresh state | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer hands the viewer the Markdown setting and the session's viewer state
+T12-M32 [9] dispose leaves the viewer open | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose
+T12-M33 [9] the viewer steers another agent | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer steers through the service with the agent's id
+T12-M34 [10] the row ignores showCost | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display shows no cost when disabled, and none for an unpriced model
+T12-M35 [10] the row shows no cost | 2 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display appends the cost after the token count when enabled
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display keeps its figures when the agent finishes
+T12-M36 [10] a finished agent's clock keeps running | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display keeps its figures when the agent finishes
+T12-M37 [11] the row drops the name's color | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+T12-M38 [12] no terminal input is captured | 20 of 49 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation activates on tui.editor.cursorDown at an empty prompt, consuming the key
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation also activates on tui.editor.cursorLeft, ctrl+b included
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.up above main, returning to the prompt
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.cancel
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components still activates when the prompt editor has focus
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components assumes the editor when focus is unknown (no TUI yet, or nothing focused)
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer returns the cursor to the viewed agent after the viewer closes, even when the list reordered
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer steers through the service with the agent's id
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer hands the viewer the Markdown setting and the session's viewer state
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer keeps the viewer open and the agent listed when the viewed agent finishes
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose
+T12-M39 [12] quit keeps the input handler | 3 of 49 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose
+T12-M40 [9] the list takes the viewer's keys | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes
+T12-M41 [9] a directly disposed session keeps the viewer open | 1 of 35 failed, caught
+    test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly
+restored | 0 of 49 failed
+clean: yes

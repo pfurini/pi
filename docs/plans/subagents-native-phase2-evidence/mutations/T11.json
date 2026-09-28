@@ -1,0 +1,974 @@
+[
+  {
+    "id": "T11-M1",
+    "cases": [
+      1
+    ],
+    "what": "the line names the short label",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const model = modelId ?? modelName;",
+    "new": "const model = modelName;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line names the model with its provider",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line discloses a model and level the run did not honor"
+    ]
+  },
+  {
+    "id": "T11-M2",
+    "cases": [
+      1
+    ],
+    "what": "the line has no fallback to the short label",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const model = modelId ?? modelName;",
+    "new": "const model = modelId;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line falls back to the short label when the model names no provider"
+    ]
+  },
+  {
+    "id": "T11-M3",
+    "cases": [
+      1
+    ],
+    "what": "a model with no provider gets a canonical id",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "id: model.provider ? `${model.provider}/${model.id}` : undefined,",
+    "new": "id: `${model.provider}/${model.id}`,",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line falls back to the short label when the model names no provider"
+    ]
+  },
+  {
+    "id": "T11-M4",
+    "cases": [
+      1
+    ],
+    "what": "an empty invocation still renders a row",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "return parts.length === 0 ? undefined :",
+    "new": "return false ? undefined :",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line renders no row at all for an agent with no model and no invocation tags"
+    ]
+  },
+  {
+    "id": "T11-M5",
+    "cases": [
+      2
+    ],
+    "what": "the header ignores showCost",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "const cost = formatCost(view.usage.cost.total);",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows no cost when disabled"
+    ]
+  },
+  {
+    "id": "T11-M6",
+    "cases": [
+      2
+    ],
+    "what": "the header shows no cost",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "const cost = \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows the cost beside the token count when enabled"
+    ]
+  },
+  {
+    "id": "T11-M7",
+    "cases": [
+      2
+    ],
+    "what": "the header prices an unpriced model at zero",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) || \"~$0.00\" : \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows no cost for a model with no pricing data"
+    ]
+  },
+  {
+    "id": "T11-M8",
+    "cases": [
+      3
+    ],
+    "what": "cancel does not close",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (this.matches(data, \"tui.select.cancel\")) {",
+    "new": "if (false) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer closes on tui.select.cancel when not composing, and stops listening"
+    ]
+  },
+  {
+    "id": "T11-M9",
+    "cases": [
+      3
+    ],
+    "what": "closing keeps the service listener",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\tthis.closed = true;\n\t\tthis.unsubscribeService();\n",
+    "new": "\t\tthis.closed = true;\n",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer closes on tui.select.cancel when not composing, and stops listening"
+    ]
+  },
+  {
+    "id": "T11-M10",
+    "cases": [
+      4
+    ],
+    "what": "bordered rows are not truncated",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "truncateToWidth(padded, innerWidth, \"...\", true)",
+    "new": "padded",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with empty messages",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with plain text messages",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety keeps bordered rows exact-width at a double-width truncation boundary",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width when text is longer than viewport",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with embedded ANSI escape codes in content",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with long URLs",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with wide table-like content",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with bashExecution messages",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with running activity indicator",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with tool calls",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width at narrow terminal",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with mixed ANSI + unicode content"
+    ]
+  },
+  {
+    "id": "T11-M11",
+    "cases": [
+      4
+    ],
+    "what": "bordered rows are not padded",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "truncateToWidth(padded, innerWidth, \"...\", true)",
+    "new": "truncateToWidth(padded, innerWidth, \"...\")",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety keeps bordered rows exact-width at a double-width truncation boundary"
+    ]
+  },
+  {
+    "id": "T11-M12",
+    "cases": [
+      4
+    ],
+    "what": "content lines are not clamped",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "return lines.map((line) => truncateToWidth(line, width));",
+    "new": "return lines;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from toolResult content",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from user message content",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from assistant message content",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from bashExecution output",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines that also contain ANSI codes"
+    ]
+  },
+  {
+    "id": "T11-M13",
+    "cases": [
+      5
+    ],
+    "what": "assistant text is always raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "mode === \"off\"",
+    "new": "mode !== \"none\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders assistant Markdown by default instead of raw source markers"
+    ]
+  },
+  {
+    "id": "T11-M14",
+    "cases": [
+      5
+    ],
+    "what": "assistant text is never raw",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "mode === \"off\"",
+    "new": "mode === \"none\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves assistant text verbatim under `off`"
+    ]
+  },
+  {
+    "id": "T11-M15",
+    "cases": [
+      5
+    ],
+    "what": "tool results always render as Markdown",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "mode === \"all\" ?",
+    "new": "mode !== \"none\" ?",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves tool results byte-exact under the default mode"
+    ]
+  },
+  {
+    "id": "T11-M16",
+    "cases": [
+      5
+    ],
+    "what": "tool results never render as Markdown",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "mode === \"all\" ?",
+    "new": "mode === \"none\" ?",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders tool-result Markdown under `all`"
+    ]
+  },
+  {
+    "id": "T11-M17",
+    "cases": [
+      5
+    ],
+    "what": "Markdown renumbers ordered lists",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "preserveOrderedListMarkers: true",
+    "new": "preserveOrderedListMarkers: false",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering does not renumber ordered lists even when it does render them"
+    ]
+  },
+  {
+    "id": "T11-M18",
+    "cases": [
+      5
+    ],
+    "what": "Markdown tool results are not dim",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "dim ? { color: (value: string) => this.theme.fg(\"dim\", value) } : undefined",
+    "new": "undefined",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps tool results dim even when rendering them as Markdown"
+    ]
+  },
+  {
+    "id": "T11-M19",
+    "cases": [
+      5
+    ],
+    "what": "raw tool results are not dim",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "return dim ? lines.map((line) => this.theme.fg(\"dim\", line)) : lines;",
+    "new": "return lines;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps tool results dim on the literal path too"
+    ]
+  },
+  {
+    "id": "T11-M20",
+    "cases": [
+      5
+    ],
+    "what": "Markdown renders wider than the content",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "return entry.md.render(width);",
+    "new": "return entry.md.render(width + 10);",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders Markdown to fit, so the overwidth clamp never has to cut it"
+    ]
+  },
+  {
+    "id": "T11-M21",
+    "cases": [
+      6
+    ],
+    "what": "the Markdown key changes nothing",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "this.state.markdownMode = MARKDOWN_MODES[(MARKDOWN_MODES.indexOf(mode) + 1) % MARKDOWN_MODES.length];",
+    "new": "void mode;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering opens a later viewer of the session in the mode the key chose, over the setting"
+    ]
+  },
+  {
+    "id": "T11-M22",
+    "cases": [
+      6
+    ],
+    "what": "the viewer ignores the session's mode",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "return this.state.markdownMode ?? this.source.settings.viewerMarkdown;",
+    "new": "return this.source.settings.viewerMarkdown;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering opens a later viewer of the session in the mode the key chose, over the setting"
+    ]
+  },
+  {
+    "id": "T11-M23",
+    "cases": [
+      6
+    ],
+    "what": "the footer always reads md",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "MARKDOWN_MODE_LABELS[this.markdownMode()]",
+    "new": "MARKDOWN_MODE_LABELS.assistant",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer"
+    ]
+  },
+  {
+    "id": "T11-M24",
+    "cases": [
+      7
+    ],
+    "what": "the footer keeps the line count when it has no room",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "<= innerWidth ? withCount",
+    "new": "<= innerWidth + 40 ? withCount",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps the footer's navigation hints intact at 80 columns"
+    ]
+  },
+  {
+    "id": "T11-M25",
+    "cases": [
+      8
+    ],
+    "what": "the first stop press stops",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "} else this.stopArmed = true;",
+    "new": "} else this.source.stop(this.view.id);",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key stops a running agent on the second press of app.subagents.stop"
+    ]
+  },
+  {
+    "id": "T11-M26",
+    "cases": [
+      8
+    ],
+    "what": "other keys leave the stop armed",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\tthis.stopArmed = false;\n\t\tif (this.matches(data, SUBAGENT_KEYBINDING_IDS.markdownMode)) {",
+    "new": "\t\tif (this.matches(data, SUBAGENT_KEYBINDING_IDS.markdownMode)) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key any other key disarms the confirm",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key the Markdown key disarms a pending stop rather than confirming it"
+    ]
+  },
+  {
+    "id": "T11-M27",
+    "cases": [
+      8
+    ],
+    "what": "a finished agent can be stopped",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tif (this.isActive()) {\n\t\t\t\tif (this.stopArmed) {",
+    "new": "\t\t\tif (true) {\n\t\t\t\tif (this.stopArmed) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key does not offer or perform stop once the agent is no longer running"
+    ]
+  },
+  {
+    "id": "T11-M28",
+    "cases": [
+      9
+    ],
+    "what": "results cap at 500 characters",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "export const RESULT_MAX_CHARS = 16_000;",
+    "new": "export const RESULT_MAX_CHARS = 500;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering caps a tool result at RESULT_MAX_CHARS, not 500, and says what it dropped",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves a result under the cap untouched"
+    ]
+  },
+  {
+    "id": "T11-M29",
+    "cases": [
+      9
+    ],
+    "what": "the notice lands inside the content",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\treturn { text: text.slice(0, RESULT_MAX_CHARS), elided: text.length - RESULT_MAX_CHARS };",
+    "new": "\treturn { text: `${text.slice(0, RESULT_MAX_CHARS)}\\n${truncationNote(text.length - RESULT_MAX_CHARS)}`, elided: 0 };",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering puts the truncation notice outside the code fence it cut into"
+    ]
+  },
+  {
+    "id": "T11-M30",
+    "cases": [
+      9
+    ],
+    "what": "the omitted count stops at 2,000",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "elided: text.length - RESULT_MAX_CHARS };",
+    "new": "elided: Math.min(text.length - RESULT_MAX_CHARS, 2000) };",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering tracks a tool result that keeps growing past the cap",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering abbreviates a large omitted count so the notice fits a narrow frame"
+    ]
+  },
+  {
+    "id": "T11-M31",
+    "cases": [
+      9
+    ],
+    "what": "the omitted count is exact however large",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (count < 1_000) return `${count}`;",
+    "new": "if (count < 10_000_000) return `${count}`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering abbreviates a large omitted count so the notice fits a narrow frame",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering rounds into the M bracket rather than reporting 1000k"
+    ]
+  },
+  {
+    "id": "T11-M32",
+    "cases": [
+      9
+    ],
+    "what": "the bracket is picked on the raw count",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const thousands = count < 999_950;",
+    "new": "const thousands = count < 1_000_000;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering rounds into the M bracket rather than reporting 1000k"
+    ]
+  },
+  {
+    "id": "T11-M33",
+    "cases": [
+      9
+    ],
+    "what": "the omitted count is off by one",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "... (truncated, ${humanCount(elided)} more",
+    "new": "... (truncated, ${humanCount(elided + 1)} more",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering reports the exact omitted character count"
+    ]
+  },
+  {
+    "id": "T11-M34",
+    "cases": [
+      9
+    ],
+    "what": "bash output is not capped",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const { text, elided } = capResult(output);",
+    "new": "const { text, elided } = { text: output, elided: 0 };",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering caps bash output with the same rule as a tool result"
+    ]
+  },
+  {
+    "id": "T11-M35",
+    "cases": [
+      10
+    ],
+    "what": "a failed parse is retried on every frame",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tentry.failed = true;\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix"
+    ]
+  },
+  {
+    "id": "T11-M36",
+    "cases": [
+      10
+    ],
+    "what": "appended text retries the parser",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const retry = !text.startsWith(entry.text);",
+    "new": "const retry = true;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix"
+    ]
+  },
+  {
+    "id": "T11-M37",
+    "cases": [
+      10
+    ],
+    "what": "no Markdown is cached",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tthis.markdownCache.set(message, entry);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering reuses one Markdown per message across renders",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering re-renders a message whose text is still streaming",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost re-renders without re-parsing: the Markdown cache survives a frame"
+    ]
+  },
+  {
+    "id": "T11-M38",
+    "cases": [
+      10
+    ],
+    "what": "a streaming message keeps its first text",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tentry.md.setText(text);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering re-renders a message whose text is still streaming"
+    ]
+  },
+  {
+    "id": "T11-M39",
+    "cases": [
+      11
+    ],
+    "what": "confirm opens no composer",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (this.matches(data, \"tui.select.confirm\") && this.isActive()) {",
+    "new": "if (false) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer offers the steer affordance for a running agent and opens on Enter",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer typing then Enter sends the trimmed message and closes the composer",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer composer rows never exceed width"
+    ]
+  },
+  {
+    "id": "T11-M40",
+    "cases": [
+      11
+    ],
+    "what": "a finished agent opens the composer",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (this.matches(data, \"tui.select.confirm\") && this.isActive()) {",
+    "new": "if (this.matches(data, \"tui.select.confirm\")) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer no steer affordance once the agent is no longer running"
+    ]
+  },
+  {
+    "id": "T11-M41",
+    "cases": [
+      11
+    ],
+    "what": "the steer is not trimmed",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "const message = value.trim();",
+    "new": "const message = value;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer typing then Enter sends the trimmed message and closes the composer"
+    ]
+  },
+  {
+    "id": "T11-M42",
+    "cases": [
+      11
+    ],
+    "what": "an empty submit steers",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (message) this.steer(message);",
+    "new": "this.steer(message);",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer an empty submit just returns, without steering"
+    ]
+  },
+  {
+    "id": "T11-M43",
+    "cases": [
+      11
+    ],
+    "what": "cancel keeps the composer",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\tinput.onEscape = () => {\n\t\t\tthis.composer = undefined;",
+    "new": "\t\tinput.onEscape = () => {\n\t\t\tthis.composer = this.composer;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer Esc cancels the composer without sending"
+    ]
+  },
+  {
+    "id": "T11-M44",
+    "cases": [
+      11
+    ],
+    "what": "the composer does not own the keys",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\tif (this.composer) {\n\t\t\tthis.composer.handleInput(data);",
+    "new": "\t\tif (false) {\n\t\t\tthis.composer?.handleInput(data);",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer scroll keys are inert while composing (input owns them)"
+    ]
+  },
+  {
+    "id": "T11-M45",
+    "cases": [
+      11
+    ],
+    "what": "the composer row is not framed",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "lines.push(row(this.composer.render(innerWidth)[0] ?? \"\"));",
+    "new": "lines.push(this.composer.render(innerWidth + 20)[0] ?? \"\");",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer composer rows never exceed width"
+    ]
+  },
+  {
+    "id": "T11-M46",
+    "cases": [
+      12
+    ],
+    "what": "a failed steer shows nothing",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (outcome.kind === \"failed\") this.steerError =",
+    "new": "if (outcome.kind === \"delivered\") this.steerError =",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key"
+    ]
+  },
+  {
+    "id": "T11-M47",
+    "cases": [
+      12
+    ],
+    "what": "the steer error is not drawn",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\tif (this.steerError) lines.push(row(theme.fg(\"error\", this.steerError)));\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key"
+    ]
+  },
+  {
+    "id": "T11-M48",
+    "cases": [
+      13
+    ],
+    "what": "scrolling up ignores the manager",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (this.matches(data, \"tui.select.up\")) {",
+    "new": "if (data === \"\\x1b[A\") {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager honors user keybindings when a manager has them",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager respects a rebinding that removes a default key"
+    ]
+  },
+  {
+    "id": "T11-M49",
+    "cases": [
+      13
+    ],
+    "what": "ctrl+p pages up under the defaults",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "} else if (this.matches(data, \"tui.select.pageUp\")) {",
+    "new": "} else if (data === \"\\x10\" || this.matches(data, \"tui.select.pageUp\")) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager a manager with no user overrides behaves as the defaults"
+    ]
+  },
+  {
+    "id": "T11-M50",
+    "cases": [
+      13
+    ],
+    "what": "stop ignores its rebinding",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (this.matches(data, SUBAGENT_KEYBINDING_IDS.stop)) {",
+    "new": "if (data === \"x\") {",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager stops with app.subagents.stop rebound to s, and names the key in the footer"
+    ]
+  },
+  {
+    "id": "T11-M51",
+    "cases": [
+      14
+    ],
+    "what": "each message rewraps the whole transcript",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tconst start = lines.length;\n",
+    "new": "\t\t\tconst start = lines.length;\n\t\t\tfor (const _ of messages) wrapTextWithAnsi(\"\", width);\n",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost does ~10x the work for 10x the messages (raw wrap path)",
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost does ~10x the work for 10x the messages (markdown path)"
+    ]
+  },
+  {
+    "id": "T11-M52",
+    "cases": [
+      15
+    ],
+    "what": "every framed row touches the disk",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\ttruncateToWidth,\n\tvisibleWidth,\n\twrapTextWithAnsi,\n} from \"@earendil-works/pi-tui\";",
+    "new": "\ttruncateToWidth as truncateLine,\n\tvisibleWidth,\n\twrapTextWithAnsi,\n} from \"@earendil-works/pi-tui\";\nimport { existsSync } from \"node:fs\";\nconst truncateToWidth = (...args: Parameters<typeof truncateLine>) => (existsSync(\"/\"), truncateLine(...args));",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost touches no file while it renders a frame"
+    ]
+  },
+  {
+    "id": "T11-M53",
+    "cases": [
+      16
+    ],
+    "what": "the header drops the name's color",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "${renderAgentName(view.definition, theme, { bold: true })}",
+    "new": "${theme.bold(view.definition.displayName ?? view.definition.name)}",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer shows the header with the status, the display name in its color, and the stats"
+    ]
+  },
+  {
+    "id": "T11-M54",
+    "cases": [
+      17
+    ],
+    "what": "top stops one line short",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "} else if (this.matches(data, SUBAGENT_KEYBINDING_IDS.top)) {\n\t\t\tthis.scrollOffset = 0;",
+    "new": "} else if (this.matches(data, SUBAGENT_KEYBINDING_IDS.top)) {\n\t\t\tthis.scrollOffset = 1;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling jumps to the top and the bottom with app.subagents.top and app.subagents.bottom"
+    ]
+  },
+  {
+    "id": "T11-M55",
+    "cases": [
+      17
+    ],
+    "what": "bottom keeps auto-scroll off",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tthis.scrollOffset = maxScroll;\n\t\t\tthis.autoScroll = true;",
+    "new": "\t\t\tthis.scrollOffset = maxScroll;\n\t\t\tthis.autoScroll = false;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling follows new messages until the user scrolls up, and again from the bottom"
+    ]
+  },
+  {
+    "id": "T11-M56",
+    "cases": [
+      17
+    ],
+    "what": "scrolling up keeps auto-scroll on",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "this.scrollOffset = Math.max(0, this.scrollOffset - 1);\n\t\t\tthis.autoScroll = this.scrollOffset >= maxScroll;",
+    "new": "this.scrollOffset = Math.max(0, this.scrollOffset - 1);\n\t\t\tthis.autoScroll = true;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling follows new messages until the user scrolls up, and again from the bottom"
+    ]
+  },
+  {
+    "id": "T11-M57",
+    "cases": [
+      18
+    ],
+    "what": "a child message requests no render",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "if (!this.closed) this.tui.requestRender();",
+    "new": "void this.closed;",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer live updates renders a new child message without reopening"
+    ]
+  },
+  {
+    "id": "T11-M58",
+    "cases": [
+      18
+    ],
+    "what": "an attaching child is not followed",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tthis.followConversation();\n\t\t\t// A confirmation",
+    "new": "\t\t\t// A confirmation",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer live updates follows a queued agent's conversation once its child attaches"
+    ]
+  },
+  {
+    "id": "T11-M59",
+    "cases": [
+      8
+    ],
+    "what": "a pending stop survives the run's end",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\tif (!this.isActive()) this.stopArmed = false;\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key forgets a pending stop when the run ends, so a resumed run needs both presses"
+    ]
+  }
+]

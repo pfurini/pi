@@ -1,0 +1,264 @@
+[
+  {
+    "id": "T14-M1",
+    "cases": [
+      1
+    ],
+    "what": "the manual path drops the thinking level",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "thinking: thinking === \"inherit\" ? undefined : thinking,",
+    "new": "thinking: undefined,",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes the manual path's file, and the new agent spawns at once"
+    ]
+  },
+  {
+    "id": "T14-M2",
+    "cases": [
+      1,
+      2
+    ],
+    "what": "the created file is not written",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\tchange(env, file.path, `Created ${file.path}`, () => writeAgentFile(file, created.text, dirs));",
+    "new": "\tvoid file;",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes the manual path's file, and the new agent spawns at once",
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns"
+    ]
+  },
+  {
+    "id": "T14-M3",
+    "cases": [
+      2
+    ],
+    "what": "the generation request carries a tool",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\t\tmessages: [{ role: \"user\", content: description, timestamp: Date.now() }],\n",
+    "new": "\t\tmessages: [{ role: \"user\", content: description, timestamp: Date.now() }],\n\t\ttools: [{ name: \"write\", description: \"write a file\", parameters: { type: \"object\", properties: {} } }] as never,\n",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns"
+    ]
+  },
+  {
+    "id": "T14-M4",
+    "cases": [
+      2
+    ],
+    "what": "the generated file gains a line",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\t\treturn undefined;\n\t}\n\treturn { path, text };",
+    "new": "\t\treturn undefined;\n\t}\n\treturn { path, text: `${text}\\nextra\\n` };",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns"
+    ]
+  },
+  {
+    "id": "T14-M5",
+    "cases": [
+      3
+    ],
+    "what": "a file without a description is written",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tif (typeof description !== \"string\" || !description.trim()) reasons.push(\"has no description:\");\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that fails to parse or has no description, and says why"
+    ]
+  },
+  {
+    "id": "T14-M6",
+    "cases": [
+      3
+    ],
+    "what": "an unparseable reply is written",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tif (!parsed.definition)\n\t\treturn [parsed.errorKind === \"parse\" ? `cannot be parsed: ${parsed.error}` : `${parsed.error}`];",
+    "new": "\tif (!parsed.definition) return [];",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that fails to parse or has no description, and says why"
+    ]
+  },
+  {
+    "id": "T14-M7",
+    "cases": [
+      4
+    ],
+    "what": "the model step offers no scoped model",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tconst scoped = env.scopedModels().map(({ model }) => `${model.provider}/${model.id}`);",
+    "new": "\tconst scoped: string[] = [];",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard offers the session's scoped models in the model step"
+    ]
+  },
+  {
+    "id": "T14-M8",
+    "cases": [
+      5
+    ],
+    "what": "an untrusted project offers the project location",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "const options = dirs.projectTrusted ? [\"Project (.pi/agents/)\", personal] : [personal];",
+    "new": "const options = [\"Project (.pi/agents/)\", personal];",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard offers only the personal location in an untrusted project"
+    ]
+  },
+  {
+    "id": "T14-M9",
+    "cases": [
+      6
+    ],
+    "what": "an existing file is overwritten without asking",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tif (existsSync(path) && !(await env.ui.confirm(",
+    "new": "\tif (false && !(await env.ui.confirm(",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard leaves an existing file unchanged when the overwrite is declined"
+    ]
+  },
+  {
+    "id": "T14-M10",
+    "cases": [
+      7
+    ],
+    "what": "only spaces make a name invalid",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "if (/[\\s:/\\\\]/.test(name)) {",
+    "new": "if (/[\\s]/.test(name)) {",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard refuses a name with a space, a colon or a path separator"
+    ]
+  },
+  {
+    "id": "T14-M11",
+    "cases": [
+      8
+    ],
+    "what": "invalid values are not refused",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tfor (const invalid of parsed.invalidValues) reasons.push(`has an invalid value for ${invalid}`);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply with an invalid documented value or an unknown key, naming each"
+    ]
+  },
+  {
+    "id": "T14-M12",
+    "cases": [
+      8
+    ],
+    "what": "unknown keys are not refused",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tfor (const key of parsed.unknownKeys) reasons.push(`has the unknown key \"${key}\"`);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply with an invalid documented value or an unknown key, naming each"
+    ]
+  },
+  {
+    "id": "T14-M13",
+    "cases": [
+      9
+    ],
+    "what": "another agent's name is accepted",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tif (parsed.definition.name !== name)\n",
+    "new": "\tif (false)\n",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that names another agent, a path included"
+    ]
+  },
+  {
+    "id": "T14-M14",
+    "cases": [
+      10
+    ],
+    "what": "any list value is accepted",
+    "path": "src/core/fork-builtins/subagents/definitions/frontmatter.ts",
+    "old": "\tif (Array.isArray(value) && value.every((item) => typeof item === \"string\")) return value;",
+    "new": "\tif (true) return value;",
+    "files": [
+      "test/fork-builtins/subagents/definitions.test.ts",
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/definitions.test.ts > agent file frontmatter reports a list field that is neither a string nor a string list, and ignores it",
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply whose list field is neither a list nor a string"
+    ]
+  },
+  {
+    "id": "T14-M15",
+    "cases": [
+      10
+    ],
+    "what": "a list key with no value passes",
+    "path": "src/core/fork-builtins/subagents/definitions/frontmatter.ts",
+    "old": "\tif (value === undefined || typeof value === \"string\") return value;",
+    "new": "\tif (value === undefined || value === null || typeof value === \"string\") return value;",
+    "files": [
+      "test/fork-builtins/subagents/definitions.test.ts",
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/definitions.test.ts > agent file frontmatter reports a list key written with no value, and ignores it as absent",
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply whose list field is neither a list nor a string"
+    ]
+  },
+  {
+    "id": "T14-M16",
+    "cases": [
+      6
+    ],
+    "what": "a file created during generation is overwritten without asking",
+    "path": "src/core/fork-builtins/subagents/ui/create-wizard.ts",
+    "old": "\tif (!existed && existsSync(path) && !(await env.ui.confirm(",
+    "new": "\tif (false && !(await env.ui.confirm(",
+    "files": [
+      "test/suite/fork-subagents-create-wizard.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard asks again before overwriting a file another session created while the model answered"
+    ]
+  }
+]

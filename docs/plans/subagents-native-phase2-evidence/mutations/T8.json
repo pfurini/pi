@@ -1,0 +1,387 @@
+[
+  {
+    "id": "T8-M1",
+    "cases": [
+      1
+    ],
+    "what": "only the first progress update is sent",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\t\tif (key === last) return;\n",
+    "new": "\t\tif (last !== undefined) return;\n",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent progress sends a running update after the child's first tool call, then one per window with a burst's last change"
+    ]
+  },
+  {
+    "id": "T8-M3",
+    "cases": [
+      2
+    ],
+    "what": "the queued activity hides how many wait ahead",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "${ahead > 0 ? ` (${ahead} ahead)` : \"\"}",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent progress reports a queued foreground call's place in the queue"
+    ]
+  },
+  {
+    "id": "T8-M4",
+    "cases": [
+      3
+    ],
+    "what": "an error result with empty details is drawn as a run",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "if (context.isError || !details?.status) return new Text(text, 0, 0);",
+    "new": "if (!details) return new Text(text, 0, 0);",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders an error result's text, and a result without details as its raw text"
+    ]
+  },
+  {
+    "id": "T8-M5",
+    "cases": [
+      4
+    ],
+    "what": "a finished result drops its model label",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\t\tmodelName,\n\t\ttags: mode",
+    "new": "\t\tmodelName: view.completedAt === undefined ? modelName : undefined,\n\t\ttags: mode",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the model even when the child inherited the parent's"
+    ]
+  },
+  {
+    "id": "T8-M6",
+    "cases": [
+      4
+    ],
+    "what": "before a session exists no model is named",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\tconst model = effective.model ?? view.model;",
+    "new": "\tconst model = effective.model;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the inherited model while streaming, before a session exists"
+    ]
+  },
+  {
+    "id": "T8-M7",
+    "cases": [
+      5
+    ],
+    "what": "the twin label is dropped",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\t\ttags: mode ? [mode, ...tags] : tags,",
+    "new": "\t\ttags,",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering keeps the twin label beside the model"
+    ]
+  },
+  {
+    "id": "T8-M8",
+    "cases": [
+      6
+    ],
+    "what": "the requested level shows instead of the session's",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\tconst thinking = effective.thinking ?? invocation.thinking;",
+    "new": "\tconst thinking = invocation.thinking ?? effective.thinking;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering reports the session's level, and what was asked for, when pi clamps it"
+    ]
+  },
+  {
+    "id": "T8-M9",
+    "cases": [
+      7
+    ],
+    "what": "a level the file pinned is not disclosed",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\tconst requestedThinking = invocation.overridden?.thinking ?? invocation.thinking;",
+    "new": "\tconst requestedThinking = invocation.thinking;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a level an agent file pinned over the caller's (#182)"
+    ]
+  },
+  {
+    "id": "T8-M10",
+    "cases": [
+      7
+    ],
+    "what": "a model the file pinned is not disclosed",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\t\tmodelName: asked(labels?.name, invocation.overridden?.model),",
+    "new": "\t\tmodelName: labels?.name,",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a model an agent file pinned over the caller's (#182)",
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a spelling that names no available model at all"
+    ]
+  },
+  {
+    "id": "T8-M11",
+    "cases": [
+      7
+    ],
+    "what": "a spelling that names the winner is disclosed",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\tif (!asked || !model) return invocation;\n",
+    "new": "\t\treturn invocation;\n",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering stays quiet when the caller's spelling names the model that won"
+    ]
+  },
+  {
+    "id": "T8-M12",
+    "cases": [
+      7
+    ],
+    "what": "a spelling that names no model is dropped",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "if (typeof resolved === \"string\" || resolved.provider !== model.provider || resolved.id !== model.id) {",
+    "new": "if (typeof resolved !== \"string\" && (resolved.provider !== model.provider || resolved.id !== model.id)) {",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a spelling that names no available model at all"
+    ]
+  },
+  {
+    "id": "T8-M13",
+    "cases": [
+      7
+    ],
+    "what": "every request says what was asked",
+    "path": "src/core/fork-builtins/subagents/tools/details.ts",
+    "old": "\t\tvalue && requested && requested !== value ? `${value} (asked ${requested})` : value;",
+    "new": "\t\tvalue && requested ? `${value} (asked ${requested})` : value;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering says nothing about a request that was honored"
+    ]
+  },
+  {
+    "id": "T8-M14",
+    "cases": [
+      8
+    ],
+    "what": "a resume forgets the reopened session's settings",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\trecord.endReported = undefined;\n\t\trecord.mode",
+    "new": "\t\trecord.endReported = undefined;\n\t\trecord.effective = {};\n\t\trecord.mode",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders the reopened session's settings, not the resume call's"
+    ]
+  },
+  {
+    "id": "T8-M15",
+    "cases": [
+      9
+    ],
+    "what": "the foreground stats drop the cost",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\tif (cost) stats.push(cost);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text names the cost in the stats it already reports"
+    ]
+  },
+  {
+    "id": "T8-M16",
+    "cases": [
+      9
+    ],
+    "what": "the foreground cost ignores showCost",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\tconst cost = showCost ? formatCost(record.usage.cost.total) : \"\";\n\tif (cost) stats.push(cost);",
+    "new": "\tconst cost = formatCost(record.usage.cost.total);\n\tif (cost) stats.push(cost);",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text says nothing about cost when the setting is off"
+    ]
+  },
+  {
+    "id": "T8-M17",
+    "cases": [
+      9
+    ],
+    "what": "an unpriced foreground run shows a cost",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\tconst cost = showCost ? formatCost(record.usage.cost.total) : \"\";\n\tif (cost) stats.push(cost);",
+    "new": "\tconst cost = showCost ? formatCost(record.usage.cost.total || 0.5) : \"\";\n\tif (cost) stats.push(cost);",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text says nothing about cost for a model with no pricing data"
+    ]
+  },
+  {
+    "id": "T8-M18",
+    "cases": [
+      10
+    ],
+    "what": "get_subagent_result drops the cost field",
+    "path": "src/core/fork-builtins/subagents/tools/result.ts",
+    "old": "\tif (cost) stats.push(`Cost: ${cost}`);",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text reports the cost as its own labelled field in get_subagent_result"
+    ]
+  },
+  {
+    "id": "T8-M19",
+    "cases": [
+      10
+    ],
+    "what": "get_subagent_result shows an empty cost field",
+    "path": "src/core/fork-builtins/subagents/tools/result.ts",
+    "old": "\tif (cost) stats.push(`Cost: ${cost}`);",
+    "new": "\tstats.push(`Cost: ${cost}`);",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text omits the cost field from get_subagent_result when unpriced"
+    ]
+  },
+  {
+    "id": "T8-M20",
+    "cases": [
+      11
+    ],
+    "what": "the call row looks up no agent",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "\t\tconst agent = state?.agent ?? (found && { displayName: found.displayName ?? found.name, color: found.color });",
+    "new": "\t\tconst agent = state?.agent;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent call rendering renders the call header with the agent's display name in its color"
+    ]
+  },
+  {
+    "id": "T8-M21",
+    "cases": [
+      12
+    ],
+    "what": "the spinner stands still",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "const frame = SPINNER[Math.floor(now / SPINNER_FRAME_MS) % SPINNER.length];",
+    "new": "const frame = SPINNER[0];",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering shows another spinner frame when the running row renders 100 ms later"
+    ]
+  },
+  {
+    "id": "T8-M22",
+    "cases": [
+      13
+    ],
+    "what": "the launch text styles the agent's name",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\t\t`Type: ${displayName(record)}`,",
+    "new": "\t\t`Type: \\u001b[1m${displayName(record)}\\u001b[22m`,",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result text keeps a colored agent's name badge out of the result text, so print mode shows none"
+    ]
+  },
+  {
+    "id": "T8-M23",
+    "cases": [
+      14
+    ],
+    "what": "a steered result reads as done",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "${steered ? \"Wrapped up (turn limit)\" : \"Done\"}",
+    "new": "Done",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering draws each finished status with its icon and outcome"
+    ]
+  },
+  {
+    "id": "T8-M24",
+    "cases": [
+      15
+    ],
+    "what": "an expanded result shows up to 60 lines",
+    "path": "src/core/fork-builtins/subagents/ui/tool-renderers.ts",
+    "old": "const MAX_EXPANDED_LINES = 50;",
+    "new": "const MAX_EXPANDED_LINES = 60;",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent result rendering expands a completed result to at most 50 lines, pointing to get_subagent_result for the rest"
+    ]
+  },
+  {
+    "id": "T8-M25",
+    "cases": [
+      2
+    ],
+    "what": "a queued call refreshes only on its own events",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": " || service.lookup(id)?.status === \"queued\") schedule();",
+    "new": ") schedule();",
+    "files": [
+      "test/suite/fork-subagents-rendering.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-rendering.test.ts > Agent progress reports a queued foreground call's place in the queue"
+    ]
+  }
+]

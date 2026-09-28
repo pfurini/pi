@@ -1,0 +1,18 @@
+[
+  {
+    "id": "T18-F5-M1",
+    "cases": [
+      1
+    ],
+    "what": "the composer stays open when the agent stops",
+    "path": "src/core/fork-builtins/subagents/ui/viewer.ts",
+    "old": "\t\t\t\tthis.stopArmed = false;\n\t\t\t\tthis.composer = undefined;\n\t\t\t}",
+    "new": "\t\t\t\tthis.stopArmed = false;\n\t\t\t}",
+    "files": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer closes the composer when the agent stops while a message is typed, and sends nothing"
+    ]
+  }
+]

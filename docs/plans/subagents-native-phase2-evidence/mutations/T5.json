@@ -1,0 +1,20 @@
+[
+  {
+    "id": "T5-M1",
+    "cases": [
+      1,
+      2
+    ],
+    "what": "the subagent keys leave FORK_KEYBINDINGS (probe P6)",
+    "path": "src/core/fork-builtins/keybindings.ts",
+    "old": "\t...SUBAGENT_KEYBINDINGS,\n",
+    "new": "\t...(false ? SUBAGENT_KEYBINDINGS : {}),\n",
+    "files": [
+      "test/fork-builtins/keybindings.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/keybindings.test.ts > fork keybindings puts every fork id into Pi's keybinding table with its default",
+      "test/fork-builtins/keybindings.test.ts > fork keybindings takes a user's binding for a subagent key from keybindings.json"
+    ]
+  }
+]

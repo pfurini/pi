@@ -1,0 +1,52 @@
+[
+  {
+    "id": "T18-F3-M1",
+    "cases": [
+      1
+    ],
+    "what": "steer_subagent awaits the delivery without its signal",
+    "path": "src/core/fork-builtins/subagents/tools/steer.ts",
+    "old": "await unlessAborted(service.steer(record.id, params.message), signal);",
+    "new": "await service.steer(record.id, params.message);",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent stops waiting on a steer the child's input handler never takes once the call is aborted"
+    ]
+  },
+  {
+    "id": "T18-F3-M2",
+    "cases": [
+      1
+    ],
+    "what": "the nested steer awaits the delivery without its signal",
+    "path": "src/core/fork-builtins/subagents/tools/nested.ts",
+    "old": "await unlessAborted(runtime.steer(record.id, params.message), signal);",
+    "new": "await runtime.steer(record.id, params.message);",
+    "files": [
+      "test/suite/fork-subagents-nested.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-nested.test.ts > nested ownership ends a delegating agent's run while its nested steer waits on a child that never takes it"
+    ]
+  },
+  {
+    "id": "T18-F3-M3",
+    "cases": [
+      1
+    ],
+    "what": "an abort does not end the wait",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "\t\tconst onAbort = () => resolve(undefined);",
+    "new": "\t\tconst onAbort = () => {};",
+    "files": [
+      "test/suite/fork-subagents-tools.test.ts",
+      "test/suite/fork-subagents-nested.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-tools.test.ts > steer_subagent stops waiting on a steer the child's input handler never takes once the call is aborted",
+      "test/suite/fork-subagents-nested.test.ts > nested ownership ends a delegating agent's run while its nested steer waits on a child that never takes it"
+    ]
+  }
+]

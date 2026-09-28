@@ -1,0 +1,14 @@
+T4-M1 [1,2] only the memory directory and MEMORY.md are checked, as before | 2 of 8 failed, caught
+    test/fork-builtins/subagents/memory.test.ts > agent memory refuses read-write memory behind a symlinked ancestor, naming the link, and creates nothing there
+    test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent none of the memory behind a symlinked ancestor
+T4-M2 [1] read-write memory ignores a symlinked ancestor | 1 of 8 failed, caught
+    test/fork-builtins/subagents/memory.test.ts > agent memory refuses read-write memory behind a symlinked ancestor, naming the link, and creates nothing there
+T4-M3 [2] read-only memory reads through a symlinked ancestor | 2 of 8 failed, caught
+    test/fork-builtins/subagents/memory.test.ts > agent memory refuses a symlinked memory directory and ignores a symlinked MEMORY.md
+    test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent none of the memory behind a symlinked ancestor
+T4-M4 [3] the scope root itself is checked | 1 of 8 failed, caught
+    test/fork-builtins/subagents/memory.test.ts > agent memory works under a scope root that is itself a symlink
+T4-M5 [2] an unreadable memory path fails a read-only agent | 1 of 8 failed, caught
+    test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent an empty block when a memory directory cannot be read
+restored | 0 of 8 failed
+clean: yes

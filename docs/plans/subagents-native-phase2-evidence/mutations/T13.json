@@ -1,0 +1,926 @@
+[
+  {
+    "id": "T13-M1",
+    "cases": [
+      1
+    ],
+    "what": "enable strips only the first frontmatter line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "(line, index) => !(index > 0 && index < block.close &&",
+    "new": "(line, index) => !(index === 1 && index < block.close &&",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when another key precedes it",
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the last frontmatter line"
+    ]
+  },
+  {
+    "id": "T13-M2",
+    "cases": [
+      1
+    ],
+    "what": "enable skips the first frontmatter line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "(line, index) => !(index > 0 && index < block.close &&",
+    "new": "(line, index) => !(index > 1 && index < block.close &&",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the first frontmatter line"
+    ]
+  },
+  {
+    "id": "T13-M3",
+    "cases": [
+      1
+    ],
+    "what": "enable always reports a change",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "if (kept.length === block.lines.length) return { content, changed: false };",
+    "new": "if (kept.length === -1) return { content, changed: false };",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent reports changed: false when there is nothing to strip"
+    ]
+  },
+  {
+    "id": "T13-M4",
+    "cases": [
+      1
+    ],
+    "what": "enable keeps the carriage return on a CRLF line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "ENABLED_FALSE.test(line.replace(/\\r?\\n$/, \"\"))",
+    "new": "ENABLED_FALSE.test(line.replace(/\\n$/, \"\"))",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings"
+    ]
+  },
+  {
+    "id": "T13-M5",
+    "cases": [
+      1
+    ],
+    "what": "enable trims the file's end",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return { content: kept.join(\"\"), changed: true };",
+    "new": "return { content: kept.join(\"\").trimEnd(), changed: true };",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent leaves the body and other frontmatter keys untouched",
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings"
+    ]
+  },
+  {
+    "id": "T13-M6",
+    "cases": [
+      2
+    ],
+    "what": "disable inserts the key after the first key",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "lines.splice(1, 0, `enabled: false${block.eol}`);",
+    "new": "lines.splice(2, 0, `enabled: false${block.eol}`);",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block",
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less",
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it"
+    ]
+  },
+  {
+    "id": "T13-M7",
+    "cases": [
+      2
+    ],
+    "what": "disable inserts a second key into a disabled file",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tif (isDisabledContent(content)) return { content, outcome: \"already-disabled\" };\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already first",
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already present mid-block",
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse"
+    ]
+  },
+  {
+    "id": "T13-M8",
+    "cases": [
+      2
+    ],
+    "what": "disable claims success on a fence-less file",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "if (!block) return { content, outcome: \"no-frontmatter\" };",
+    "new": "if (!block) return { content: `---\\nenabled: false\\n---\\n${content}`, outcome: \"disabled\" };",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent reports no-frontmatter rather than claiming success on a fence-less file"
+    ]
+  },
+  {
+    "id": "T13-M9",
+    "cases": [
+      2
+    ],
+    "what": "disable writes LF into a CRLF file",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "eol: lines[0].endsWith(\"\\r\\n\") ? \"\\r\\n\" : \"\\n\"",
+    "new": "eol: \"\\n\"",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less"
+    ]
+  },
+  {
+    "id": "T13-M10",
+    "cases": [
+      2
+    ],
+    "what": "a BOM hides the frontmatter block",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "lines[0]?.replace(/^\\uFEFF/, \"\")",
+    "new": "lines[0]",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it"
+    ]
+  },
+  {
+    "id": "T13-M11",
+    "cases": [
+      3
+    ],
+    "what": "detection mirrors the parser with a regex",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return parseFrontmatter(content).frontmatter.enabled === false;",
+    "new": "return /^enabled:[ \\t]*false/m.test(content);",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: False",
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: '----' closes the block early"
+    ]
+  },
+  {
+    "id": "T13-M12",
+    "cases": [
+      3
+    ],
+    "what": "detection never sees a disabled file",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return parseFrontmatter(content).frontmatter.enabled === false;",
+    "new": "return false;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key at the first frontmatter line",
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key mid-block",
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key in a CRLF file"
+    ]
+  },
+  {
+    "id": "T13-M13",
+    "cases": [
+      3
+    ],
+    "what": "detection sees every file without enabled: true as disabled",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return parseFrontmatter(content).frontmatter.enabled === false;",
+    "new": "return parseFrontmatter(content).frontmatter.enabled !== true;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent is false for an enabled file"
+    ]
+  },
+  {
+    "id": "T13-M14",
+    "cases": [
+      4
+    ],
+    "what": "enable stops before the block's last line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "index > 0 && index < block.close && ENABLED_FALSE",
+    "new": "index > 0 && index < block.close - 1 && ENABLED_FALSE",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key last"
+    ]
+  },
+  {
+    "id": "T13-M15",
+    "cases": [
+      4
+    ],
+    "what": "disable writes a spelling enable cannot remove",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "lines.splice(1, 0, `enabled: false${block.eol}`);",
+    "new": "lines.splice(1, 0, `enabled: False${block.eol}`);",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file"
+    ]
+  },
+  {
+    "id": "T13-M16",
+    "cases": [
+      5
+    ],
+    "what": "a BOM hides the stub",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\t\t\t.replace(/^\\uFEFF/, \"\")\n\t\t\t.replace(/\\r\\n/g, \"\\n\")\n\t\t\t.trim() === \"---\\n---\"",
+    "new": "\t\t\t.replace(/\\r\\n/g, \"\\n\")\n\t\t\t.trimEnd() === \"---\\n---\"",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub behind a BOM"
+    ]
+  },
+  {
+    "id": "T13-M17",
+    "cases": [
+      5
+    ],
+    "what": "the stub needs a blank line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": ".trim() === \"---\\n---\"",
+    "new": ".trim() === \"---\\n\\n---\"",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub /agents writes to disable a default agent, once enabled"
+    ]
+  },
+  {
+    "id": "T13-M18",
+    "cases": [
+      5
+    ],
+    "what": "every file is a stub",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\treturn (\n\t\tcontent\n",
+    "new": "\treturn true || (\n\t\tcontent\n",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub is false for a file with real frontmatter"
+    ]
+  },
+  {
+    "id": "T13-M19",
+    "cases": [
+      6
+    ],
+    "what": "the workspace wins over the project",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return directories.projectTrusted ? [\"project\", \"workspace\", \"personal\"] : [\"personal\"];",
+    "new": "return directories.projectTrusted ? [\"workspace\", \"project\", \"personal\"] : [\"personal\"];",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files prefers .pi/agents over .agents/agents and the personal directory"
+    ]
+  },
+  {
+    "id": "T13-M20",
+    "cases": [
+      6
+    ],
+    "what": "the workspace is never searched",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return directories.projectTrusted ? [\"project\", \"workspace\", \"personal\"] : [\"personal\"];",
+    "new": "return directories.projectTrusted ? [\"project\", \"personal\"] : [\"personal\"];",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the workspace .agents/agents directory"
+    ]
+  },
+  {
+    "id": "T13-M21",
+    "cases": [
+      6
+    ],
+    "what": "the personal directory is never searched",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return directories.projectTrusted ? [\"project\", \"workspace\", \"personal\"] : [\"personal\"];",
+    "new": "return directories.projectTrusted ? [\"project\", \"workspace\"] : [\"personal\"];",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the personal agent directory"
+    ]
+  },
+  {
+    "id": "T13-M22",
+    "cases": [
+      6
+    ],
+    "what": "an untrusted project's files are found",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "return directories.projectTrusted ? [",
+    "new": "return true ? [",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files looks in no project location of an untrusted project"
+    ]
+  },
+  {
+    "id": "T13-M23",
+    "cases": [
+      6
+    ],
+    "what": "a missing file is found",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\t\tif (isFile(path) && loadsAs(path, location, name)) return { path, location };",
+    "new": "\t\treturn { path, location };",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files returns undefined when the agent has no file anywhere",
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files finds nothing when neither the source path nor the probe resolves"
+    ]
+  },
+  {
+    "id": "T13-M24",
+    "cases": [
+      6
+    ],
+    "what": "the loader's path is ignored",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tif (sourcePath && isFile(sourcePath)) {",
+    "new": "\tif (false) {",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files uses the file the loader read, whatever it is called",
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path"
+    ]
+  },
+  {
+    "id": "T13-M25",
+    "cases": [
+      6
+    ],
+    "what": "every source path counts as personal",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "sourcePath.startsWith(agentDirectory(candidate, directories) + sep),",
+    "new": "false,",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files uses the file the loader read, whatever it is called",
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path"
+    ]
+  },
+  {
+    "id": "T13-M26",
+    "cases": [
+      6
+    ],
+    "what": "no probe backs up the source path",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\treturn findAgentFile(name, directories);\n}",
+    "new": "\treturn undefined;\n}",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the <type>.md probe for a default agent with no source file",
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back when the recorded path has since been deleted"
+    ]
+  },
+  {
+    "id": "T13-M27",
+    "cases": [
+      6
+    ],
+    "what": "a deleted source path still counts",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tif (sourcePath && isFile(sourcePath)) {",
+    "new": "\tif (sourcePath) {",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back when the recorded path has since been deleted",
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files finds nothing when neither the source path nor the probe resolves"
+    ]
+  },
+  {
+    "id": "T13-M28",
+    "cases": [
+      7
+    ],
+    "what": "eject drops persist_session",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tput(\"persist_session\", definition.persistSession);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition round-trips a definition that sets every frontmatter key"
+    ]
+  },
+  {
+    "id": "T13-M29",
+    "cases": [
+      7
+    ],
+    "what": "eject writes values unquoted",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "if (value !== undefined) fields.push(`${key}: ${JSON.stringify(value)}`);",
+    "new": "if (value !== undefined) fields.push(`${key}: ${value}`);",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition ejects every default agent into a file that parses back to the same definition",
+      "test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition round-trips a definition that sets every frontmatter key"
+    ]
+  },
+  {
+    "id": "T13-M30",
+    "cases": [
+      7
+    ],
+    "what": "eject drops the system prompt",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\\n---\\n\\n${definition.systemPrompt}\\n`;",
+    "new": "\\n---\\n\\n`;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition ejects every default agent into a file that parses back to the same definition"
+    ]
+  },
+  {
+    "id": "T13-M31",
+    "cases": [
+      8
+    ],
+    "what": "the description is written unquoted",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "description: ${JSON.stringify(input.description)}",
+    "new": "description: ${input.description}",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a description containing a colon",
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps a description containing a # instead of truncating it"
+    ]
+  },
+  {
+    "id": "T13-M32",
+    "cases": [
+      8
+    ],
+    "what": "the description loses its case",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "description: ${JSON.stringify(input.description)}",
+    "new": "description: ${JSON.stringify(input.description.toLowerCase())}",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile round-trips an ordinary description"
+    ]
+  },
+  {
+    "id": "T13-M33",
+    "cases": [
+      8
+    ],
+    "what": "the model is written unquoted",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "const model = input.model ? `\\nmodel: ${JSON.stringify(input.model)}` : \"\";",
+    "new": "const model = input.model ? `\\nmodel: ${input.model}` : \"\";",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a custom model containing a colon-space or a #"
+    ]
+  },
+  {
+    "id": "T13-M34",
+    "cases": [
+      8
+    ],
+    "what": "the model loses its thinking suffix",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "const model = input.model ? `\\nmodel: ${JSON.stringify(input.model)}` : \"\";",
+    "new": "const model = input.model ? `\\nmodel: ${JSON.stringify(input.model.split(\":\")[0])}` : \"\";",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile leaves a `provider/model:thinking` suffix intact"
+    ]
+  },
+  {
+    "id": "T13-M35",
+    "cases": [
+      8
+    ],
+    "what": "an inherited thinking level is written",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "const thinking = input.thinking ? `\\nthinking: ${input.thinking}` : \"\";",
+    "new": "const thinking = `\\nthinking: ${input.thinking ?? \"medium\"}`;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile emits the fields the wizard collects, and omits the ones left on inherit"
+    ]
+  },
+  {
+    "id": "T13-M36",
+    "cases": [
+      8
+    ],
+    "what": "the body keeps only its first line",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "prompt_mode: replace\\n---\\n\\n${input.systemPrompt}\\n`;",
+    "new": "prompt_mode: replace\\n---\\n\\n${input.systemPrompt.split(\"\\n\")[0]}\\n`;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps the system prompt as the body"
+    ]
+  },
+  {
+    "id": "T13-M37",
+    "cases": [
+      9
+    ],
+    "what": "an untrusted project offers the project location",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "const options = dirs.projectTrusted ? [\"Project (.pi/agents/)\", personal] : [personal];",
+    "new": "const options = [\"Project (.pi/agents/)\", personal];",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents offers only the personal location in an untrusted project, for eject and the disable stub"
+    ]
+  },
+  {
+    "id": "T13-M38",
+    "cases": [
+      10
+    ],
+    "what": "the stub disables nothing",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "export const DISABLED_STUB = \"---\\nenabled: false\\n---\\n\";",
+    "new": "export const DISABLED_STUB = \"---\\n---\\n\";",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents disables a default agent with a stub its next spawn routes around, and enabling deletes the stub"
+    ]
+  },
+  {
+    "id": "T13-M39",
+    "cases": [
+      10
+    ],
+    "what": "enabling keeps an empty stub",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\tif (isEmptyStub(content)) {",
+    "new": "\tif (false) {",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents disables a default agent with a stub its next spawn routes around, and enabling deletes the stub"
+    ]
+  },
+  {
+    "id": "T13-M40",
+    "cases": [
+      11
+    ],
+    "what": "an unchanged edit is written",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "if (edited === undefined || edited === content) return;",
+    "new": "if (edited === undefined) return;",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents writes an edit only when the text changed, and deletes only after a confirm"
+    ]
+  },
+  {
+    "id": "T13-M41",
+    "cases": [
+      11
+    ],
+    "what": "a declined confirm still deletes",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\tif (!confirmed) return;\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents writes an edit only when the text changed, and deletes only after a confirm",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents ejects a default agent, and resets it only after a confirm"
+    ]
+  },
+  {
+    "id": "T13-M42",
+    "cases": [
+      12
+    ],
+    "what": "rpc mode opens the menu",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "if (ctx.mode !== \"tui\") {",
+    "new": "if (ctx.mode === \"print\") {",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents answers outside the interactive TUI that it needs it, and opens nothing"
+    ]
+  },
+  {
+    "id": "T13-M43",
+    "cases": [
+      13,
+      17,
+      18,
+      19,
+      20
+    ],
+    "what": "a failed change reads as information",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\tenv.ui.notify(errorText(error), \"error\");",
+    "new": "\t\tenv.ui.notify(errorText(error), \"info\");",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents leaves the target and no temporary file when the directory is read-only, and reports the error",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents reports a failed rename, leaving the target and no temporary file",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents reports a failed unlink and leaves the file in place",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents refuses to write when its temporary path already exists, as a file or a symlink, and leaves it untouched",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link"
+    ]
+  },
+  {
+    "id": "T13-M44",
+    "cases": [
+      14
+    ],
+    "what": "a failed reload after a change escapes the menu",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\ttry {\n\t\tenv.service.refreshDefinitions();\n\t} catch (error) {\n\t\tenv.ui.notify(`Saved ${path}",
+    "new": "\tenv.service.refreshDefinitions();\n\ttry {\n\t} catch (error) {\n\t\tenv.ui.notify(`Saved ${path}",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents keeps a change that landed when the reload after it fails, and says the file is saved"
+    ]
+  },
+  {
+    "id": "T13-M45",
+    "cases": [
+      14
+    ],
+    "what": "a failed reload before the roster escapes the menu",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\treturn env.service.registry;",
+    "new": "\t\tthrow error;",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents keeps a change that landed when the reload after it fails, and says the file is saved"
+    ]
+  },
+  {
+    "id": "T13-M46",
+    "cases": [
+      15
+    ],
+    "what": "the project marker changes",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "definition.source.kind === \"project\" ? \"•\"",
+    "new": "definition.source.kind === \"project\" ? \"*\"",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent"
+    ]
+  },
+  {
+    "id": "T13-M47",
+    "cases": [
+      15
+    ],
+    "what": "skill agents are listed",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\treturn [...registry.agents].filter(([, definition]) => !definition.hidden);",
+    "new": "\treturn [...registry.agents];",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent"
+    ]
+  },
+  {
+    "id": "T13-M48",
+    "cases": [
+      15
+    ],
+    "what": "a running agent opens no viewer",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\tawait openConversationViewer(env.ui, env.service, view, env.viewerState);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent"
+    ]
+  },
+  {
+    "id": "T13-M49",
+    "cases": [
+      16
+    ],
+    "what": "the top menu counts a stale roster",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\tconst registry = reload(env);\n\t\tconst agents = env.service.list();",
+    "new": "\t\tconst registry = env.service.registry;\n\t\tconst agents = env.service.list();",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents lists a project agent before any spawn, and one added on disk when it opens again"
+    ]
+  },
+  {
+    "id": "T13-M50",
+    "cases": [
+      20
+    ],
+    "what": "a symlinked component is followed",
+    "path": "src/core/fork-builtins/subagents/atomic-write.ts",
+    "old": "\t\tif (stats.isSymbolicLink()) throw",
+    "new": "\t\tif (false) throw",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link"
+    ]
+  },
+  {
+    "id": "T13-M51",
+    "cases": [
+      20
+    ],
+    "what": "a write skips the symlink check",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\trefuseSymlinks(locationRoot(file.location, directories), file.path);\n\tmkdirSync",
+    "new": "\tmkdirSync",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link"
+    ]
+  },
+  {
+    "id": "T13-M52",
+    "cases": [
+      20
+    ],
+    "what": "an unlink skips the symlink check",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\trefuseSymlinks(locationRoot(file.location, directories), file.path);\n\tunlinkSync",
+    "new": "\tunlinkSync",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link"
+    ]
+  },
+  {
+    "id": "T13-M53",
+    "cases": [
+      6
+    ],
+    "what": "a probed file with another name counts",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "if (isFile(path) && loadsAs(path, location, name)) return",
+    "new": "if (isFile(path)) return",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts",
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > locating agent files skips a probed file that declares another agent's name",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents acts on a default agent's own file only: another agent's file at its path is neither reset nor overwritten"
+    ]
+  },
+  {
+    "id": "T13-M54",
+    "cases": [
+      2
+    ],
+    "what": "disable adds a second key beside enabled: true",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\telse lines[existing] = `enabled: false${block.eol}`;",
+    "new": "\telse lines.splice(1, 0, `enabled: false${block.eol}`);",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent replaces an enabled: true line instead of adding a second key"
+    ]
+  },
+  {
+    "id": "T13-M55",
+    "cases": [
+      2
+    ],
+    "what": "disable writes an edit that does not read as disabled",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tif (!isDisabledContent(edited)) return { content, outcome: \"cannot-rewrite\" };\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent refuses an enabled key it cannot rewrite, rather than write a file the loader cannot parse",
+      "test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse"
+    ]
+  },
+  {
+    "id": "T13-M56",
+    "cases": [
+      10
+    ],
+    "what": "the stub overwrites a file without asking",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\tif (statSync(stub.path, { throwIfNoEntry: false })) {",
+    "new": "\tif (false) {",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents acts on a default agent's own file only: another agent's file at its path is neither reset nor overwritten"
+    ]
+  }
+]

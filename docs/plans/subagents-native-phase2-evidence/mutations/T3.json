@@ -1,0 +1,141 @@
+[
+  {
+    "id": "T3-M1",
+    "cases": [
+      1
+    ],
+    "what": "a view's status is writable",
+    "path": "src/core/fork-builtins/subagents/service/records.ts",
+    "old": "\treadonly status: SubagentStatus;\n",
+    "new": "\tstatus: SubagentStatus;\n",
+    "tsgo": "TS2578"
+  },
+  {
+    "id": "T3-M2",
+    "cases": [
+      2
+    ],
+    "what": "the reader hands out live settings",
+    "path": "src/core/fork-builtins/subagents/settings/settings.ts",
+    "old": "settings: Object.freeze({ ...DEFAULT_SUBAGENT_SETTINGS, ...global.values, ...project.values }),",
+    "new": "settings: { ...DEFAULT_SUBAGENT_SETTINGS, ...global.values, ...project.values },",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the read-only surface hands out frozen settings, and a reread replaces them with a new frozen object"
+    ]
+  },
+  {
+    "id": "T3-M3",
+    "cases": [
+      3
+    ],
+    "what": "a conversation subscriber is never called",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\t\t\t\t\tlistener();\n",
+    "new": "\t\t\t\t\t\tvoid listener;\n",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the read-only surface hands out a running child's conversation and its changes, and none for a queued agent"
+    ]
+  },
+  {
+    "id": "T3-M4",
+    "cases": [
+      4
+    ],
+    "what": "queue positions count from 0",
+    "path": "src/core/fork-builtins/subagents/service/queue.ts",
+    "old": "return samePool.indexOf(entry) + 1;",
+    "new": "return samePool.indexOf(entry);",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the read-only surface numbers queued agents by their place in the queue, and a running one not at all"
+    ]
+  },
+  {
+    "id": "T3-M5",
+    "cases": [
+      5
+    ],
+    "what": "the writer stores values the reader drops",
+    "path": "src/core/fork-builtins/subagents/settings/settings.ts",
+    "old": "\tif (warnings.length > 0) {\n",
+    "new": "\tif (warnings.length < 0) {\n",
+    "files": [
+      "test/fork-builtins/subagents/settings.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/settings.test.ts > subagent settings refuses a value the reader would drop, naming its key, and leaves settings.json as it was"
+    ]
+  },
+  {
+    "id": "T3-M6",
+    "cases": [
+      6
+    ],
+    "what": "the writer follows a symlinked .pi or settings.json",
+    "path": "src/core/fork-builtins/subagents/settings/settings.ts",
+    "old": "?.isSymbolicLink()) {",
+    "new": "?.isFIFO()) {",
+    "files": [
+      "test/fork-builtins/subagents/settings.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/settings.test.ts > subagent settings refuses to write through a symlinked .pi or settings.json, dangling or not"
+    ]
+  },
+  {
+    "id": "T3-M7",
+    "cases": [
+      7
+    ],
+    "what": "the temporary file is opened without the exclusive flag",
+    "path": "src/core/fork-builtins/subagents/atomic-write.ts",
+    "old": "openSync(temporary, \"wx\",",
+    "new": "openSync(temporary, \"w\",",
+    "files": [
+      "test/fork-builtins/subagents/atomic-write.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/atomic-write.test.ts > writeFileAtomically refuses when its temporary path exists, and neither overwrites nor deletes what is there"
+    ]
+  },
+  {
+    "id": "T3-M8",
+    "cases": [
+      7
+    ],
+    "what": "a failed rename leaves the temporary file behind",
+    "path": "src/core/fork-builtins/subagents/atomic-write.ts",
+    "old": "if (!renamed) rmSync(temporary, { force: true });",
+    "new": "if (!renamed) void temporary;",
+    "files": [
+      "test/fork-builtins/subagents/atomic-write.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/atomic-write.test.ts > writeFileAtomically leaves the target and no temporary file when the rename fails"
+    ]
+  },
+  {
+    "id": "T3-M9",
+    "cases": [
+      8
+    ],
+    "what": "an existing settings.json is written in place",
+    "path": "src/core/fork-builtins/subagents/settings/settings.ts",
+    "old": "\t\tif (current === undefined) return text;\n",
+    "new": "\t\treturn text;\n",
+    "files": [
+      "test/fork-builtins/subagents/settings.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/settings.test.ts > subagent settings replaces an existing settings.json whole, and leaves it byte-identical when the rename fails"
+    ]
+  }
+]

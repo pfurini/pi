@@ -1,0 +1,6 @@
+T18-F1-M1 [1] the foreground wait takes no signal | 1 of 15 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory returns an aborted foreground call whose child never finishes starting, and quit still ends within the bound
+T18-F1-M2 [1] the spawn path passes no signal to the wait | 1 of 15 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory returns an aborted foreground call whose child never finishes starting, and quit still ends within the bound
+restored | 0 of 15 failed
+clean: yes

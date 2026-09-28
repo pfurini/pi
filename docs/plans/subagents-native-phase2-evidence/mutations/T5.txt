@@ -1,0 +1,5 @@
+T5-M1 [1,2] the subagent keys leave FORK_KEYBINDINGS (probe P6) | 2 of 2 failed, caught
+    test/fork-builtins/keybindings.test.ts > fork keybindings puts every fork id into Pi's keybinding table with its default
+    test/fork-builtins/keybindings.test.ts > fork keybindings takes a user's binding for a subagent key from keybindings.json
+restored | 0 of 2 failed
+clean: yes

@@ -1,0 +1,329 @@
+[
+  {
+    "id": "T15-M1",
+    "cases": [
+      1
+    ],
+    "what": "the project's own values are dropped",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\t\t...projectSubagentValues(env.settingsManager),\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu writes only the changed key into the project's own values, copies no global value, and keeps every other key"
+    ]
+  },
+  {
+    "id": "T15-M2",
+    "cases": [
+      1
+    ],
+    "what": "the effective values, global ones included, are written",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\t\t...projectSubagentValues(env.settingsManager),\n",
+    "new": "\t\t\t...env.service.reloadSettings(),\n",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu writes only the changed key into the project's own values, copies no global value, and keeps every other key"
+    ]
+  },
+  {
+    "id": "T15-M3",
+    "cases": [
+      2,
+      3
+    ],
+    "what": "the session's settings are not reread after the save",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\tawait env.settingsManager.reload();\n\t// A saved mode",
+    "new": "\t// A saved mode",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu rereads the saved value into the service, and announces the change once",
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu asks for a number again until it passes the reader's checks, then saves it"
+    ]
+  },
+  {
+    "id": "T15-M4",
+    "cases": [
+      3
+    ],
+    "what": "an out-of-range number is taken",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tif (!warning) return value;",
+    "new": "\t\treturn value;",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu asks for a number again until it passes the reader's checks, then saves it"
+    ]
+  },
+  {
+    "id": "T15-M5",
+    "cases": [
+      3
+    ],
+    "what": "a refused number is not asked again",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tinput = await env.ui.input(`${row.prompt}: ${reason}`, text);",
+    "new": "\t\tinput = undefined;",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu asks for a number again until it passes the reader's checks, then saves it"
+    ]
+  },
+  {
+    "id": "T15-M6",
+    "cases": [
+      3
+    ],
+    "what": "the top menu's Settings entry opens nothing",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\t\telse if (choice === \"Settings\") await showSettingsMenu(env);\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu asks for a number again until it passes the reader's checks, then saves it"
+    ]
+  },
+  {
+    "id": "T15-M7",
+    "cases": [
+      3
+    ],
+    "what": "the top menu offers no Settings entry",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\"Create new agent\", \"Settings\");",
+    "new": "\"Create new agent\");",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts",
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu asks for a number again until it passes the reader's checks, then saves it",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents lists a project agent before any spawn, and one added on disk when it opens again"
+    ]
+  },
+  {
+    "id": "T15-M8",
+    "cases": [
+      4
+    ],
+    "what": "an untrusted project is written",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\tif (!env.settingsManager.isProjectTrusted()) {\n\t\tenv.ui.notify(UNTRUSTED_NOTICE",
+    "new": "\tif (false) {\n\t\tenv.ui.notify(UNTRUSTED_NOTICE",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu shows an untrusted project's effective values read-only, with a notice, and writes nothing"
+    ]
+  },
+  {
+    "id": "T15-M9",
+    "cases": [
+      4
+    ],
+    "what": "an untrusted project's menu is editable, with no notice",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tconst editable = env.settingsManager.isProjectTrusted();",
+    "new": "\t\tconst editable = true;",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu shows an untrusted project's effective values read-only, with a notice, and writes nothing"
+    ]
+  },
+  {
+    "id": "T15-M10",
+    "cases": [
+      4,
+      7
+    ],
+    "what": "read-only rows cycle",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tif (editable) {\n",
+    "new": "\t\tif (true) {\n",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list changes nothing read-only, and closes on Escape"
+    ]
+  },
+  {
+    "id": "T15-M11",
+    "cases": [
+      5
+    ],
+    "what": "a failed save does not warn",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tenv.ui.notify(`Subagent settings not saved: ${errorText(error)}`, \"warning\");\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu warns and changes nothing when the project settings.json holds no JSON object"
+    ]
+  },
+  {
+    "id": "T15-M12",
+    "cases": [
+      6
+    ],
+    "what": "the cost toast is worded otherwise",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\t\treturn `Cost display ${state}`;",
+    "new": "\t\t\treturn `Show cost ${state}`;",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu shows pi-subagents' toast for each key's change"
+    ]
+  },
+  {
+    "id": "T15-M13",
+    "cases": [
+      1,
+      6
+    ],
+    "what": "a save shows no toast",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\tenv.ui.notify(settingToast(key, value), \"info\");\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu writes only the changed key into the project's own values, copies no global value, and keeps every other key",
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu shows pi-subagents' toast for each key's change"
+    ]
+  },
+  {
+    "id": "T15-M14",
+    "cases": [
+      6
+    ],
+    "what": "a saved Markdown mode keeps the viewer key's session mode",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\tif (key === \"viewerMarkdown\") env.viewerState.markdownMode = undefined;\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu shows pi-subagents' toast for each key's change"
+    ]
+  },
+  {
+    "id": "T15-M15",
+    "cases": [
+      7
+    ],
+    "what": "a row is missing",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t{\n\t\tkey: \"scopeModels\",\n\t\tlabel: \"Scope models\",\n\t\tdescription: \"Validate subagent models against the scoped models (enabledModels)\",\n\t\tkind: \"boolean\",\n\t},\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list shows the 22 keys in pi-subagents' order, and a boolean toggles through the list's input"
+    ]
+  },
+  {
+    "id": "T15-M16",
+    "cases": [
+      7
+    ],
+    "what": "the rows show in reverse order",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\treturn SETTING_ROWS.map((row) => {",
+    "new": "\treturn [...SETTING_ROWS].reverse().map((row) => {",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list shows the 22 keys in pi-subagents' order, and a boolean toggles through the list's input"
+    ]
+  },
+  {
+    "id": "T15-M17",
+    "cases": [
+      7
+    ],
+    "what": "a boolean does not toggle",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\t\telse if (row.kind === \"boolean\") values = [\"on\", \"off\"];",
+    "new": "\t\t\telse if (row.kind === \"boolean\") values = [\"on\"];",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list shows the 22 keys in pi-subagents' order, and a boolean toggles through the list's input"
+    ]
+  },
+  {
+    "id": "T15-M18",
+    "cases": [
+      7
+    ],
+    "what": "a number row reports its value",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "options.done({ key, value: rowOf(key).kind === \"number\" ? undefined : value });",
+    "new": "options.done({ key, value });",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list reports a number row without a value, and cycles the fallback agent through the enabled types and none"
+    ]
+  },
+  {
+    "id": "T15-M19",
+    "cases": [
+      7
+    ],
+    "what": "the fallback row offers no none",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\t\telse values = [...new Set([...agents, NO_FALLBACK])];",
+    "new": "\t\t\telse values = [...agents];",
+    "files": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-settings-menu.test.ts > the subagent settings list reports a number row without a value, and cycles the fallback agent through the enabled types and none"
+    ]
+  },
+  {
+    "id": "T15-M20",
+    "cases": [
+      8
+    ],
+    "what": "a save does not reload the definitions",
+    "path": "src/core/fork-builtins/subagents/ui/settings-menu.ts",
+    "old": "\t\tenv.service.refreshDefinitions();\n\t} catch",
+    "new": "\t\tenv.service.reloadSettings();\n\t} catch",
+    "files": [
+      "test/suite/fork-subagents-settings-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-settings-menu.test.ts > the /agents settings menu reloads the definitions after a save, so disabling the defaults drops them from the roster"
+    ]
+  }
+]

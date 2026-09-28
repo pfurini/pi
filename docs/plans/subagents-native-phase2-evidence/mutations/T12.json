@@ -1,0 +1,665 @@
+[
+  {
+    "id": "T12-M1",
+    "cases": [
+      1
+    ],
+    "what": "an empty fleet still registers the widget",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tif (count === 0) {",
+    "new": "\t\tif (count < 0) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation registers no widget when no agent has a session"
+    ]
+  },
+  {
+    "id": "T12-M2",
+    "cases": [
+      1,
+      12
+    ],
+    "what": "the factory builds no FleetView",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "const fleet = tui ? new FleetView(service, ctx.ui, viewerStateOf(bound)) : undefined;",
+    "new": "const fleet = undefined as FleetView | undefined;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit"
+    ]
+  },
+  {
+    "id": "T12-M3",
+    "cases": [
+      1
+    ],
+    "what": "quit leaves FleetView",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\t\t\tfleet?.dispose();\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit"
+    ]
+  },
+  {
+    "id": "T12-M4",
+    "cases": [
+      2
+    ],
+    "what": "nested agents show",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\t\t\tview.parentId === undefined &&\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation hides nested agents from the session's fleet"
+    ]
+  },
+  {
+    "id": "T12-M5",
+    "cases": [
+      2
+    ],
+    "what": "agents without a session show",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\t\t\tthis.source.conversation(view.id) !== undefined &&\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation registers no widget when no agent has a session"
+    ]
+  },
+  {
+    "id": "T12-M6",
+    "cases": [
+      3
+    ],
+    "what": "only cursorDown activates",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "keybindings.matches(data, \"tui.editor.cursorDown\") || keybindings.matches(data, \"tui.editor.cursorLeft\");",
+    "new": "keybindings.matches(data, \"tui.editor.cursorDown\");",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation also activates on tui.editor.cursorLeft, ctrl+b included"
+    ]
+  },
+  {
+    "id": "T12-M7",
+    "cases": [
+      3
+    ],
+    "what": "the list activates over editor text",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "this.ui.getEditorText() !== \"\" || ",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation does not activate when the prompt holds text, so typing is preserved"
+    ]
+  },
+  {
+    "id": "T12-M8",
+    "cases": [
+      3
+    ],
+    "what": "key releases count as presses",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": " || isKeyRelease(data)) return undefined;",
+    "new": ") return undefined;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores key-release events so one tap moves exactly one row"
+    ]
+  },
+  {
+    "id": "T12-M9",
+    "cases": [
+      3
+    ],
+    "what": "cursorDown does not activate",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "keybindings.matches(data, \"tui.editor.cursorDown\") || keybindings.matches",
+    "new": "false || keybindings.matches",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation activates on tui.editor.cursorDown at an empty prompt, consuming the key"
+    ]
+  },
+  {
+    "id": "T12-M10",
+    "cases": [
+      4
+    ],
+    "what": "any focus counts as the editor",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "return focused == null || focused instanceof Editor;",
+    "new": "return true;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal the activation key from a focused selector",
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active"
+    ]
+  },
+  {
+    "id": "T12-M11",
+    "cases": [
+      4
+    ],
+    "what": "an unknown focus blocks the list",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "return focused == null || focused instanceof Editor;",
+    "new": "return focused instanceof Editor;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components assumes the editor when focus is unknown (no TUI yet, or nothing focused)"
+    ]
+  },
+  {
+    "id": "T12-M12",
+    "cases": [
+      4
+    ],
+    "what": "only an unknown focus counts as the editor",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "return focused == null || focused instanceof Editor;",
+    "new": "return focused == null;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components still activates when the prompt editor has focus",
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView vs other focused components does not steal navigation keys from a selector opened while the list was active"
+    ]
+  },
+  {
+    "id": "T12-M13",
+    "cases": [
+      5
+    ],
+    "what": "the selection is not clamped",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tthis.selected = Math.min(this.selected, count);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation moves the selection down and up and clamps at the ends"
+    ]
+  },
+  {
+    "id": "T12-M14",
+    "cases": [
+      5
+    ],
+    "what": "up at main stays open",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\tif (this.selected === 0) this.deactivate();",
+    "new": "\t\t\tif (this.selected === 0) this.update();",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.up above main, returning to the prompt"
+    ]
+  },
+  {
+    "id": "T12-M15",
+    "cases": [
+      5
+    ],
+    "what": "cancel keeps the list open",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tif (keybindings.matches(data, \"tui.select.cancel\")) {\n\t\t\tthis.deactivate();",
+    "new": "\t\tif (keybindings.matches(data, \"tui.select.cancel\")) {\n\t\t\tthis.update();",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation closes on tui.select.cancel"
+    ]
+  },
+  {
+    "id": "T12-M16",
+    "cases": [
+      5
+    ],
+    "what": "other keys are consumed",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tthis.deactivate();\n\t\treturn undefined;\n\t}",
+    "new": "\t\tthis.deactivate();\n\t\treturn { consume: true };\n\t}",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation passes other keys through and closes"
+    ]
+  },
+  {
+    "id": "T12-M17",
+    "cases": [
+      6
+    ],
+    "what": "fleetView is ignored",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "return this.source.settings.fleetView;",
+    "new": "return true;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation ignores all input and hides while fleetView is off"
+    ]
+  },
+  {
+    "id": "T12-M18",
+    "cases": [
+      6
+    ],
+    "what": "the tick never re-arms",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\tthis.stopTimer();\n\t\t\tthis.active = false;",
+    "new": "\t\t\tthis.stopTimer();\n\t\t\tthis.timer = 1 as never;\n\t\t\tthis.active = false;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation re-arms its refresh tick when the list shows again"
+    ]
+  },
+  {
+    "id": "T12-M19",
+    "cases": [
+      7
+    ],
+    "what": "the selected description keeps the plain color",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const description = selected ? theme.fg(\"text\", view.description) : view.description;",
+    "new": "const description = view.description;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color"
+    ]
+  },
+  {
+    "id": "T12-M20",
+    "cases": [
+      7
+    ],
+    "what": "the selected badge is repainted instead of bolded",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "? { fallbackColor: \"text\", bold: resolveAgentColor(view.definition.color) !== undefined }",
+    "new": "? { fallbackColor: \"text\", bold: false }",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it"
+    ]
+  },
+  {
+    "id": "T12-M21",
+    "cases": [
+      7
+    ],
+    "what": "the selected stats stay dim",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "theme.fg(selected ? \"text\" : \"dim\", stats)",
+    "new": "theme.fg(\"dim\", stats)",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders the whole selected row in the theme's text color"
+    ]
+  },
+  {
+    "id": "T12-M22",
+    "cases": [
+      8
+    ],
+    "what": "agents list newest first",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": ".sort((a, b) => a.startedAt - b.startedAt);",
+    "new": ".sort((a, b) => b.startedAt - a.startedAt);",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering orders agents earliest-launched first"
+    ]
+  },
+  {
+    "id": "T12-M23",
+    "cases": [
+      8
+    ],
+    "what": "all agents show at once",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const visible = Math.min(MAX_AGENT_ROWS, agents.length);",
+    "new": "const visible = agents.length;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering collapses overflow into a '↓ N more' indicator"
+    ]
+  },
+  {
+    "id": "T12-M24",
+    "cases": [
+      8
+    ],
+    "what": "rows are not clamped to the width",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\treturn truncateToWidth(clamped + \" \".repeat(gap) + right, width);",
+    "new": "\treturn clamped + \" \".repeat(gap) + right;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering never emits a line wider than the terminal"
+    ]
+  },
+  {
+    "id": "T12-M25",
+    "cases": [
+      8
+    ],
+    "what": "the window ignores the selection",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const start = selectedRow < visible ? 0 : selectedRow - visible + 1;",
+    "new": "const start = 0;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering windows the visible agents so the selection stays on screen"
+    ]
+  },
+  {
+    "id": "T12-M26",
+    "cases": [
+      8
+    ],
+    "what": "stats are not right-aligned",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const gap = Math.max(1, width - visibleWidth(clamped) - rightWidth);",
+    "new": "const gap = 1;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering renders main and agent rows with markers, name, description and right-aligned stats"
+    ]
+  },
+  {
+    "id": "T12-M27",
+    "cases": [
+      9
+    ],
+    "what": "confirm on main opens nothing but stays active",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tif (!view) {\n\t\t\tthis.deactivate();",
+    "new": "\t\tif (!view) {\n\t\t\tthis.update();",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes the list on tui.select.confirm at main, opening no viewer"
+    ]
+  },
+  {
+    "id": "T12-M28",
+    "cases": [
+      9
+    ],
+    "what": "the cursor stays where the viewer left it",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\tif (index >= 0) this.selected = index + 1;\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer returns the cursor to the viewed agent after the viewer closes, even when the list reordered"
+    ]
+  },
+  {
+    "id": "T12-M29",
+    "cases": [
+      9
+    ],
+    "what": "the viewed agent drops out when it finishes",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\t\t\t\tview.id === this.viewingId ||\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer keeps the viewer open and the agent listed when the viewed agent finishes"
+    ]
+  },
+  {
+    "id": "T12-M30",
+    "cases": [
+      9
+    ],
+    "what": "finished agents linger 10 s",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const FINISHED_LINGER_MS = 4000;",
+    "new": "const FINISHED_LINGER_MS = 10_000;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer lingers a finished agent for 4 s, then drops it"
+    ]
+  },
+  {
+    "id": "T12-M31",
+    "cases": [
+      9
+    ],
+    "what": "the viewer gets a fresh state",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "openConversationViewer(this.ui, this.source, view, this.state, (close) => {",
+    "new": "openConversationViewer(this.ui, this.source, view, {}, (close) => {",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer hands the viewer the Markdown setting and the session's viewer state"
+    ]
+  },
+  {
+    "id": "T12-M32",
+    "cases": [
+      9
+    ],
+    "what": "dispose leaves the viewer open",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tthis.closeViewer?.();\n\t\tthis.closeViewer = undefined;\n\t\tif (registered)",
+    "new": "\t\tif (registered)",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose"
+    ]
+  },
+  {
+    "id": "T12-M33",
+    "cases": [
+      9
+    ],
+    "what": "the viewer steers another agent",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "openConversationViewer(this.ui, this.source, view, this.state, (close) => {",
+    "new": "openConversationViewer(this.ui, this.source, { ...view, id: \"other\" }, this.state, (close) => {",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer steers through the service with the agent's id"
+    ]
+  },
+  {
+    "id": "T12-M34",
+    "cases": [
+      10
+    ],
+    "what": "the row ignores showCost",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "const cost = formatCost(view.usage.cost.total);",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display shows no cost when disabled, and none for an unpriced model"
+    ]
+  },
+  {
+    "id": "T12-M35",
+    "cases": [
+      10
+    ],
+    "what": "the row shows no cost",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const cost = this.source.settings.showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "const cost = \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display appends the cost after the token count when enabled"
+    ]
+  },
+  {
+    "id": "T12-M36",
+    "cases": [
+      10
+    ],
+    "what": "a finished agent's clock keeps running",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "const elapsed = (view.completedAt ?? Date.now()) - view.startedAt;",
+    "new": "const elapsed = (view.status === \"completed\" ? Date.now() + 60_000 : (view.completedAt ?? Date.now())) - view.startedAt;",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView cost display keeps its figures when the agent finishes"
+    ]
+  },
+  {
+    "id": "T12-M37",
+    "cases": [
+      11
+    ],
+    "what": "the row drops the name's color",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tconst name = renderAgentName(\n\t\t\tview.definition,\n\t\t\ttheme,",
+    "new": "\t\tconst name = renderAgentName(\n\t\t\t{ ...view.definition, color: undefined },\n\t\t\ttheme,",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it"
+    ]
+  },
+  {
+    "id": "T12-M38",
+    "cases": [
+      12
+    ],
+    "what": "no terminal input is captured",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tthis.unsubscribeInput = ui.onTerminalInput(handler);",
+    "new": "\t\tthis.unsubscribeInput = () => {};\n\t\tvoid handler;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts",
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit",
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView navigation activates on tui.editor.cursorDown at an empty prompt, consuming the key"
+    ]
+  },
+  {
+    "id": "T12-M39",
+    "cases": [
+      12
+    ],
+    "what": "quit keeps the input handler",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tthis.unsubscribeInput();\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts",
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit",
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer and removes the widget and the input handler on dispose"
+    ]
+  },
+  {
+    "id": "T12-M40",
+    "cases": [
+      9
+    ],
+    "what": "the list takes the viewer's keys",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\tif (this.viewingId !== undefined) return undefined;\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer leaves the viewer its keys, and resumes navigation at the viewed agent once it closes"
+    ]
+  },
+  {
+    "id": "T12-M41",
+    "cases": [
+      9
+    ],
+    "what": "a directly disposed session keeps the viewer open",
+    "path": "src/core/fork-builtins/subagents/ui/fleet.ts",
+    "old": "\t\t\tthis.release();\n\t\t\tcloseViewer?.();",
+    "new": "\t\t\tthis.release();",
+    "files": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-fleet.test.ts > FleetView and the viewer closes an open viewer when the session is disposed directly"
+    ]
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "T18-F2-M1",
+    "cases": [
+      1
+    ],
+    "what": "the conversation omits the streaming message",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\treturn [...messages, stream.message];\n",
+    "new": "\treturn messages;\n",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the read-only surface includes the message a child is streaming, so its text grows before the message ends"
+    ]
+  },
+  {
+    "id": "T18-F2-M2",
+    "cases": [
+      1
+    ],
+    "what": "every streaming update is a new object",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\tif (stream?.index === messages.length && stream.message.role === streaming.role) {",
+    "new": "\tif (false) {",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > the read-only surface includes the message a child is streaming, so its text grows before the message ends"
+    ]
+  }
+]

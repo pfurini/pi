@@ -1,0 +1,20 @@
+T3-M1 [1] a view's status is writable | 1 of 1 failed, caught
+    tsgo > packages/coding-agent/test/fork-builtins/subagents/views.test.ts(11,2): error TS2578: Unused '@ts-expect-error' directive.
+T3-M2 [2] the reader hands out live settings | 1 of 23 failed, caught
+    test/suite/fork-subagents-service.test.ts > the read-only surface hands out frozen settings, and a reread replaces them with a new frozen object
+T3-M3 [3] a conversation subscriber is never called | 1 of 23 failed, caught
+    test/suite/fork-subagents-service.test.ts > the read-only surface hands out a running child's conversation and its changes, and none for a queued agent
+T3-M4 [4] queue positions count from 0 | 1 of 23 failed, caught
+    test/suite/fork-subagents-service.test.ts > the read-only surface numbers queued agents by their place in the queue, and a running one not at all
+T3-M5 [5] the writer stores values the reader drops | 1 of 7 failed, caught
+    test/fork-builtins/subagents/settings.test.ts > subagent settings refuses a value the reader would drop, naming its key, and leaves settings.json as it was
+T3-M6 [6] the writer follows a symlinked .pi or settings.json | 1 of 7 failed, caught
+    test/fork-builtins/subagents/settings.test.ts > subagent settings refuses to write through a symlinked .pi or settings.json, dangling or not
+T3-M7 [7] the temporary file is opened without the exclusive flag | 1 of 4 failed, caught
+    test/fork-builtins/subagents/atomic-write.test.ts > writeFileAtomically refuses when its temporary path exists, and neither overwrites nor deletes what is there
+T3-M8 [7] a failed rename leaves the temporary file behind | 1 of 4 failed, caught
+    test/fork-builtins/subagents/atomic-write.test.ts > writeFileAtomically leaves the target and no temporary file when the rename fails
+T3-M9 [8] an existing settings.json is written in place | 1 of 7 failed, caught
+    test/fork-builtins/subagents/settings.test.ts > subagent settings replaces an existing settings.json whole, and leaves it byte-identical when the rename fails
+restored | 0 of 34 failed
+clean: yes

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "T18-F1-M1",
+    "cases": [
+      1
+    ],
+    "what": "the foreground wait takes no signal",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\t\tawait service.waitForResult(id, signal);",
+    "new": "\t\tawait service.waitForResult(id);",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory returns an aborted foreground call whose child never finishes starting, and quit still ends within the bound"
+    ]
+  },
+  {
+    "id": "T18-F1-M2",
+    "cases": [
+      1
+    ],
+    "what": "the spawn path passes no signal to the wait",
+    "path": "src/core/fork-builtins/subagents/tools/agent.ts",
+    "old": "\t\t\tawait waitInForeground(service, record.id, signal, onUpdate);\n\t\t\treturn detailedResult(",
+    "new": "\t\t\tawait waitInForeground(service, record.id, undefined, onUpdate);\n\t\t\treturn detailedResult(",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory returns an aborted foreground call whose child never finishes starting, and quit still ends within the bound"
+    ]
+  }
+]

@@ -1,0 +1,53 @@
+[
+  {
+    "id": "T18-F6-M1",
+    "cases": [
+      1
+    ],
+    "what": "enable removes only a bare enabled: false",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "const ENABLED_FALSE = /^enabled[ \\t]*:[ \\t]*(?:false|False|FALSE)[ \\t]*(?:#.*)?$/;",
+    "new": "const ENABLED_FALSE = /^enabled:[ \\t]*false[ \\t]*$/;",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key with a comment",
+      "test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: capitalized False"
+    ]
+  },
+  {
+    "id": "T18-F6-M2",
+    "cases": [
+      1
+    ],
+    "what": "enable writes an edit that still reads as disabled",
+    "path": "src/core/fork-builtins/subagents/definitions/files.ts",
+    "old": "\tif (!readsEnabled(edited)) return { content, changed: false, cannotRewrite: true };\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/agent-files.test.ts",
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/agent-files.test.ts > enableInContent refuses a disabled key it cannot rewrite, rather than write a file that stays disabled or no longer parses",
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents reports a disabled key it cannot rewrite on Enable, and leaves the file as it was"
+    ]
+  },
+  {
+    "id": "T18-F6-M3",
+    "cases": [
+      1
+    ],
+    "what": "the menu ignores a key it cannot rewrite",
+    "path": "src/core/fork-builtins/subagents/ui/agents-menu.ts",
+    "old": "\tif (cannotRewrite) {",
+    "new": "\tif (false) {",
+    "files": [
+      "test/suite/fork-subagents-agents-menu.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-agents-menu.test.ts > /agents reports a disabled key it cannot rewrite on Enable, and leaves the file as it was"
+    ]
+  }
+]

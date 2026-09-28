@@ -1,0 +1,19 @@
+[
+  {
+    "id": "T1-M1",
+    "cases": [
+      1
+    ],
+    "what": "the service imports adapter/events.ts again (probe P1)",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "import { NestedRuntime } from \"./nested.ts\";",
+    "new": "import { NestedRuntime } from \"./nested.ts\";\nimport { AGENT_ENDED_CHANNEL } from \"../adapter/events.ts\";\nvoid AGENT_ENDED_CHANNEL;",
+    "files": [
+      "test/fork-builtins/subagents/layering.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/layering.test.ts > subagents module layering imports only from its own or a lower layer",
+      "test/fork-builtins/subagents/layering.test.ts > subagents module layering has no value import cycle"
+    ]
+  }
+]

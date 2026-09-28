@@ -1,0 +1,55 @@
+T8-M1 [1] only the first progress update is sent | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent progress sends a running update after the child's first tool call, then one per window with a burst's last change
+T8-M3 [2] the queued activity hides how many wait ahead | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent progress reports a queued foreground call's place in the queue
+T8-M4 [3] an error result with empty details is drawn as a run | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders an error result's text, and a result without details as its raw text
+T8-M5 [4] a finished result drops its model label | 6 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the model even when the child inherited the parent's
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering keeps the twin label beside the model
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a model an agent file pinned over the caller's (#182)
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering stays quiet when the caller's spelling names the model that won
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a spelling that names no available model at all
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders the reopened session's settings, not the resume call's
+T8-M6 [4] before a session exists no model is named | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the inherited model while streaming, before a session exists
+T8-M7 [5] the twin label is dropped | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering keeps the twin label beside the model
+T8-M8 [6] the requested level shows instead of the session's | 2 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering reports the session's level, and what was asked for, when pi clamps it
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders the reopened session's settings, not the resume call's
+T8-M9 [7] a level the file pinned is not disclosed | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a level an agent file pinned over the caller's (#182)
+T8-M10 [7] a model the file pinned is not disclosed | 2 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a model an agent file pinned over the caller's (#182)
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a spelling that names no available model at all
+T8-M11 [7] a spelling that names the winner is disclosed | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering stays quiet when the caller's spelling names the model that won
+T8-M12 [7] a spelling that names no model is dropped | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering discloses a spelling that names no available model at all
+T8-M13 [7] every request says what was asked | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering says nothing about a request that was honored
+T8-M14 [8] a resume forgets the reopened session's settings | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering renders the reopened session's settings, not the resume call's
+T8-M15 [9] the foreground stats drop the cost | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text names the cost in the stats it already reports
+T8-M16 [9] the foreground cost ignores showCost | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text says nothing about cost when the setting is off
+T8-M17 [9] an unpriced foreground run shows a cost | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text says nothing about cost for a model with no pricing data
+T8-M18 [10] get_subagent_result drops the cost field | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text reports the cost as its own labelled field in get_subagent_result
+T8-M19 [10] get_subagent_result shows an empty cost field | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text omits the cost field from get_subagent_result when unpriced
+T8-M20 [11] the call row looks up no agent | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent call rendering renders the call header with the agent's display name in its color
+T8-M21 [12] the spinner stands still | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering shows another spinner frame when the running row renders 100 ms later
+T8-M22 [13] the launch text styles the agent's name | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result text keeps a colored agent's name badge out of the result text, so print mode shows none
+T8-M23 [14] a steered result reads as done | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering draws each finished status with its icon and outcome
+T8-M24 [15] an expanded result shows up to 60 lines | 1 of 23 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering expands a completed result to at most 50 lines, pointing to get_subagent_result for the rest
+restored | 0 of 23 failed
+clean: yes

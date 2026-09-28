@@ -1,0 +1,52 @@
+T9-M1 [1] a collapsed notification shows 100 characters of the first line | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows the result's first line up to 80 characters collapsed, and up to 30 lines expanded
+T9-M2 [1] an expanded notification shows 40 lines | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows the result's first line up to 80 characters collapsed, and up to 30 lines expanded
+T9-M3 [2] a stopped agent is marked as completed | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer marks error, stopped and aborted with ✗, every other status with ✓, and steered as completed (steered)
+T9-M4 [2] a steered agent reads plain completed | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer marks error, stopped and aborted with ✗, every other status with ✓, and steered as completed (steered)
+T9-M5 [3] the transcript line is dropped | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer names the transcript when the agent wrote one, and no transcript otherwise
+T9-M6 [4] the stats line drops the turn limit | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows turns, tool uses, tokens and duration, and the cost only under showCost
+T9-M7 [4,5] the renderer ignores showCost | 4 of 21 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows turns, tool uses, tokens and duration, and the cost only under showCost
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer reads showCost at every render and draws nothing without details
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows nothing when the setting is off
+T9-M8 [4] the factory shows cost when no service exists | 1 of 12 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one
+T9-M9 [4] a render builds the session's service | 1 of 12 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one
+T9-M10 [4] the factory registers no notification renderer | 2 of 19 failed, caught
+    test/fork-builtins.test.ts > fork built-in extensions registers the subagents presentation as a fork-owned built-in, with no tool
+    test/suite/fork-subagents-presentation.test.ts > presentation factory draws a notification's cost from the bound session's service, and builds no service to draw one
+T9-M11 [4] the details carry no turn count | 2 of 37 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the default turn limit
+    test/fork-builtins/subagents/service.test.ts > notification text carries each agent's turns and turn limit, from its invocation or the default setting
+T9-M12 [4] the details ignore the default turn limit | 2 of 37 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the default turn limit
+    test/fork-builtins/subagents/service.test.ts > notification text carries each agent's turns and turn limit, from its invocation or the default setting
+T9-M13 [4] the service hands the queue no default turn limit | 1 of 30 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads hands the renderer the run's turns and the default turn limit
+T9-M14 [5] a single agent gets a total line | 2 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer shows turns, tool uses, tokens and duration, and the cost only under showCost
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification does not total a single agent — the line above already says it
+T9-M15 [5] the total line ignores showCost | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows nothing when the setting is off
+T9-M16 [5] an unpriced group gets a total line | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification shows no total, and no per-agent cost, when unpriced
+T9-M17 [5] a group renders only its first member | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification totals a group, so nobody adds four figures by hand
+T9-M18 [5] the total line trails the rows | 1 of 9 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the completion notification totals a group, so nobody adds four figures by hand
+T9-M19 [6] the model's notice ignores showCost | 1 of 30 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads omits it when disabled, because the notice is model context, not a display
+T9-M20 [6] the model's notice names a zero cost | 2 of 30 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads omits it when disabled, because the notice is model context, not a display
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads omits it for a model with no pricing data
+T9-M21 [6] the service never shows cost to the model | 1 of 30 failed, caught
+    test/suite/fork-subagents-service.test.ts > the background completion notification the model reads includes the cost in the usage block when enabled
+restored | 0 of 65 failed
+clean: yes

@@ -1,0 +1,39 @@
+T6-M1 [1] FORK_OWNED_BUILTINS omits the factory (probe P7) | 1 of 7 failed, caught
+    test/fork-builtins.test.ts > fork built-in extensions registers the subagents presentation as a fork-owned built-in, with no tool
+T6-M2 [2] a child's loader answers no child query (probe P2) | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory registers nothing in a child session
+T6-M3 [3,6] the adapter answers no bind request (probe P3) | 8 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows how many agents run and wait in the tui status line, and clears it when none does
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows the same status in rpc mode, and none in print mode
+    test/suite/fork-subagents-presentation.test.ts > presentation factory binds each of two sessions on one event bus to its own agents
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for every child's session_shutdown handlers
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for the children of a session that never started
+    test/suite/fork-subagents-presentation.test.ts > presentation factory keeps the service and its running agent across /reload, and its status afterwards
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes a runtime's new session wait for the old session's children
+T6-M4 [5] the first adapter on a shared bus answers every session | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory binds each of two sessions on one event bus to its own agents
+T6-M5 [4] rpc mode shows no status | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows the same status in rpc mode, and none in print mode
+T6-M6 [4] print mode shows the status too | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows the same status in rpc mode, and none in print mode
+T6-M7 [3] queued agents count as running | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows how many agents run and wait in the tui status line, and clears it when none does
+T6-M8 [6,9,11] quit does not await the child teardown (probe P4) | 4 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for every child's session_shutdown handlers
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for the children of a session that never started
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes a runtime's new session wait for the old session's children
+T6-M9 [7] a child that attaches after dispose is torn down unawaited (probe P8) | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting
+T6-M10 [7] shutdown does not wait for children still starting (probe P9) | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting
+T6-M11 [8] shutdown waits for a starting child without a bound (probe P10) | 1 of 24 failed, caught
+    test/suite/fork-subagents-service.test.ts > ownership waits for a starting child only up to its bound, and tears it down when it attaches later
+T6-M12 [9] a session that never started is not bound at session_shutdown | 2 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for the children of a session that never started
+    test/suite/fork-subagents-presentation.test.ts > presentation factory makes a runtime's new session wait for the old session's children
+T6-M13 [10] /reload ends the agents (probe P5) | 1 of 9 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory keeps the service and its running agent across /reload, and its status afterwards
+restored | 0 of 40 failed
+clean: yes

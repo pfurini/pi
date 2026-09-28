@@ -1,0 +1,5 @@
+T1-M1 [1] the service imports adapter/events.ts again (probe P1) | 2 of 2 failed, caught
+    test/fork-builtins/subagents/layering.test.ts > subagents module layering imports only from its own or a lower layer
+    test/fork-builtins/subagents/layering.test.ts > subagents module layering has no value import cycle
+restored | 0 of 2 failed
+clean: yes

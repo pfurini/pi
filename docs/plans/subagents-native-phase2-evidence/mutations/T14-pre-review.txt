@@ -1,0 +1,33 @@
+T14-M1 [1] the manual path drops the thinking level | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes the manual path's file, and the new agent spawns at once
+T14-M2 [1,2] the created file is not written | 2 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes the manual path's file, and the new agent spawns at once
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns
+T14-M3 [2] the generation request carries a tool | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns
+T14-M4 [2] the generated file gains a line | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns
+T14-M5 [3] a file without a description is written | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that fails to parse or has no description, and says why
+T14-M6 [3] an unparseable reply is written | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that fails to parse or has no description, and says why
+T14-M7 [4] the model step offers no scoped model | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard offers the session's scoped models in the model step
+T14-M8 [5] an untrusted project offers the project location | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard offers only the personal location in an untrusted project
+T14-M9 [6] an existing file is overwritten without asking | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard leaves an existing file unchanged when the overwrite is declined
+T14-M10 [7] only spaces make a name invalid | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard refuses a name with a space, a colon or a path separator
+T14-M11 [8] invalid values are not refused | 2 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply with an invalid documented value or an unknown key, naming each
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply whose list field is neither a list nor a string
+T14-M12 [8] unknown keys are not refused | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply with an invalid documented value or an unknown key, naming each
+T14-M13 [9] another agent's name is accepted | 1 of 10 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply that names another agent, a path included
+T14-M14 [10] any list value is accepted | 2 of 27 failed, caught
+    test/suite/fork-subagents-create-wizard.test.ts > the /agents create wizard writes nothing for a reply whose list field is neither a list nor a string
+    test/fork-builtins/subagents/definitions.test.ts > agent file frontmatter reports a list field that is neither a string nor a string list, and ignores it
+restored | 0 of 27 failed
+clean: yes

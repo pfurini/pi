@@ -1,0 +1,94 @@
+T10-M1 [1] the activity line drops the activity | 3 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders running status as separate component lines
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows stats for an agent whose child session does not exist yet
+T10-M2 [1] the heading always marks activity | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active
+T10-M3 [2] background mode keeps foreground agents | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget excludes foreground agents in 'background' mode
+T10-M4 [2] nested agents show | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget hides nested children in every coordinator widget mode
+T10-M5 [2] off mode shows agents | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders nothing in 'off' mode
+T10-M6 [2] only background agents show | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows foreground agents in 'all' mode (and by default)
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps detached agents, spawned over RPC, in 'background' mode
+T10-M7 [2] background mode shows nothing | 3 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders background agents in 'background' mode
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps detached agents, spawned over RPC, in 'background' mode
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps queued agents on one summary line and finished agents visible
+T10-M8 [3] showModel names nothing | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel names the model and thinking on a running row under showModel
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor
+T10-M9 [3] the model shows without showModel | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel renders the row exactly as before when showModel is off
+T10-M10 [3] the row carries the canonical id | 3 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel names the model and thinking on a running row under showModel
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel carries the short label, never the canonical id, onto the row
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor
+T10-M11 [3] the row shows only an honored level | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor
+T10-M12 [4] the queued summary changes its words | 4 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps queued agents on one summary line and finished agents visible
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting keeps the queued summary visible when the running agents fill the widget
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting gives the queued summary priority over finished lines
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting renders everything with no footer when the fleet fits
+T10-M13 [5] a running row ignores showCost | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost when disabled
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display defaults to hiding it
+T10-M14 [5] a running row shows no cost | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows the cost beside the token count when enabled
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows stats for an agent whose child session does not exist yet
+T10-M15 [5] a running row prices an unpriced model at zero | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost for an unpriced model, even when enabled
+T10-M16 [5] a finished row drops its cost | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display keeps the cost visible after the agent finishes
+T10-M17 [6] the widget takes 13 lines | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never exceeds the line cap, for any fleet shape
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting counts everything it hid — the footer total matches what is missing
+T10-M18 [6] the footer counts queued agents as hidden | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never prints a footer that miscounts what it hid, for any fleet shape
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting counts everything it hid — the footer total matches what is missing
+T10-M19 [6] the queued summary's row goes to finished lines | 2 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting keeps the queued summary visible when the running agents fill the widget
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting gives the queued summary priority over finished lines
+T10-M20 [6] a fleet that fits gets a footer | 6 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders running status as separate component lines
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps queued agents on one summary line and finished agents visible
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never exceeds the line cap, for any fleet shape
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never prints a footer that miscounts what it hid, for any fleet shape
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting renders everything with no footer when the fleet fits
+T10-M21 [6] a resumed agent keeps its earlier linger age | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting shows the completion line again after a finished agent is resumed
+T10-M22 [7] a steered row reads steered | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted
+T10-M23 [7] an error row shows 80 characters | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted
+T10-M24 [7] a stopped row draws a cross | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted
+T10-M25 [8] an error lingers one turn | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps a completed agent for one parent turn and an error for two
+T10-M26 [8] a completed agent lingers two turns | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps a completed agent for one parent turn and an error for two
+T10-M27 [9] every rendered line touches the disk | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget touches no file while it renders a frame
+T10-M28 [9] each running row rescans the agent list | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget asks the service for the agent list a constant number of times per frame
+T10-M29 [10] a running row drops the name's color | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's display name in its color
+T10-M30 [11,1] a running row ignores the child's response | 2 of 45 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active
+T10-M31 [11] the widget shows in rpc mode instead of tui | 1 of 13 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode
+T10-M32 [12] the timer runs while nothing runs | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer
+T10-M33 [12] dispose leaves the widget | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer
+T10-M34 [12] dispose keeps the timer | 1 of 32 failed, caught
+    test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer
+T10-M35 [12] unbinding keeps the widget | 1 of 13 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode
+restored | 0 of 45 failed
+clean: yes

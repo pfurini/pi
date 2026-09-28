@@ -1,0 +1,195 @@
+T13-M1 [1] enable strips only the first frontmatter line | 7 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when another key precedes it
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the last frontmatter line
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent leaves the body and other frontmatter keys untouched
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key after description
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key last
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: CRLF
+T13-M2 [1] enable skips the first frontmatter line | 5 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the first frontmatter line
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key first
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub /agents writes to disable a default agent, once enabled
+T13-M3 [1] enable always reports a change | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent reports changed: false when there is nothing to strip
+T13-M4 [1] enable keeps the carriage return on a CRLF line | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: CRLF
+T13-M5 [1] enable trims the file's end | 4 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent leaves the body and other frontmatter keys untouched
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file
+T13-M6 [2] disable inserts the key after the first key | 3 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+T13-M7 [2] disable inserts a second key into a disabled file | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already first
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already present mid-block
+T13-M8 [2] disable claims success on a fence-less file | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent reports no-frontmatter rather than claiming success on a fence-less file
+T13-M9 [2] disable writes LF into a CRLF file | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less
+T13-M10 [2] a BOM hides the frontmatter block | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+T13-M11 [3] detection mirrors the parser with a regex | 7 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent refuses an enabled key it cannot rewrite, rather than write a file the loader cannot parse
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: False
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: FALSE
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: quoted key
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: '----' closes the block early
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: key only in the body
+T13-M12 [3] detection never sees a disabled file | 16 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already first
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already present mid-block
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent replaces an enabled: true line instead of adding a second key
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key at the first frontmatter line
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key mid-block
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key in a CRLF file
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: lowercase bare false
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: False
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: FALSE
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: trailing comment
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: quoted key
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: trailing whitespace
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file
+T13-M13 [3] detection sees every file without enabled: true as disabled | 10 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent is false for an enabled file
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: '----' closes the block early
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: quoted string, not a boolean
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: YAML 1.1 'no' is a string here
+    test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: key only in the body
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file
+T13-M14 [4] enable stops before the block's last line | 7 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when another key precedes it
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the last frontmatter line
+    test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key after description
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key last
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: CRLF
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub /agents writes to disable a default agent, once enabled
+T13-M15 [4] disable writes a spelling enable cannot remove | 4 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it
+    test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file
+T13-M16 [5] a BOM hides the stub | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub behind a BOM
+T13-M17 [5] the stub needs a blank line | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub behind a BOM
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub /agents writes to disable a default agent, once enabled
+T13-M18 [5] every file is a stub | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub is false for a file with real frontmatter
+T13-M19 [6] the workspace wins over the project | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files prefers .pi/agents over .agents/agents and the personal directory
+T13-M20 [6] the workspace is never searched | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the workspace .agents/agents directory
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path
+T13-M21 [6] the personal directory is never searched | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the personal agent directory
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files skips a probed file that declares another agent's name
+T13-M22 [6] an untrusted project's files are found | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files looks in no project location of an untrusted project
+T13-M23 [6] a missing file is found | 5 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the workspace .agents/agents directory
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the personal agent directory
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files returns undefined when the agent has no file anywhere
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files skips a probed file that declares another agent's name
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files finds nothing when neither the source path nor the probe resolves
+T13-M24 [6] the loader's path is ignored | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files uses the file the loader read, whatever it is called
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path
+T13-M25 [6] every source path counts as personal | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files uses the file the loader read, whatever it is called
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path
+T13-M26 [6] no probe backs up the source path | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the <type>.md probe for a default agent with no source file
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back when the recorded path has since been deleted
+T13-M27 [6] a deleted source path still counts | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back when the recorded path has since been deleted
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files finds nothing when neither the source path nor the probe resolves
+T13-M28 [7] eject drops persist_session | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition round-trips a definition that sets every frontmatter key
+T13-M29 [7] eject writes values unquoted | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition ejects every default agent into a file that parses back to the same definition
+    test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition round-trips a definition that sets every frontmatter key
+T13-M30 [7] eject drops the system prompt | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition ejects every default agent into a file that parses back to the same definition
+    test/fork-builtins/subagents/agent-files.test.ts > serializeAgentDefinition round-trips a definition that sets every frontmatter key
+T13-M31 [8] the description is written unquoted | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a description containing a colon
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps a description containing a # instead of truncating it
+T13-M32 [8] the description loses its case | 3 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile round-trips an ordinary description
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a description containing a colon
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile emits the fields the wizard collects, and omits the ones left on inherit
+T13-M33 [8] the model is written unquoted | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a custom model containing a colon-space or a #
+T13-M34 [8] the model loses its thinking suffix | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile leaves a `provider/model:thinking` suffix intact
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a custom model containing a colon-space or a #
+T13-M35 [8] an inherited thinking level is written | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile emits the fields the wizard collects, and omits the ones left on inherit
+T13-M36 [8] the body keeps only its first line | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps the system prompt as the body
+T13-M37 [9] an untrusted project offers the project location | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents offers only the personal location in an untrusted project, for eject and the disable stub
+T13-M38 [10] the stub disables nothing | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents disables a default agent with a stub its next spawn routes around, and enabling deletes the stub
+T13-M39 [10] enabling keeps an empty stub | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents disables a default agent with a stub its next spawn routes around, and enabling deletes the stub
+T13-M40 [11] an unchanged edit is written | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents writes an edit only when the text changed, and deletes only after a confirm
+T13-M41 [11] a declined confirm still deletes | 2 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents writes an edit only when the text changed, and deletes only after a confirm
+    test/suite/fork-subagents-agents-menu.test.ts > /agents ejects a default agent, and resets it only after a confirm
+T13-M42 [12] rpc mode opens the menu | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents answers outside the interactive TUI that it needs it, and opens nothing
+T13-M43 [13,17,18,19,20] a failed change reads as information | 5 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents leaves the target and no temporary file when the directory is read-only, and reports the error
+    test/suite/fork-subagents-agents-menu.test.ts > /agents reports a failed rename, leaving the target and no temporary file
+    test/suite/fork-subagents-agents-menu.test.ts > /agents reports a failed unlink and leaves the file in place
+    test/suite/fork-subagents-agents-menu.test.ts > /agents refuses to write when its temporary path already exists, as a file or a symlink, and leaves it untouched
+    test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link
+T13-M44 [14] a failed reload after a change escapes the menu | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents keeps a change that landed when the reload after it fails, and says the file is saved
+T13-M45 [14] a failed reload before the roster escapes the menu | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents keeps a change that landed when the reload after it fails, and says the file is saved
+T13-M46 [15] the project marker changes | 2 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents lists a project agent before any spawn, and one added on disk when it opens again
+    test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent
+T13-M47 [15] skill agents are listed | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent
+T13-M48 [15] a running agent opens no viewer | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents opens a running agent's viewer, marks the agent types, and never lists a skill agent
+T13-M49 [16] the top menu counts a stale roster | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents lists a project agent before any spawn, and one added on disk when it opens again
+T13-M50 [20] a symlinked component is followed | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link
+T13-M51 [20] a write skips the symlink check | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link
+T13-M52 [20] an unlink skips the symlink check | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents refuses every change through a symlinked .pi/agents or agent file, naming the link
+T13-M53 [6] a probed file with another name counts | 2 of 71 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents acts on a default agent's own file only: another agent's file at its path is neither reset nor overwritten
+    test/fork-builtins/subagents/agent-files.test.ts > locating agent files skips a probed file that declares another agent's name
+T13-M54 [2] disable adds a second key beside enabled: true | 1 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent replaces an enabled: true line instead of adding a second key
+T13-M55 [2] disable writes an edit that does not read as disabled | 2 of 57 failed, caught
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse
+    test/fork-builtins/subagents/agent-files.test.ts > disableInContent refuses an enabled key it cannot rewrite, rather than write a file the loader cannot parse
+T13-M56 [10] the stub overwrites a file without asking | 1 of 14 failed, caught
+    test/suite/fork-subagents-agents-menu.test.ts > /agents acts on a default agent's own file only: another agent's file at its path is neither reset nor overwritten
+restored | 0 of 71 failed
+clean: yes

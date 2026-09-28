@@ -1,0 +1,84 @@
+[
+  {
+    "id": "T4-M1",
+    "cases": [
+      1,
+      2
+    ],
+    "what": "only the memory directory and MEMORY.md are checked, as before",
+    "path": "src/core/fork-builtins/subagents/runner/memory.ts",
+    "old": "\tconst root = scope === \"user\" ? agentDir : cwd;\n",
+    "new": "\tconst root = join(dir, \"..\");\n",
+    "files": [
+      "test/fork-builtins/subagents/memory.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/memory.test.ts > agent memory refuses read-write memory behind a symlinked ancestor, naming the link, and creates nothing there",
+      "test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent none of the memory behind a symlinked ancestor"
+    ]
+  },
+  {
+    "id": "T4-M2",
+    "cases": [
+      1
+    ],
+    "what": "read-write memory ignores a symlinked ancestor",
+    "path": "src/core/fork-builtins/subagents/runner/memory.ts",
+    "old": "\tif (link) throw new Error(`Refusing to use subagent memory behind a symlink: ${link}`);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/memory.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/memory.test.ts > agent memory refuses read-write memory behind a symlinked ancestor, naming the link, and creates nothing there"
+    ]
+  },
+  {
+    "id": "T4-M3",
+    "cases": [
+      2
+    ],
+    "what": "read-only memory reads through a symlinked ancestor",
+    "path": "src/core/fork-builtins/subagents/runner/memory.ts",
+    "old": "\tconst existing = symlinkBelowRoot(dir, scope, cwd, agentDir) ? undefined : readMemoryIndex(dir);",
+    "new": "\tconst existing = readMemoryIndex(dir);",
+    "files": [
+      "test/fork-builtins/subagents/memory.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent none of the memory behind a symlinked ancestor"
+    ]
+  },
+  {
+    "id": "T4-M4",
+    "cases": [
+      3
+    ],
+    "what": "the scope root itself is checked",
+    "path": "src/core/fork-builtins/subagents/runner/memory.ts",
+    "old": "\tconst root = scope === \"user\" ? agentDir : cwd;\n",
+    "new": "\tconst root = join(scope === \"user\" ? agentDir : cwd, \"..\");\n",
+    "files": [
+      "test/fork-builtins/subagents/memory.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/memory.test.ts > agent memory works under a scope root that is itself a symlink"
+    ]
+  },
+  {
+    "id": "T4-M5",
+    "cases": [
+      2
+    ],
+    "what": "an unreadable memory path fails a read-only agent",
+    "path": "src/core/fork-builtins/subagents/runner/memory.ts",
+    "old": "\t\t} catch {\n\t\t\treturn undefined;\n\t\t}\n\t\tif (!stat) return undefined;",
+    "new": "\t\t} catch (error) {\n\t\t\tthrow error;\n\t\t}\n\t\tif (!stat) return undefined;",
+    "files": [
+      "test/fork-builtins/subagents/memory.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/memory.test.ts > agent memory gives a read-only agent an empty block when a memory directory cannot be read"
+    ]
+  }
+]

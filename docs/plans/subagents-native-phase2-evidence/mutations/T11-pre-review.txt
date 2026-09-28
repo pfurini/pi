@@ -1,0 +1,169 @@
+T11-M1 [1] the line names the short label | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line names the model with its provider
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line discloses a model and level the run did not honor
+T11-M2 [1] the line has no fallback to the short label | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line falls back to the short label when the model names no provider
+T11-M3 [1] a model with no provider gets a canonical id | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line falls back to the short label when the model names no provider
+T11-M4 [1] an empty invocation still renders a row | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's invocation line renders no row at all for an agent with no model and no invocation tags
+T11-M5 [2] the header ignores showCost | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows no cost when disabled
+T11-M6 [2] the header shows no cost | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows the cost beside the token count when enabled
+T11-M7 [2] the header prices an unpriced model at zero | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's cost display shows no cost for a model with no pricing data
+T11-M8 [3] cancel does not close | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer closes on tui.select.cancel when not composing, and stops listening
+T11-M9 [3] closing keeps the service listener | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer closes on tui.select.cancel when not composing, and stops listening
+T11-M10 [4] bordered rows are not truncated | 13 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with empty messages
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with plain text messages
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety keeps bordered rows exact-width at a double-width truncation boundary
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width when text is longer than viewport
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with embedded ANSI escape codes in content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with long URLs
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with wide table-like content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with bashExecution messages
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with running activity indicator
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with tool calls
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width at narrow terminal
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety no line exceeds width with mixed ANSI + unicode content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer composer rows never exceed width
+T11-M11 [4] bordered rows are not padded | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer render width safety keeps bordered rows exact-width at a double-width truncation boundary
+T11-M12 [4] content lines are not clamped | 5 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from toolResult content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from user message content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from assistant message content
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines from bashExecution output
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer safety net against an overwidth wrap clamps overwidth lines that also contain ANSI codes
+T11-M13 [5] assistant text is always raw | 4 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders assistant Markdown by default instead of raw source markers
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering reuses one Markdown per message across renders
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering re-renders a message whose text is still streaming
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost re-renders without re-parsing: the Markdown cache survives a frame
+T11-M14 [5] assistant text is never raw | 3 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves assistant text verbatim under `off`
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering opens a later viewer of the session in the mode the key chose, over the setting
+T11-M15 [5] tool results always render as Markdown | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves tool results byte-exact under the default mode
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering tracks a tool result that keeps growing past the cap
+T11-M16 [5] tool results never render as Markdown | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders tool-result Markdown under `all`
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix
+T11-M17 [5] Markdown renumbers ordered lists | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering does not renumber ordered lists even when it does render them
+T11-M18 [5] Markdown tool results are not dim | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps tool results dim even when rendering them as Markdown
+T11-M19 [5] raw tool results are not dim | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps tool results dim on the literal path too
+T11-M20 [5] Markdown renders wider than the content | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering renders Markdown to fit, so the overwidth clamp never has to cut it
+T11-M21 [6] the Markdown key changes nothing | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering opens a later viewer of the session in the mode the key chose, over the setting
+T11-M22 [6] the viewer ignores the session's mode | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering opens a later viewer of the session in the mode the key chose, over the setting
+T11-M23 [6] the footer always reads md | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering cycles the mode with its key for the session, and shows it in the footer
+T11-M24 [7] the footer keeps the line count when it has no room | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering keeps the footer's navigation hints intact at 80 columns
+T11-M25 [8] the first stop press stops | 4 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key stops a running agent on the second press of app.subagents.stop
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key any other key disarms the confirm
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key the Markdown key disarms a pending stop rather than confirming it
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager stops with app.subagents.stop rebound to s, and names the key in the footer
+T11-M26 [8] other keys leave the stop armed | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key any other key disarms the confirm
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key the Markdown key disarms a pending stop rather than confirming it
+T11-M27 [8] a finished agent can be stopped | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer stop key does not offer or perform stop once the agent is no longer running
+T11-M28 [9] results cap at 500 characters | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering caps a tool result at RESULT_MAX_CHARS, not 500, and says what it dropped
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering leaves a result under the cap untouched
+T11-M29 [9] the notice lands inside the content | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering puts the truncation notice outside the code fence it cut into
+T11-M30 [9] the omitted count stops at 2,000 | 3 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering abbreviates a large omitted count so the notice fits a narrow frame
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering rounds into the M bracket rather than reporting 1000k
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering tracks a tool result that keeps growing past the cap
+T11-M31 [9] the omitted count is exact however large | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering abbreviates a large omitted count so the notice fits a narrow frame
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering rounds into the M bracket rather than reporting 1000k
+T11-M32 [9] the bracket is picked on the raw count | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering rounds into the M bracket rather than reporting 1000k
+T11-M33 [9] the omitted count is off by one | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering reports the exact omitted character count
+T11-M34 [9] bash output is not capped | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering caps bash output with the same rule as a tool result
+T11-M35 [10] a failed parse is retried on every frame | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix
+T11-M36 [10] appended text retries the parser | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix
+T11-M37 [10] no Markdown is cached | 4 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering reuses one Markdown per message across renders
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering re-renders a message whose text is still streaming
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost re-renders without re-parsing: the Markdown cache survives a frame
+T11-M38 [10] a streaming message keeps its first text | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering falls back to literal wrapping once for an unsafe streaming prefix
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer Markdown rendering re-renders a message whose text is still streaming
+T11-M39 [11] confirm opens no composer | 4 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer offers the steer affordance for a running agent and opens on Enter
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer typing then Enter sends the trimmed message and closes the composer
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer scroll keys are inert while composing (input owns them)
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key
+T11-M40 [11] a finished agent opens the composer | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer no steer affordance once the agent is no longer running
+T11-M41 [11] the steer is not trimmed | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer typing then Enter sends the trimmed message and closes the composer
+T11-M42 [11] an empty submit steers | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer an empty submit just returns, without steering
+T11-M43 [11] cancel keeps the composer | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer Esc cancels the composer without sending
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer scroll keys are inert while composing (input owns them)
+T11-M44 [11] the composer does not own the keys | 5 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer typing then Enter sends the trimmed message and closes the composer
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer Esc cancels the composer without sending
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer an empty submit just returns, without steering
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer scroll keys are inert while composing (input owns them)
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key
+T11-M45 [11] the composer row is not framed | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer composer rows never exceed width
+T11-M46 [12] a failed steer shows nothing | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key
+T11-M47 [12] the steer error is not drawn | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer shows the error of a steer that failed to deliver, until the next key
+T11-M48 [13] scrolling up ignores the manager | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager honors user keybindings when a manager has them
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager respects a rebinding that removes a default key
+T11-M49 [13] ctrl+p pages up under the defaults | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager a manager with no user overrides behaves as the defaults
+T11-M50 [13] stop ignores its rebinding | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager stops with app.subagents.stop rebound to s, and names the key in the footer
+T11-M51 [14] each message rewraps the whole transcript | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost does ~10x the work for 10x the messages (raw wrap path)
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost does ~10x the work for 10x the messages (markdown path)
+T11-M52 [15] every framed row touches the disk | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the viewer's render cost touches no file while it renders a frame
+T11-M53 [16] the header drops the name's color | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer shows the header with the status, the display name in its color, and the stats
+T11-M54 [17] top stops one line short | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling jumps to the top and the bottom with app.subagents.top and app.subagents.bottom
+T11-M55 [17] bottom keeps auto-scroll off | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling follows new messages until the user scrolls up, and again from the bottom
+T11-M56 [17] scrolling up keeps auto-scroll on | 3 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager honors user keybindings when a manager has them
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer keys from the keybinding manager respects a rebinding that removes a default key
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer scrolling follows new messages until the user scrolls up, and again from the bottom
+T11-M57 [18] a child message requests no render | 2 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer live updates renders a new child message without reopening
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer live updates follows a queued agent's conversation once its child attaches
+T11-M58 [18] an attaching child is not followed | 1 of 72 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer live updates follows a queued agent's conversation once its child attaches
+restored | 0 of 72 failed
+clean: yes

@@ -1,0 +1,55 @@
+T7-M1 [1] color names are not looked up | 5 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor resolves Claude Code names and Agency Agents aliases
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel renders a padded truecolor badge with readable foreground
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel restores an enclosing tool background after the badge
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel resets the background when the caller paints none
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel names an agent by its display name, in its color
+T7-M2 [1] any #-value counts as a color | 1 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor normalizes six-digit hex and rejects unsupported values
+T7-M3 [2] badge text contrast inverted | 2 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel renders a padded truecolor badge with readable foreground
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel judges contrast against the effective color in 256-color mode
+T7-M4 [3] 256-color contrast judged on the unquantized color | 1 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel judges contrast against the effective color in 256-color mode
+T7-M5 [4] the enclosing background is not restored | 1 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel restores an enclosing tool background after the badge
+T7-M6 [4] the background is not reset | 1 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel resets the background when the caller paints none
+T7-M7 [5] the fallback theme color is dropped | 2 of 8 failed, caught
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel preserves existing theme styling without a valid color
+    test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel names an agent by its display name, in its color
+T7-M8 [6] context thresholds exclusive | 2 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens applies threshold colors (<70 dim, 70–85 warning, ≥85 error)
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset
+T7-M9 [7] compactions are not annotated | 1 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens annotates compaction count alongside percent
+T7-M10 [7] a nested reset drops the outer style | 1 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset
+T7-M11 [8] cost rounded to cents | 2 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents
+T7-M12 [8] cost padded to four decimals | 2 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents
+T7-M13 [8] only an exact zero shows nothing | 1 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost shows nothing when there is nothing to show
+T7-M14 [8] a tiny cost rounds to zero | 1 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost says a real but tiny cost is tiny, not zero
+T7-M15 [8] a cost from half a dollar loses its tilde | 3 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents
+    test/fork-builtins/subagents/ui-format.test.ts > formatCost marks the figure as an estimate
+T7-M16 [9] FleetView's elapsed time floors fractions and goes negative | 2 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > elapsed time writes tenths of a second, and FleetView's whole seconds
+    test/fork-builtins/subagents/ui-format.test.ts > elapsed time floors FleetView's elapsed time at 0s
+T7-M17 [10] thousands lose their decimal | 4 of 15 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens applies threshold colors (<70 dim, 70–85 warning, ≥85 error)
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens annotates compaction count alongside percent
+    test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset
+    test/fork-builtins/subagents/ui-format.test.ts > token counts writes `33.8k token`, and FleetView's `↓ 13.1k tokens`
+T7-M18 [11] the child's effective model and level are not recorded | 1 of 26 failed, caught
+    test/suite/fork-subagents-service.test.ts > definitions, usage and statuses records the model and thinking level the child session runs with
+T7-M19 [11] a caller spelling that names the winning model is still disclosed | 1 of 26 failed, caught
+    test/suite/fork-subagents-service.test.ts > definitions, usage and statuses keeps a caller's model the agent file outranked only when it names another model
+restored | 0 of 49 failed
+clean: yes

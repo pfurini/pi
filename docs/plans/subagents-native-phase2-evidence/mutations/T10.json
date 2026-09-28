@@ -1,0 +1,589 @@
+[
+  {
+    "id": "T10-M1",
+    "cases": [
+      1
+    ],
+    "what": "the activity line drops the activity",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "`  ⎿  ${activity}`",
+    "new": "`  ⎿  `",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders running status as separate component lines",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active"
+    ]
+  },
+  {
+    "id": "T10-M2",
+    "cases": [
+      1
+    ],
+    "what": "the heading always marks activity",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "active ? \"●\" : \"○\"",
+    "new": "\"●\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active"
+    ]
+  },
+  {
+    "id": "T10-M3",
+    "cases": [
+      2
+    ],
+    "what": "background mode keeps foreground agents",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "mode === \"all\" || view.mode !== \"foreground\"",
+    "new": "mode === \"all\" || true",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget excludes foreground agents in 'background' mode"
+    ]
+  },
+  {
+    "id": "T10-M4",
+    "cases": [
+      2
+    ],
+    "what": "nested agents show",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "view.parentId === undefined && ",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget hides nested children in every coordinator widget mode"
+    ]
+  },
+  {
+    "id": "T10-M5",
+    "cases": [
+      2
+    ],
+    "what": "off mode shows agents",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "if (mode === \"off\") return [];",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders nothing in 'off' mode"
+    ]
+  },
+  {
+    "id": "T10-M6",
+    "cases": [
+      2
+    ],
+    "what": "only background agents show",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "mode === \"all\" || view.mode !== \"foreground\"",
+    "new": "view.mode === \"background\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows foreground agents in 'all' mode (and by default)",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps detached agents, spawned over RPC, in 'background' mode"
+    ]
+  },
+  {
+    "id": "T10-M7",
+    "cases": [
+      2
+    ],
+    "what": "background mode shows nothing",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "mode === \"all\" || view.mode !== \"foreground\"",
+    "new": "mode === \"all\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget renders background agents in 'background' mode",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps detached agents, spawned over RPC, in 'background' mode"
+    ]
+  },
+  {
+    "id": "T10-M8",
+    "cases": [
+      3
+    ],
+    "what": "showModel names nothing",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tif (showModel) {",
+    "new": "\t\tif (false) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel names the model and thinking on a running row under showModel",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor"
+    ]
+  },
+  {
+    "id": "T10-M9",
+    "cases": [
+      3
+    ],
+    "what": "the model shows without showModel",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tif (showModel) {",
+    "new": "\t\tif (true) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel renders the row exactly as before when showModel is off"
+    ]
+  },
+  {
+    "id": "T10-M10",
+    "cases": [
+      3
+    ],
+    "what": "the row carries the canonical id",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "if (modelName) parts.push(modelName);",
+    "new": "if (modelName) parts.push(`${modelName} ${invocationTags(view).modelId}`);",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel carries the short label, never the canonical id, onto the row"
+    ]
+  },
+  {
+    "id": "T10-M11",
+    "cases": [
+      3
+    ],
+    "what": "the row shows only an honored level",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "const thinking = tags.find((tag) => tag.startsWith(\"thinking: \"));",
+    "new": "const thinking = tags.find((tag) => tag === \"thinking: high\");",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget under showModel discloses a level the run did not honor"
+    ]
+  },
+  {
+    "id": "T10-M12",
+    "cases": [
+      4
+    ],
+    "what": "the queued summary changes its words",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "`${queued.length} queued`",
+    "new": "`${queued.length} waiting`",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps queued agents on one summary line and finished agents visible"
+    ]
+  },
+  {
+    "id": "T10-M13",
+    "cases": [
+      5
+    ],
+    "what": "a running row ignores showCost",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\t}\n\t\tconst cost = showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "\t\t}\n\t\tconst cost = formatCost(view.usage.cost.total);",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost when disabled",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display defaults to hiding it"
+    ]
+  },
+  {
+    "id": "T10-M14",
+    "cases": [
+      5
+    ],
+    "what": "a running row shows no cost",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\t}\n\t\tconst cost = showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "\t\t}\n\t\tconst cost = \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows the cost beside the token count when enabled",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows stats for an agent whose child session does not exist yet"
+    ]
+  },
+  {
+    "id": "T10-M15",
+    "cases": [
+      5
+    ],
+    "what": "a running row prices an unpriced model at zero",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\t}\n\t\tconst cost = showCost ? formatCost(view.usage.cost.total) : \"\";",
+    "new": "\t\t}\n\t\tconst cost = showCost ? formatCost(view.usage.cost.total) || \"~$0.00\" : \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display shows no cost for an unpriced model, even when enabled"
+    ]
+  },
+  {
+    "id": "T10-M16",
+    "cases": [
+      5
+    ],
+    "what": "a finished row drops its cost",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tconst cost = showCost ? formatCost(view.usage.cost.total) : \"\";\n\t\tif (cost) parts.push(cost);\n\t\tparts.push(formatMs((view.completedAt",
+    "new": "\t\tparts.push(formatMs((view.completedAt",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's cost display keeps the cost visible after the agent finishes"
+    ]
+  },
+  {
+    "id": "T10-M17",
+    "cases": [
+      6
+    ],
+    "what": "the widget takes 13 lines",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "const MAX_WIDGET_LINES = 12;",
+    "new": "const MAX_WIDGET_LINES = 13;",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never exceeds the line cap, for any fleet shape"
+    ]
+  },
+  {
+    "id": "T10-M18",
+    "cases": [
+      6
+    ],
+    "what": "the footer counts queued agents as hidden",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "`+${hiddenRunning + hiddenFinished} more",
+    "new": "`+${hiddenRunning + hiddenFinished + queued.length} more",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting never prints a footer that miscounts what it hid, for any fleet shape",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting counts everything it hid — the footer total matches what is missing"
+    ]
+  },
+  {
+    "id": "T10-M19",
+    "cases": [
+      6
+    ],
+    "what": "the queued summary's row goes to finished lines",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\t\tif (queuedLine) lines.push(queuedLine);\n\t\t\tfor (const line of finishedLines) {",
+    "new": "\t\t\tif (queuedLine) budget++;\n\t\t\tfor (const line of finishedLines) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting keeps the queued summary visible when the running agents fill the widget",
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting gives the queued summary priority over finished lines"
+    ]
+  },
+  {
+    "id": "T10-M20",
+    "cases": [
+      6
+    ],
+    "what": "a fleet that fits gets a footer",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\t\tif (queuedLine) lines.push(queuedLine);\n\t\t\t// The last item closes",
+    "new": "\t\t\tif (queuedLine) lines.push(queuedLine);\n\t\t\tlines.push(\"├─ +0 more ()\");\n\t\t\t// The last item closes",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting renders everything with no footer when the fleet fits"
+    ]
+  },
+  {
+    "id": "T10-M21",
+    "cases": [
+      6
+    ],
+    "what": "a resumed agent keeps its earlier linger age",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "if (event.type === \"ended\") this.finishedAge.set",
+    "new": "if (event.type === \"ended\" && !this.finishedAge.has(event.record.id)) this.finishedAge.set",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget's overflow accounting shows the completion line again after a finished agent is resumed"
+    ]
+  },
+  {
+    "id": "T10-M22",
+    "cases": [
+      7
+    ],
+    "what": "a steered row reads steered",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\" (turn limit)\"",
+    "new": "\" steered\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted"
+    ]
+  },
+  {
+    "id": "T10-M23",
+    "cases": [
+      7
+    ],
+    "what": "an error row shows 80 characters",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "view.error.slice(0, 60)",
+    "new": "view.error.slice(0, 80)",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted"
+    ]
+  },
+  {
+    "id": "T10-M24",
+    "cases": [
+      7
+    ],
+    "what": "a stopped row draws a cross",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "icon = theme.fg(\"dim\", \"■\");",
+    "new": "icon = theme.fg(\"dim\", \"✗\");",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget draws each finished outcome: completed, turn limit, stopped, error and aborted"
+    ]
+  },
+  {
+    "id": "T10-M25",
+    "cases": [
+      8
+    ],
+    "what": "an error lingers one turn",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "const ERROR_LINGER_TURNS = 2;",
+    "new": "const ERROR_LINGER_TURNS = 1;",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps a completed agent for one parent turn and an error for two"
+    ]
+  },
+  {
+    "id": "T10-M26",
+    "cases": [
+      8
+    ],
+    "what": "a completed agent lingers two turns",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "const COMPLETED_LINGER_TURNS = 1;",
+    "new": "const COMPLETED_LINGER_TURNS = 2;",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget keeps a completed agent for one parent turn and an error for two"
+    ]
+  },
+  {
+    "id": "T10-M27",
+    "cases": [
+      9
+    ],
+    "what": "every rendered line touches the disk",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "import { type Component, type TUI, truncateToWidth } from \"@earendil-works/pi-tui\";",
+    "new": "import { type Component, type TUI, truncateToWidth as truncateLine } from \"@earendil-works/pi-tui\";\nimport { existsSync } from \"node:fs\";\nconst truncateToWidth = (line: string, width: number) => (existsSync(\"/\"), truncateLine(line, width));",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget touches no file while it renders a frame"
+    ]
+  },
+  {
+    "id": "T10-M28",
+    "cases": [
+      9
+    ],
+    "what": "each running row rescans the agent list",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tconst parts: string[] = [];\n\t\tif (showModel) {",
+    "new": "\t\tthis.source.list();\n\t\tconst parts: string[] = [];\n\t\tif (showModel) {",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget asks the service for the agent list a constant number of times per frame"
+    ]
+  },
+  {
+    "id": "T10-M29",
+    "cases": [
+      10
+    ],
+    "what": "a running row drops the name's color",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "renderAgentName(view.definition, theme, { bold: true })",
+    "new": "theme.bold(view.definition.displayName ?? view.definition.name)",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's display name in its color"
+    ]
+  },
+  {
+    "id": "T10-M30",
+    "cases": [
+      11,
+      1
+    ],
+    "what": "a running row ignores the child's response",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "responseText(this.source.conversation(view.id)?.messages ?? [])",
+    "new": "undefined",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts",
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's latest response when no tool runs, and marks a fleet with nothing active",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode"
+    ]
+  },
+  {
+    "id": "T10-M31",
+    "cases": [
+      11
+    ],
+    "what": "the widget shows in rpc mode instead of tui",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "widget = ctx.mode === \"tui\" ? new AgentWidget",
+    "new": "widget = ctx.mode === \"rpc\" ? new AgentWidget",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode"
+    ]
+  },
+  {
+    "id": "T10-M32",
+    "cases": [
+      12
+    ],
+    "what": "the timer runs while nothing runs",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tif (running) this.startTimer();\n\t\telse this.stopTimer();",
+    "new": "\t\tthis.startTimer();",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer"
+    ]
+  },
+  {
+    "id": "T10-M33",
+    "cases": [
+      12
+    ],
+    "what": "dispose leaves the widget",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tif (registered) this.ui.setWidget(WIDGET_KEY, undefined);\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer"
+    ]
+  },
+  {
+    "id": "T10-M34",
+    "cases": [
+      12
+    ],
+    "what": "dispose keeps the timer",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tthis.unsubscribe();\n\t\tthis.stopTimer();",
+    "new": "\t\tthis.unsubscribe();",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget runs its 80 ms timer only while an agent runs, and unbinding removes the widget and the timer"
+    ]
+  },
+  {
+    "id": "T10-M35",
+    "cases": [
+      12
+    ],
+    "what": "unbinding keeps the widget",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\t\t\twidget?.dispose();\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode"
+    ]
+  },
+  {
+    "id": "T10-M36",
+    "cases": [
+      12
+    ],
+    "what": "a directly disposed session keeps the timer",
+    "path": "src/core/fork-builtins/subagents/ui/widget.ts",
+    "old": "\t\tif (this.source.isDisposed) {\n\t\t\tthis.release();\n\t\t\treturn;",
+    "new": "\t\tif (this.source.isDisposed) {\n\t\t\treturn;",
+    "files": [
+      "test/fork-builtins/subagents/ui-widget.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-widget.test.ts > the agents widget stops its timer and listener, touching no UI, once the session is disposed directly"
+    ]
+  }
+]

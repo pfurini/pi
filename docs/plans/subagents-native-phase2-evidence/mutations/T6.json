@@ -1,0 +1,248 @@
+[
+  {
+    "id": "T6-M1",
+    "cases": [
+      1
+    ],
+    "what": "FORK_OWNED_BUILTINS omits the factory (probe P7)",
+    "path": "src/core/fork-builtins.ts",
+    "old": "\t{ name: \"subagents\", factory: subagentsPresentation, hidden: true },\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins.test.ts > fork built-in extensions registers the subagents presentation as a fork-owned built-in, with no tool"
+    ]
+  },
+  {
+    "id": "T6-M2",
+    "cases": [
+      2
+    ],
+    "what": "a child's loader answers no child query (probe P2)",
+    "path": "src/core/fork-builtins/subagents/runner/lineage.ts",
+    "old": "(query as ChildSessionQuery).child = true;",
+    "new": "void query;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory registers nothing in a child session"
+    ]
+  },
+  {
+    "id": "T6-M3",
+    "cases": [
+      3,
+      6
+    ],
+    "what": "the adapter answers no bind request (probe P3)",
+    "path": "src/core/fork-builtins/subagents/adapter/install.ts",
+    "old": "if (request.sessionManager === session.sessionManager) request.session = session;",
+    "new": "void request;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows how many agents run and wait in the tui status line, and clears it when none does",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for every child's session_shutdown handlers"
+    ]
+  },
+  {
+    "id": "T6-M4",
+    "cases": [
+      5
+    ],
+    "what": "the first adapter on a shared bus answers every session",
+    "path": "src/core/fork-builtins/subagents/adapter/install.ts",
+    "old": "if (request.sessionManager === session.sessionManager) request.session = session;",
+    "new": "request.session ??= session;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory binds each of two sessions on one event bus to its own agents"
+    ]
+  },
+  {
+    "id": "T6-M5",
+    "cases": [
+      4
+    ],
+    "what": "rpc mode shows no status",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "if (!bound || (ctx.mode !== \"tui\" && ctx.mode !== \"rpc\")) return;",
+    "new": "if (!bound || ctx.mode !== \"tui\") return;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows the same status in rpc mode, and none in print mode"
+    ]
+  },
+  {
+    "id": "T6-M6",
+    "cases": [
+      4
+    ],
+    "what": "print mode shows the status too",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "if (!bound || (ctx.mode !== \"tui\" && ctx.mode !== \"rpc\")) return;",
+    "new": "if (!bound) return;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows the same status in rpc mode, and none in print mode"
+    ]
+  },
+  {
+    "id": "T6-M7",
+    "cases": [
+      3
+    ],
+    "what": "queued agents count as running",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "else if (view.status === \"queued\") queued++;",
+    "new": "else if (view.status === \"queued\") running++;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory shows how many agents run and wait in the tui status line, and clears it when none does"
+    ]
+  },
+  {
+    "id": "T6-M8",
+    "cases": [
+      6,
+      9,
+      11
+    ],
+    "what": "quit does not await the child teardown (probe P4)",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "await (bound ? existingSubagentService(bound) : undefined)?.shutdown();",
+    "new": "void (bound ? existingSubagentService(bound) : undefined)?.shutdown();",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for every child's session_shutdown handlers",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for the children of a session that never started",
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes a runtime's new session wait for the old session's children"
+    ]
+  },
+  {
+    "id": "T6-M9",
+    "cases": [
+      7
+    ],
+    "what": "a child that attaches after dispose is torn down unawaited (probe P8)",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\t\tthis.teardowns.push(teardownChild(child));\n\t\t\treturn;",
+    "new": "\t\t\tvoid teardownChild(child);\n\t\t\treturn;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting"
+    ]
+  },
+  {
+    "id": "T6-M10",
+    "cases": [
+      7
+    ],
+    "what": "shutdown does not wait for children still starting (probe P9)",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\t\tPromise.allSettled(starting),\n",
+    "new": "\t\t\tPromise.resolve(starting),\n",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for a child that is still starting"
+    ]
+  },
+  {
+    "id": "T6-M11",
+    "cases": [
+      8
+    ],
+    "what": "shutdown waits for a starting child without a bound (probe P10)",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "timer = setTimeout(resolve, this.startupWaitMs);",
+    "new": "timer = setTimeout(resolve, 2 ** 30);",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > ownership waits for a starting child only up to its bound, and tears it down when it attaches later"
+    ]
+  },
+  {
+    "id": "T6-M12",
+    "cases": [
+      9
+    ],
+    "what": "a session that never started is not bound at session_shutdown",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\t\tif (event.reason === \"reload\") return;\n\t\tconst bound = resolve(ctx);",
+    "new": "\t\tif (event.reason === \"reload\") return;\n\t\tconst bound = session;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory makes quit wait for the children of a session that never started"
+    ]
+  },
+  {
+    "id": "T6-M13",
+    "cases": [
+      10
+    ],
+    "what": "/reload ends the agents (probe P5)",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\t\tif (event.reason === \"reload\") return;\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory keeps the service and its running agent across /reload, and its status afterwards"
+    ]
+  },
+  {
+    "id": "T6-M14",
+    "cases": [
+      3
+    ],
+    "what": "a queued foreground spawn announces nothing",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\t\tthis.emit({ type: \"queued\", record });\n",
+    "new": "",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory counts a foreground agent that waits for a slot"
+    ]
+  },
+  {
+    "id": "T6-M15",
+    "cases": [
+      3
+    ],
+    "what": "a scheduled status update runs after the service was disposed",
+    "path": "src/core/fork-builtins/subagents/ui/index.ts",
+    "old": "\t\tif (!bound || service.isDisposed) return;",
+    "new": "\t\tif (!bound) return;",
+    "files": [
+      "test/suite/fork-subagents-presentation.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-presentation.test.ts > presentation factory writes no status through the context of a session disposed directly"
+    ]
+  }
+]

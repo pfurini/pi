@@ -1,0 +1,23 @@
+T18-F4-M1 [1] displayText returns the text unchanged | 4 of 125 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences
+    test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode
+T18-F4-M2 [1] displayText strips escapes but keeps control characters | 1 of 16 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences
+T18-F4-M3 [1] the activity keeps the child's escapes | 1 of 16 failed, caught
+    test/fork-builtins/subagents/ui-format.test.ts > turns, status and activity describes the activity without the child's escape sequences
+T18-F4-M4 [1] the viewer prints a string message raw | 1 of 74 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode
+T18-F4-M5 [1] the viewer prints message parts raw | 1 of 74 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode
+T18-F4-M6 [1] the viewer prints bash output raw | 1 of 74 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer prints a child's messages without their escape sequences, in every Markdown mode
+T18-F4-M7 [1] the result row prints the text raw | 1 of 25 failed, caught
+    test/suite/fork-subagents-rendering.test.ts > Agent result rendering prints a result's text without its escape sequences
+T18-F4-M8 [1] the notification prints the preview raw | 1 of 10 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences
+T18-F4-M9 [1] the notification prints the description raw | 1 of 10 failed, caught
+    test/fork-builtins/subagents/ui-notification.test.ts > the notification renderer prints the description and the result without escape sequences
+restored | 0 of 125 failed
+clean: yes

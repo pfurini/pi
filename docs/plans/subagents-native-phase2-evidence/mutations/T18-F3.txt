@@ -1,0 +1,9 @@
+T18-F3-M1 [1] steer_subagent awaits the delivery without its signal | 1 of 28 failed, caught
+    test/suite/fork-subagents-tools.test.ts > steer_subagent stops waiting on a steer the child's input handler never takes once the call is aborted
+T18-F3-M2 [1] the nested steer awaits the delivery without its signal | 1 of 10 failed, caught
+    test/suite/fork-subagents-nested.test.ts > nested ownership ends a delegating agent's run while its nested steer waits on a child that never takes it
+T18-F3-M3 [1] an abort does not end the wait | 2 of 38 failed, caught
+    test/suite/fork-subagents-nested.test.ts > nested ownership ends a delegating agent's run while its nested steer waits on a child that never takes it
+    test/suite/fork-subagents-tools.test.ts > steer_subagent stops waiting on a steer the child's input handler never takes once the call is aborted
+restored | 0 of 38 failed
+clean: yes

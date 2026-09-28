@@ -1,0 +1,307 @@
+[
+  {
+    "id": "T7-M1",
+    "cases": [
+      1
+    ],
+    "what": "color names are not looked up",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "const resolved = NAMED_AGENT_COLORS[normalized] ?? normalized;",
+    "new": "const resolved = normalized;",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor resolves Claude Code names and Agency Agents aliases"
+    ]
+  },
+  {
+    "id": "T7-M2",
+    "cases": [
+      1
+    ],
+    "what": "any #-value counts as a color",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "return /^#[0-9a-f]{6}$/i.test(resolved) ? resolved.toUpperCase() : undefined;",
+    "new": "return resolved.startsWith(\"#\") ? resolved.toUpperCase() : undefined;",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > resolveAgentColor normalizes six-digit hex and rejects unsupported values"
+    ]
+  },
+  {
+    "id": "T7-M3",
+    "cases": [
+      2
+    ],
+    "what": "badge text contrast inverted",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "> LUMINANCE_THRESHOLD ? BLACK : WHITE",
+    "new": "< LUMINANCE_THRESHOLD ? BLACK : WHITE",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel renders a padded truecolor badge with readable foreground"
+    ]
+  },
+  {
+    "id": "T7-M4",
+    "cases": [
+      3
+    ],
+    "what": "256-color contrast judged on the unquantized color",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "relativeLuminance(quantized?.rgb ?? rgb)",
+    "new": "relativeLuminance(rgb)",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel judges contrast against the effective color in 256-color mode"
+    ]
+  },
+  {
+    "id": "T7-M5",
+    "cases": [
+      4
+    ],
+    "what": "the enclosing background is not restored",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "(style.restoreBackground ?? \"\\u001b[49m\")",
+    "new": "\"\\u001b[49m\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel restores an enclosing tool background after the badge"
+    ]
+  },
+  {
+    "id": "T7-M6",
+    "cases": [
+      4
+    ],
+    "what": "the background is not reset",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "(style.restoreBackground ?? \"\\u001b[49m\")",
+    "new": "(style.restoreBackground ?? \"\")",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel resets the background when the caller paints none"
+    ]
+  },
+  {
+    "id": "T7-M7",
+    "cases": [
+      5
+    ],
+    "what": "the fallback theme color is dropped",
+    "path": "src/core/fork-builtins/subagents/ui/colors.ts",
+    "old": "return style.fallbackColor ? theme.fg(style.fallbackColor, text) : text;",
+    "new": "return text;",
+    "files": [
+      "test/fork-builtins/subagents/ui-colors.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-colors.test.ts > renderAgentNameLabel preserves existing theme styling without a valid color"
+    ]
+  },
+  {
+    "id": "T7-M8",
+    "cases": [
+      6
+    ],
+    "what": "context thresholds exclusive",
+    "path": "src/core/fork-builtins/subagents/ui/format.ts",
+    "old": "percent >= 85 ? \"error\" : percent >= 70 ? \"warning\" : \"dim\"",
+    "new": "percent > 85 ? \"error\" : percent > 70 ? \"warning\" : \"dim\"",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens applies threshold colors (<70 dim, 70–85 warning, ≥85 error)"
+    ]
+  },
+  {
+    "id": "T7-M9",
+    "cases": [
+      7
+    ],
+    "what": "compactions are not annotated",
+    "path": "src/core/fork-builtins/subagents/ui/format.ts",
+    "old": "\tif (compactions > 0) annotations.push(theme.fg(\"dim\", `⇊${compactions}`));\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens annotates compaction count alongside percent"
+    ]
+  },
+  {
+    "id": "T7-M10",
+    "cases": [
+      7
+    ],
+    "what": "a nested reset drops the outer style",
+    "path": "src/core/fork-builtins/subagents/ui/format.ts",
+    "old": "(reset) => `${reset}${start}`",
+    "new": "(reset) => reset",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatSessionTokens preserves the outer style after nested annotation styles reset"
+    ]
+  },
+  {
+    "id": "T7-M11",
+    "cases": [
+      8
+    ],
+    "what": "cost rounded to cents",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "return `~$${rounded.toFixed(Math.max(2, decimals))}`;",
+    "new": "return `~$${rounded.toFixed(2)}`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatCost keeps the precision that distinguishes one run from another"
+    ]
+  },
+  {
+    "id": "T7-M12",
+    "cases": [
+      8
+    ],
+    "what": "cost padded to four decimals",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "return `~$${rounded.toFixed(Math.max(2, decimals))}`;",
+    "new": "return `~$${rounded.toFixed(4)}`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatCost never pads a round figure with noise, nor cuts it below cents"
+    ]
+  },
+  {
+    "id": "T7-M13",
+    "cases": [
+      8
+    ],
+    "what": "only an exact zero shows nothing",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "if (!(cost > 0)) return \"\";",
+    "new": "if (cost === 0) return \"\";",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatCost shows nothing when there is nothing to show"
+    ]
+  },
+  {
+    "id": "T7-M14",
+    "cases": [
+      8
+    ],
+    "what": "a tiny cost rounds to zero",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "\tif (cost < 0.0001) return \"<$0.0001\";\n",
+    "new": "",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatCost says a real but tiny cost is tiny, not zero"
+    ]
+  },
+  {
+    "id": "T7-M15",
+    "cases": [
+      8
+    ],
+    "what": "a cost from half a dollar loses its tilde",
+    "path": "src/core/fork-builtins/subagents/tools/common.ts",
+    "old": "if (cost >= 1) return `~$${cost.toFixed(2)}`;",
+    "new": "if (cost >= 0.5) return `$${cost.toFixed(2)}`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > formatCost marks the figure as an estimate"
+    ]
+  },
+  {
+    "id": "T7-M16",
+    "cases": [
+      9
+    ],
+    "what": "FleetView's elapsed time floors fractions and goes negative",
+    "path": "src/core/fork-builtins/subagents/ui/format.ts",
+    "old": "return `${Math.max(0, Math.round(ms / 1000))}s`;",
+    "new": "return `${Math.floor(ms / 1000)}s`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > elapsed time writes tenths of a second, and FleetView's whole seconds",
+      "test/fork-builtins/subagents/ui-format.test.ts > elapsed time floors FleetView's elapsed time at 0s"
+    ]
+  },
+  {
+    "id": "T7-M17",
+    "cases": [
+      10
+    ],
+    "what": "thousands lose their decimal",
+    "path": "src/core/fork-builtins/subagents/ui/format.ts",
+    "old": "if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;",
+    "new": "if (count >= 1_000) return `${(count / 1_000).toFixed(0)}k`;",
+    "files": [
+      "test/fork-builtins/subagents/ui-format.test.ts"
+    ],
+    "expect": [
+      "test/fork-builtins/subagents/ui-format.test.ts > token counts writes `33.8k token`, and FleetView's `↓ 13.1k tokens`"
+    ]
+  },
+  {
+    "id": "T7-M18",
+    "cases": [
+      11
+    ],
+    "what": "the child's effective model and level are not recorded",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "record.effective = { model: child.session.model, thinking: child.session.thinkingLevel };",
+    "new": "record.effective = {};",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > definitions, usage and statuses records the model and thinking level the child session runs with"
+    ]
+  },
+  {
+    "id": "T7-M19",
+    "cases": [
+      11
+    ],
+    "what": "a caller spelling that names the winning model is still disclosed",
+    "path": "src/core/fork-builtins/subagents/service/service.ts",
+    "old": "\t\tif (!asked || !model) return invocation;\n",
+    "new": "\t\treturn invocation;\n",
+    "files": [
+      "test/suite/fork-subagents-service.test.ts"
+    ],
+    "expect": [
+      "test/suite/fork-subagents-service.test.ts > definitions, usage and statuses keeps a caller's model the agent file outranked only when it names another model"
+    ]
+  }
+]

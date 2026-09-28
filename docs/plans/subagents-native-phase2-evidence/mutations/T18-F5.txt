@@ -1,0 +1,4 @@
+T18-F5-M1 [1] the composer stays open when the agent stops | 1 of 76 failed, caught
+    test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer steer composer closes the composer when the agent stops while a message is typed, and sends nothing
+restored | 0 of 76 failed
+clean: yes

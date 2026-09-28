@@ -20,6 +20,7 @@
 import { createRequire } from "node:module";
 import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
 import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
+import subagentsPresentation from "./fork-builtins/subagents/ui/index.ts";
 import { forkBuiltinsEnabled } from "./fork-builtins/switch.ts";
 import pluginTokensave from "./fork-builtins/tokensave/index.ts";
 
@@ -28,6 +29,7 @@ export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
 /** Fork-owned built-ins that live in this package and register without a package resolution. */
 export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [
 	{ name: "tokensave", factory: pluginTokensave, hidden: true },
+	{ name: "subagents", factory: subagentsPresentation, hidden: true },
 ];
 
 const requireFromHere = createRequire(import.meta.url);

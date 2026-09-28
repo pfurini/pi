@@ -632,6 +632,44 @@ describe("ownership", () => {
 		expect(existsSync(tempDir)).toBe(true);
 	});
 
+	it("waits for a starting child only up to its bound, and tears it down when it attaches later", async () => {
+		const harness = await parent();
+		let open!: () => void;
+		const opened = new Promise<void>((resolve) => {
+			open = resolve;
+		});
+		const gate = { opened, shutdowns: 0 };
+		(globalThis as { __sn2Gate?: typeof gate }).__sn2Gate = gate;
+		cleanups.push(() => {
+			open();
+			delete (globalThis as { __sn2Gate?: typeof gate }).__sn2Gate;
+		});
+		// Extensions load for this agent, so its child's loader runs the gated extension below.
+		writeFileSync(
+			join(harness.tempDir, "agents", "gated.md"),
+			"---\ndescription: gated\ntools: read\n---\nYou are gated.",
+		);
+		mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
+		writeFileSync(
+			join(harness.tempDir, "extensions", "gate.ts"),
+			'export default async function (pi) {\n\tawait globalThis.__sn2Gate.opened;\n\tpi.on("session_shutdown", () => {\n\t\tglobalThis.__sn2Gate.shutdowns++;\n\t});\n}\n',
+		);
+		const subagents = service(harness, { startupWaitMs: 200 });
+		const record = await subagents.spawn({
+			type: "gated",
+			prompt: "gated task",
+			description: "gated task",
+			params: { run_in_background: true },
+		});
+		const started = Date.now();
+		await subagents.shutdown();
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(inspectRecord(subagents, record.id)?.child, "the child is still starting").toBeUndefined();
+		expect(gate.shutdowns).toBe(0);
+		open();
+		await vi.waitFor(() => expect(gate.shutdowns).toBe(1), CHILD_START);
+	});
+
 	it("never evicts a queued record, however long it waits", async () => {
 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
 		const gate = held();

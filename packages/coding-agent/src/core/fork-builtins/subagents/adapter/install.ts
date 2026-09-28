@@ -9,14 +9,23 @@
 import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
+import { PRESENTATION_BIND_CHANNEL, type PresentationBindRequest } from "../binding.ts";
 import { serveRpc } from "./rpc.ts";
 import { publishSessionRewriteMaps, serveSkillAgents } from "./skill-agents.ts";
 
 const installed = new WeakSet<AgentSession>();
 
+/** Answers the presentation factory of the session that owns the asking context's session manager. */
+function servePresentation(session: AgentSession, bus: EventBus): () => void {
+	return bus.on(PRESENTATION_BIND_CHANNEL, (raw) => {
+		const request = raw as PresentationBindRequest;
+		if (request.sessionManager === session.sessionManager) request.session = session;
+	});
+}
+
 export function installSubagentAdapter(session: AgentSession, bus: EventBus): void {
 	if (!installed.has(session)) {
-		const offs = [serveRpc(session, bus), serveSkillAgents(session, bus)];
+		const offs = [serveRpc(session, bus), serveSkillAgents(session, bus), servePresentation(session, bus)];
 		const unregister = registerSessionResourceCleanup((sessionId) => {
 			if (sessionId !== session.sessionId) return;
 			for (const off of offs) off();

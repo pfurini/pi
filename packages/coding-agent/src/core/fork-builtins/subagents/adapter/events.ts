@@ -150,6 +150,8 @@ export function bridgeServiceEvents(service: BridgedService): void {
 			case "definitions":
 				if (service.eventBus) publishRewriteMaps(service.eventBus, event.registry.aliases);
 				return;
+			// pi-subagents emitted no bus event for either; `subagents:*` payloads stay as they were (D19).
+			case "queued":
 			case "warning":
 				return;
 		}

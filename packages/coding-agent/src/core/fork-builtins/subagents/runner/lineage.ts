@@ -5,6 +5,7 @@
  * the child runs as, under that agent's `allowed_subagents`, `isolated` and depth.
  */
 import type { EventBus } from "../../../event-bus.ts";
+import { CHILD_SESSION_QUERY_CHANNEL, type ChildSessionQuery } from "../binding.ts";
 import type { SubagentView } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
 
@@ -22,6 +23,12 @@ export interface ChildLineage {
 const lineages = new WeakMap<EventBus, ChildLineage>();
 
 export function setLineage(bus: EventBus, lineage: ChildLineage): void {
+	// Once per bus: the child's presentation factory asks while it loads, before the child session exists.
+	if (!lineages.has(bus)) {
+		bus.on(CHILD_SESSION_QUERY_CHANNEL, (query) => {
+			(query as ChildSessionQuery).child = true;
+		});
+	}
 	lineages.set(bus, lineage);
 }
 

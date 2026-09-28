@@ -82,6 +82,16 @@ describe("fork built-in extensions", () => {
 		expect(builtIn?.commands.has("tokensave-mode")).toBe(true);
 	});
 
+	it("registers the subagents presentation as a fork-owned built-in, with no tool", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		const subject = loader([]);
+		await subject.reload();
+
+		const builtIn = subject.getExtensions().extensions.find((extension) => extension.path === "<inline:subagents>");
+		expect(builtIn?.hidden).toBe(true);
+		expect(builtIn?.tools.size).toBe(0);
+	});
+
 	it("loads no built-in when PI_FORK_BUILTINS is off", async () => {
 		vi.stubEnv("PI_FORK_BUILTINS", "off");
 		const subject = loader();

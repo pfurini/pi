@@ -115,10 +115,14 @@ export interface SubagentServiceOptions {
 	groupTimeoutMs?: number;
 	/** How long the rest of a partially delivered group waits. */
 	stragglerTimeoutMs?: number;
+	/** How long `shutdown()` waits for children still starting; `CHILD_SHUTDOWN_TIMEOUT_MS` by default. */
+	startupWaitMs?: number;
 }
 
 export type SubagentEvent =
 	| { type: "created" | "started" | "ended"; record: SubagentView }
+	/** A run waits for a pool slot; the presentation counts it. The bus adapter bridges no event for it. */
+	| { type: "queued"; record: SubagentView }
 	| { type: "steered"; record: SubagentView; message: string }
 	| { type: "compacted"; record: SubagentView; reason: "manual" | "threshold" | "overflow"; tokensBefore: number }
 	| { type: "definitions"; registry: AgentRegistry }
@@ -196,6 +200,9 @@ export class SubagentService {
 	private registryCache: AgentRegistry;
 	private agentFilesCache?: AgentFileLoad;
 	private disposed = false;
+	/** The child teardowns `dispose()` and a late attach started; `shutdown()` awaits them. */
+	private readonly teardowns: Promise<void>[] = [];
+	private readonly startupWaitMs: number;
 
 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
 		this.session = session;
@@ -218,6 +225,7 @@ export class SubagentService {
 			options.groupTimeoutMs ?? 30_000,
 			options.stragglerTimeoutMs ?? 15_000,
 		);
+		this.startupWaitMs = options.startupWaitMs ?? CHILD_SHUTDOWN_TIMEOUT_MS;
 		this.batch = new SpawnBatch(
 			this.groups,
 			(id) => this.records.get(id),
@@ -506,6 +514,7 @@ export class SubagentService {
 		if (pool && !this.queue.hasRoom(pool)) {
 			record.status = "queued";
 			this.queue.enqueue(record, pool, start);
+			this.emit({ type: "queued", record });
 			return;
 		}
 		start();
@@ -625,7 +634,7 @@ export class SubagentService {
 		record.transcriptPath = child.transcriptPath;
 		// The owner ended while the child was being built: nothing may keep it.
 		if (this.disposed) {
-			void teardownChild(child);
+			this.teardowns.push(teardownChild(child));
 			return;
 		}
 		for (const message of record.pendingSteers.splice(0)) this.deliverSteer(record, message);
@@ -968,7 +977,7 @@ export class SubagentService {
 		for (const record of ended) record.abort?.abort();
 		for (const record of this.records.values()) this.detachSignal(record);
 		for (const record of this.records.values()) {
-			if (record.child) void teardownChild(record.child);
+			if (record.child) this.teardowns.push(teardownChild(record.child));
 			record.child = undefined;
 			if (!record.run) {
 				for (const waiter of [...record.waiters]) waiter();
@@ -976,5 +985,31 @@ export class SubagentService {
 			}
 		}
 		this.listeners.clear();
+	}
+
+	/**
+	 * Ends every agent as `dispose()` does, then waits at most `startupWaitMs` for children still
+	 * starting, and resolves once every teardown started by then has settled: each child's
+	 * `session_shutdown` handlers ran or hit their 3 s bound, and its session and loader are disposed.
+	 * A child that attaches after the wait is torn down when it attaches; `shutdown()` does not wait
+	 * for it. The presentation factory awaits `shutdown()` from the parent's `session_shutdown` (D21).
+	 */
+	async shutdown(): Promise<void> {
+		const starting = [...this.records.values()].flatMap((record) =>
+			record.run && !record.child ? [record.run] : [],
+		);
+		this.dispose();
+		// A child still being built attaches after dispose(), which starts its teardown there (attachChild).
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		await Promise.race([
+			Promise.allSettled(starting),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, this.startupWaitMs);
+				timer.unref?.();
+			}),
+		]);
+		clearTimeout(timer);
+		// Read after the wait, so it holds the teardowns of children that attached during it.
+		await Promise.allSettled(this.teardowns);
 	}
 }

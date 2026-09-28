@@ -1,9 +1,30 @@
 /**
  * Fork-owned: whole-file replacement for the files the subagents module writes (plan P27): the
  * project `settings.json` and, from the `/agents` menu, agent files. A reader sees the old file or
- * the new one, never a truncated one, and a failed write changes nothing.
+ * the new one, never a truncated one, and a failed write changes nothing. `refuseSymlinks` keeps an
+ * agent-file change inside its directory tree.
  */
-import { closeSync, openSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, lstatSync, openSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative, sep } from "node:path";
+
+/**
+ * Throws when a path component below `root`, `path` included, is a symlink, dangling or not, so
+ * an agent-file change never reaches a file outside the project or the agent directory. `root`
+ * itself may be a link. A missing component ends the walk: nothing below it exists yet.
+ */
+export function refuseSymlinks(root: string, path: string): void {
+	const below = relative(root, path);
+	if (below === "" || below.startsWith(`..${sep}`) || below === ".." || isAbsolute(below)) {
+		throw new Error(`Refusing to change ${path}: it is not inside ${root}`);
+	}
+	let current = root;
+	for (const part of below.split(sep)) {
+		current = join(current, part);
+		const stats = lstatSync(current, { throwIfNoEntry: false });
+		if (!stats) return;
+		if (stats.isSymbolicLink()) throw new Error(`Refusing to change an agent file behind a symlink: ${current}`);
+	}
+}
 
 /**
  * Writes `text` to `<target>.<pid>.tmp` in the target's directory, then renames it over `target`.

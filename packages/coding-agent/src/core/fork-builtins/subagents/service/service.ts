@@ -264,6 +264,11 @@ export class SubagentService {
 		return this.agentFilesCache;
 	}
 
+	/** The agent directory whose `agents/` holds the user's own agent files. */
+	get agentDir(): string {
+		return this.context.agentDir;
+	}
+
 	subscribe(listener: (event: SubagentEvent) => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);

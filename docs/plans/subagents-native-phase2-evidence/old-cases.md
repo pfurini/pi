@@ -18,47 +18,47 @@ Each task T7 to T13 fills `Covering tests` for its own `T<n>.<k>` rows, in the c
 | 9 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the above-editor Agent widget with the display name and color | T10.10 | test/fork-builtins/subagents/ui-widget.test.ts > the agents widget shows a running agent's display name in its color |
 | 10 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the FleetView row with the display name and color | T12.11 | test/fork-builtins/subagents/ui-fleet.test.ts > FleetView rendering keeps a color badge on the selected row, bolded, without shifting it |
 | 11 | test/agent-color-surfaces.test.ts > custom agent color runtime surfaces > renders the conversation viewer header with the display name and color | T11.16 | test/fork-builtins/subagents/ui-viewer.test.ts > the conversation viewer shows the header with the status, the display name in its color, and the stats |
-| 12 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when it is the first frontmatter line | T13.1 |  |
-| 13 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when another key precedes it | T13.1 |  |
-| 14 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when it is the last frontmatter line | T13.1 |  |
-| 15 | test/agent-file-toggle.test.ts > enableInContent > reports changed: false when there is nothing to strip | T13.1 |  |
-| 16 | test/agent-file-toggle.test.ts > enableInContent > leaves the body and other frontmatter keys untouched | T13.1 |  |
-| 17 | test/agent-file-toggle.test.ts > enableInContent > handles CRLF line endings | T13.1 |  |
-| 18 | test/agent-file-toggle.test.ts > disableInContent > inserts enabled: false into a normal frontmatter block | T13.2 |  |
-| 19 | test/agent-file-toggle.test.ts > disableInContent > is idempotent when the key is already first | T13.2 |  |
-| 20 | test/agent-file-toggle.test.ts > disableInContent > is idempotent when the key is already present mid-block | T13.2 |  |
-| 21 | test/agent-file-toggle.test.ts > disableInContent > never writes a file the loader cannot parse | T13.2 |  |
-| 22 | test/agent-file-toggle.test.ts > disableInContent > reports no-frontmatter rather than claiming success on a fence-less file | T13.2 |  |
-| 23 | test/agent-file-toggle.test.ts > disableInContent > disables a CRLF file instead of misreporting it as frontmatter-less | T13.2 |  |
-| 24 | test/agent-file-toggle.test.ts > disableInContent > toggles a BOM-prefixed file, and leaves the BOM where it found it | T13.2 |  |
+| 12 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when it is the first frontmatter line | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the first frontmatter line |
+| 13 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when another key precedes it | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when another key precedes it |
+| 14 | test/agent-file-toggle.test.ts > enableInContent > strips enabled: false when it is the last frontmatter line | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent strips enabled: false when it is the last frontmatter line |
+| 15 | test/agent-file-toggle.test.ts > enableInContent > reports changed: false when there is nothing to strip | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent reports changed: false when there is nothing to strip |
+| 16 | test/agent-file-toggle.test.ts > enableInContent > leaves the body and other frontmatter keys untouched | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent leaves the body and other frontmatter keys untouched |
+| 17 | test/agent-file-toggle.test.ts > enableInContent > handles CRLF line endings | T13.1 | test/fork-builtins/subagents/agent-files.test.ts > enableInContent handles CRLF line endings |
+| 18 | test/agent-file-toggle.test.ts > disableInContent > inserts enabled: false into a normal frontmatter block | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent inserts enabled: false into a normal frontmatter block |
+| 19 | test/agent-file-toggle.test.ts > disableInContent > is idempotent when the key is already first | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already first |
+| 20 | test/agent-file-toggle.test.ts > disableInContent > is idempotent when the key is already present mid-block | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent is idempotent when the key is already present mid-block |
+| 21 | test/agent-file-toggle.test.ts > disableInContent > never writes a file the loader cannot parse | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent never writes a file the loader cannot parse |
+| 22 | test/agent-file-toggle.test.ts > disableInContent > reports no-frontmatter rather than claiming success on a fence-less file | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent reports no-frontmatter rather than claiming success on a fence-less file |
+| 23 | test/agent-file-toggle.test.ts > disableInContent > disables a CRLF file instead of misreporting it as frontmatter-less | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent disables a CRLF file instead of misreporting it as frontmatter-less |
+| 24 | test/agent-file-toggle.test.ts > disableInContent > toggles a BOM-prefixed file, and leaves the BOM where it found it | T13.2 | test/fork-builtins/subagents/agent-files.test.ts > disableInContent toggles a BOM-prefixed file, and leaves the BOM where it found it |
 | 25 | test/agent-file-toggle.test.ts > parseAgentFrontmatter > reads a BOM-prefixed file's fields instead of dropping them | Phase 1 | test/fork-builtins/subagents/definitions.test.ts > agent file frontmatter parses a file that starts with a UTF-8 BOM |
 | 26 | test/agent-file-toggle.test.ts > parseAgentFrontmatter > leaves a file without a BOM exactly as the parser reads it | Phase 1 | test/fork-builtins/subagents/definitions.test.ts > agent file frontmatter reads every documented key |
-| 27 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key at the first frontmatter line | T13.3 |  |
-| 28 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key mid-block | T13.3 |  |
-| 29 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key in a CRLF file | T13.3 |  |
-| 30 | test/agent-file-toggle.test.ts > isDisabledContent > is false for an enabled file | T13.3 |  |
-| 31 | test/agent-file-toggle.test.ts > isDisabledContent > agrees with the loader: %s | T13.3 |  |
-| 32 | test/agent-file-toggle.test.ts > read and write paths agree > a file the loader reads as disabled can be enabled — ${label} | T13.4 |  |
-| 33 | test/agent-file-toggle.test.ts > read and write paths agree > disable → enable round-trips to the original hand-authored file | T13.4 |  |
-| 34 | test/agent-file-toggle.test.ts > isEmptyStub > recognises the stub behind a BOM | T13.5 |  |
-| 35 | test/agent-file-toggle.test.ts > isEmptyStub > recognizes the stub /agents writes to disable a built-in default | T13.5 |  |
-| 36 | test/agent-file-toggle.test.ts > isEmptyStub > is false for a file with real frontmatter | T13.5 |  |
-| 37 | test/agent-file-toggle.test.ts > findAgentFile > prefers .pi/agents over .agents/agents and the personal dir | T13.6 |  |
-| 38 | test/agent-file-toggle.test.ts > findAgentFile > falls back to the workspace .agents/agents dir | T13.6 |  |
-| 39 | test/agent-file-toggle.test.ts > findAgentFile > falls back to the personal agent dir | T13.6 |  |
-| 40 | test/agent-file-toggle.test.ts > findAgentFile > returns undefined when the agent has no file anywhere | T13.6 |  |
-| 41 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > uses the file the loader read, whatever it is called | T13.6 |  |
-| 42 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > classifies a workspace and a personal source path | T13.6 |  |
-| 43 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > falls back to the <type>.md probe for a built-in with no source file | T13.6 |  |
-| 44 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > falls back when the recorded path has since been deleted | T13.6 |  |
-| 45 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > finds nothing when neither the source path nor the probe resolves | T13.6 |  |
-| 46 | test/agent-file-toggle.test.ts > buildNewAgentFile > round-trips an ordinary description | T13.8 |  |
-| 47 | test/agent-file-toggle.test.ts > buildNewAgentFile > survives a description containing a colon | T13.8 |  |
-| 48 | test/agent-file-toggle.test.ts > buildNewAgentFile > keeps a description containing a # instead of truncating it | T13.8 |  |
-| 49 | test/agent-file-toggle.test.ts > buildNewAgentFile > leaves a `provider/model:thinking` suffix intact | T13.8 |  |
-| 50 | test/agent-file-toggle.test.ts > buildNewAgentFile > survives a custom model containing a colon-space or a # | T13.8 |  |
-| 51 | test/agent-file-toggle.test.ts > buildNewAgentFile > emits the fields the wizard collects, and omits the ones left on inherit | T13.8 |  |
-| 52 | test/agent-file-toggle.test.ts > buildNewAgentFile > keeps the system prompt as the body | T13.8 |  |
+| 27 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key at the first frontmatter line | T13.3 | test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key at the first frontmatter line |
+| 28 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key mid-block | T13.3 | test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key mid-block |
+| 29 | test/agent-file-toggle.test.ts > isDisabledContent > sees the key in a CRLF file | T13.3 | test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent sees the key in a CRLF file |
+| 30 | test/agent-file-toggle.test.ts > isDisabledContent > is false for an enabled file | T13.3 | test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent is false for an enabled file |
+| 31 | test/agent-file-toggle.test.ts > isDisabledContent > agrees with the loader: %s | T13.3 | test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: False; test/fork-builtins/subagents/agent-files.test.ts > isDisabledContent agrees with the loader: '----' closes the block early |
+| 32 | test/agent-file-toggle.test.ts > read and write paths agree > a file the loader reads as disabled can be enabled — ${label} | T13.4 | test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key last; test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree a file the loader reads as disabled can be enabled: key first |
+| 33 | test/agent-file-toggle.test.ts > read and write paths agree > disable → enable round-trips to the original hand-authored file | T13.4 | test/fork-builtins/subagents/agent-files.test.ts > read and write paths agree disable then enable round-trips to the original hand-authored file |
+| 34 | test/agent-file-toggle.test.ts > isEmptyStub > recognises the stub behind a BOM | T13.5 | test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub behind a BOM |
+| 35 | test/agent-file-toggle.test.ts > isEmptyStub > recognizes the stub /agents writes to disable a built-in default | T13.5 | test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub recognizes the stub /agents writes to disable a default agent, once enabled |
+| 36 | test/agent-file-toggle.test.ts > isEmptyStub > is false for a file with real frontmatter | T13.5 | test/fork-builtins/subagents/agent-files.test.ts > isEmptyStub is false for a file with real frontmatter |
+| 37 | test/agent-file-toggle.test.ts > findAgentFile > prefers .pi/agents over .agents/agents and the personal dir | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files prefers .pi/agents over .agents/agents and the personal directory |
+| 38 | test/agent-file-toggle.test.ts > findAgentFile > falls back to the workspace .agents/agents dir | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the workspace .agents/agents directory |
+| 39 | test/agent-file-toggle.test.ts > findAgentFile > falls back to the personal agent dir | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the personal agent directory |
+| 40 | test/agent-file-toggle.test.ts > findAgentFile > returns undefined when the agent has no file anywhere | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files returns undefined when the agent has no file anywhere |
+| 41 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > uses the file the loader read, whatever it is called | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files uses the file the loader read, whatever it is called |
+| 42 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > classifies a workspace and a personal source path | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files classifies a workspace and a personal source path |
+| 43 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > falls back to the <type>.md probe for a built-in with no source file | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back to the <type>.md probe for a default agent with no source file |
+| 44 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > falls back when the recorded path has since been deleted | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files falls back when the recorded path has since been deleted |
+| 45 | test/agent-file-toggle.test.ts > findAgentFile > locateAgentFile > finds nothing when neither the source path nor the probe resolves | T13.6 | test/fork-builtins/subagents/agent-files.test.ts > locating agent files finds nothing when neither the source path nor the probe resolves |
+| 46 | test/agent-file-toggle.test.ts > buildNewAgentFile > round-trips an ordinary description | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile round-trips an ordinary description |
+| 47 | test/agent-file-toggle.test.ts > buildNewAgentFile > survives a description containing a colon | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a description containing a colon |
+| 48 | test/agent-file-toggle.test.ts > buildNewAgentFile > keeps a description containing a # instead of truncating it | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps a description containing a # instead of truncating it |
+| 49 | test/agent-file-toggle.test.ts > buildNewAgentFile > leaves a `provider/model:thinking` suffix intact | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile leaves a `provider/model:thinking` suffix intact |
+| 50 | test/agent-file-toggle.test.ts > buildNewAgentFile > survives a custom model containing a colon-space or a # | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile survives a custom model containing a colon-space or a # |
+| 51 | test/agent-file-toggle.test.ts > buildNewAgentFile > emits the fields the wizard collects, and omits the ones left on inherit | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile emits the fields the wizard collects, and omits the ones left on inherit |
+| 52 | test/agent-file-toggle.test.ts > buildNewAgentFile > keeps the system prompt as the body | T13.8 | test/fork-builtins/subagents/agent-files.test.ts > buildNewAgentFile keeps the system prompt as the body |
 | 53 | test/agent-model-display.test.ts > Agent tool result — effective model > names the model even when the child inherited the parent's | T8.4 | test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the model even when the child inherited the parent's |
 | 54 | test/agent-model-display.test.ts > Agent tool result — effective model > names the inherited model while streaming, before a session exists | T8.4 | test/suite/fork-subagents-rendering.test.ts > Agent result rendering names the inherited model while streaming, before a session exists |
 | 55 | test/agent-model-display.test.ts > Agent tool result — effective model > keeps the twin label beside the model | T8.5 | test/suite/fork-subagents-rendering.test.ts > Agent result rendering keeps the twin label beside the model |

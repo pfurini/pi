@@ -11,7 +11,8 @@
  * Every `session_shutdown` unbinds the UI. A reason other than `reload` then awaits the service's
  * bounded `shutdown()`, so quit and session replacement wait for the children's teardown (R4, P6);
  * it never builds a service to do so. `/reload` keeps the service and its agents. The
- * `subagent-notification` renderer (`notification.ts`) draws completion notices.
+ * `subagent-notification` renderer (`notification.ts`) draws completion notices, and `/agents`
+ * (`agents-menu.ts`) manages agents and their files in `tui` mode.
  */
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
@@ -24,6 +25,7 @@ import {
 import { NOTIFICATION_CUSTOM_TYPE } from "../service/notifications.ts";
 import type { SubagentService } from "../service/service.ts";
 import { existingSubagentService, subagentServiceFor } from "../service/sessions.ts";
+import { showAgentsMenu } from "./agents-menu.ts";
 import { FleetView } from "./fleet.ts";
 import { notificationRenderer } from "./notification.ts";
 import type { ViewerSessionState } from "./viewer.ts";
@@ -130,6 +132,26 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 			widget = undefined;
 			unbindStatus();
 		};
+	});
+
+	// Only the interactive TUI shows the menus; RPC's `custom()` returns nothing (P7).
+	pi.registerCommand("agents", {
+		description: "Manage subagents: running agents, agent types and their files",
+		handler: async (_args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("/agents needs the interactive TUI.", "info");
+				return;
+			}
+			const bound = resolve(ctx);
+			const service = bound ? subagentServiceFor(bound) : undefined;
+			if (!bound || !service) return;
+			await showAgentsMenu({
+				ui: ctx.ui,
+				service,
+				projectTrusted: () => bound.settingsManager.isProjectTrusted(),
+				viewerState: viewerStateOf(bound),
+			});
+		},
 	});
 
 	// A parent turn ages the widget's finished agents.

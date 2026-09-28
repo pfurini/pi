@@ -150,6 +150,9 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 				service,
 				projectTrusted: () => bound.settingsManager.isProjectTrusted(),
 				viewerState: viewerStateOf(bound),
+				model: () => ctx.model,
+				scopedModels: () => ctx.scopedModels,
+				modelRuntime: bound.modelRuntime,
 			});
 		},
 	});

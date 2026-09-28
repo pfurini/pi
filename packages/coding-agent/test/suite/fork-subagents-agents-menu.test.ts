@@ -170,7 +170,7 @@ describe("/agents", () => {
 		writeProjectAgent(projectAgents, "scout");
 		const scripted = await bind(harness);
 		await agents(harness, scripted, { select: [pick("Agent types")] });
-		expect(scripted.log.selects[0].options).toEqual(["Agent types (5)"]);
+		expect(scripted.log.selects[0].options).toEqual(["Agent types (5)", "Create new agent"]);
 		expect(scripted.log.renders[0]).toContain("•  scout");
 		writeProjectAgent(projectAgents, "later");
 		await agents(harness, scripted, { select: [pick("Agent types")] });

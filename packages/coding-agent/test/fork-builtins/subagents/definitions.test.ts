@@ -147,6 +147,45 @@ describe("agent file frontmatter", () => {
 		expect(definition.systemPrompt).toBe("prompt");
 	});
 
+	it("reports a list field that is neither a string nor a string list, and ignores it", () => {
+		const parsed = parseAgentFile(
+			"---\nextensions: 123\nskills:\n  nested: map\ntools: [read, 2]\ndisallowed_tools: true\nexclude_extensions: 7\nallowed_subagents: 3\n---\n",
+			PROJECT_SOURCE,
+		);
+		expect(parsed.invalidValues).toEqual([
+			"tools: expected a list of names or a comma-separated string",
+			"disallowed_tools: expected a list of names or a comma-separated string",
+			"extensions: expected a list of names, a comma-separated string, true or false",
+			"exclude_extensions: expected a list of names or a comma-separated string",
+			"skills: expected a list of names, a comma-separated string, true or false",
+			"allowed_subagents: expected a list of names, a comma-separated string, true or false",
+		]);
+		expect(parsed.definition).toMatchObject({ extensions: true, skills: true });
+		expect(parsed.definition?.tools).toBeUndefined();
+		expect(parsed.definition?.allowedSubagents).toBeUndefined();
+
+		const valid = parseAgentFile(
+			"---\nextensions: false\nskills: [simplify, review]\ntools: read, grep\n---\n",
+			PROJECT_SOURCE,
+		);
+		expect(valid.invalidValues).toEqual([]);
+		expect(valid.definition).toMatchObject({
+			extensions: false,
+			skills: ["simplify", "review"],
+			tools: ["read", "grep"],
+		});
+	});
+
+	it("reports a list key written with no value, and ignores it as absent", () => {
+		const parsed = parseAgentFile("---\ntools:\nskills:\n---\n", PROJECT_SOURCE);
+		expect(parsed.invalidValues).toEqual([
+			"tools: expected a list of names or a comma-separated string",
+			"skills: expected a list of names, a comma-separated string, true or false",
+		]);
+		expect(parsed.definition?.tools).toBeUndefined();
+		expect(parsed.definition?.skills).toBe(true);
+	});
+
 	it("refuses a type that holds the skill separator", () => {
 		expect(parseAgentFile("---\nname: a:b\n---\n", PROJECT_SOURCE).error).toContain('"a:b"');
 		expect(

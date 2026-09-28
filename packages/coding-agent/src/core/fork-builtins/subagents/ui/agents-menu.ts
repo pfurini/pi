@@ -41,13 +41,14 @@ import {
 import type { AgentRegistry } from "../definitions/registry.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { SubagentService } from "../service/service.ts";
+import { type CreateWizardEnvironment, runCreateWizard } from "./create-wizard.ts";
 import type { FormatTheme } from "./format.ts";
 import { formatMs } from "./format.ts";
 import { openConversationViewer, type ViewerSessionState } from "./viewer.ts";
 
-/** What the menu works with: the command's UI, the session's service and its project trust. */
-export interface AgentsMenuEnvironment {
-	ui: Pick<ExtensionUIContext, "select" | "confirm" | "editor" | "notify" | "custom">;
+/** What the menu works with: the command's UI, the session's service, its project trust and its models. */
+export interface AgentsMenuEnvironment extends CreateWizardEnvironment {
+	ui: Pick<ExtensionUIContext, "select" | "input" | "confirm" | "editor" | "notify" | "custom">;
 	service: SubagentService;
 	projectTrusted(): boolean;
 	viewerState: ViewerSessionState;
@@ -106,11 +107,12 @@ export async function showAgentsMenu(env: AgentsMenuEnvironment): Promise<void> 
 		const agents = env.service.list();
 		const options: string[] = [];
 		if (agents.length > 0) options.push(`Running agents (${agents.length})`);
-		options.push(`Agent types (${roster(registry).length})`);
+		options.push(`Agent types (${roster(registry).length})`, "Create new agent");
 		const choice = await env.ui.select("Agents", options);
 		if (!choice) return;
 		if (choice.startsWith("Running agents")) await showRunningAgents(env);
-		else await showAgentTypes(env);
+		else if (choice.startsWith("Agent types")) await showAgentTypes(env);
+		else await createAgent(env);
 	}
 }
 
@@ -238,6 +240,17 @@ async function showAgentActions(env: AgentsMenuEnvironment, name: string, defini
 	} else if (choice === "Enable" && file) {
 		enable(env, name, file, dirs);
 	}
+}
+
+/** The create wizard (T14): the location here, the rest in `create-wizard.ts`; the write here, per P27. */
+async function createAgent(env: AgentsMenuEnvironment): Promise<void> {
+	const dirs = directories(env);
+	const location = await chooseLocation(env, dirs);
+	if (!location) return;
+	const created = await runCreateWizard(env, agentDirectory(location, dirs), location);
+	if (!created) return;
+	const file: AgentFile = { path: created.path, location };
+	change(env, file.path, `Created ${file.path}`, () => writeAgentFile(file, created.text, dirs));
 }
 
 /** Asks where a new file goes; a project location only in a trusted project (P18). */

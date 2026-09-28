@@ -84,18 +84,18 @@ export function parseAgentFile(content: string, source: Exclude<AgentSource, { k
 		displayName: stringField(fm, "display_name", invalid),
 		color: stringField(fm, "color", invalid),
 		description: stringField(fm, "description", invalid) ?? name,
-		tools: toolsField(fm.tools),
-		disallowedTools: listField(fm.disallowed_tools),
-		extensions: inheritField(fm.extensions),
-		excludeExtensions: listField(fm.exclude_extensions),
-		skills: inheritField(fm.skills),
+		tools: toolsField(listValue(fm, "tools", invalid)),
+		disallowedTools: listField(listValue(fm, "disallowed_tools", invalid)),
+		extensions: inheritField(listValue(fm, "extensions", invalid, true)),
+		excludeExtensions: listField(listValue(fm, "exclude_extensions", invalid)),
+		skills: inheritField(listValue(fm, "skills", invalid, true)),
 		model: stringField(fm, "model", invalid),
 		thinking: thinkingField(fm, invalid),
 		maxTurns: maxTurnsField(fm, invalid),
 		persistSession: booleanField(fm, "persist_session", invalid),
 		outputTranscript: booleanField(fm, "output_transcript", invalid),
 		sessionDir: stringField(fm, "session_dir", invalid),
-		allowedSubagents: allowedSubagentsField(fm.allowed_subagents),
+		allowedSubagents: allowedSubagentsField(listValue(fm, "allowed_subagents", invalid, true)),
 		systemPrompt: body.trim(),
 		promptMode: fm.prompt_mode === "append" ? "append" : "replace",
 		inheritContext: booleanField(fm, "inherit_context", invalid),
@@ -132,6 +132,25 @@ function booleanField(fm: Record<string, unknown>, key: string, invalid: Invalid
 	if (value === undefined || value === null) return undefined;
 	if (typeof value === "boolean") return value;
 	invalid(key, "true or false");
+	return undefined;
+}
+
+/**
+ * A list field's value when it is a string or a list of strings, or with `booleans` also `true` or
+ * `false`; any other value, `null` included, is reported and ignored, as absent (P21).
+ */
+function listValue(fm: Record<string, unknown>, key: string, invalid: Invalid, booleans = false): unknown {
+	const value = fm[key];
+	// A key written with no value is null, which is no list either.
+	if (value === undefined || typeof value === "string") return value;
+	if (Array.isArray(value) && value.every((item) => typeof item === "string")) return value;
+	if (booleans && typeof value === "boolean") return value;
+	invalid(
+		key,
+		booleans
+			? "a list of names, a comma-separated string, true or false"
+			: "a list of names or a comma-separated string",
+	);
 	return undefined;
 }
 

@@ -312,6 +312,36 @@ describe("the read-only surface", () => {
 		await subagents.waitForResult(waiting.id);
 	});
 
+	// T18-F2: the conversation lacked the streaming message, so no surface showed a reply until it ended.
+	it("includes the message a child is streaming, so its text grows before the message ends", async () => {
+		const reply = Array.from({ length: 40 }, (_, index) => `word${index}`).join(" ");
+		const gate = held(() => fauxAssistantMessage(reply));
+		const harness = await parent({ defaultJoinMode: "async" }, { stream: [gate.behavior] });
+		const subagents = service(harness);
+		const streaming = await subagents.spawn(background("stream task"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const conversation = subagents.conversation(streaming.id);
+		if (!conversation) throw new Error("no conversation for a running agent");
+		const snapshots: string[] = [];
+		const inFlight = new Set<object>();
+		const unsubscribe = conversation.subscribe(() => {
+			const last = conversation.messages.at(-1);
+			if (last?.role !== "assistant") return;
+			const text = textOf(last.content);
+			snapshots.push(text);
+			// One object for the whole stream, so a reader's cache by identity holds (T18-F2 review).
+			if (text.length > 0 && text.length < reply.length) inFlight.add(last);
+		});
+		gate.release();
+		await subagents.waitForResult(streaming.id);
+		unsubscribe();
+		const partial = snapshots.filter((snapshot) => snapshot.length > 0 && snapshot.length < reply.length);
+		expect(partial.length).toBeGreaterThan(0);
+		for (const snapshot of partial) expect(reply.startsWith(snapshot)).toBe(true);
+		expect(inFlight.size).toBe(1);
+		expect(conversation.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+	});
+
 	it("numbers queued agents by their place in the queue, and a running one not at all", async () => {
 		const gate = held();
 		const harness = await parent({ maxConcurrent: 1, defaultJoinMode: "async" }, { hold: [gate.behavior] });

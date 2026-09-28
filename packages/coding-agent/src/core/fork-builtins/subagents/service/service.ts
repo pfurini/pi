@@ -184,6 +184,28 @@ export interface SubagentConversation {
 const recordMaps = new WeakMap<SubagentService, ReadonlyMap<string, SubagentRecord>>();
 
 /**
+ * Each child session's message in flight, as one object for the whole stream: agent-core hands out a
+ * new copy on every update, and readers such as the viewer cache a message's rendering by identity.
+ * `index` is the place the message takes once it ends.
+ */
+const streams = new WeakMap<AgentSession, { index: number; message: AgentMessage }>();
+
+/** The session's messages, with the message it is streaming at the end (T18-F2). */
+function messagesWithStream(session: AgentSession): readonly AgentMessage[] {
+	const messages = session.messages;
+	const streaming = session.agent.state.streamingMessage;
+	if (!streaming) return messages;
+	let stream = streams.get(session);
+	if (stream?.index === messages.length && stream.message.role === streaming.role) {
+		Object.assign(stream.message, streaming);
+	} else {
+		stream = { index: messages.length, message: { ...streaming } };
+		streams.set(session, stream);
+	}
+	return [...messages, stream.message];
+}
+
+/**
  * @internal Tests only: the service's own record behind an id, with its child session, run and
  * waiters (P33). Production code reads views and the service's accessors.
  */
@@ -783,13 +805,17 @@ export class SubagentService {
 		return this.retention.tombstones.list();
 	}
 
-	/** The conversation of an agent whose child session exists; undefined for a queued or evicted one. */
+	/**
+	 * The conversation of an agent whose child session exists; undefined for a queued or evicted one.
+	 * It includes the message the child is streaming, as one object per stream: agent-core appends a
+	 * message to the session's messages only when it ends (T18-F2).
+	 */
 	conversation(id: string): SubagentConversation | undefined {
 		const session = this.records.get(id)?.child?.session;
 		if (!session) return undefined;
 		return {
 			get messages() {
-				return session.messages;
+				return messagesWithStream(session);
 			},
 			subscribe: (listener) =>
 				session.subscribe((event) => {

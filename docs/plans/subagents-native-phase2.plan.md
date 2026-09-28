@@ -246,7 +246,7 @@ Every command runs from `/tmp/subagents-native` unless it names another director
 | `SUB` | `packages/coding-agent/src/core/fork-builtins/subagents` |
 | `BASE` | `941bec9ab9acfa5564586318ae988bc6b1e1486b` |
 
-1. `git rev-parse --abbrev-ref HEAD` prints `feat/subagents-native`. `git log -1 --format=%s` prints `docs: native subagents phase 2 plan`. `git rev-parse HEAD~1` prints `$BASE`. `git status --short` prints nothing. Otherwise stop and ask.
+1. `git rev-parse --abbrev-ref HEAD` prints `feat/subagents-native`. `git merge-base --is-ancestor $BASE HEAD` exits 0. `git log --reverse --format=%s $BASE..HEAD | head -1` prints `docs: native subagents phase 2 plan`, and every other subject in that range starts with `docs: `. `git diff --name-only $BASE HEAD | grep -v -e '^docs/plans/subagents-native-phase2.plan.md$' -e '^docs/plans/subagents-native-phase2-evidence/'` prints nothing. `git status --short` prints nothing. Otherwise stop and ask.
 2. `test -x .husky/_/pre-commit` exits 0, and `diff -r $M/packages/ai/src/providers/data packages/ai/src/providers/data` prints nothing. Otherwise stop and ask; the planning session prepared both.
 3. `ls -l $R` lists `personal.ref`, `main-packages.status`, `live-settings.sha256`, `base-1.json` and `base-testsh.log`, each read-only (P31). `shasum -a 256 $R/base-1.json $R/base-testsh.log` prints Appendix A's hashes. When a baseline is missing or differs, rebuild both, then use the `-b` files and record the substitution in the results file:
    - `git worktree add --detach /tmp/sn2-base $BASE`; when the path exists, stop and ask;
@@ -298,7 +298,7 @@ Shared rules for every code task:
 
 ### T0. Record the plan
 
-The planning session commits this plan and `$E2/` as `docs: native subagents phase 2 plan`. `$E2/` holds eight files: `probe.patch`, `mutate.mjs`, `probe-mutations.json`, `sdk-probe.mjs`, `old-cases.md`, `extract-old-cases.mjs`, `check-cases.mjs` and `check-identities.mjs`.
+The planning session commits this plan and `$E2/` as `docs: native subagents phase 2 plan`. Each later edit of the plan before implementation is its own `docs: ` commit that touches only the plan and `$E2/`; Section 5 step 1 checks the range. `$E2/` holds eight files: `probe.patch`, `mutate.mjs`, `probe-mutations.json`, `sdk-probe.mjs`, `old-cases.md`, `extract-old-cases.mjs`, `check-cases.mjs` and `check-identities.mjs`.
 
 ### T1. Layer the subagents module and split its service (F14)
 
@@ -1385,4 +1385,4 @@ All six angles ran as a re-review on `.pi/agents/plan-reviewer.md` (thinking `hi
 | 11 | Safety: agent-file actions could reach outside the project or agent directory through a symlink. | Accepted; Paolo chose to refuse any symlink, 2026-09-28 | `definitions/load.ts:44-47`, `:91-106`. P27's `refuseSymlinks`; T13 case 20. |
 | 12 | Safety: as 7. | Accepted, as 7 | As 7. |
 
-Sections changed: 1 (the workflow paragraph), 2.1 (P21, P27, P28, P29), 3, T2, T8, T13, T14, T17, T20, Appendices A and B, and the evidence files `mutate.mjs` and `check-identities.mjs`. Changes made after this pass and not yet reviewed: all of the above.
+Sections changed: 1 (the workflow paragraph), 2.1 (P21, P27, P28, P29), 3, T2, T8, T13, T14, T17, T20, Appendices A and B, and the evidence files `mutate.mjs` and `check-identities.mjs`. At handoff, Section 5 step 1 and T0 changed to accept more than one plan commit. Changes made after this pass and not yet reviewed: all of the above.

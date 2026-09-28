@@ -2,7 +2,7 @@
  * Fork-owned: `Agent`, `get_subagent_result` and `steer_subagent` as fork base tools (plan T5), on
  * real parent and child sessions with the faux router of `fork-subagents-fixtures.ts`.
  * Old pi-subagents tests at 79a7c42 this covers: tool-description-mode, steer-subagent-wiring,
- * agent-tool-error-rendering (the result text; rendering is phase 2).
+ * agent-tool-error-rendering (the result text; rendering is phase 2), perf/spawn-invariants.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "../../src/core/extensions/types.ts";
+import * as definitionLoads from "../../src/core/fork-builtins/subagents/definitions/load.ts";
 import { lineageForBus } from "../../src/core/fork-builtins/subagents/runner/lineage.ts";
 import {
 	type SubagentService,
@@ -34,6 +35,12 @@ import {
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
+
+// Counts every sweep of the agent directories; each call still loads the real files.
+vi.mock("../../src/core/fork-builtins/subagents/definitions/load.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof definitionLoads>();
+	return { ...actual, loadAgentFiles: vi.fn(actual.loadAgentFiles) };
+});
 
 const harnesses: Harness[] = [];
 
@@ -127,6 +134,21 @@ describe("Agent", () => {
 		await vi.waitFor(() => expect(notices(harness.session)).toHaveLength(1), { timeout: 5000 });
 		expect(notices(harness.session)[0]).toContain(`<task-id>${id}</task-id>`);
 		expect(notices(harness.session)[0]).toContain("beta result");
+	});
+
+	it("sweeps the agent directories once per call, the child's startup included, however many agents run", async () => {
+		const harness = await parent({ defaultJoinMode: "async" }, { tally: [say("tally result")] });
+		// The session's own startup loads the agents; this counts the calls only.
+		await sleep(0);
+		const sweeps = vi.mocked(definitionLoads.loadAgentFiles);
+		sweeps.mockClear();
+		const first = agentId(await call(harness, "Agent", task("tally 0")));
+		await serviceOf(harness).waitForResult(first);
+		expect(sweeps).toHaveBeenCalledTimes(1);
+		const ids: string[] = [];
+		for (let index = 1; index < 5; index++) ids.push(agentId(await call(harness, "Agent", task(`tally ${index}`))));
+		for (const id of ids) await serviceOf(harness).waitForResult(id);
+		expect(sweeps).toHaveBeenCalledTimes(5);
 	});
 
 	it("returns an unknown type under fallbackSubagent none as text naming the available types, and starts nothing", async () => {

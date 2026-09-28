@@ -29,7 +29,7 @@ import type { EventBus } from "../../../event-bus.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { getSkillSetController } from "../../../skills/skill-set-events.ts";
 import { bridgeServiceEvents } from "../adapter/events.ts";
-import { loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
+import { type AgentFileLoad, loadAgentFiles, loadSkillAgents } from "../definitions/load.ts";
 import {
 	type AgentRegistry,
 	buildAgentRegistry,
@@ -86,7 +86,8 @@ export interface SubagentSessionContext {
 /**
  * The agent registry a session sees: user agents, project agents when the project is trusted,
  * and the agents the session's skills bundle. Pure over its inputs; the service and the tool
- * description both use it.
+ * description both use it. Given `files` already loaded from the same project, it sweeps no
+ * agent directory.
  */
 export function loadAgentRegistry(input: {
 	session: AgentSession;
@@ -94,13 +95,16 @@ export function loadAgentRegistry(input: {
 	eventBus?: EventBus;
 	cwd: string;
 	settings: SubagentSettings;
-}): { registry: AgentRegistry; warnings: string[] } {
-	const files = loadAgentFiles({
-		agentDir: input.agentDir,
-		cwd: input.cwd,
-		projectTrusted: input.session.settingsManager.isProjectTrusted(),
-		strict: input.settings.strictAgentFiles,
-	});
+	files?: AgentFileLoad;
+}): { registry: AgentRegistry; warnings: string[]; files: AgentFileLoad } {
+	const files =
+		input.files ??
+		loadAgentFiles({
+			agentDir: input.agentDir,
+			cwd: input.cwd,
+			projectTrusted: input.session.settingsManager.isProjectTrusted(),
+			strict: input.settings.strictAgentFiles,
+		});
 	const skills = input.eventBus ? getSkillSetController(input.eventBus).getSnapshot().skills : [];
 	const bundled = loadSkillAgents(skills);
 	return {
@@ -110,6 +114,7 @@ export function loadAgentRegistry(input: {
 			disableDefaultAgents: input.settings.disableDefaultAgents,
 		}),
 		warnings: [...files.warnings, ...bundled.warnings],
+		files,
 	};
 }
 
@@ -192,6 +197,7 @@ export class SubagentService {
 	private readonly unregisterCleanup: () => void;
 	private current: SubagentSettings;
 	private registryCache: AgentRegistry;
+	private agentFilesCache?: AgentFileLoad;
 	private disposed = false;
 
 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
@@ -233,6 +239,11 @@ export class SubagentService {
 	/** The agent registry of the last reload. */
 	get registry(): AgentRegistry {
 		return this.registryCache;
+	}
+
+	/** The agent files of the last reload; undefined before the first. A child's adapter reuses them (D34). */
+	get agentFiles(): AgentFileLoad | undefined {
+		return this.agentFilesCache;
 	}
 
 	subscribe(listener: (event: SubagentEvent) => void): () => void {
@@ -309,7 +320,7 @@ export class SubagentService {
 	 */
 	refreshDefinitions(cwd = this.defaultCwd()): AgentRegistry {
 		this.reloadSettings();
-		const { registry, warnings } = loadAgentRegistry({
+		const { registry, warnings, files } = loadAgentRegistry({
 			session: this.session,
 			agentDir: this.context.agentDir,
 			eventBus: this.context.eventBus,
@@ -318,6 +329,7 @@ export class SubagentService {
 		});
 		for (const warning of warnings) this.warn(warning);
 		this.registryCache = registry;
+		this.agentFilesCache = files;
 		this.emit({ type: "definitions", registry: this.registryCache });
 		return this.registryCache;
 	}
@@ -552,8 +564,14 @@ export class SubagentService {
 		const request = this.childRequest(record, settings);
 		const attach = (child: Child) => this.attachChild(record, child);
 		if (record.invocation.isolation !== "worktree") return spawnChild(request, { ...turn, inheritContext }, attach);
+		const creation = createWorktree(record.cwd, record.id);
+		// Set before the first await, so a caller that started the run at once can wait on it (D33).
+		record.worktreeStart = creation.then(
+			() => undefined,
+			(error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+		);
 		try {
-			record.worktree = await createWorktree(record.cwd, record.id);
+			record.worktree = await creation;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return { status: "error", text: "", error: message, usage: emptyUsage(), turns: 0 };
@@ -745,6 +763,18 @@ export class SubagentService {
 			record.waiters.add(done);
 			signal?.addEventListener("abort", onAbort, { once: true });
 		});
+	}
+
+	/**
+	 * Waits for a run that started at once to create its worktree, and throws the error when it could
+	 * not (D33). The caller reports that error, so the record's own notification is dropped. A queued
+	 * run, or one without a worktree, returns at once.
+	 */
+	async worktreeStarted(record: SubagentRecord): Promise<void> {
+		const error = await record.worktreeStart;
+		if (!error) return;
+		record.resultConsumed = true;
+		throw error;
 	}
 
 	/** Marks a finished agent's result as read, which drops its notification. False for a running or unknown agent. */

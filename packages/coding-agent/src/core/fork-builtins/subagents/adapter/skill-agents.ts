@@ -66,7 +66,10 @@ export function publishRewriteMaps(bus: EventBus, aliases: readonly SkillAliasDe
 	bus.emit(SKILL_AGENTS_REWRITE_MAPS_CHANNEL, event);
 }
 
-/** Reloads the session's agents as its next spawn would, and publishes their maps when they changed. */
+/**
+ * Reloads the session's agents as its next spawn would, and publishes their maps when they changed.
+ * A child session takes its agent files from its owner service's last reload instead of sweeping again.
+ */
 export function publishSessionRewriteMaps(session: AgentSession, bus: EventBus): void {
 	const context = subagentSessionRecord(session);
 	if (!context) return;
@@ -79,6 +82,8 @@ export function publishSessionRewriteMaps(session: AgentSession, bus: EventBus):
 			// A child's agents come from its owner's project, as its spawns resolve them, wherever it works.
 			cwd: context.lineage ? context.lineage.owner.defaultCwd() : sessionCwd(session),
 			settings,
+			// A child reuses the files its owner loaded for the spawn, so a spawn sweeps them once (D34).
+			files: context.lineage?.owner.agentFiles,
 		});
 		publishRewriteMaps(bus, registry.aliases);
 	} catch (error) {

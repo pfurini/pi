@@ -59,6 +59,8 @@ export interface SubagentRecord {
 	transcriptPath?: string;
 	/** The worktree an `isolation: "worktree"` run works in, from its start. */
 	worktree?: Worktree;
+	/** Settles once the run's worktree exists, with the error when it could not be created. */
+	worktreeStart?: Promise<Error | undefined>;
 	/** What happened to the worktree when the run ended. */
 	worktreeOutcome?: WorktreeOutcome;
 	/** Tool calls, scoping warnings and extension errors, in order. */

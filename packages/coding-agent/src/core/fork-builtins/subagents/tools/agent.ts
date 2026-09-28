@@ -8,13 +8,18 @@
  * `isolation` only while `worktreeIsolation` is on.
  *
  * A spawn the service refuses (an unknown type under `fallbackSubagent: none`, a refused model)
- * returns a text result naming the reason. A foreground spawn waits for the agent, and the call's
- * abort signal stops it. A background spawn returns its id at once and notifies on completion.
+ * returns a text result naming the reason. A spawn whose worktree cannot be created throws instead,
+ * whether the spawn is refused or its run, started at once, fails to create it: Pi marks a tool call
+ * failed only when it throws, and a text result reads as an agent that ran (handoff D33;
+ * pi-subagents #179). A queued run that fails later ends as an error. A foreground spawn waits for
+ * the agent, and the call's abort signal stops it. A background spawn returns its id at once and
+ * notifies on completion.
  */
 import { type TSchema, Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { type AgentRegistry, buildAgentRegistry, listedAgentTypes } from "../definitions/registry.ts";
+import { WorktreeStartError } from "../runner/worktree.ts";
 import type { SubagentRecord } from "../service/records.ts";
 import {
 	loadAgentRegistry,
@@ -244,8 +249,11 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 					toolCallId,
 				});
 			} catch (error) {
+				// The agent never started: a thrown error marks the call failed, where text reads as a run (D33).
+				if (error instanceof WorktreeStartError) throw error;
 				return textResult(service, errorText(error));
 			}
+			await service.worktreeStarted(record);
 			const note =
 				record.fellBackFrom === undefined
 					? ""

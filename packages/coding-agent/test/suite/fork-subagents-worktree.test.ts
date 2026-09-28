@@ -3,7 +3,7 @@
  * whose working directory is a real git repository. The child writes through its own `write` tool,
  * so the test proves which directory the agent's tools resolve against. Git reads no global or
  * system configuration here.
- * Old pi-subagents tests at 79a7c42 this covers: worktree-isolation-e2e.
+ * Old pi-subagents tests at 79a7c42 this covers: worktree-isolation-e2e, agent-startup-error.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
@@ -12,7 +12,19 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type SubagentService, subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/service.ts";
-import { agentId, type Behavior, CHILD_START, call, held, router, say, text, use } from "./fork-subagents-fixtures.ts";
+import {
+	agentId,
+	type Behavior,
+	CHILD_START,
+	call,
+	held,
+	notices,
+	router,
+	say,
+	sleep,
+	text,
+	use,
+} from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const harnesses: Harness[] = [];
@@ -138,10 +150,30 @@ describe("worktree isolation through the service", () => {
 
 	it("fails the spawn with a named error outside a git repository", async () => {
 		const harness = await parent(false, {});
-		const result = await call(harness, "Agent", isolated("plain task", { run_in_background: false }));
-		expect(text(result)).toMatch(
-			/^Cannot run with isolation: "worktree": .* is not inside a git repository with at least one commit/,
-		);
+		// The call rejects, so Pi marks it failed; a text result would read as an agent that ran (D33).
+		for (const run_in_background of [false, true]) {
+			await expect(call(harness, "Agent", isolated("plain task", { run_in_background }))).rejects.toThrow(
+				/^Cannot run with isolation: "worktree": .* is not inside a git repository with at least one commit/,
+			);
+		}
 		expect(serviceOf(harness).list()).toEqual([]);
+	});
+
+	it("fails the call when git cannot add the worktree of a run that starts at once, and sends no notification", async () => {
+		const harness = await parent(true, {});
+		// A file where git keeps its worktrees: the repository checks pass, and `git worktree add` fails.
+		writeFileSync(join(harness.tempDir, ".git", "worktrees"), "");
+		for (const run_in_background of [false, true]) {
+			await expect(call(harness, "Agent", isolated("plain task", { run_in_background }))).rejects.toThrow(
+				/^Cannot run with isolation: "worktree": git worktree add failed/,
+			);
+		}
+		const records = serviceOf(harness).list();
+		for (const record of records) await serviceOf(harness).waitForResult(record.id);
+		expect(
+			records.map((record) => `${record.isBackground ? "background" : "foreground"} ${record.status}`).sort(),
+		).toEqual(["background error", "foreground error"]);
+		await sleep(400);
+		expect(notices(harness.session)).toEqual([]);
 	});
 });

@@ -55,6 +55,17 @@ function errorText(error: unknown): string {
 }
 
 /**
+ * A worktree that cannot be created. The agent never starts: an `Agent` call whose spawn or whose
+ * run, started at once, meets it fails with it (handoff D33). A queued run that meets it ends as an error.
+ */
+export class WorktreeStartError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorktreeStartError";
+	}
+}
+
+/**
  * Where a worktree of `cwd` comes from: the main worktree (`git worktree list` names it first), the
  * top level of `cwd`'s own tree, and its `HEAD`. Throws a named error outside a repository with commits.
  */
@@ -65,7 +76,7 @@ export async function worktreeBase(cwd: string): Promise<{ repo: string; top: st
 		const main = (await git(cwd, ["worktree", "list", "--porcelain"])).split("\n")[0];
 		return { repo: main.startsWith("worktree ") ? main.slice("worktree ".length) : top, top, baseSha };
 	} catch (error) {
-		throw new Error(
+		throw new WorktreeStartError(
 			`Cannot run with isolation: "worktree": ${cwd} is not inside a git repository with at least one commit (${errorText(error)}).`,
 		);
 	}
@@ -79,7 +90,9 @@ export async function createWorktree(cwd: string, agentId: string): Promise<Work
 	try {
 		await git(repo, ["worktree", "add", "--detach", path, baseSha]);
 	} catch (error) {
-		throw new Error(`Cannot run with isolation: "worktree": git worktree add failed (${errorText(error)}).`);
+		throw new WorktreeStartError(
+			`Cannot run with isolation: "worktree": git worktree add failed (${errorText(error)}).`,
+		);
 	}
 	const workPath = subdir ? join(path, subdir) : path;
 	mkdirSync(workPath, { recursive: true });

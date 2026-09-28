@@ -735,6 +735,21 @@ describe("the conversation viewer", () => {
 			expect(out).not.toContain("Enter steer");
 		});
 
+		// T18-F5: the composer stayed open after the agent stopped, and its submit was refused.
+		it("closes the composer when the agent stops while a message is typed, and sends nothing", () => {
+			const { viewer, fake, view: subject } = mount();
+			viewer.handleInput(KEY.enter);
+			for (const character of "draft") viewer.handleInput(character);
+			(subject as { status: SubagentView["status"] }).status = "completed";
+			for (const listener of fake.listeners) listener({ type: "ended", record: subject });
+			const out = strip(viewer.render(80).join("\n"));
+			expect(out).not.toContain("Enter send");
+			expect(out).not.toContain("draft");
+			expect(out).not.toContain("Enter steer");
+			viewer.handleInput(KEY.enter);
+			expect(fake.steer).not.toHaveBeenCalled();
+		});
+
 		it("typing then Enter sends the trimmed message and closes the composer", () => {
 			const { viewer, fake } = mount();
 			viewer.handleInput(KEY.enter);

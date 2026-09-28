@@ -215,8 +215,12 @@ export class ConversationViewer implements Component {
 			if (this.closed || !("record" in event) || event.record.id !== this.view.id) return;
 			// A queued agent's conversation exists once its child attaches.
 			this.followConversation();
-			// A confirmation belongs to one run: a resumed run needs both presses again.
-			if (!this.isActive()) this.stopArmed = false;
+			// A confirmation and a draft belong to one run: a resumed run needs both presses again, and a
+			// stopped agent takes no steer (T18-F5).
+			if (!this.isActive()) {
+				this.stopArmed = false;
+				this.composer = undefined;
+			}
 			this.tui.requestRender();
 		});
 		this.followConversation();

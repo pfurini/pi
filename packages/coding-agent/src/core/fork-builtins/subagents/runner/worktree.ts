@@ -11,11 +11,11 @@
  * removes the worktree. A worktree is removed only after its changes are on that branch, or when it
  * holds none. A failed stage, commit, branch creation or removal keeps it, and the outcome names
  * its path and the error. Only the worktree this module created is ever removed; nothing here runs
- * a repository-wide `git worktree prune`.
+ * a repository-wide `git worktree prune`. No git command here runs a repository hook.
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { execCommand } from "../../../exec.ts";
 
@@ -40,9 +40,19 @@ export type WorktreeOutcome =
 
 const GIT_TIMEOUT_MS = 60_000;
 
+/**
+ * Every git command here runs with no repository hook (D29). `--no-verify` alone skips only
+ * `pre-commit` and `commit-msg`. `post-checkout`, `prepare-commit-msg`, `post-commit` and
+ * `reference-transaction` would still run, and so would a `core.fsmonitor` program.
+ */
+const NO_HOOKS = ["-c", `core.hooksPath=${devNull}`, "-c", "core.fsmonitor=false"];
+
 /** Runs git and returns its trimmed stdout; any exit but a clean one throws with git's own message. */
 async function git(cwd: string, args: string[]): Promise<string> {
-	const result = await execCommand("git", args, cwd, { timeout: GIT_TIMEOUT_MS, truncationNotice: false });
+	const result = await execCommand("git", [...NO_HOOKS, ...args], cwd, {
+		timeout: GIT_TIMEOUT_MS,
+		truncationNotice: false,
+	});
 	if (result.killed || result.code !== 0) {
 		const output = result.stderr.trim() || result.stdout.trim();
 		throw new Error(output || `git ${args.join(" ")} failed (exit ${result.code})`);

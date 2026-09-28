@@ -128,6 +128,36 @@ describe("worktree isolation", () => {
 		expect(worktrees(repo)).toEqual(sorted(repo, other));
 	});
 
+	it("runs no repository hook while it creates, saves and removes the worktree", async () => {
+		const { repo, other } = repository();
+		const markers = join(temp("pi-worktree-hooks-"), "ran");
+		for (const name of [
+			"post-checkout",
+			"pre-commit",
+			"prepare-commit-msg",
+			"commit-msg",
+			"post-commit",
+			"reference-transaction",
+		]) {
+			const hook = join(repo, ".git", "hooks", name);
+			writeFileSync(hook, `#!/bin/sh\necho ${name} >> ${JSON.stringify(markers)}\n`);
+			chmodSync(hook, 0o755);
+		}
+		// A file-system monitor program is a hook that `core.hooksPath` does not cover.
+		const monitor = join(repo, ".git", "hooks", "fsmonitor-watchman");
+		writeFileSync(monitor, `#!/bin/sh\necho fsmonitor >> ${JSON.stringify(markers)}\n`);
+		chmodSync(monitor, 0o755);
+		git(repo, "config", "core.fsmonitor", monitor);
+		const worktree = await created(repo, "hooked9");
+		writeFileSync(join(worktree.workPath, "note.txt"), "hooked\n");
+		expect(await finishWorktree(worktree, "pi-agent: hooked")).toEqual({
+			kind: "committed",
+			branch: "pi-agent-hooked9",
+		});
+		expect(existsSync(markers) ? readFileSync(markers, "utf8") : "").toBe("");
+		expect(worktrees(repo)).toEqual(sorted(repo, other));
+	});
+
 	it("keeps the worktree and names it when the commit fails", async () => {
 		const { repo, other } = repository();
 		git(repo, "config", "--unset", "user.name");

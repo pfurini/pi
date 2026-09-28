@@ -139,7 +139,7 @@ The session cannot reach a nested agent:
 
 ## Worktree isolation
 
-`isolation: "worktree"` needs a git repository with a commit. Elsewhere, or when git cannot add the worktree of a run that starts at once, the `Agent` call fails with a named error (D33). A queued run that meets the same failure ends as an error. The run works in a detached worktree under the OS temp directory, at the spawn's subdirectory. However the run ends, the service commits its changes with `--no-verify` (D29) to `pi-agent-<id>`. The service then removes the worktree through the main worktree. A failed git step keeps the worktree, and the result names its path and the error. The service never runs a repository-wide `git worktree prune`. A worktree agent cannot be resumed.
+`isolation: "worktree"` needs a git repository with a commit. Elsewhere, or when git cannot add the worktree of a run that starts at once, the `Agent` call fails with a named error (D33). A queued run that meets the same failure ends as an error. The run works in a detached worktree under the OS temp directory, at the spawn's subdirectory. However the run ends, the service commits its changes with `--no-verify` (D29) to `pi-agent-<id>`. No repository hook runs on any of the service's git commands. The service then removes the worktree through the main worktree. A failed git step keeps the worktree, and the result names its path and the error. The service never runs a repository-wide `git worktree prune`. A worktree agent cannot be resumed.
 
 ## Events and RPC
 

@@ -11,7 +11,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as worktreeModule from "../../src/core/fork-builtins/subagents/runner/worktree.ts";
+import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
 import { type SubagentService, subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import type { Settings } from "../../src/core/settings-manager.ts";
 import {
 	agentId,
 	type Behavior,
@@ -27,6 +30,19 @@ import {
 } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
+// Lets a test look at the service at the moment a worktree is saved; the real finish still runs.
+const finishHooks = vi.hoisted(() => ({ onFinish: undefined as (() => void) | undefined }));
+vi.mock("../../src/core/fork-builtins/subagents/runner/worktree.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof worktreeModule>();
+	return {
+		...actual,
+		finishWorktree: (...args: Parameters<typeof actual.finishWorktree>) => {
+			finishHooks.onFinish?.();
+			return actual.finishWorktree(...args);
+		},
+	};
+});
+
 const harnesses: Harness[] = [];
 
 beforeEach(() => {
@@ -37,6 +53,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	for (const harness of harnesses.splice(0)) harness.cleanup();
+	finishHooks.onFinish = undefined;
 	vi.unstubAllEnvs();
 });
 
@@ -52,7 +69,11 @@ function worktrees(repo: string): string[] {
 }
 
 /** A session whose working directory holds the `scribe` agent, as a committed git repository when `repository`. */
-async function parent(repository: boolean, script: Record<string, Behavior[]>): Promise<Harness> {
+async function parent(
+	repository: boolean,
+	script: Record<string, Behavior[]>,
+	subagents: Record<string, unknown> = {},
+): Promise<Harness> {
 	const cwd = realpathSync(mkdtempSync(join(tmpdir(), "pi-subagent-worktree-")));
 	mkdirSync(join(cwd, "agents"));
 	writeFileSync(
@@ -71,7 +92,10 @@ async function parent(repository: boolean, script: Record<string, Behavior[]>): 
 		git(cwd, "add", "README.md");
 		git(cwd, "commit", "-q", "-m", "initial");
 	}
-	const harness = await createHarness({ cwd });
+	const harness = await createHarness({
+		cwd,
+		settings: { forkBuiltins: { subagents } } as unknown as Partial<Settings>,
+	});
 	harnesses.push(harness);
 	harness.setResponses(Array.from({ length: 100 }, () => router(script)));
 	return harness;
@@ -146,6 +170,80 @@ describe("worktree isolation through the service", () => {
 		expect(record.sessionFile?.startsWith(`${join(repo, "sessions")}/`)).toBe(true);
 		expect(record.sessionFile !== undefined && existsSync(record.sessionFile)).toBe(true);
 		expect(record.worktreeOutcome).toEqual({ kind: "unchanged" });
+	});
+
+	it("stops a worktree agent's nested agents, children and theirs, before it saves and removes the copy", async () => {
+		let deepAsked = () => {};
+		const deepStarted = new Promise<void>((resolve) => {
+			deepAsked = resolve;
+		});
+		const harness = await parent(
+			true,
+			{
+				lead: [
+					use("Agent", () => ({
+						subagent_type: "relay",
+						prompt: "relay task",
+						description: "relay task",
+						run_in_background: true,
+					})),
+					// The lead ends only once the grandchild is mid-request, so both nested agents still run.
+					async () => {
+						await deepStarted;
+						return fauxAssistantMessage("lead done");
+					},
+				],
+				relay: [
+					use("Agent", () => ({
+						subagent_type: "scribe",
+						prompt: "deep task",
+						description: "deep task",
+						run_in_background: true,
+					})),
+					held().behavior,
+				],
+				deep: [
+					(_context, options) =>
+						new Promise((resolve) => {
+							deepAsked();
+							options?.signal?.addEventListener("abort", () => resolve(fauxAssistantMessage("")), {
+								once: true,
+							});
+						}),
+				],
+			},
+			{ maxSubagentDepth: 3 },
+		);
+		writeFileSync(
+			join(harness.tempDir, "agents", "lead.md"),
+			"---\ndescription: delegating lead\ntools: read\nextensions: false\nallowed_subagents: relay\n---\nYou lead.",
+		);
+		writeFileSync(
+			join(harness.tempDir, "agents", "relay.md"),
+			"---\ndescription: delegating relay\ntools: read\nextensions: false\nallowed_subagents: scribe\n---\nYou relay.",
+		);
+		const started: SubagentRecord[] = [];
+		serviceOf(harness).subscribe((event) => {
+			if (event.type === "started") started.push(event.record);
+		});
+		let runningAtFinish: string[] | undefined;
+		finishHooks.onFinish = () => {
+			runningAtFinish = started.filter((record) => record.parent && record.run).map((record) => record.type);
+		};
+		await call(harness, "Agent", {
+			subagent_type: "lead",
+			prompt: "lead task",
+			description: "lead task",
+			isolation: "worktree",
+			run_in_background: false,
+		});
+		expect(runningAtFinish).toEqual([]);
+		expect(started.map((record) => `${record.type} ${record.status}`)).toEqual([
+			"lead completed",
+			"relay aborted",
+			"scribe aborted",
+		]);
+		expect(serviceOf(harness).list()[0]?.worktreeOutcome).toEqual({ kind: "unchanged" });
 	});
 
 	it("fails the spawn with a named error outside a git repository", async () => {

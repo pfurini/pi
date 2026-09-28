@@ -38,7 +38,15 @@ import {
 } from "../definitions/registry.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 import type { ChildLineage } from "../runner/lineage.ts";
-import { type Child, type ChildRequest, runTurn, spawnChild, type TurnOutcome, teardownChild } from "../runner/run.ts";
+import {
+	CHILD_SHUTDOWN_TIMEOUT_MS,
+	type Child,
+	type ChildRequest,
+	runTurn,
+	spawnChild,
+	type TurnOutcome,
+	teardownChild,
+} from "../runner/run.ts";
 import { transcriptPath } from "../runner/transcript.ts";
 import { createWorktree, describeWorktreeOutcome, finishWorktree, worktreeBase } from "../runner/worktree.ts";
 import { type InvocationParams, resolveInvocationConfig, resolveSpawnModel } from "../settings/models.ts";
@@ -590,6 +598,8 @@ export class SubagentService {
 			{ ...turn, inheritContext },
 			attach,
 		);
+		// Nested agents, children and theirs, may still work in the copy: stop them before it is saved and removed.
+		await this.endDescendants(record);
 		record.worktreeOutcome = await finishWorktree(worktree, `pi-agent: ${record.description.slice(0, 200)}`);
 		const note = describeWorktreeOutcome(record.worktreeOutcome, worktree.repo);
 		return note ? { ...outcome, text: outcome.text ? `${outcome.text}\n\n---\n${note}` : note } : outcome;
@@ -659,6 +669,26 @@ export class SubagentService {
 		this.finish(record);
 		this.abortChildren(record);
 		this.drain();
+	}
+
+	/** Ends every agent below `ancestor` and waits for their runs, at most the child shutdown bound. */
+	private async endDescendants(ancestor: SubagentRecord): Promise<void> {
+		const descendants = [...this.records.values()].filter((record) => {
+			for (let up = record.parent; up; up = up.parent) if (up === ancestor) return true;
+			return false;
+		});
+		for (const record of descendants) this.endRecord(record, "aborted", PARENT_ENDED_ERROR);
+		const runs = descendants.flatMap((record) => (record.run ? [record.run] : []));
+		if (runs.length === 0) return;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		await Promise.race([
+			Promise.allSettled(runs),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, CHILD_SHUTDOWN_TIMEOUT_MS);
+				timer.unref?.();
+			}),
+		]);
+		clearTimeout(timer);
 	}
 
 	/** A parent's run ended: its running and queued children end with it, and theirs in turn as they settle (R6). */

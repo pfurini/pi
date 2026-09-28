@@ -1,6 +1,6 @@
 # subagents (fork-owned service and base tools)
 
-This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D34 in the session-control handoff govern it, and `docs/plans/subagents-native-phase1.plan.md` records phase 1.
+This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D36 in the session-control handoff govern it, and `docs/plans/subagents-native-phase1.plan.md` records phase 1.
 
 ## Layout
 
@@ -166,6 +166,11 @@ The adapter keeps pi-subagents' names and payloads (`README.md` "Events" and `do
 | `subagents:rpc:consume` | Success, or `Agent is owned by another agent or workflow`, `Agent not found or still running`. |
 
 The adapter also publishes `skill-agents:rewrite-maps` when the maps change: at install, on `skills:changed`, and after a definition reload. It answers `skill-agents:query` with the latest revision. A child session builds its maps from the agent files its owner service loaded, so a spawn sweeps the agent directories once (D34).
+
+## Known limitations
+
+- An Esc during the parent's post-run auto-compaction goes undetected. A parked notice then starts a new parent turn instead of waiting for the next prompt (D35).
+- Core reports a compaction the user aborted and one an extension cancelled in the same way. The service therefore cannot tell them apart, and the gap stays unfixed.
 
 ## Later phases
 

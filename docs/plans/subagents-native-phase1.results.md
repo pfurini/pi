@@ -599,8 +599,8 @@ Each ruling is a dated row in section 7 of `/Users/paolof/Developer/ai/_handoffs
 
 ### Open items for later phases
 
-- Phase review F10 to F16, each Deferred with its reason above.
-- An abort during post-run auto-compaction does not mark the parent run interrupted (T10-F1 review).
+- Phase review F11 to F14 and F16, each Deferred with its reason above. D35 drops F10 and moves F15 to phase 2.
+- An abort during post-run auto-compaction does not mark the parent run interrupted (T10-F1 review). D35 keeps it unfixed; the module README documents it.
 - The 506 gap lines in `docs/plans/subagents-native-phase1-evidence/checklist.md`.
-- Two tests stay load-sensitive: `exec.test.ts` "captures finite inherited descendant output after the shell exits" and every `agent-session-concurrent.test.ts` test.
+- Two tests stay load-sensitive: `exec.test.ts` "captures finite inherited descendant output after the shell exits" and every `agent-session-concurrent.test.ts` test. D36 ignores them, and the footer reftable test, from phase 2 on.
 

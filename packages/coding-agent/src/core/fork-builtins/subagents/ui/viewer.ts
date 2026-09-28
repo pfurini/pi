@@ -73,11 +73,19 @@ const KEY_LABELS: Record<string, string> = {
 	enter: "Enter",
 	up: "↑",
 	down: "↓",
+	left: "←",
+	right: "→",
 	pageUp: "PgUp",
 	pageDown: "PgDn",
 	home: "Home",
 	end: "End",
 };
+
+/** The first key bound to `id`, as a hint names it: `Esc`, `↓`, `x`. */
+export function keyLabel(keybindings: Pick<KeybindingsManager, "getKeys">, id: Keybinding): string {
+	const key = keybindings.getKeys(id)[0];
+	return key === undefined ? "?" : (KEY_LABELS[key] ?? formatKeyText(key));
+}
 
 /** What the viewer reads from the service and asks it to do. */
 export type ViewerSource = Pick<
@@ -336,10 +344,8 @@ export class ConversationViewer implements Component {
 		this.done();
 	}
 
-	/** The first key bound to `id`, as the footer names it. */
 	private keyLabel(id: Keybinding): string {
-		const key = this.keybindings.getKeys(id)[0];
-		return key === undefined ? "?" : (KEY_LABELS[key] ?? formatKeyText(key));
+		return keyLabel(this.keybindings, id);
 	}
 
 	/** Stop and steer apply only while the agent runs or waits. */
@@ -559,16 +565,34 @@ export class ConversationViewer implements Component {
 	}
 }
 
-/** Opens the viewer for `view` as a centered overlay; resolves when it closes. */
+/**
+ * Opens the viewer for `view` as a centered overlay; resolves when it closes. `onOpen` receives a
+ * handle that closes the overlay from outside, as quit does.
+ */
 export function openConversationViewer(
 	ui: Pick<ExtensionUIContext, "custom">,
 	source: ViewerSource,
 	view: SubagentView,
 	state: ViewerSessionState,
+	onOpen?: (close: () => void) => void,
 ): Promise<void> {
 	return ui.custom<void>(
-		(tui, theme, keybindings, done) =>
-			new ConversationViewer({ tui, theme, keybindings, source, view, state, done: () => done(undefined) }),
+		(tui, theme, keybindings, done) => {
+			const viewer = new ConversationViewer({
+				tui,
+				theme,
+				keybindings,
+				source,
+				view,
+				state,
+				done: () => done(undefined),
+			});
+			onOpen?.(() => {
+				viewer.dispose();
+				done(undefined);
+			});
+			return viewer;
+		},
 		{ overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "70%" } },
 	);
 }

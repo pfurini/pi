@@ -98,10 +98,15 @@ function widgetUi() {
 	const content = new Map<string, (tui: TUI, theme: Theme) => Component>();
 	const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
 	const tui = { requestRender: () => {} } as unknown as TUI;
+	const inputs = new Set<unknown>();
 	const ui = {
 		notify: () => {},
 		setStatus: () => {},
-		onTerminalInput: () => () => {},
+		getEditorText: () => "",
+		onTerminalInput: (handler: unknown) => {
+			inputs.add(handler);
+			return () => inputs.delete(handler);
+		},
 		setWidget: (key: string, factory: ((tui: TUI, theme: Theme) => Component) | undefined) => {
 			if (factory) content.set(key, factory);
 			else content.delete(key);
@@ -109,6 +114,7 @@ function widgetUi() {
 	} as unknown as ExtensionUIContext;
 	const widgets = {
 		keys: () => [...content.keys()],
+		inputs: () => inputs.size,
 		text: (key: string) => content.get(key)?.(tui, plainTheme).render(200).join("\n") ?? "",
 	};
 	return { ui, widgets };
@@ -312,6 +318,22 @@ describe("presentation factory", () => {
 		await vi.waitFor(() => expect(rpcGate.requests()).toBe(1), CHILD_START);
 		expect(remoteUi.widgets.keys()).toEqual([]);
 		rpcGate.release();
+	});
+
+	it("captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit", async () => {
+		const gate = held();
+		const harness = await parent({ hold: [gate.behavior] });
+		const { ui, widgets } = widgetUi();
+		await harness.session.bindExtensions({ uiContext: ui, mode: "tui" });
+		expect(widgets.inputs()).toBe(1);
+		expect(widgets.keys()).not.toContain("fleet");
+		agentId(await call(harness, "Agent", background("hold fleet")));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		await vi.waitFor(() => expect(widgets.text("fleet")).toMatch(/○ worker {2}hold fleet +\d+s · ↓ /));
+		gate.release();
+		await harness.session.shutdown();
+		expect(widgets.keys()).not.toContain("fleet");
+		expect(widgets.inputs()).toBe(0);
 	});
 
 	it("binds each of two sessions on one event bus to its own agents", async () => {

@@ -6,7 +6,8 @@
  * demand (P5).
  *
  * In `tui` and `rpc` mode it builds the session's service at `session_start` and keeps the status
- * line `subagents` current (P7, P8); in `tui` mode it also shows the `agents` widget (`widget.ts`).
+ * line `subagents` current (P7, P8); in `tui` mode it also shows the `agents` widget (`widget.ts`)
+ * and FleetView (`fleet.ts`), whose viewer keeps its Markdown mode for the session.
  * Every `session_shutdown` unbinds the UI. A reason other than `reload` then awaits the service's
  * bounded `shutdown()`, so quit and session replacement wait for the children's teardown (R4, P6);
  * it never builds a service to do so. `/reload` keeps the service and its agents. The
@@ -23,7 +24,9 @@ import {
 import { NOTIFICATION_CUSTOM_TYPE } from "../service/notifications.ts";
 import type { SubagentService } from "../service/service.ts";
 import { existingSubagentService, subagentServiceFor } from "../service/sessions.ts";
+import { FleetView } from "./fleet.ts";
 import { notificationRenderer } from "./notification.ts";
+import type { ViewerSessionState } from "./viewer.ts";
 import { AgentWidget } from "./widget.ts";
 
 const STATUS_KEY = "subagents";
@@ -73,6 +76,18 @@ function bindStatus(service: SubagentService, ctx: ExtensionContext): () => void
 	};
 }
 
+/** Each session's viewer state, kept across `/reload`: the Markdown mode holds for the session (P16). */
+const viewerStates = new WeakMap<AgentSession, ViewerSessionState>();
+
+function viewerStateOf(session: AgentSession): ViewerSessionState {
+	let state = viewerStates.get(session);
+	if (!state) {
+		state = {};
+		viewerStates.set(session, state);
+	}
+	return state;
+}
+
 export default function subagentsPresentation(pi: ExtensionAPI): void {
 	// A child's presentation is its parent's: the child registers no command, renderer or handler.
 	const query: ChildSessionQuery = { child: false };
@@ -105,9 +120,12 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 		if (!service) return;
 		unbind?.();
 		const unbindStatus = bindStatus(service, ctx);
-		// RPC ignores widget factories (P7).
-		widget = ctx.mode === "tui" ? new AgentWidget(service, ctx.ui) : undefined;
+		// RPC ignores widget factories and terminal input (P7).
+		const tui = ctx.mode === "tui";
+		widget = tui ? new AgentWidget(service, ctx.ui) : undefined;
+		const fleet = tui ? new FleetView(service, ctx.ui, viewerStateOf(bound)) : undefined;
 		unbind = () => {
+			fleet?.dispose();
 			widget?.dispose();
 			widget = undefined;
 			unbindStatus();

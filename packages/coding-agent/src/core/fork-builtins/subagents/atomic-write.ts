@@ -8,9 +8,11 @@ import { closeSync, lstatSync, openSync, renameSync, rmSync, statSync, writeFile
 import { isAbsolute, join, relative, sep } from "node:path";
 
 /**
- * Throws when a path component below `root`, `path` included, is a symlink, dangling or not, so
- * an agent-file change never reaches a file outside the project or the agent directory. `root`
- * itself may be a link. A missing component ends the walk: nothing below it exists yet.
+ * Throws when a path component below `root`, `path` included, is a symlink, dangling or not. An
+ * agent-file change therefore stays inside the directory tree `root` names. `root` itself, the
+ * project directory or the agent directory, is trusted and may be a link, as a symlinked
+ * `~/.pi/agent` often is (Paolo, 2026-09-28). A missing component ends the walk: nothing below it
+ * exists yet.
  */
 export function refuseSymlinks(root: string, path: string): void {
 	const below = relative(root, path);

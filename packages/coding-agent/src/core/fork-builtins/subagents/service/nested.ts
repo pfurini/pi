@@ -20,7 +20,7 @@ import {
 } from "../definitions/registry.ts";
 import type { SubagentSettings } from "../settings/settings.ts";
 import type { SubagentRecord } from "./records.ts";
-import type { SpawnRequest, SubagentService } from "./service.ts";
+import type { SpawnRequest, SteerOutcome, SubagentService } from "./service.ts";
 
 export class NestedRuntime {
 	readonly service: SubagentService;
@@ -89,7 +89,7 @@ export class NestedRuntime {
 		return this.service.waitForResult(ref, signal, this.parent);
 	}
 
-	steer(ref: string, message: string): boolean {
+	steer(ref: string, message: string): Promise<SteerOutcome> {
 		return this.service.steer(ref, message, this.parent);
 	}
 

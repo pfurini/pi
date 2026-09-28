@@ -220,6 +220,50 @@ describe("nested ownership", () => {
 		expect(child.parent).toBe(lead);
 	});
 
+	it("reports a nested steer the child refuses as a failed delivery", async () => {
+		const stuck = held(() => fauxAssistantMessage("never"));
+		const harness = await parent(
+			{},
+			{
+				directing: [
+					use("Agent", () => ({
+						subagent_type: "commander",
+						prompt: "orders task",
+						description: "orders",
+						run_in_background: true,
+					})),
+					// Steers once the nested child runs, so the steer reaches its session instead of waiting.
+					async (context) => {
+						await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
+						return fauxAssistantMessage(
+							[fauxToolCall("steer_subagent", { agent_id: spawnedId(context), message: "/probe-cmd" })],
+							{ stopReason: "toolUse" },
+						);
+					},
+					say("director done"),
+				],
+				orders: [stuck.behavior],
+			},
+		);
+		const agents = join(harness.tempDir, "agents");
+		writeFileSync(
+			join(agents, "director.md"),
+			"---\ndescription: directs\ntools: read\nextensions: false\nallowed_subagents: commander\n---\nYou direct.",
+		);
+		// The commander loads the agent directory's extensions, which register the command `probe-cmd`.
+		writeFileSync(join(agents, "commander.md"), "---\ndescription: loads extensions\ntools: read\n---\nYou command.");
+		mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
+		writeFileSync(
+			join(harness.tempDir, "extensions", "probe-cmd.ts"),
+			'export default function (pi) {\n\tpi.registerCommand("probe-cmd", { description: "probe", handler: async () => {} });\n}\n',
+		);
+		const director = await runLead(harness, "director", "directing task");
+		const id = /Agent ID: (\S+)/.exec(toolResults(director.child?.session, "Agent")[0])?.[1] ?? "";
+		expect(toolResults(director.child?.session, "steer_subagent")[0]).toMatch(
+			new RegExp(`^Failed to steer nested agent ${id}: \\S`),
+		);
+	});
+
 	it("lets no agent reach a nested agent it does not own, and hides it from the session", async () => {
 		const stuck = held(() => fauxAssistantMessage("never"));
 		const lingering = held(() => fauxAssistantMessage("alpha done"));

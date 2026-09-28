@@ -42,9 +42,10 @@ export function createSteerToolDefinition(session: AgentSession): ToolDefinition
 					`Agent "${params.agent_id}" is not running (status: ${record.status}). Cannot steer a non-running agent.`,
 				);
 			}
-			const waiting = !record.child;
-			service.steer(record.id, params.message);
-			if (waiting) {
+			const outcome = await service.steer(record.id, params.message);
+			if (outcome.kind === "refused") return textResult(service, outcome.reason);
+			if (outcome.kind === "failed") return textResult(service, `Failed to steer agent: ${outcome.error}`);
+			if (outcome.kind === "queued") {
 				return textResult(
 					service,
 					`Steering message queued for agent ${record.id}. It will be delivered once the session initializes.`,

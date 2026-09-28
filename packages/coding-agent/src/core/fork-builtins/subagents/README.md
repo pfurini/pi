@@ -52,7 +52,7 @@ A child session ends through `teardownChild`: it starts `abort()`, gives the chi
 | --- | --- | --- |
 | `Agent` | `prompt`, `description`, `name`, `subagent_type`, `model`, `thinking`, `max_turns`, `run_in_background`, `resume`, `isolated`, `inherit_context`, and `isolation` while `worktreeIsolation` is on | Starts an agent. A foreground call waits and returns the output; its abort signal stops the agent. A background call returns the id and notifies later. `resume` continues a finished agent. A refused spawn returns the reason as text. A worktree that cannot be created fails the call instead (D33). |
 | `get_subagent_result` | `agent_id`, `wait`, `verbose` | Reports an agent by id, handle or alias. `wait` waits through the queue and the run; cancelling the call ends only the wait. Reading a finished result consumes it. |
-| `steer_subagent` | `agent_id`, `message` | Sends a message to a running agent, or queues it until the child starts. |
+| `steer_subagent` | `agent_id`, `message` | Sends a message to a running agent, or queues it until the child starts. A steer the child rejects, such as extension-command text, answers `Failed to steer agent: <error>`. |
 
 Frontmatter outranks the tool's parameters. The agent file's `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated` and `isolation` win. `backgroundByDefault` decides an unset `run_in_background`.
 
@@ -153,7 +153,7 @@ The adapter keeps pi-subagents' names and payloads (`README.md` "Events" and `do
 | `subagents:completed` | A run ends `completed` or `steered`. |
 | `subagents:failed` | A run ends `error`, `stopped` or `aborted`. |
 | `subagents:agent-ended` | Every terminal transition, with the native status; for an RPC spawn, after its reply. |
-| `subagents:steered` | A steer is accepted, delivered or queued. |
+| `subagents:steered` | A steer reached the child, or waits for a child that has not started. A steer the child rejects emits nothing. |
 | `subagents:compacted` | A child compacts during a run. |
 | `subagents:settings_loaded` | The service starts. |
 | `subagents:settings_changed` | A reread finds different settings; `persisted` is true, because they come from the files. |

@@ -161,10 +161,15 @@ export function createNestedToolDefinitions(runtime: NestedRuntime): ToolDefinit
 			if (!record || isTerminal(record)) {
 				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
 			}
-			const waiting = !record.child;
-			runtime.steer(record.id, params.message);
+			const outcome = await runtime.steer(record.id, params.message);
+			if (outcome.kind === "refused") {
+				return nestedText(`Running nested agent not found or not owned by this parent: "${params.agent_id}".`);
+			}
+			if (outcome.kind === "failed") {
+				return nestedText(`Failed to steer nested agent ${record.id}: ${outcome.error}`);
+			}
 			return nestedText(
-				waiting
+				outcome.kind === "queued"
 					? `Steering message queued for nested agent ${record.id}.`
 					: `Steering message sent to nested agent ${record.id}.`,
 			);

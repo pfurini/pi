@@ -144,6 +144,13 @@ export interface SpawnRequest {
 	onCreated?: (record: SubagentRecord) => void;
 }
 
+/** What became of a steer: `steer_subagent` and the conversation viewer report each kind. */
+export type SteerOutcome =
+	| { kind: "delivered" }
+	| { kind: "queued" }
+	| { kind: "refused"; reason: string }
+	| { kind: "failed"; error: string };
+
 export class SubagentService {
 	private readonly session: AgentSession;
 	private readonly context: SubagentSessionContext;
@@ -727,16 +734,38 @@ export class SubagentService {
 		return true;
 	}
 
-	/** Steers a running or queued agent; a queued one receives the message when its child starts. */
-	steer(ref: string, message: string, owner?: SubagentRecord): boolean {
+	/**
+	 * Steers a running or queued agent (F11). `delivered`: the child's `session.steer` resolved while the
+	 * agent still runs. `queued`: the child does not exist yet and receives the message when it starts.
+	 * `refused`: the agent is unknown, not the caller's, or finished, also when it ended while the steer
+	 * was being delivered. `failed`: the child's steer rejected, as it does for extension-command text.
+	 * Only `delivered` and `queued` announce `steered`.
+	 */
+	async steer(ref: string, message: string, owner?: SubagentRecord): Promise<SteerOutcome> {
 		const record = this.get(ref, owner);
-		if (!record || isTerminal(record)) return false;
-		if (record.child) this.deliverSteer(record, message);
-		else record.pendingSteers.push(message);
+		if (!record) return { kind: "refused", reason: notFound(ref) };
+		const notRunning = (): SteerOutcome => ({
+			kind: "refused",
+			reason: `Agent "${ref}" is not running (status: ${record.status}).`,
+		});
+		if (isTerminal(record)) return notRunning();
+		if (!record.child) {
+			record.pendingSteers.push(message);
+			this.emit({ type: "steered", record, message });
+			return { kind: "queued" };
+		}
+		try {
+			await record.child.session.steer(message);
+		} catch (error) {
+			return { kind: "failed", error: error instanceof Error ? error.message : String(error) };
+		}
+		// A stop or the owner's end during the delivery leaves the message with a run that no longer runs.
+		if (this.disposed || isTerminal(record)) return notRunning();
 		this.emit({ type: "steered", record, message });
-		return true;
+		return { kind: "delivered" };
 	}
 
+	/** Delivers a steer that waited for the child; no caller waits, so a failure is recorded as activity. */
 	private deliverSteer(record: SubagentRecord, message: string): void {
 		record.child?.session.steer(message).catch((error: unknown) => {
 			record.activity.push({ type: "extension-error", message: `steer failed: ${String(error)}` });

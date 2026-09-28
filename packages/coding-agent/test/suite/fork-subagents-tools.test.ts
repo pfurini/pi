@@ -11,6 +11,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createEventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionAPI } from "../../src/core/extensions/types.ts";
 import * as definitionLoads from "../../src/core/fork-builtins/subagents/definitions/load.ts";
 import { lineageForBus } from "../../src/core/fork-builtins/subagents/runner/lineage.ts";
@@ -78,6 +79,28 @@ async function parent(
 	const harness = await session(subagents);
 	harness.setResponses(Array.from({ length: 300 }, () => router(script, main)));
 	return harness;
+}
+
+/**
+ * A parent on its own event bus that records every `subagents:steered`. It also holds the `commander`
+ * agent, whose child loads the agent directory's extension that registers the command `probe-cmd`.
+ */
+async function steerable(script: Record<string, Behavior[]>, subagents: Record<string, unknown> = {}) {
+	const bus = createEventBus();
+	const steered: unknown[] = [];
+	bus.on("subagents:steered", (data) => steered.push(data));
+	const harness = await session({ defaultJoinMode: "async", ...subagents }, { eventBus: bus });
+	writeFileSync(
+		join(harness.tempDir, "agents", "commander.md"),
+		"---\ndescription: loads extensions\ntools: read\n---\nYou command.",
+	);
+	mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
+	writeFileSync(
+		join(harness.tempDir, "extensions", "probe-cmd.ts"),
+		'export default function (pi) {\n\tpi.registerCommand("probe-cmd", { description: "probe", handler: async () => {} });\n}\n',
+	);
+	harness.setResponses(Array.from({ length: 300 }, () => router(script)));
+	return { harness, steered };
 }
 
 const task = (prompt: string, extra: Record<string, unknown> = {}) => ({
@@ -429,6 +452,79 @@ describe("steer_subagent", () => {
 		);
 		const unknown = await call(harness, "steer_subagent", { agent_id: "nobody", message: "hello" });
 		expect(text(unknown)).toBe('Agent not found: "nobody". It may have been cleaned up.');
+	});
+
+	it("reports a steer the child refuses, announces no steered event, and leaves the agent running", async () => {
+		const gate = held(() => fauxAssistantMessage("command done"));
+		const { harness, steered } = await steerable({ "command task": [gate.behavior] });
+		const id = agentId(
+			await call(harness, "Agent", { subagent_type: "commander", prompt: "command task", description: "command" }),
+		);
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const result = await call(harness, "steer_subagent", { agent_id: id, message: "/probe-cmd" });
+		expect(text(result)).toMatch(/^Failed to steer agent: \S/);
+		expect(steered).toEqual([]);
+		expect(serviceOf(harness).get(id)?.status).toBe("running");
+		gate.release();
+		expect((await serviceOf(harness).waitForResult(id)).status).toBe("completed");
+	});
+
+	it("announces one steered event for a steer the running child accepts", async () => {
+		const gate = held(() => fauxAssistantMessage("plain done"));
+		const { harness, steered } = await steerable({ "plain task": [gate.behavior] });
+		const id = agentId(await call(harness, "Agent", task("plain task")));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const result = await call(harness, "steer_subagent", { agent_id: id, message: "hurry up" });
+		expect(text(result)).toMatch(new RegExp(`^Steering message sent to agent ${id}\\. `));
+		expect(steered).toEqual([{ id, message: "hurry up" }]);
+		gate.release();
+		await serviceOf(harness).waitForResult(id);
+	});
+
+	it("refuses a steer whose agent stops while the steer is delivered, and announces nothing", async () => {
+		const gate = held(() => fauxAssistantMessage("late done"));
+		const { harness, steered } = await steerable({ "late task": [gate.behavior] });
+		const id = agentId(await call(harness, "Agent", task("late task")));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const service = serviceOf(harness);
+		const pending = service.steer(id, "too late");
+		expect(service.stop(id)).toBe(true);
+		expect(await pending).toEqual({ kind: "refused", reason: `Agent "${id}" is not running (status: stopped).` });
+		expect(steered).toEqual([]);
+		await service.waitForResult(id);
+	});
+
+	it("announces one steered event for a steer that waits for its child, and delivers it when the child starts", async () => {
+		const gate = held(() => fauxAssistantMessage("first done"));
+		const seen: string[] = [];
+		const { harness, steered } = await steerable(
+			{
+				"busy task": [gate.behavior],
+				"waiting task": [
+					(context) => {
+						seen.push(
+							...context.messages
+								.filter((message) => message.role === "user")
+								.map((message) => textOf(message.content)),
+						);
+						return fauxAssistantMessage("waiting done");
+					},
+				],
+			},
+			{ maxConcurrent: 1 },
+		);
+		agentId(await call(harness, "Agent", task("busy task")));
+		const id = agentId(await call(harness, "Agent", task("waiting task")));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const result = await call(harness, "steer_subagent", { agent_id: id, message: "check the tests" });
+		expect(text(result)).toBe(
+			`Steering message queued for agent ${id}. It will be delivered once the session initializes.`,
+		);
+		expect(steered).toEqual([{ id, message: "check the tests" }]);
+		gate.release();
+		await serviceOf(harness).waitForResult(id);
+		expect(seen).toContain("check the tests");
+		expect(steered).toHaveLength(1);
 	});
 });
 

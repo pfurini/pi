@@ -320,7 +320,7 @@ describe("waits, steering, stopping and resuming", () => {
 		const subagents = service(harness);
 		const steered = await subagents.spawn(foreground("steerable"));
 		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
-		expect(subagents.steer(steered.id, "switch to plan B")).toBe(true);
+		expect((await subagents.steer(steered.id, "switch to plan B")).kind).toBe("delivered");
 		gate.release();
 		await subagents.waitForResult(steered.id);
 		expect(steeredText).toContain("switch to plan B");
@@ -332,7 +332,7 @@ describe("waits, steering, stopping and resuming", () => {
 		await subagents.waitForResult(stopped.id);
 		expect(stopped.status).toBe("stopped");
 		expect(stopped.result).toBe("partial result");
-		expect(subagents.steer(stopped.id, "too late")).toBe(false);
+		expect((await subagents.steer(stopped.id, "too late")).kind).toBe("refused");
 	});
 
 	it("resumes a finished persisted agent in its session file", async () => {

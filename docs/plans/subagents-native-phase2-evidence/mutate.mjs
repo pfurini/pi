@@ -18,9 +18,10 @@
 // its own process group, and restores the file in a `finally` block. SIGINT or SIGTERM stops the whole
 // process group (SIGTERM, then SIGKILL after 5 s), waits until no process of the group is left,
 // restores the file, verifies its SHA-256 and only then removes the recovery state. After a check exits
-// normally, the runner ends whatever its group left behind in the same way. When <state-dir>/current.json
-// exists at start, an earlier run died while a file was mutated: the runner prints the restore command
-// and exits 2 without touching anything.
+// normally, the runner ends whatever its group left behind in the same way. A group still alive 10 s
+// after SIGTERM stops the runner with exit 2 and restores nothing: the marker, which names the group,
+// and the backup stay. When <state-dir>/current.json exists at start, an earlier run died while a file
+// was mutated: the runner prints the restore command and exits 2 without touching anything.
 //
 // Output, one block per entry:
 //   <id> [<cases>] <what> | <k> of <n> failed, caught          (or ", not caught")
@@ -28,7 +29,7 @@
 //       ! <file> > <file failed to run>  (each infrastructure failure)
 // then "restored | <k> of <n> failed" for all named test files together, and "clean: yes" or "clean: no".
 // Exit 0 when every entry was caught, the restored run has no failure and every file is clean; 1
-// otherwise; 2 on bad input or an interrupted earlier run.
+// otherwise; 2 on bad input, an interrupted earlier run, or a process group that outlived SIGKILL.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -112,6 +113,10 @@ function groupAlive(pgid) {
 	}
 }
 
+// The bounds of `endGroup`. The two variables exist only so a self-test can force the give-up path.
+const KILL_AFTER_MS = Number(process.env.MUTATE_KILL_AFTER_MS ?? 5000);
+const GIVE_UP_MS = Number(process.env.MUTATE_GIVE_UP_MS ?? 10000);
+
 /**
  * Ends process group `pgid`: SIGTERM, then SIGKILL after 5 s. Resolves true once no member is left,
  * or false when one is still there after 10 s. The leader's exit alone proves nothing: a test's own
@@ -130,8 +135,8 @@ async function endGroup(pgid) {
 	signal("SIGTERM");
 	while (groupAlive(pgid)) {
 		const elapsed = Date.now() - started;
-		if (elapsed >= 10000) return false;
-		if (!killed && elapsed >= 5000) {
+		if (elapsed >= GIVE_UP_MS) return false;
+		if (!killed && elapsed >= KILL_AFTER_MS) {
 			signal("SIGKILL");
 			killed = true;
 		}
@@ -140,19 +145,27 @@ async function endGroup(pgid) {
 	return true;
 }
 
+/**
+ * Stops the runner when a check's process group survives `endGroup`. Nothing is restored: a live
+ * member could still read or write the mutated file. The marker (with the group), the backup and the
+ * scratch directory stay, so the recovery at the next start names the group and the restore command.
+ */
+function hardStop(pgid) {
+	const where = active ? ` while ${active.full} is mutated; recovery state kept in ${stateDir}` : "";
+	process.stderr.write(
+		`mutate: process group ${pgid} outlived SIGKILL${where}. End the group (\`pgrep -g ${pgid}\`), then follow the restore command the next run prints.\n`,
+	);
+	process.exit(2);
+}
+
 let stopping = false;
 for (const name of ["SIGINT", "SIGTERM"]) {
 	process.on(name, async () => {
 		if (stopping) return;
 		stopping = true;
 		const group = running?.pid;
-		const ended = group === undefined || (await endGroup(group));
-		if (ended) restoreActive();
-		else if (active) {
-			// Restore the source, but keep the marker: it names the group that is still alive.
-			writeFileSync(active.full, active.original);
-			process.stderr.write(`mutate: process group ${group} outlived SIGKILL; recovery state kept in ${stateDir}\n`);
-		}
+		if (group !== undefined && !(await endGroup(group))) hardStop(group);
+		restoreActive();
 		if (scratch) rmSync(scratch, { recursive: true, force: true });
 		process.exit(name === "SIGINT" ? 130 : 143);
 	});
@@ -183,7 +196,7 @@ function exec(command, args, options, capture) {
 		});
 		child.on("close", async (code) => {
 			// Members the check left behind must not overlap the restore or the next check.
-			await endGroup(child.pid);
+			if (!(await endGroup(child.pid))) hardStop(child.pid);
 			running = undefined;
 			done({ code, output });
 		});

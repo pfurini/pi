@@ -19,7 +19,7 @@ This plan adds the presentation of native subagents as one inline factory in `FO
 | `docs/adr/ADR-0009-built-in-extensions.md` | Built-in kinds, the switch and the settings rule. T16 amends it. |
 | `AGENTS.md` (repository) | Git, lockfile, check and test rules. |
 
-The `planning-changes` skill wrote this plan and ran review passes 1 and 2. Pass 1 ran on stale reviewer definitions; pass 2 reran all six angles on the current ones (Review history). A fresh session implements the plan from a handoff prompt, on `feat/subagents-native` in `/tmp/subagents-native`.
+The `planning-changes` skill wrote this plan and ran review passes 1 to 3. Pass 1 ran on stale reviewer definitions; passes 2 and 3 ran all six angles on the current ones (Review history). A fresh session implements the plan from a handoff prompt, on `feat/subagents-native` in `/tmp/subagents-native`.
 
 ## 2. Decisions
 
@@ -70,15 +70,15 @@ Paolo made every ruling below; the handoff's section 7 records each D-row.
 | P18 | Agent-file locations | Project locations (`.pi/agents/`) exist only in a trusted project. Create, eject and the default-agent disable stub otherwise offer only `<agentDir>/agents/`. | The loader reads project agents only when trusted (phase 1 T1). |
 | P19 | Definitions refresh | `/agents` calls `service.refreshDefinitions()` before it shows the agent roster, after every successful file change, and after every settings save. When the refresh throws, the menu warns with the error and shows the last good roster. | Phase 1 "Definition refresh". The service starts with an empty user-agent registry (`service/service.ts:216`), and pi-subagents reloaded agents when the menu opened (`src/index.ts:3109-3110`). |
 | P20 | Wizard models | Inherit, the session's scoped models (`ctx.scopedModels`), or a typed `provider/model`. | pi-subagents hardcoded stale Anthropic ids (`src/index.ts:3590-3604`). |
-| P21 | Wizard generation (R16) | One `session.modelRuntime.completeSimple(model, context)` call with the session's current model, a system prompt that asks for the whole agent file, and the user's description as the only message. The context carries no tools, and no message joins the session. The wizard parses the reply's text with `parseAgentFile(text, source)` for the chosen path. It refuses the reply, and writes nothing, on a parse error, a reserved name, a missing `description:`, any entry in `invalidValues` or any entry in `unknownKeys`; the warning names each reason. A valid file is written per P27. | `model-runtime.ts:664-666`; `definitions/frontmatter.ts:56`. `parseAgentFile` returns a definition together with its invalid values and unknown keys (`frontmatter.ts:40-49`, `:67`, `:113`), so a parse without error is not yet a valid definition (pass 2). The loader ignores an unknown key silently (handoff 14.6), so a misspelled key such as `thinkingLevel` would do nothing; Paolo confirmed refusing unknown keys on 2026-09-28. The feasibility probe ran exactly this call on the faux provider and parsed the reply (Appendix A). |
+| P21 | Wizard generation (R16) | One `session.modelRuntime.completeSimple(model, context)` call with the session's current model, a system prompt that asks for the whole agent file, and the user's description as the only message. The context carries no tools, and no message joins the session. The wizard parses the reply's text with `parseAgentFile(text, source)` for the chosen path. It refuses the reply, and writes nothing, on a parse error, a reserved name, a missing `description:`, any entry in `invalidValues`, any entry in `unknownKeys`, or a `name:` other than the name the user chose; the warning names each reason. T14 makes the parser report a list field (`tools`, `disallowed_tools`, `extensions`, `exclude_extensions`, `skills`, `allowed_subagents`) whose value is neither a string nor an array of strings; `extensions`, `skills` and `allowed_subagents` also accept a boolean. The loader then warns and ignores the field, as for any invalid value. A valid file is written per P27. | `model-runtime.ts:664-666`; `definitions/frontmatter.ts:56`. `parseAgentFile` returns a definition together with its invalid values and unknown keys (`frontmatter.ts:40-49`, `:67`, `:113`), so a parse without error is not yet a valid definition (pass 2). A loaded file's unknown key only warns and is dropped (`definitions/load.ts:114-119`), so a misspelled key such as `thinkingLevel` would do nothing; Paolo confirmed refusing unknown keys on 2026-09-28. Pass 3: list fields stringify any value with no diagnostic (`frontmatter.ts:140-172`), and `name:` overrides the file's base name (`:71-72`); Paolo chose on 2026-09-28 to fix the parser rather than add a wizard-only check. The feasibility probe ran exactly this call on the faux provider and parsed the reply (Appendix A). |
 | P22 | Effective model | The service records the child's model and thinking level when the child attaches. Displays compare them with the requested ones and `invocation.overridden`. | The `agent-model-display` old tests; `settings/models.ts:153-164`. |
 | P23 | Test fixtures | A fake UI context is a plain object with own methods. A test that matches `app.*` ids through `getKeybindings()` installs `setKeybindings(new KeybindingsManager())` and restores the previous manager afterwards. | The runner spreads the UI context (`runner.ts:556-565`), so a proxy loses its methods (Appendix A). `getKeybindings()` falls back to TUI ids only (`tui/src/keybindings.ts:315-320`). |
 | P24 | Visible assertions | Presentation tests assert visible output: status text, widget lines, rendered rows. None asserts only the absence of an error. | The service swallows listener errors (`service.ts:262-270`); the probe's first widget test failed silently. |
 | P25 | Old-case inventory | `$E2/old-cases.md` gives each of the 235 cases of the 12 old files a status: a numbered case `T<n>.<k>` of this plan, `Phase 1` with the covering phase 1 test, or `Dropped: <reason>`. Each task T7 to T13 fills the covering tests of its rows in the commit that adds them. `$E2/check-cases.mjs coverage` checks every row. Phase 1's checklist stays unchanged. | Pass 1 findings 9 and 14: a per-file map left the covered behaviors to the implementer. `extract-old-cases.mjs` parsed the old files with the TypeScript compiler (Appendix A). |
 | P26 | Print-mode hold | Documented as a known limitation, not fixed: a `pi -p` run aborts its background agents at exit. | pi-subagents' hold relied on a process-global manager (`src/index.ts:782`, `:861-869`), which phase 1 dropped with `manager-registry-guard`. It lies outside this phase's scope. |
-| P27 | Agent-file writes | `$SUB/atomic-write.ts` exports `writeFileAtomically(target, text)`. It creates `<target>.<pid>.tmp` in the target's directory with the exclusive flag `wx`, writes and closes it, then `renameSync`s it over the target. When the temporary path already exists, as a file or a symlink, it refuses and touches nothing there. Otherwise a failed write or rename leaves the target unchanged and removes only the temporary file this call created. Agent-file actions and the settings writer (P12) use it. A failed agent-file write, rename or unlink notifies `error` with the message and changes nothing else. After a successful change, `refreshDefinitions()` runs. When it throws, the change stays on disk, and the menu warns `Saved <path>, but agent definitions did not reload: <error>`. | Pass 1 finding 6: disk and registry could diverge with no truthful message. Pass 2: a temporary name another file already held could be overwritten or deleted. A rename within one directory replaces the file whole. |
-| P28 | Mutation records | Each code task lists numbered cases; each case is one new behavior (D36). The task's mutation spec `$R/mutations/<task>.json` holds at least one entry per case, and an entry may name several cases it breaks. Every entry lists concrete test files and the identities it expects to fail (`expect`). An entry is caught only when an expected test fails an assertion; a test file that fails to load is an infrastructure failure and never counts. Only `$E2/mutate.mjs` mutates files; it writes the record `$R/mutations/<task>.txt`, and `check-cases.mjs mutations` checks it. A case with several inventory rows needs entries until each row has a covering test that one of them fails. T20 commits the specs and records under `$E2/mutations/`. | Pass 1 findings 5 and 17; pass 2: an import failure passed as a caught mutation, the runner left test processes running after a SIGTERM, and the records lived only in `/tmp`. The runner now runs each check in its own process group and waits until the group is empty, after a signal and after a normal exit, before it restores the file or starts the next check (Appendix A). |
-| P29 | Existing tests | No task removes or renames an existing test: its file and full name stay. A task changes an existing expectation only where it says so. `$E2/check-identities.mjs` checks the phase run: every baseline test and every test of each task's last report is still present, counted with its copies; no test is skipped more often than in the baseline; every failure is a known flake or passes in a repair report. A task's earlier reports are skipped, because a review fix may rename a test the task itself added. | Pass 1 finding 14; pass 2: phase 1's identity check skipped tests with no pass, so a skipped test could vanish, and it ignored task reports and repair reports. Self-tests of the check (Appendix A). |
+| P27 | Agent-file writes | `$SUB/atomic-write.ts` exports `writeFileAtomically(target, text)` and `refuseSymlinks(root, path)`. `writeFileAtomically` creates `<target>.<pid>.tmp` in the target's directory with the exclusive flag `wx`, writes and closes it, then `renameSync`s it over the target. When the temporary path already exists, as a file or a symlink, it refuses and touches nothing there. Otherwise a failed write or rename leaves the target unchanged and removes only the temporary file this call created. Agent-file actions and the settings writer (P12) use it. Before any agent-file write or unlink, `refuseSymlinks` checks with `lstat` every component from the root down to the file: the project directory for `.pi/agents/` and `.agents/agents/`, `<agentDir>` for `<agentDir>/agents/`. A symlink there, dangling or not, the agent file included, refuses the action with `Refusing to change an agent file behind a symlink: <path>`, and nothing changes. A failed agent-file write, rename or unlink notifies `error` with the message and changes nothing else. After a successful change, `refreshDefinitions()` runs. When it throws, the change stays on disk, and the menu warns `Saved <path>, but agent definitions did not reload: <error>`. | Pass 1 finding 6: disk and registry could diverge with no truthful message. Pass 2: a temporary name another file already held could be overwritten or deleted. Pass 3: the loader follows symlinked agent directories (`definitions/load.ts:44-47`, `:91-106`), so a project action could reach another checkout or the personal directory; Paolo chose on 2026-09-28 to refuse any symlink on the path. A rename within one directory replaces the file whole. |
+| P28 | Mutation records | Each code task lists numbered cases; each case is one new behavior (D36). The task's mutation spec `$R/mutations/<task>.json` holds at least one entry per case, and an entry may name several cases it breaks. Every entry lists concrete test files and the identities it expects to fail (`expect`). An entry is caught only when an expected test fails an assertion; a test file that fails to load is an infrastructure failure and never counts. Only `$E2/mutate.mjs` mutates files; it writes the record `$R/mutations/<task>.txt`, and `check-cases.mjs mutations` checks it. A case with several inventory rows needs entries until each row has a covering test that one of them fails. T20 commits the specs and records under `$E2/mutations/`. | Pass 1 findings 5 and 17; pass 2: an import failure passed as a caught mutation, the runner left test processes running after a SIGTERM, and the records lived only in `/tmp`. The runner now runs each check in its own process group and waits until the group is empty, after a signal and after a normal exit, before it restores the file or starts the next check. Pass 3: a group still alive 10 s after SIGTERM stops the runner with exit 2, restores nothing, and keeps the marker naming the group (Appendix A). |
+| P29 | Existing tests | No task removes or renames an existing test: its file and full name stay. A task changes an existing expectation only where it says so. `$E2/check-identities.mjs` checks the phase run against the baseline and the task reports T1 to T16: every baseline test and every test of each task's last report is still present, counted with its copies; no test is skipped more often than in the baseline; every failure is a known flake or passes in a repair report. A task's earlier reports are skipped, because a review fix may rename a test the task itself added. A fix after the phase run (`T17-R<n>`, `T18-F<n>`) may add tests the phase run lacks; the check instead requires its last report to fail no test other than a known flake. | Pass 1 finding 14; pass 2: phase 1's identity check skipped tests with no pass, so a skipped test could vanish, and it ignored task reports and repair reports. Pass 3: requiring a review fix's new test in the earlier phase run made the done criteria unreachable. Self-tests of the check (Appendix A). |
 | P30 | Recorded approvals | Paolo's yes is written down with its date. In `$R/phase-review.md`, an applied finding carries `Approved: <date>, <Paolo's words>` above its `Applied:` line. In `$R/reviews.md`, a Deferred finding names the date of Paolo's yes. | Pass 1 finding 8. |
 | P31 | State directory | `$R` holds five read-only files (`chmod a-w`): `personal.ref`, `main-packages.status`, `live-settings.sha256`, `base-1.json` and `base-testsh.log`. Every run output goes to a new path in `$R`. | The planning request names `/tmp/sn2-impl` as the state directory, as phase 1 used `/tmp/sn-impl`. The read-only mode makes an accidental overwrite fail. |
 | P32 | Test file lists | A task names its test files as paths relative to `packages/coding-agent`. Patterns such as `test/suite/fork-subagents-*.test.ts` are passed quoted to `tf() { (cd packages/coding-agent && eval "ls -1d $*"); }`, which expands them in the package directory and fails on a pattern that matches nothing. The run passes `$(tf '<pattern>' <file> ...)`. After the run, `node -e 'console.log(require(process.argv[1]).testResults.length)' <report>` prints the number of lines `tf` printed. | Pass 2: commands run from the repository root, where the pattern matches nothing; `failing-tests.mjs` forwards it unchanged, and vitest treats it as a name filter that selects no file. Quoting keeps the shell from expanding the pattern at the root; `tf` behaved the same in bash and zsh (Appendix A). |
@@ -180,9 +180,11 @@ The probe ran on 2026-09-28 at `36feafa3e2c6f795a44bc6f370d4169f7dbced79`. The b
 | The coding-agent baseline has 4,790 tests, 0 failures and 50 pending. `./test.sh` fails only the known flake `exec.test.ts` "captures finite inherited descendant output after the shell exits". | `$R/base-1.json`; `$R/base-testsh.log` (Appendix A) |
 | The probe passes `npm run check`, and its full run shows no new failure beyond two known flakes. | Appendix A |
 | The built SDK loads the factory, sets the widget under a fake TUI context, and awaits a child's `session_shutdown` on quit. | `$E2/sdk-probe.mjs` against the probe's `dist` (Appendix A) |
-| The mutation runner ends the check's whole process group on SIGTERM (SIGKILL after 5 s) and waits until no member is left, then restores the file; it refuses to start after a run that died mid-mutation. It counts a mutation only when an expected test fails an assertion. | Runner checks (Appendix A) |
+| The mutation runner ends the check's whole process group on SIGTERM (SIGKILL after 5 s) and waits until no member is left, then restores the file; it refuses to start after a run that died mid-mutation. A group still alive after 10 s stops it with exit 2 and nothing restored. It counts a mutation only when an expected test fails an assertion. | Runner checks (Appendix A) |
 | `FileSettingsStorage.withLock` writes the settings file in place with `writeFileSync`, and skips the write when its callback returns `undefined`. | `settings-manager.ts:319-345` |
 | `parseAgentFile` returns a definition together with its invalid values and unknown keys; neither sets `error`. | `definitions/frontmatter.ts:40-49`, `:113`; reproduced by the pass 2 reviewers |
+| List fields turn any value into strings with no diagnostic, and a `name:` key overrides the file's base name, path characters included. | `definitions/frontmatter.ts:71-72`, `:140-172`; parser check (Appendix A) |
+| The loader warns on and drops an unknown key or an invalid value, even under `strictAgentFiles`, and follows symlinked agent directories. | `definitions/load.ts:44-47`, `:91-106`, `:114-123` |
 | The service starts with an empty user-agent registry until its first refresh. | `service/service.ts:216` |
 | This vitest reports a test that did not run as `skipped`. | The probe's full-run report: 4,749 passed, 50 skipped, 2 failed |
 | A test-file pattern passed from the repository root reaches vitest unexpanded, and vitest reads it as a name filter. | `printf '%s\n' test/suite/fork-subagents-*.test.ts` at the root prints the pattern; `failing-tests.mjs:64-67` forwards it |
@@ -344,6 +346,8 @@ The planning session commits this plan and `$E2/` as `docs: native subagents pha
 3. A steer before the child exists answers the queued text, emits one `subagents:steered`, and reaches the child when it starts.
 4. The nested `steer_subagent` reports a failed delivery the same way.
 
+**Existing expectations.** `fork-subagents-service.test.ts:323` and `:335` assert `steer(...)` as `true` and `false`. Both become `expect((await subagents.steer(...)).kind)`, with `"delivered"` and `"refused"`; the test keeps its name and the rest of its checks (P29).
+
 **Validation.** Test files: the two above, plus `fork-subagents-adapter.test.ts` and `fork-subagents-service.test.ts`. Mutations with case count 4. `npm run check` exits 0.
 
 **Commit.** `fix(coding-agent): report a subagent steer that fails to deliver`.
@@ -489,7 +493,7 @@ The probe's mutations P2 to P5 and P7 to P10 serve as this task's entries for th
 | Tests | `test/suite/fork-subagents-rendering.test.ts`. |
 
 **Cases.**
-1. A foreground call's `onUpdate` receives a running update after its child's first tool call, and no two updates come less than 100 ms apart (fake timers).
+1. With fake timers, a foreground call's `onUpdate` receives a running update after its child's first tool call, and no two updates come less than 100 ms apart. A burst of later changes (a second tool call, a turn end, new usage) yields a further update within the next window, whose details show the last change of the burst. A mutation that sends only the first update fails this case.
 2. A queued foreground call reports its position under `maxConcurrentForeground: 1`.
 3. An error result renders its error text, and a result without details renders its raw text.
 4. The result names the effective model even when the child inherited it, and while streaming before a session exists (old 53, 54).
@@ -648,14 +652,15 @@ The probe's mutations P2 to P5 and P7 to P10 serve as this task's entries for th
 17. A failed rename (the target path is a directory) leaves the target and no temporary file, and notifies `error`.
 18. A failed unlink (delete in a read-only directory) notifies `error` and leaves the file in place.
 19. A pre-existing `<target>.<pid>.tmp`, file or symlink, makes the action refuse and stays untouched.
+20. With `.pi/agents` a symlink to an outside directory, or the agent file a symlink to an outside file, create, edit, disable and delete refuse with the error naming the link; each outside file keeps its SHA-256, and no file appears outside the project (P27).
 
-**Validation.** Test files: the two new files and `test/fork-builtins.test.ts`. Mutations with case count 19; coverage of rows `T13`. `npm run check` exits 0.
+**Validation.** Test files: the two new files and `test/fork-builtins.test.ts`. Mutations with case count 20; coverage of rows `T13`. `npm run check` exits 0.
 
 **Commit.** `feat(coding-agent): /agents lists, edits, ejects and toggles agents`.
 
 ### T14. The create wizard (R16)
 
-**Changes.** `$SUB/ui/create-wizard.ts`, following pi-subagents `src/index.ts:3451-3636` except where R16 differs. It asks for the location (P18) and the method.
+**Changes.** `$SUB/ui/create-wizard.ts`, following pi-subagents `src/index.ts:3451-3636` except where R16 differs. `$SUB/definitions/frontmatter.ts` reports invalid list-field values per P21, and `test/fork-builtins/subagents/definitions.test.ts` gains that case. The wizard asks for the location (P18) and the method.
 - Generate: a description, a name, an overwrite confirm when the file exists, the notice `Generating agent definition...`, then the completion of P21. It ends with `Created <path>`, or a warning naming why nothing was written.
 - Manual: a name, a description, tools (`all`, `none`, `read-only`, or a typed list), a model (P20), a thinking level (`inherit` or a level) and the system prompt in the editor. It writes `buildNewAgentFile`'s text.
 - A name with a space, a `:` or a path separator is refused. Every write follows P27 and triggers `refreshDefinitions()`.
@@ -669,8 +674,10 @@ The probe's mutations P2 to P5 and P7 to P10 serve as this task's entries for th
 6. Declining the overwrite confirm leaves the existing file unchanged.
 7. Names with a space, a `:` or a path separator are refused.
 8. A reply that parses but carries an invalid documented value (`max_turns: -1`, `thinking: banana`) or an unknown key writes nothing, and the warning names each one (R16, P21).
+9. A reply whose `name:` differs from the chosen name, for example `name: ../../outside`, writes nothing; the chosen path stays absent, and a sentinel file outside the agent directory keeps its SHA-256.
+10. `parseAgentFile` reports `extensions: 123` and a mapping under `skills:` in `invalidValues`, accepts `extensions: false` and a string list, and a reply carrying either invalid value writes nothing.
 
-**Validation.** Mutations with case count 8. `npm run check` exits 0.
+**Validation.** Test files: `definitions.test.ts` and the wizard's suite file. Mutations with case count 10. `npm run check` exits 0.
 
 **Commit.** `feat(coding-agent): /agents create wizard`.
 
@@ -719,7 +726,7 @@ The probe's mutations P2 to P5 and P7 to P10 serve as this task's entries for th
 - `node $S diff $R/base-1.json $R/phase.json` lists no new failure other than a known flake.
 - With `ids() { grep -E '(^| )FAIL |^✖ |ℹ fail ' "$1" | sed -E 's/ \([0-9.]+ ?m?s\)$//' | sort -u; }`, `diff <(ids $R/base-testsh.log) <(ids $R/phase-testsh.log)` shows no added line other than a known flake. With `pkgs() { grep -E '^> @earendil-works/.* test$' "$1" | sort; }`, `diff <(pkgs $R/base-testsh.log) <(pkgs $R/phase-testsh.log)` prints nothing.
 - Every failure other than a known flake becomes task `T17-R<n>` under the regression rule and the review gate, committed as `fix(coding-agent): <failure>`. Its reports `$R/T17-R<n>-<k>.json` hold the failing identity's file and the test files of every task whose files its diff touches. A report that shows the identity passing discharges the failure.
-- `node $I $R/base-1.json $R/phase.json $R` exits 0 (P29): no baseline or task-report test is missing, none is skipped more often, and every failure is a known flake or discharged by a repair report.
+- `node $I $R/base-1.json $R/phase.json $R` exits 0 (P29): no baseline or task-report test is missing, none is skipped more often, every failure is a known flake or discharged by a repair report, and each fix's last report fails nothing but a known flake. Section 9 reruns it after T18.
 
 ### T18. Phase review
 
@@ -763,7 +770,7 @@ It also copies every `$R/mutations/*.json` and `*.txt` to `$E2/mutations/`, so l
 **Validation.** With `F=docs/plans/subagents-native-phase2.results.md`:
 - `for h in $(git log --format=%h $BASE..HEAD); do grep -qF "$h" $F || echo "missing $h"; done` prints nothing.
 - `for t in T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15 T16; do awk -v t="### $t" '$0 ~ "^"t"( |$)"{f=1;next} /^#{2,3} /{f=0} f' $F > $R/sec.txt; grep -q '^Review:' $R/sec.txt || echo "$t lacks Review"; [ $t = T16 ] && continue; grep -qE '^Tests: [^ ]' $R/sec.txt || echo "$t lacks Tests"; grep -qE '^Mutations: [^ ]' $R/sec.txt || echo "$t lacks Mutations"; done` prints nothing.
-- `for c in "T1 1" "T2 4" "T3 8" "T4 3" "T5 2" "T6 11" "T7 11" "T8 15" "T9 6" "T10 12" "T11 18" "T12 12" "T13 19" "T14 8" "T15 8"; do set -- $c; node $E2/check-cases.mjs mutations $E2/mutations/$1.txt $2 > /dev/null || echo "$1 mutations incomplete"; done` prints nothing.
+- `for c in "T1 1" "T2 4" "T3 8" "T4 3" "T5 2" "T6 11" "T7 11" "T8 15" "T9 6" "T10 12" "T11 18" "T12 12" "T13 20" "T14 10" "T15 8"; do set -- $c; node $E2/check-cases.mjs mutations $E2/mutations/$1.txt $2 > /dev/null || echo "$1 mutations incomplete"; done` prints nothing.
 - `for f in $E2/mutations/T17-R*.txt $E2/mutations/T18-F*.txt; do [ -e "$f" ] || continue; node $E2/check-cases.mjs mutations "$f" 1 > /dev/null || echo "$f incomplete"; done` prints nothing.
 - `for f in $R/mutations/*; do cmp -s "$f" $E2/mutations/$(basename "$f") || echo "not copied: $f"; done` prints nothing.
 - `grep -E '^- ' $R/reviews.md | grep -vxFf $F` prints nothing.
@@ -894,6 +901,7 @@ Feasibility checks, in a scratch test that was then deleted:
 - `harness.session.modelRuntime.completeSimple(model, { systemPrompt, messages })` returned the faux reply, `parseAgentFile` read its `description`, `tools` and body, and the session held no message afterwards.
 - Pass 2: `parseAgentFile` on the probe's `dist`, for a file with `thinking: banana`, `max_turns: -1` and `thinkingLevel: high`, returned a definition, no `error`, two `invalidValues` entries and `unknownKeys: ["thinkingLevel"]` (P21).
 - Pass 2: `tf 'test/suite/fork-subagents-*.test.ts' test/suite/skills-fork.test.ts` printed 7 paths in bash and in zsh, and a pattern that matched nothing exited 1 in both (P32).
+- Pass 3: `parseAgentFile` on the probe's `dist` turned `extensions: 123` into `["123"]` and a mapping under `skills:` into `["[object Object]"]`, with empty `invalidValues` and `unknownKeys`. For `name: ../../outside` in `/tmp/chosen.md` it returned the name `../../outside` with no diagnostic (P21; T14 cases 9 and 10).
 
 Mutation runner checks:
 - A SIGTERM 4 s into a run stopped the test process, restored the file to its SHA-256, removed the backup and the marker, and left no stray vitest process or scratch directory.
@@ -901,6 +909,7 @@ Mutation runner checks:
 - A `tsgo` entry that made a field `string` reported `1 of 1 failed, caught` with TS2322, and restored the file.
 - Pass 2: an entry whose module throws at load reported `0 of 0 failed, not caught` with a `! <file failed to run>` line, and the runner exited 1. `check-cases.mjs mutations` rejected that record.
 - Pass 2: a test that spawns a subprocess, adapted from the safety reviewer's probe (`/tmp/sn2-plan/sa2-check/check.mjs`). The interrupted runner left a subprocess alive or writing in all three scenarios. The final runner exited 143 on SIGTERM with the source restored and no marker, and the subprocess neither survived nor wrote late, also when it ignored SIGTERM. After a normal run, the runner ended the subprocess the test left behind before it moved on.
+- Pass 3: the same check forces the give-up path. The subprocess ignores SIGTERM, `MUTATE_KILL_AFTER_MS=60000` and `MUTATE_GIVE_UP_MS=1500`. After a normal exit and after a SIGTERM, the runner exited 2, left the source mutated, and kept the backup and the marker with the group's id; its message named the group and the recovery. The three earlier scenarios still passed, and the probe mutations reran: 12 of 12 caught, 37 of 37 restored, exit 0.
 
 Mutations, from `$E2/probe-mutations.json` run by `$E2/mutate.mjs` on the final probe:
 
@@ -924,7 +933,7 @@ The corrected T1 patterns matched 6 exports and 21 old-field lines on the probe,
 
 Old-case inventory: `extract-old-cases.mjs` listed 235 cases in the 12 files. `check-cases.mjs inventory` reported 235 rows and no offending row. On a sample, `check-cases.mjs coverage` flagged a row whose test no mutation of its case caught, an unknown `Phase 1` identity and an unfilled row. It passed the good rows, with and without a task filter. Pass 2: with a phase report in which a covering test failed, `coverage` exited 1; with a repair report listed after it, where the test passed, it exited 0.
 
-Identity check (`check-identities.mjs`), on copies of `base-1.json`, `probe-3.json` and a task report. It exited 0 for the unchanged phase run, and for a failure that a repair report shows passing. It exited 1 for a removed pending baseline test, a non-flake failure with no repair, a missing test of a task report, a newly skipped test, and a test missing from a task's last report. A test present only in a task's earlier report did not count.
+Identity check (`check-identities.mjs`), on copies of `base-1.json`, `probe-3.json` and a task report. It exited 0 for the unchanged phase run, and for a failure that a repair report shows passing. It exited 1 for a removed pending baseline test, a non-flake failure with no repair, a missing test of a task report, a newly skipped test, and a test missing from a task's last report. A test present only in a task's earlier report did not count. Pass 3: a `T18-F1-1.json` that adds a passing test the phase run lacks exited 0; the same report with that test failing exited 1; a failing `T18-F1-1.json` followed by a passing `T18-F1-2.json` exited 0.
 
 SDK probe against the probe's `dist`, with an isolated home:
 
@@ -943,13 +952,13 @@ Evidence files, with SHA-256:
 | File | SHA-256 |
 | --- | --- |
 | `docs/plans/subagents-native-phase2-evidence/probe.patch` | `5dfc07b31b01b86ffa63edc04a06b754fa9ddd73e02ad0e4df9819e6aa10e8d9` |
-| `docs/plans/subagents-native-phase2-evidence/mutate.mjs` | `6b83f2323b644e205c144cf79b85d8675c869300043f49a4d09920ea9eb0d0d1` |
+| `docs/plans/subagents-native-phase2-evidence/mutate.mjs` | `5bf027ffe69a75ac180e568589546abe0749da90a709acdf0e733d946c45297e` |
 | `docs/plans/subagents-native-phase2-evidence/probe-mutations.json` | `8a1fd43731fa65569e7243560873a7895001c08389f1d517e960053afb015c8f` |
 | `docs/plans/subagents-native-phase2-evidence/sdk-probe.mjs` | `75c44b1f5164fded6ea61b7708e5a3fb52a8d24df46be1d324c1a376e769671a` |
 | `docs/plans/subagents-native-phase2-evidence/old-cases.md` | `56ed8653b207b6104406846d28223df50bd6be76ab9b36b921d19e409b81892e` |
 | `docs/plans/subagents-native-phase2-evidence/extract-old-cases.mjs` | `408cf67fee571432f6e1bce4378490741ed0fe34597e4aeea39de74a61bab5f5` |
 | `docs/plans/subagents-native-phase2-evidence/check-cases.mjs` | `530c8af5d56fcd916306eeeedaac634044d965c37af49bc7326dddb838bbff09` |
-| `docs/plans/subagents-native-phase2-evidence/check-identities.mjs` | `e432708b4611cba2342c5a81a80d9624fce60c0ec515f98571876400140db614` |
+| `docs/plans/subagents-native-phase2-evidence/check-identities.mjs` | `b7a36fde51f72b09b837ae4c67bf04b5107b7b681396b22e9a4a7c027d5dcfb9` |
 
 `probe.patch` is the probe's final diff against its start commit, and `git apply --check` accepts it at BASE. It is a spike, not the implementation: its factory sets a string widget and registers a stub command, a stub renderer and stub tool renderers, which T6, T8, T9 and T13 replace. The fragments below are copied verbatim from it.
 
@@ -1347,3 +1356,33 @@ All six angles ran on `.pi/agents/plan-reviewer.md` at `941bec9ab` (thinking `hi
 | 17 | Safety: temporary agent-file writes could clobber or delete a file they did not create. | Accepted | P27: exclusive `wx` creation, refusal on collision, cleanup of its own file only; T3 case 7; T13 case 19. |
 
 Sections changed: 1 (the evidence row and the workflow paragraph), 2.1 (P1, P2, P12, P19, P21, P27 to P29, new P32 and P33), 3, 4, 5, T0, T1, T3, T6, T8, T13, T14, T15, T17, T20, 7, 8, 9, Appendices A and B, and the evidence files `probe.patch`, `mutate.mjs`, `probe-mutations.json`, `check-cases.mjs` and the new `check-identities.mjs`. Changes made after this pass and not yet reviewed: all of the above.
+
+### Pass 3: 2026-09-28, reviewer model openai-codex/gpt-6-astra
+
+All six angles ran as a re-review on `.pi/agents/plan-reviewer.md` (thinking `high`) against commit `82fac8be5`. Findings 1, 3, 4, 5 and 8 are one finding, and so are 7 and 12. The validation reviewer also listed checks that stay judgment: T16's documentation beyond its keywords, T18's dispositions and T20's attribution of review lines; T18 already leaves dispositions to Paolo.
+
+| Angle | Verdict |
+| --- | --- |
+| Traceability | PASS_WITH_FINDINGS |
+| Assumptions | FAIL |
+| Completeness | FAIL |
+| Feasibility | PASS_WITH_FINDINGS |
+| Validation | PASS_WITH_FINDINGS |
+| Safety | PASS_WITH_FINDINGS |
+
+| # | Finding | Disposition | Evidence |
+| --- | --- | --- | --- |
+| 1 | Traceability: the identity check required tests added by a `T18-F<n>` fix to appear in the earlier phase run. | Accepted | `check-identities.mjs` reads fix reports (`T17-R`, `T18-F`) apart: their tests need not be in `phase.json`, and their last report must pass them (P29; Appendix A self-tests). |
+| 2 | Assumptions, blocking: list fields accept any value with no diagnostic, so the wizard would write `extensions: 123`. | Accepted; Paolo chose the parser fix, 2026-09-28 | `frontmatter.ts:140-172`; Appendix A parser check. P21; T14 changes and case 10. |
+| 3 | Assumptions, blocking: as 1. | Accepted, as 1 | As 1. |
+| 4 | Completeness, blocking: as 1. | Accepted, as 1 | As 1. |
+| 5 | Feasibility: as 1. | Accepted, as 1 | As 1. |
+| 6 | Feasibility: T2 changes `steer` to a promise, and the service suite asserts it as a boolean. | Accepted | `fork-subagents-service.test.ts:323`, `:335`. T2 names the two expectation changes (P29). |
+| 7 | Feasibility: the runner restored the file and went on when a process group outlived `endGroup`. | Accepted | `mutate.mjs` stops with exit 2, restores nothing, and keeps the marker and backup; the forced give-up check passes (Appendix A). |
+| 8 | Validation: as 1. | Accepted, as 1 | As 1. |
+| 9 | Validation: a generated `name:` could differ from the chosen name, even hold a path. | Accepted | `frontmatter.ts:71-72`; Appendix A parser check. P21 refuses it; T14 case 9. |
+| 10 | Validation: one progress update satisfied T8's live-progress case. | Accepted | T8 case 1 now requires a later update after a burst, showing its last change. |
+| 11 | Safety: agent-file actions could reach outside the project or agent directory through a symlink. | Accepted; Paolo chose to refuse any symlink, 2026-09-28 | `definitions/load.ts:44-47`, `:91-106`. P27's `refuseSymlinks`; T13 case 20. |
+| 12 | Safety: as 7. | Accepted, as 7 | As 7. |
+
+Sections changed: 1 (the workflow paragraph), 2.1 (P21, P27, P28, P29), 3, T2, T8, T13, T14, T17, T20, Appendices A and B, and the evidence files `mutate.mjs` and `check-identities.mjs`. Changes made after this pass and not yet reviewed: all of the above.

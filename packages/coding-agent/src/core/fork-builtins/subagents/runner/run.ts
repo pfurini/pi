@@ -110,11 +110,20 @@ export async function createChild(request: ChildRequest): Promise<Child> {
 	const report = (activity: ChildActivity) => request.onActivity?.(activity);
 	const isolated = request.isolated || definition.isolated === true;
 
-	const memory = definition.memory ? (hasWriteTools(definition) ? "read-write" : "read-only") : undefined;
-	const memoryBlock = definition.memory
+	// Project and local memory live in the project; like its other files, they reach the prompt only when trusted.
+	const memoryScope =
+		definition.memory === "user" || parent.settingsManager.isProjectTrusted() ? definition.memory : undefined;
+	if (definition.memory && !memoryScope) {
+		report({
+			type: "tools-error",
+			message: `memory: ${definition.memory} for agent "${definition.name}" is off in an untrusted project`,
+		});
+	}
+	const memory = memoryScope ? (hasWriteTools(definition) ? "read-write" : "read-only") : undefined;
+	const memoryBlock = memoryScope
 		? (memory === "read-write" ? readWriteMemoryBlock : readOnlyMemoryBlock)(
 				definition.name,
-				definition.memory,
+				memoryScope,
 				configCwd,
 				request.agentDir,
 			)

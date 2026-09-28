@@ -332,6 +332,40 @@ describe("child turns", () => {
 	});
 });
 
+describe("child memory in an untrusted project", () => {
+	it("reads and creates no project or local memory, keeps user memory, and warns", async () => {
+		const harness = await parent();
+		harness.settingsManager.setProjectTrusted(false);
+		const planted = join(harness.tempDir, ".pi", "agent-memory", "keeper");
+		mkdirSync(planted, { recursive: true });
+		writeFileSync(join(planted, "MEMORY.md"), "PLANTED PROJECT MEMORY");
+		const project = seen();
+		harness.setResponses([capture(project)]);
+		const keeper = await create(harness, agent({ name: "keeper", memory: "project" }));
+		await runTurn(keeper.child, { prompt: "look", graceTurns: 5 });
+		expect(project.system).not.toContain("PLANTED PROJECT MEMORY");
+		expect(project.system).not.toContain("# Agent Memory");
+		expect(keeper.activity).toContainEqual({
+			type: "tools-error",
+			message: 'memory: project for agent "keeper" is off in an untrusted project',
+		});
+
+		const local = seen();
+		harness.setResponses([capture(local)]);
+		const scribe = await create(harness, agent({ name: "scribe", memory: "local" }));
+		await runTurn(scribe.child, { prompt: "look", graceTurns: 5 });
+		expect(local.system).not.toContain("# Agent Memory");
+		expect(existsSync(join(harness.tempDir, ".pi", "agent-memory-local", "scribe"))).toBe(false);
+
+		const user = seen();
+		harness.setResponses([capture(user)]);
+		const diarist = await create(harness, agent({ name: "diarist", memory: "user" }));
+		await runTurn(diarist.child, { prompt: "look", graceTurns: 5 });
+		expect(user.system).toContain("# Agent Memory\n");
+		expect(existsSync(join(harness.tempDir, "agent-memory", "diarist"))).toBe(true);
+	});
+});
+
 describe("child transcripts and sessions", () => {
 	it("writes the child's messages to its .output transcript, and nothing under output_transcript: false", async () => {
 		const harness = await parent();

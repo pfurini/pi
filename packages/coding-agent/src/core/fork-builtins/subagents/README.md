@@ -112,7 +112,7 @@ A later source overrides an earlier one by name. An agent switched off with `ena
 | `prompt_mode` | `replace` (default) or `append` to the parent's system prompt. |
 | `inherit_context`, `run_in_background` | Defaults the file locks for every call. |
 | `isolated` | No extensions, no skills and no nested tools. |
-| `memory` | `user`, `project` or `local` persistent memory. |
+| `memory` | `user`, `project` or `local` persistent memory; `project` and `local` apply only in a trusted project. |
 | `isolation` | `worktree`, or `off` to refuse one. |
 | `enabled` | `false` keeps the agent out of spawns and listings. |
 

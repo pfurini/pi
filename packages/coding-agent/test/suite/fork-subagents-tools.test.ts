@@ -15,7 +15,7 @@ import { createEventBus } from "../../src/core/event-bus.ts";
 import type { ExtensionAPI } from "../../src/core/extensions/types.ts";
 import * as definitionLoads from "../../src/core/fork-builtins/subagents/definitions/load.ts";
 import { lineageForBus } from "../../src/core/fork-builtins/subagents/runner/lineage.ts";
-import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import { inspectRecord, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor, subagentSessionRecord } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import {
@@ -576,7 +576,7 @@ describe("registration", () => {
 		await call(harness, "Agent", task("eta task", { run_in_background: false }));
 		const service = serviceOf(harness);
 		const [record] = service.list();
-		const child = record.child;
+		const child = inspectRecord(service, record.id)?.child;
 		if (!child) throw new Error("the child was not kept");
 		const lineage = lineageForBus(child.loader.getEventBus());
 		// Identity checks: a deep comparison would walk the session into its theme proxy.

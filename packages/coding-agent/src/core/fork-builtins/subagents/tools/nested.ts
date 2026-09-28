@@ -8,7 +8,7 @@ import type { ToolDefinition } from "../../../extensions/types.ts";
 import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../names.ts";
 import type { NestedRuntime } from "../service/nested.ts";
 import { statusNote } from "../service/notifications.ts";
-import { isTerminal, type SubagentRecord } from "../service/records.ts";
+import { isTerminal, type SubagentView } from "../service/records.ts";
 import { THINKING_LEVELS } from "../settings/models.ts";
 import { errorText, foregroundOutcomeNote, partialOutputSuffix } from "./common.ts";
 
@@ -21,7 +21,7 @@ function nestedText(text: string) {
  * foreground spawn or a resume, which hands back everything; `fetched` is a background child's
  * result, which the parent may poll again.
  */
-function formatNested(record: SubagentRecord, position: "inline" | "fetched"): string {
+function formatNested(record: SubagentView, position: "inline" | "fetched"): string {
 	if (record.status === "error")
 		return `Agent failed: ${record.error ?? "unknown error"}${partialOutputSuffix(record)}`;
 	if (!isTerminal(record)) return `Agent ${record.id} is ${record.status}.`;
@@ -110,7 +110,7 @@ export function createNestedToolDefinitions(runtime: NestedRuntime): ToolDefinit
 					return nestedText(errorText(error));
 				}
 			}
-			let record: SubagentRecord;
+			let record: SubagentView;
 			try {
 				record = await runtime.spawn({
 					type: args.subagent_type,

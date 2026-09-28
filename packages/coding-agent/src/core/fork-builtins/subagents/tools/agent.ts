@@ -26,7 +26,7 @@ import {
 } from "../definitions/registry.ts";
 import { AGENT_TOOL_NAME } from "../names.ts";
 import { WorktreeStartError } from "../runner/worktree.ts";
-import type { SubagentRecord } from "../service/records.ts";
+import type { SubagentView } from "../service/records.ts";
 import {
 	busSkills,
 	notFound,
@@ -163,7 +163,7 @@ function buildSurface(
 }
 
 /** What a background spawn or resume returns: the id and how to follow up. */
-function launchedText(record: SubagentRecord, verb: "started" | "resumed", maxConcurrent: number): string {
+function launchedText(record: SubagentView, verb: "started" | "resumed", maxConcurrent: number): string {
 	const queued = record.status === "queued";
 	return [
 		`Agent ${queued ? "queued" : verb} in background.`,
@@ -179,7 +179,7 @@ function launchedText(record: SubagentRecord, verb: "started" | "resumed", maxCo
 }
 
 /** What a foreground run returns: its whole output, with a note for any outcome short of completion. */
-function finishedText(record: SubagentRecord, showCost: boolean): string {
+function finishedText(record: SubagentView, showCost: boolean): string {
 	if (record.status === "error")
 		return `Agent failed: ${record.error ?? "unknown error"}${partialOutputSuffix(record)}`;
 	const stats = [`${record.toolUses} tool uses`];
@@ -208,7 +208,7 @@ async function resume(
 	if (!existing) return textResult(service, notFound(ref));
 	const background =
 		existing.definition.runInBackground ?? args.run_in_background ?? service.reloadSettings().backgroundByDefault;
-	let record: SubagentRecord;
+	let record: SubagentView;
 	try {
 		record = service.resume(ref, args.prompt, { background, signal: background ? undefined : signal, toolCallId });
 	} catch (error) {
@@ -246,7 +246,7 @@ export function createAgentToolDefinition(session: AgentSession, context: Subage
 			const args = params as AgentToolParams;
 			const service = requireService(session);
 			if (args.resume) return resume(service, args, args.resume, toolCallId, signal);
-			let record: SubagentRecord;
+			let record: SubagentView;
 			try {
 				record = await service.spawn({
 					type: args.subagent_type,

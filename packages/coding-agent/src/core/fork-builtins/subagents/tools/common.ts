@@ -5,7 +5,7 @@
  * the behavior reference.
  */
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { SubagentRecord, SubagentStatus } from "../service/records.ts";
+import type { SubagentStatus, SubagentView } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
 import { displayTokens } from "../usage.ts";
 
@@ -23,7 +23,7 @@ export function errorText(error: unknown): string {
 }
 
 /** `33.8k token`, or "" when nothing was spent. */
-export function formatTokens(record: SubagentRecord): string {
+export function formatTokens(record: SubagentView): string {
 	const count = displayTokens(record.usage);
 	if (count <= 0) return "";
 	if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M token`;
@@ -45,15 +45,6 @@ export function formatMs(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** The child's context-window fill, or undefined when no session reports it. */
-export function contextPercent(record: SubagentRecord): number | undefined {
-	try {
-		return record.child?.session.getSessionStats().contextUsage?.percent ?? undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 /** A foreground caller holds the whole output inline, so the note says there is nothing more to fetch. */
 export function foregroundOutcomeNote(status: SubagentStatus): string {
 	switch (status) {
@@ -69,11 +60,11 @@ export function foregroundOutcomeNote(status: SubagentStatus): string {
 }
 
 /** The failed run's own partial output, as a labeled suffix, or "". */
-export function partialOutputSuffix(record: SubagentRecord): string {
+export function partialOutputSuffix(record: SubagentView): string {
 	const partial = record.result?.trim();
 	return partial ? `\n\nPartial output before the failure:\n${partial}` : "";
 }
 
-export function displayName(record: SubagentRecord): string {
+export function displayName(record: SubagentView): string {
 	return record.definition.displayName ?? record.type;
 }

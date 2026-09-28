@@ -23,8 +23,9 @@ import {
 	createAgentSessionServices,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
+import type { SubagentView } from "../../src/core/fork-builtins/subagents/service/records.ts";
 import {
+	inspectRecord,
 	SESSION_ENDED_ERROR,
 	SubagentService,
 	type SubagentServiceOptions,
@@ -34,7 +35,7 @@ import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import type { DefaultResourceLoader } from "../../src/core/resource-loader.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, CHILD_START, held, notices, router, say, sleep } from "./fork-subagents-fixtures.ts";
+import { type Behavior, CHILD_START, held, notices, router, say, sleep, textOf } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const harnesses: Harness[] = [];
@@ -213,12 +214,70 @@ describe("notifications", () => {
 	});
 });
 
+describe("the read-only surface", () => {
+	it("hands out frozen settings, and a reread replaces them with a new frozen object", async () => {
+		const harness = await parent();
+		const subagents = service(harness);
+		const first = subagents.settings;
+		expect(Object.isFrozen(first)).toBe(true);
+		vi.spyOn(harness.settingsManager, "getGlobalSettings").mockReturnValue({
+			forkBuiltins: { subagents: { maxConcurrent: 5 } },
+		} as unknown as Settings);
+		const second = subagents.reloadSettings();
+		expect(second).not.toBe(first);
+		expect(Object.isFrozen(second)).toBe(true);
+		expect(subagents.settings).toBe(second);
+		expect([first.maxConcurrent, second.maxConcurrent]).toEqual([10, 5]);
+	});
+
+	it("hands out a running child's conversation and its changes, and none for a queued agent", async () => {
+		const gate = held(() => fauxAssistantMessage("talk done"));
+		const harness = await parent({ maxConcurrent: 1, defaultJoinMode: "async" }, { talk: [gate.behavior] });
+		const subagents = service(harness);
+		const talking = await subagents.spawn(background("talk task"));
+		const waiting = await subagents.spawn(background("wait task"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		expect(subagents.conversation(waiting.id)).toBeUndefined();
+		const conversation = subagents.conversation(talking.id);
+		if (!conversation) throw new Error("no conversation for a running agent");
+		const texts = () =>
+			conversation.messages.map((message) =>
+				message.role === "user" || message.role === "assistant" ? textOf(message.content) : "",
+			);
+		expect(texts().join("\n")).toContain("talk task");
+		let changes = 0;
+		const unsubscribe = conversation.subscribe(() => {
+			changes++;
+		});
+		gate.release();
+		await subagents.waitForResult(talking.id);
+		expect(changes).toBeGreaterThan(0);
+		expect(texts()).toContain("talk done");
+		unsubscribe();
+		await subagents.waitForResult(waiting.id);
+	});
+
+	it("numbers queued agents by their place in the queue, and a running one not at all", async () => {
+		const gate = held();
+		const harness = await parent({ maxConcurrent: 1, defaultJoinMode: "async" }, { hold: [gate.behavior] });
+		const subagents = service(harness);
+		const running = await subagents.spawn(background("hold running"));
+		const next = await subagents.spawn(background("hold next"));
+		const last = await subagents.spawn(background("hold last"));
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		expect([running, next, last].map((record) => subagents.queuePosition(record.id))).toEqual([undefined, 1, 2]);
+		gate.release();
+		await subagents.waitForResult(last.id);
+		expect(subagents.queuePosition(last.id)).toBeUndefined();
+	});
+});
+
 describe("pools", () => {
 	it("queues the eleventh background spawn at maxConcurrent 10, detached background spawns included", async () => {
 		const gate = held();
 		const harness = await parent({ defaultJoinMode: "async" }, { busy: [gate.behavior] });
 		const subagents = service(harness);
-		const running: SubagentRecord[] = [];
+		const running: SubagentView[] = [];
 		for (let index = 0; index < 9; index++) running.push(await subagents.spawn(background(`busy ${index}`)));
 		running.push(
 			await subagents.spawn({
@@ -263,13 +322,13 @@ describe("waits, steering, stopping and resuming", () => {
 		const runningRecord = await subagents.spawn(background("hold running"));
 		const queuedRecord = await subagents.spawn(background("hold queued"));
 		expect(queuedRecord.status).toBe("queued");
-		const laterWaits: Array<{ wait: Promise<SubagentRecord>; removed: ReturnType<typeof vi.spyOn> }> = [];
+		const laterWaits: Array<{ wait: Promise<SubagentView>; removed: ReturnType<typeof vi.spyOn> }> = [];
 		for (const record of [runningRecord, queuedRecord]) {
 			const controller = new AbortController();
 			const wait = subagents.waitForResult(record.id, controller.signal);
 			controller.abort(new Error("wait cancelled"));
 			await expect(wait).rejects.toThrow("wait cancelled");
-			expect(record.waiters.size).toBe(0);
+			expect(inspectRecord(subagents, record.id)?.waiters.size).toBe(0);
 			expect(record.status).toBe(record === runningRecord ? "running" : "queued");
 			// A wait that ends normally leaves nothing on its signal either.
 			const kept = new AbortController();
@@ -285,7 +344,8 @@ describe("waits, steering, stopping and resuming", () => {
 		}
 		expect(runningRecord.resultConsumed).toBe(false);
 		expect(queuedRecord.resultConsumed).toBe(false);
-		expect(runningRecord.waiters.size + queuedRecord.waiters.size).toBe(0);
+		const waiters = (record: SubagentView) => inspectRecord(subagents, record.id)?.waiters.size;
+		expect((waiters(runningRecord) ?? 0) + (waiters(queuedRecord) ?? 0)).toBe(0);
 		await vi.waitFor(() => {
 			expect(notices(harness.session).join("\n")).toContain(runningRecord.id);
 			expect(notices(harness.session).join("\n")).toContain(queuedRecord.id);
@@ -414,14 +474,14 @@ describe("definitions, usage and statuses", () => {
 			for (const message of records) if (message.role === "assistant") addUsage(total, message.usage);
 			return total;
 		};
-		const first = sum(record.child?.session.messages ?? []);
+		const first = sum(inspectRecord(subagents, record.id)?.child?.session.messages ?? []);
 		expect(first.input + first.output).toBeGreaterThan(0);
 		expect(record.usage).toEqual(first);
 		expect(subagents.takeReportedUsage()).toEqual(first);
 		expect(subagents.takeReportedUsage()).toBeUndefined();
 		subagents.resume(record.id, "count again", { background: false });
 		await subagents.waitForResult(record.id);
-		const total = sum(record.child?.session.messages ?? []);
+		const total = sum(inspectRecord(subagents, record.id)?.child?.session.messages ?? []);
 		expect(record.usage).toEqual(total);
 		const delta = subagents.takeReportedUsage() as Usage;
 		expect(delta.input + first.input).toBe(total.input);
@@ -480,8 +540,14 @@ describe("ownership", () => {
 		subagents.subscribe((event) => {
 			if (event.type === "ended") ended.push(`${event.record.id}:${event.record.status}`);
 		});
-		const finishedLoader = vi.spyOn(finished.child?.loader as DefaultResourceLoader, "dispose");
-		const runningLoader = vi.spyOn(running.child?.loader as DefaultResourceLoader, "dispose");
+		const finishedLoader = vi.spyOn(
+			inspectRecord(subagents, finished.id)?.child?.loader as DefaultResourceLoader,
+			"dispose",
+		);
+		const runningLoader = vi.spyOn(
+			inspectRecord(subagents, running.id)?.child?.loader as DefaultResourceLoader,
+			"dispose",
+		);
 		const sessionId = harness.session.sessionId;
 		harness.session.dispose();
 		expect(subagents.isDisposed).toBe(true);
@@ -557,7 +623,7 @@ describe("ownership", () => {
 		const subagents = new SubagentService(first, { agentDir: tempDir, forkBaseToolNames: () => [] });
 		const record = await subagents.spawn(background("hold"));
 		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
-		const loader = vi.spyOn(record.child?.loader as DefaultResourceLoader, "dispose");
+		const loader = vi.spyOn(inspectRecord(subagents, record.id)?.child?.loader as DefaultResourceLoader, "dispose");
 		await runtime.newSession();
 		expect(runtime.session).not.toBe(first);
 		expect(subagents.isDisposed).toBe(true);
@@ -591,7 +657,7 @@ describe("ownership", () => {
 		await subagents.waitForResult(finished.id);
 		const running = await subagents.spawn(background("hold on"));
 		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
-		const loader = vi.spyOn(finished.child?.loader as DefaultResourceLoader, "dispose");
+		const loader = vi.spyOn(inspectRecord(subagents, finished.id)?.child?.loader as DefaultResourceLoader, "dispose");
 		vi.advanceTimersByTime(9 * 60_000);
 		expect(subagents.get(finished.id)).toBe(finished);
 		vi.advanceTimersByTime(2 * 60_000);

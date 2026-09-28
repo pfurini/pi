@@ -15,7 +15,7 @@ import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { EventBus } from "../../../event-bus.ts";
 import type { NestedRuntime } from "../service/nested.ts";
-import type { SubagentRecord } from "../service/records.ts";
+import type { SubagentView } from "../service/records.ts";
 import type { SpawnRequest, SubagentService } from "../service/service.ts";
 import { subagentServiceFor, subagentSessionRecord } from "../service/sessions.ts";
 import { flushSpawnReply, markSpawnPending } from "./events.ts";
@@ -41,7 +41,7 @@ interface RpcSpawnOptions {
 interface Scope {
 	service: SubagentService;
 	/** The agent a child session runs as; absent in a top-level session. */
-	owner?: SubagentRecord;
+	owner?: SubagentView;
 	nested?: NestedRuntime;
 }
 
@@ -172,14 +172,16 @@ export function serveRpc(session: AgentSession, bus: EventBus): () => void {
 			const record = scope.service.lookup(id);
 			if (!record) throw new Error("Agent not found");
 			// A nested agent is its parent's to stop; aborting it would fail the parent's own step.
-			if (record.parent !== scope.owner) throw new Error("Agent is owned by another agent or workflow");
+			if (record.parentId !== scope.owner?.id) throw new Error("Agent is owned by another agent or workflow");
 			if (!scope.service.stop(id, scope.owner)) throw new Error("Agent is not running");
 		}),
 		serve<{ requestId: string; agentId?: unknown }>(bus, "subagents:rpc:consume", ({ agentId }) => {
 			const scope = scopeOf(session);
 			const ref = typeof agentId === "string" ? agentId : "";
 			const record = scope.service.lookup(ref);
-			if (record && record.parent !== scope.owner) throw new Error("Agent is owned by another agent or workflow");
+			if (record && record.parentId !== scope.owner?.id) {
+				throw new Error("Agent is owned by another agent or workflow");
+			}
 			if (!scope.service.consume(ref, scope.owner)) throw new Error("Agent not found or still running");
 		}),
 	];

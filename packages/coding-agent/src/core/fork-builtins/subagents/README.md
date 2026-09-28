@@ -30,7 +30,7 @@ Phase 2 adds `ui/`: the widget, FleetView, the conversation viewer, `/agents`, t
 
 ## The service
 
-`SubagentService` holds every record of one session: its own agents, and the nested agents they spawn.
+`SubagentService` holds every record of one session: its own agents, and the nested agents they spawn. Its methods and events hand out `SubagentView`, a read-only view of a record that reaches no child session, run or waiter (F13). The settings it hands out are frozen, and its registry is typed read-only. The accessors `conversation(id)`, `contextPercent(id)`, `queuePosition(id)` and `ownerBusOf(view)` answer what callers used to read from a record's child.
 
 | Topic | Behavior |
 | --- | --- |
@@ -60,7 +60,7 @@ The `Agent` description follows `toolDescriptionMode`. `full` is the default, an
 
 ## Settings
 
-Settings live under `forkBuiltins.subagents` in Pi's global and project `settings.json` (D20). The project value wins, and project values apply only in a trusted project. The reader drops a value of the wrong type or out of range, with one warning per key. `writeProjectSubagentSettings` writes the project object; phase 2's `/agents` menu calls it.
+Settings live under `forkBuiltins.subagents` in Pi's global and project `settings.json` (D20). The project value wins, and project values apply only in a trusted project. The reader drops a value of the wrong type or out of range, with one warning per key. `writeProjectSubagentSettings` writes the project object; phase 2's `/agents` menu calls it. The writer refuses any value the reader would drop, naming its key, and refuses a symlinked `.pi` or `settings.json`. It replaces an existing file whole (`atomic-write.ts`), so a failed write leaves it byte-identical.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

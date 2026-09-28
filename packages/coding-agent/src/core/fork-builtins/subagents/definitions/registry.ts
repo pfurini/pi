@@ -22,10 +22,10 @@ export const NO_FALLBACK = "none";
 
 /** Whether a skill agent's bare alias was granted; the rewrite maps publish `collided` as its negation. */
 export interface SkillAliasDecision {
-	skillId: string;
-	bareName: string;
-	qualified: string;
-	granted: boolean;
+	readonly skillId: string;
+	readonly bareName: string;
+	readonly qualified: string;
+	readonly granted: boolean;
 }
 
 export interface AgentRegistry {

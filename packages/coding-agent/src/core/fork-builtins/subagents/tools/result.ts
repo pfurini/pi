@@ -13,11 +13,10 @@ import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
 import { GET_RESULT_TOOL_NAME } from "../names.ts";
 import { statusNote } from "../service/notifications.ts";
-import { isTerminal, type SubagentRecord } from "../service/records.ts";
+import { isTerminal, type SubagentView } from "../service/records.ts";
 import { notFound } from "../service/service.ts";
 import { requireService } from "../service/sessions.ts";
 import {
-	contextPercent,
 	displayName,
 	errorText,
 	formatCost,
@@ -71,13 +70,12 @@ function conversationOf(messages: readonly AgentMessage[]): string {
 	return parts.join("\n\n");
 }
 
-function reportOf(record: SubagentRecord, showCost: boolean): string {
+function reportOf(record: SubagentView, showCost: boolean, context: number | undefined): string {
 	const stats = [`Tool uses: ${record.toolUses}`];
 	const tokens = formatTokens(record);
 	if (tokens) stats.push(tokens);
 	const cost = showCost ? formatCost(record.usage.cost.total) : "";
 	if (cost) stats.push(`Cost: ${cost}`);
-	const context = contextPercent(record);
 	if (context !== undefined) stats.push(`Context: ${Math.round(context)}%`);
 	if (record.compactionCount) stats.push(`Compactions: ${record.compactionCount}`);
 	stats.push(
@@ -119,10 +117,11 @@ export function createResultToolDefinition(session: AgentSession): ToolDefinitio
 					);
 				}
 			}
-			let output = reportOf(record, service.settings.showCost);
+			let output = reportOf(record, service.settings.showCost, service.contextPercent(record.id));
 			service.consume(record.id);
-			if (params.verbose && record.child) {
-				const conversation = conversationOf(record.child.session.messages);
+			const child = params.verbose ? service.conversation(record.id) : undefined;
+			if (child) {
+				const conversation = conversationOf(child.messages);
 				if (conversation) output += `\n\n--- Agent Conversation ---\n${conversation}`;
 			}
 			return textResult(service, output);

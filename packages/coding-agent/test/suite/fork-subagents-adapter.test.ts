@@ -20,6 +20,7 @@ import {
 } from "../../src/core/fork-builtins/subagents/adapter/events.ts";
 import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
 import {
+	inspectRecord,
 	SESSION_ENDED_ERROR,
 	type SubagentEvent,
 	type SubagentService,
@@ -157,7 +158,7 @@ async function spawnId(bus: EventBus, params: Record<string, unknown>): Promise<
 /** A background top-level agent whose child session stays open, held on its first request. */
 async function openChild(harness: Harness, bus: EventBus, type: string, task: string): Promise<SubagentRecord> {
 	const id = await spawnId(bus, { type, prompt: task, options: { description: task, isBackground: true } });
-	const record = serviceOf(harness).get(id);
+	const record = inspectRecord(serviceOf(harness), id);
 	if (!record) throw new Error("no record");
 	await vi.waitFor(() => expect(record.child).toBeDefined(), CHILD_START);
 	return record;
@@ -405,12 +406,15 @@ describe("lifecycle payloads", () => {
 		bridgeServiceEvents({
 			eventBus: compactions,
 			settings: service.settings,
+			ownerBusOf: () => compactions,
 			subscribe: (listener) => {
 				emit = listener;
 				return () => true;
 			},
 		});
-		record.compactionCount = 1;
+		const internal = inspectRecord(service, record.id);
+		if (!internal) throw new Error("no record");
+		internal.compactionCount = 1;
 		emit?.({ type: "compacted", record, reason: "threshold", tokensBefore: 1234 });
 		expect(normalize(compacted.of("subagents:compacted"))).toEqual([example("subagents:compacted")]);
 	});
@@ -425,6 +429,7 @@ describe("lifecycle payloads", () => {
 		bridgeServiceEvents({
 			eventBus: gated,
 			settings: serviceOf(harness).settings,
+			ownerBusOf: () => gated,
 			subscribe: (listener) => {
 				emit = listener;
 				return () => true;
@@ -583,7 +588,7 @@ describe("ownership across buses", () => {
 			options: { description: "alpha task", isBackground: true },
 		});
 		await serviceOf(harness).waitForResult(id);
-		const lead = serviceOf(harness).get(id);
+		const lead = inspectRecord(serviceOf(harness), id);
 		if (!lead) throw new Error("no record");
 		// The finished lead's session stays retained, and so does the adapter on its bus.
 		const started = listen(childBus(lead), ["subagents:started"]);
@@ -655,7 +660,7 @@ describe("ownership across buses", () => {
 			prompt: "alpha task",
 			options: { description: "alpha task", isBackground: true, cwd: work },
 		});
-		const lead = serviceOf(harness).get(id);
+		const lead = inspectRecord(serviceOf(harness), id);
 		await vi.waitFor(() => expect(lead?.child).toBeDefined(), CHILD_START);
 		const child = lead?.child;
 		if (!lead || !child) throw new Error("no child session");
@@ -750,7 +755,7 @@ describe("skill-agent rewrite maps", () => {
 			prompt: "alpha task",
 			options: { description: "alpha", isBackground: true, cwd: elsewhere },
 		});
-		const record = serviceOf(harness).get(id);
+		const record = inspectRecord(serviceOf(harness), id);
 		await vi.waitFor(() => expect(record?.child).toBeDefined(), CHILD_START);
 		if (!record) throw new Error("no record");
 		const requestId = randomUUID();

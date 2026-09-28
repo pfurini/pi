@@ -5,9 +5,12 @@
  * and `schedulingEnabled` (D17) and without the boolean spelling of `agentMentions`. A value of the
  * wrong type or out of range is dropped with one warning per key.
  */
+import { lstatSync } from "node:fs";
+import { join } from "node:path";
 import { getAgentDir } from "../../../../config.ts";
 import { stripBom } from "../../../../utils/text.ts";
 import { FileSettingsStorage, type SettingsManager } from "../../../settings-manager.ts";
+import { writeFileAtomically } from "../atomic-write.ts";
 
 export type JoinMode = "async" | "group" | "smart";
 export type ToolDescriptionMode = "full" | "compact" | "custom";
@@ -168,23 +171,41 @@ function subagentsSection(settings: object): unknown {
  * holds no project settings in an untrusted project, so project values apply only when trusted.
  */
 export function readSubagentSettings(settingsManager: SettingsManager): {
-	settings: SubagentSettings;
+	settings: Readonly<SubagentSettings>;
 	warnings: string[];
 } {
 	const global = sanitizeSubagentSettings(subagentsSection(settingsManager.getGlobalSettings()), "global");
 	const project = sanitizeSubagentSettings(subagentsSection(settingsManager.getProjectSettings()), "project");
 	return {
-		settings: { ...DEFAULT_SUBAGENT_SETTINGS, ...global.values, ...project.values },
+		// Frozen: the service hands these out, and no reader may change what the next one sees (F13).
+		settings: Object.freeze({ ...DEFAULT_SUBAGENT_SETTINGS, ...global.values, ...project.values }),
 		warnings: [...global.warnings, ...project.warnings],
 	};
 }
 
 /**
  * Replaces `forkBuiltins.subagents` in `<cwd>/.pi/settings.json` with `values`, under the settings
- * file lock, and leaves every other key as it was. The `/agents` menu (phase 2) writes through it.
+ * file lock, and leaves every other key as it was (P12). The `/agents` settings menu writes through it.
  * A session's `SettingsManager` sees the change after its next `reload()`.
+ *
+ * It writes nothing when a value fails the reader's checks, naming the key, or when `.pi` or
+ * `settings.json` is a symlink, dangling or not, so a save never reaches a file outside the project.
+ * An existing file is replaced whole through `writeFileAtomically`, so a failed write leaves it
+ * byte-identical. A missing file is created by the settings storage.
  */
 export function writeProjectSubagentSettings(cwd: string, values: Partial<SubagentSettings>): void {
+	const { warnings } = sanitizeSubagentSettings(values, "project");
+	if (warnings.length > 0) {
+		const reasons = warnings.map((warning) => warning.replace(/; it is ignored\.$/, "."));
+		throw new Error(`Refusing to write subagent settings: ${reasons.join(" ")}`);
+	}
+	const dir = join(cwd, ".pi");
+	const file = join(dir, "settings.json");
+	for (const path of [dir, file]) {
+		if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
+			throw new Error(`Refusing to write subagent settings through a symlink: ${path}`);
+		}
+	}
 	// The storage's agent directory only locates the global file, which this never touches.
 	new FileSettingsStorage(cwd, getAgentDir()).withLock("project", (current) => {
 		const parsed: unknown = current ? JSON.parse(stripBom(current)) : {};
@@ -196,6 +217,10 @@ export function writeProjectSubagentSettings(cwd: string, values: Partial<Subage
 			typeof settings.forkBuiltins === "object" && settings.forkBuiltins !== null
 				? (settings.forkBuiltins as Record<string, unknown>)
 				: {};
-		return `${JSON.stringify({ ...settings, forkBuiltins: { ...forkBuiltins, subagents: values } }, null, 2)}\n`;
+		const text = `${JSON.stringify({ ...settings, forkBuiltins: { ...forkBuiltins, subagents: values } }, null, 2)}\n`;
+		if (current === undefined) return text;
+		// The storage writes in place; an existing file is replaced whole instead, and the storage writes nothing.
+		writeFileAtomically(file, text);
+		return undefined;
 	});
 }

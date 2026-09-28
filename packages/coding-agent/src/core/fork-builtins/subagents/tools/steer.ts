@@ -10,7 +10,7 @@ import { STEER_TOOL_NAME } from "../names.ts";
 import { isTerminal } from "../service/records.ts";
 import { notFound } from "../service/service.ts";
 import { requireService } from "../service/sessions.ts";
-import { contextPercent, formatCost, formatTokens, textResult } from "./common.ts";
+import { formatCost, formatTokens, textResult } from "./common.ts";
 
 const STEER_PARAMETERS = Type.Object({
 	agent_id: Type.String({
@@ -57,7 +57,7 @@ export function createSteerToolDefinition(session: AgentSession): ToolDefinition
 			const cost = service.settings.showCost ? formatCost(record.usage.cost.total) : "";
 			if (cost) state.push(cost);
 			state.push(`${record.toolUses} tool ${record.toolUses === 1 ? "use" : "uses"}`);
-			const context = contextPercent(record);
+			const context = service.contextPercent(record.id);
 			if (context !== undefined) state.push(`context ${Math.round(context)}% full`);
 			if (record.compactionCount) {
 				state.push(`${record.compactionCount} compaction${record.compactionCount === 1 ? "" : "s"}`);

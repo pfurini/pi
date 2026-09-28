@@ -19,15 +19,15 @@ import {
 	type SpawnTypeResolution,
 } from "../definitions/registry.ts";
 import type { SubagentSettings } from "../settings/settings.ts";
-import type { SubagentRecord } from "./records.ts";
+import type { SubagentView } from "./records.ts";
 import type { SpawnRequest, SteerOutcome, SubagentService } from "./service.ts";
 
 export class NestedRuntime {
 	readonly service: SubagentService;
-	/** The agent that delegates; every record this runtime reaches has it as its parent. */
-	readonly parent: SubagentRecord;
+	/** The agent that delegates; every agent this runtime reaches has it as its parent. */
+	readonly parent: SubagentView;
 
-	constructor(service: SubagentService, parent: SubagentRecord) {
+	constructor(service: SubagentService, parent: SubagentView) {
 		this.service = service;
 		this.parent = parent;
 	}
@@ -75,17 +75,17 @@ export class NestedRuntime {
 	}
 
 	/** Spawns an agent this parent owns. Throws the refusal, or the type or model error, as the service does. */
-	async spawn(request: Omit<SpawnRequest, "mode">): Promise<SubagentRecord> {
+	async spawn(request: Omit<SpawnRequest, "mode">): Promise<SubagentView> {
 		const refusal = this.refusal(this.service.reloadSettings());
 		if (refusal) throw new Error(refusal);
 		return this.service.spawnOwned(this.parent, request, (registry) => this.resolveType(registry, request.type));
 	}
 
-	get(ref: string): SubagentRecord | undefined {
+	get(ref: string): SubagentView | undefined {
 		return this.service.get(ref, this.parent);
 	}
 
-	waitForResult(ref: string, signal?: AbortSignal): Promise<SubagentRecord> {
+	waitForResult(ref: string, signal?: AbortSignal): Promise<SubagentView> {
 		return this.service.waitForResult(ref, signal, this.parent);
 	}
 
@@ -101,7 +101,7 @@ export class NestedRuntime {
 		return this.service.consume(ref, this.parent);
 	}
 
-	resume(ref: string, prompt: string, options: { background: boolean; signal?: AbortSignal }): SubagentRecord {
+	resume(ref: string, prompt: string, options: { background: boolean; signal?: AbortSignal }): SubagentView {
 		return this.service.resume(ref, prompt, { ...options, owner: this.parent });
 	}
 }

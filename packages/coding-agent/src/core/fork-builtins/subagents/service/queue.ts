@@ -74,6 +74,14 @@ export class SpawnQueue {
 		}
 	}
 
+	/** A queued run's place among the queued runs of its pool, 1 for the next to start; undefined when not queued. */
+	position(record: SubagentRecord): number | undefined {
+		const entry = this.entries.find((candidate) => candidate.record === record);
+		if (!entry) return undefined;
+		const samePool = this.entries.filter((candidate) => candidate.pool === entry.pool);
+		return samePool.indexOf(entry) + 1;
+	}
+
 	/** Drops a queued run that will never start. */
 	remove(record: SubagentRecord): void {
 		this.entries = this.entries.filter((entry) => entry.record !== record);

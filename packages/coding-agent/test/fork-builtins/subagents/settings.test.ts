@@ -1,22 +1,43 @@
-// Fork-owned: subagent settings under forkBuiltins.subagents (plan T2). Old pi-subagents tests at
-// 79a7c42 this covers: settings, agent-runner-settings, documented-defaults (the settings defaults).
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// Fork-owned: subagent settings under forkBuiltins.subagents (plan T2; the validated writer, T3). Old
+// pi-subagents tests at 79a7c42 this covers: settings, agent-runner-settings, documented-defaults
+// (the settings defaults).
+import { createHash } from "node:crypto";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_SUBAGENT_SETTINGS,
 	readSubagentSettings,
 	SUBAGENT_SETTING_KEYS,
+	type SubagentSettings,
 	sanitizeSubagentSettings,
 	writeProjectSubagentSettings,
 } from "../../../src/core/fork-builtins/subagents/settings/settings.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
 
+// A passthrough, so a case can make the atomic writer's rename fail.
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<{ renameSync: typeof renameSync }>();
+	return { ...actual, renameSync: vi.fn(actual.renameSync) };
+});
+
 const roots: string[] = [];
 
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+	vi.mocked(renameSync).mockClear();
 });
 
 function project(global: unknown, projectSettings: unknown): { agentDir: string; cwd: string } {
@@ -32,6 +53,8 @@ function project(global: unknown, projectSettings: unknown): { agentDir: string;
 }
 
 const subagents = (values: Record<string, unknown>) => ({ forkBuiltins: { subagents: values } });
+
+const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
 
 describe("subagent settings", () => {
 	it("merges the global values under the project values", () => {
@@ -182,6 +205,81 @@ describe("subagent settings", () => {
 		writeProjectSubagentSettings(fresh.cwd, { rememberAgents: false });
 		expect(JSON.parse(readFileSync(join(fresh.cwd, ".pi", "settings.json"), "utf-8"))).toEqual(
 			subagents({ rememberAgents: false }),
+		);
+	});
+
+	it("refuses a value the reader would drop, naming its key, and leaves settings.json as it was", () => {
+		const { cwd } = project(undefined, { theme: "dark", ...subagents({ maxConcurrent: 3 }) });
+		const file = join(cwd, ".pi", "settings.json");
+		const hash = sha(file);
+		expect(() => writeProjectSubagentSettings(cwd, { maxConcurrent: 0 })).toThrow(
+			/^Refusing to write subagent settings: .*maxConcurrent must be an integer from 1 to 1024\.$/,
+		);
+		expect(sha(file)).toBe(hash);
+		const unknown = { unknownKey: 1 } as unknown as Partial<SubagentSettings>;
+		expect(() => writeProjectSubagentSettings(cwd, unknown)).toThrow(/unknown key unknownKey/);
+		expect(sha(file)).toBe(hash);
+		writeProjectSubagentSettings(cwd, { maxConcurrent: 4 });
+		expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ theme: "dark", ...subagents({ maxConcurrent: 4 }) });
+	});
+
+	it("refuses to write through a symlinked .pi or settings.json, dangling or not", () => {
+		const outside = mkdtempSync(join(tmpdir(), "pi-subagent-outside-"));
+		roots.push(outside);
+		const outsideFile = join(outside, "settings.json");
+		writeFileSync(outsideFile, JSON.stringify({ theme: "outside" }));
+		const hash = sha(outsideFile);
+		const cases: Array<[string, (cwd: string) => void]> = [
+			[".pi to a directory", (cwd) => symlinkSync(outside, join(cwd, ".pi"))],
+			[".pi dangling", (cwd) => symlinkSync(join(outside, "missing"), join(cwd, ".pi"))],
+			[
+				"settings.json to a file",
+				(cwd) => {
+					mkdirSync(join(cwd, ".pi"));
+					symlinkSync(outsideFile, join(cwd, ".pi", "settings.json"));
+				},
+			],
+			[
+				"settings.json dangling",
+				(cwd) => {
+					mkdirSync(join(cwd, ".pi"));
+					symlinkSync(join(outside, "missing.json"), join(cwd, ".pi", "settings.json"));
+				},
+			],
+		];
+		for (const [name, plant] of cases) {
+			const { cwd } = project(undefined, undefined);
+			rmSync(join(cwd, ".pi"), { recursive: true });
+			plant(cwd);
+			expect(() => writeProjectSubagentSettings(cwd, { showCost: true }), name).toThrow(
+				"Refusing to write subagent settings through a symlink",
+			);
+			expect(sha(outsideFile), name).toBe(hash);
+			expect(existsSync(join(outside, "missing")), name).toBe(false);
+			expect(existsSync(join(outside, "missing.json")), name).toBe(false);
+		}
+	});
+
+	it("replaces an existing settings.json whole, and leaves it byte-identical when the rename fails", () => {
+		const { cwd } = project(undefined, { theme: "dark", ...subagents({ maxConcurrent: 3 }) });
+		const file = join(cwd, ".pi", "settings.json");
+		const inode = statSync(file).ino;
+		writeProjectSubagentSettings(cwd, { maxConcurrent: 5 });
+		expect(statSync(file).ino).not.toBe(inode);
+		expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ theme: "dark", ...subagents({ maxConcurrent: 5 }) });
+
+		const hash = sha(file);
+		vi.mocked(renameSync).mockImplementationOnce(() => {
+			throw new Error("rename failed");
+		});
+		expect(() => writeProjectSubagentSettings(cwd, { maxConcurrent: 6 })).toThrow("rename failed");
+		expect(sha(file)).toBe(hash);
+		expect(readdirSync(join(cwd, ".pi"))).toEqual(["settings.json"]);
+
+		const fresh = project(undefined, undefined);
+		writeProjectSubagentSettings(fresh.cwd, { showModel: true });
+		expect(JSON.parse(readFileSync(join(fresh.cwd, ".pi", "settings.json"), "utf-8"))).toEqual(
+			subagents({ showModel: true }),
 		);
 	});
 });

@@ -28,7 +28,7 @@ import { basename, dirname } from "node:path";
 import type { AgentSession } from "../agent-session.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { NestedRuntime } from "../fork-builtins/subagents/service/nested.ts";
-import type { SubagentRecord } from "../fork-builtins/subagents/service/records.ts";
+import type { SubagentView } from "../fork-builtins/subagents/service/records.ts";
 import type { SpawnRequest, SubagentService } from "../fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor, subagentSessionRecord } from "../fork-builtins/subagents/service/sessions.ts";
 
@@ -151,7 +151,7 @@ export function normalizeAgentEnded(payload: unknown): NormalizedCompletion | un
 /** The service a typed fork spawns through: the session's own, or its owning agent's nested runtime in a child. */
 interface TypedRuntime {
 	service: SubagentService;
-	owner?: SubagentRecord;
+	owner?: SubagentView;
 	nested?: NestedRuntime;
 }
 

@@ -9,7 +9,7 @@
  * until that spawn's reply is on the bus.
  */
 import type { EventBus } from "../../../event-bus.ts";
-import type { SubagentRecord, TerminalStatus } from "../service/records.ts";
+import type { SubagentView, TerminalStatus } from "../service/records.ts";
 import type { SubagentService } from "../service/service.ts";
 import type { SubagentSettings } from "../settings/settings.ts";
 import { displayTokens } from "../usage.ts";
@@ -63,7 +63,7 @@ function emitAgentEnded(bus: EventBus, event: AgentEndedEvent): void {
 }
 
 /** The `subagents:completed` and `subagents:failed` payload; both share it. */
-export function lifecyclePayload(record: SubagentRecord) {
+export function lifecyclePayload(record: SubagentView) {
 	const total = displayTokens(record.usage);
 	const { usage } = record;
 	const spent = usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.cost.total > 0;
@@ -82,21 +82,20 @@ export function lifecyclePayload(record: SubagentRecord) {
 	};
 }
 
-function isFailure(status: SubagentRecord["status"]): boolean {
+function isFailure(status: SubagentView["status"]): boolean {
 	return status === "error" || status === "stopped" || status === "aborted";
 }
 
-export function settingsPayload(settings: SubagentSettings) {
+export function settingsPayload(settings: Readonly<SubagentSettings>) {
 	return { settings: { ...settings } };
 }
 
 /** What the bridge reads from a service. */
-export type BridgedService = Pick<SubagentService, "eventBus" | "settings" | "subscribe">;
+export type BridgedService = Pick<SubagentService, "eventBus" | "settings" | "subscribe" | "ownerBusOf">;
 
 /** Emits a service's lifecycle events on the bus of each record's owner. Attached once, when the service is built. */
 export function bridgeServiceEvents(service: BridgedService): void {
-	const busOf = (record: SubagentRecord): EventBus | undefined =>
-		record.parent ? record.parent.child?.loader.getEventBus() : service.eventBus;
+	const busOf = (record: SubagentView): EventBus | undefined => service.ownerBusOf(record);
 	service.eventBus?.emit("subagents:settings_loaded", settingsPayload(service.settings));
 	service.subscribe((event) => {
 		switch (event.type) {

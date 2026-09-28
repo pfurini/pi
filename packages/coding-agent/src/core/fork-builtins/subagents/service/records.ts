@@ -26,7 +26,15 @@ export function inBackground(mode: SpawnMode): boolean {
 	return mode === "background" || mode === "detached-background";
 }
 
-export interface SubagentRecord {
+/** A usage total nobody outside the service may change. */
+export type ReadonlyUsage = Readonly<Omit<Usage, "cost">> & { readonly cost: Readonly<Usage["cost"]> };
+
+/**
+ * What the service hands out for an agent (F13): its public methods and events carry this read-only
+ * view of the record. The internal `SubagentRecord` satisfies it, so a view is the live record seen
+ * through a type that neither assigns its fields nor reaches its child session, run or waiters.
+ */
+export interface SubagentView {
 	readonly id: string;
 	/** The registry key the requested type resolved to. */
 	readonly type: string;
@@ -37,62 +45,88 @@ export interface SubagentRecord {
 	readonly alias?: string;
 	readonly description: string;
 	readonly prompt: string;
-	status: SubagentStatus;
+	readonly status: SubagentStatus;
 	/** The last run's final text; the partial answer when it stopped early. */
+	readonly result?: string;
+	readonly error?: string;
+	/** Usage over every run of this agent, its nested children's included. */
+	readonly usage: ReadonlyUsage;
+	readonly toolUses: number;
+	readonly turns: number;
+	readonly compactionCount: number;
+	readonly startedAt: number;
+	readonly completedAt?: number;
+	/** Nesting depth: a top-level agent is 1. */
+	readonly depth: number;
+	/** The id of the agent that spawned this one; absent for the session's own agents. */
+	readonly parentId?: string;
+	/** How the current run was spawned: which pool it takes and whether it notifies on completion. */
+	readonly mode: SpawnMode;
+	/** The model saw the result, so no notification is due. */
+	readonly resultConsumed: boolean;
+	/** Set for a background run: how its notification joins others. */
+	readonly joinMode?: JoinMode;
+	/** The tool call the current run answers; a resume replaces it. */
+	readonly toolCallId?: string;
+	readonly invocation: Readonly<InvocationConfig>;
+	readonly model?: Model<Api>;
+	/** The working directory the child runs in. */
+	readonly cwd: string;
+	/** The requested type when it resolved to the fallback agent instead. */
+	readonly fellBackFrom?: string;
+	readonly sessionFile?: string;
+	readonly transcriptPath?: string;
+	/** The worktree copy an `isolation: "worktree"` run works in, from its start. */
+	readonly worktreePath?: string;
+	/** What happened to the worktree when the run ended. */
+	readonly worktreeOutcome?: Readonly<WorktreeOutcome>;
+	/** Tool calls, scoping warnings and extension errors, in order. */
+	readonly activity: readonly ChildActivity[];
+}
+
+/** The service's own record of an agent. Only `service/` holds it; everyone else gets a `SubagentView`. */
+export interface SubagentRecord extends SubagentView {
+	status: SubagentStatus;
 	result?: string;
 	error?: string;
-	/** Usage over every run of this agent, its nested children's included. */
 	readonly usage: Usage;
 	toolUses: number;
 	turns: number;
 	compactionCount: number;
 	startedAt: number;
 	completedAt?: number;
-	/** Nesting depth: a top-level agent is 1. */
-	readonly depth: number;
 	/** The agent that spawned this one; absent for the session's own agents. */
 	readonly parent?: SubagentRecord;
-	/** How the current run was spawned: which pool it takes and whether it notifies on completion. */
 	mode: SpawnMode;
-	/** The model saw the result, so no notification is due. */
 	resultConsumed: boolean;
-	/** Set for a background run: how its notification joins others. */
 	joinMode?: JoinMode;
-	/** The tool call the current run answers; a resume replaces it. */
 	toolCallId?: string;
-	readonly invocation: InvocationConfig;
-	readonly model?: Model<Api>;
-	/** The working directory the child runs in. */
-	readonly cwd: string;
-	/** The requested type when it resolved to the fallback agent instead. */
-	readonly fellBackFrom?: string;
 	sessionFile?: string;
 	transcriptPath?: string;
+	worktreePath?: string;
+	worktreeOutcome?: WorktreeOutcome;
+	readonly activity: ChildActivity[];
 	/** The worktree an `isolation: "worktree"` run works in, from its start. */
 	worktree?: Worktree;
 	/** Settles once the run's worktree exists, with the error when it could not be created. */
 	worktreeStart?: Promise<Error | undefined>;
-	/** What happened to the worktree when the run ended. */
-	worktreeOutcome?: WorktreeOutcome;
-	/** Tool calls, scoping warnings and extension errors, in order. */
-	readonly activity: ChildActivity[];
 	/** The live child session, until the record is evicted or the owner ends. */
 	child?: Child;
-	/** @internal Aborts the current run. */
+	/** Aborts the current run. */
 	abort?: AbortController;
-	/** @internal Removes the caller's abort listener; called when the run ends. */
+	/** Removes the caller's abort listener; called when the run ends. */
 	detachSignal?: () => void;
-	/** @internal Steers that arrived before the child existed. */
+	/** Steers that arrived before the child existed. */
 	pendingSteers: string[];
-	/** @internal Called once when the current run ends. */
+	/** Called once when the current run ends. */
 	readonly waiters: Set<() => void>;
-	/** @internal The owner's end already reported this run's end. */
+	/** The owner's end already reported this run's end. */
 	endReported?: boolean;
-	/** @internal The current run; never rejects. */
+	/** The current run; never rejects. */
 	run?: Promise<void>;
 }
 
-export function isTerminal(record: SubagentRecord): boolean {
+export function isTerminal(record: Pick<SubagentView, "status">): boolean {
 	return record.status !== "queued" && record.status !== "running";
 }
 

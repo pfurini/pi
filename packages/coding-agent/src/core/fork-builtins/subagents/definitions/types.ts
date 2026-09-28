@@ -12,50 +12,50 @@ export type MemoryScope = "user" | "project" | "local";
 
 /** Where a definition came from. Project and global sources name their file; a skill source also names its skill. */
 export type AgentSource =
-	| { kind: "default" }
-	| { kind: "project"; sourcePath: string }
-	| { kind: "global"; sourcePath: string }
-	| { kind: "skill"; sourcePath: string; skillId: string };
+	| { readonly kind: "default" }
+	| { readonly kind: "project"; readonly sourcePath: string }
+	| { readonly kind: "global"; readonly sourcePath: string }
+	| { readonly kind: "skill"; readonly sourcePath: string; readonly skillId: string };
 
 export interface AgentDefinition {
 	/** The agent type that `subagent_type` names. */
-	name: string;
+	readonly name: string;
 	/** UI label; the name stands in when absent. */
-	displayName?: string;
-	color?: string;
-	description: string;
+	readonly displayName?: string;
+	readonly color?: string;
+	readonly description: string;
 	/**
 	 * `tools:` as written: Pi tool names, fork base tool names, `*` for every Pi built-in, and
 	 * `ext:<extension>` or `ext:<extension>/<tool>` selectors. Absent means every Pi built-in.
 	 */
-	tools?: string[];
+	readonly tools?: readonly string[];
 	/** Tools removed even when `tools:` or an extension provides them. */
-	disallowedTools?: string[];
+	readonly disallowedTools?: readonly string[];
 	/** `true` loads every extension, `false` none, a list only the named ones. */
-	extensions: boolean | string[];
+	readonly extensions: boolean | readonly string[];
 	/** Extension names dropped after `extensions:`; the exclusion wins. */
-	excludeExtensions?: string[];
+	readonly excludeExtensions?: readonly string[];
 	/** `true` inherits the parent's skills, `false` none, a list preloads only the named ones. */
-	skills: boolean | string[];
-	model?: string;
-	thinking?: ModelThinkingLevel;
+	readonly skills: boolean | readonly string[];
+	readonly model?: string;
+	readonly thinking?: ModelThinkingLevel;
 	/** Turn limit before the wrap-up; 0 or absent means unlimited. */
-	maxTurns?: number;
-	persistSession?: boolean;
-	outputTranscript?: boolean;
-	sessionDir?: string;
+	readonly maxTurns?: number;
+	readonly persistSession?: boolean;
+	readonly outputTranscript?: boolean;
+	readonly sessionDir?: string;
 	/** Nested delegation: absent means none, `all` any enabled agent, a list only those types. */
-	allowedSubagents?: "all" | string[];
-	systemPrompt: string;
-	promptMode: "replace" | "append";
-	inheritContext?: boolean;
-	runInBackground?: boolean;
-	isolated?: boolean;
-	memory?: MemoryScope;
+	readonly allowedSubagents?: "all" | readonly string[];
+	readonly systemPrompt: string;
+	readonly promptMode: "replace" | "append";
+	readonly inheritContext?: boolean;
+	readonly runInBackground?: boolean;
+	readonly isolated?: boolean;
+	readonly memory?: MemoryScope;
 	/** `off` refuses a worktree even when the caller asks for one; frontmatter outranks tool parameters. */
-	isolation?: "worktree" | "off";
-	enabled: boolean;
+	readonly isolation?: "worktree" | "off";
+	readonly enabled: boolean;
 	/** Soft scoping: absent from listings, still spawnable by exact name. Only skill agents set it. */
-	hidden: boolean;
-	source: AgentSource;
+	readonly hidden: boolean;
+	readonly source: AgentSource;
 }

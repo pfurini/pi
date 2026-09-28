@@ -23,6 +23,7 @@
  * their parent's run ends.
  */
 import { randomUUID } from "node:crypto";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { registerSessionResourceCleanup, type Usage } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { AgentSession } from "../../../agent-session.ts";
@@ -57,7 +58,15 @@ import { GroupJoin, SpawnBatch } from "./joins.ts";
 import { NestedRuntime } from "./nested.ts";
 import { NotificationQueue } from "./notifications.ts";
 import { type Pool, SpawnQueue } from "./queue.ts";
-import { assignHandle, handleBase, inBackground, isTerminal, type SpawnMode, type SubagentRecord } from "./records.ts";
+import {
+	assignHandle,
+	handleBase,
+	inBackground,
+	isTerminal,
+	type SpawnMode,
+	type SubagentRecord,
+	type SubagentView,
+} from "./records.ts";
 import { Retention, type Tombstone } from "./retention.ts";
 
 /** The error of an agent its session's end cut short. */
@@ -109,11 +118,11 @@ export interface SubagentServiceOptions {
 }
 
 export type SubagentEvent =
-	| { type: "created" | "started" | "ended"; record: SubagentRecord }
-	| { type: "steered"; record: SubagentRecord; message: string }
-	| { type: "compacted"; record: SubagentRecord; reason: "manual" | "threshold" | "overflow"; tokensBefore: number }
+	| { type: "created" | "started" | "ended"; record: SubagentView }
+	| { type: "steered"; record: SubagentView; message: string }
+	| { type: "compacted"; record: SubagentView; reason: "manual" | "threshold" | "overflow"; tokensBefore: number }
 	| { type: "definitions"; registry: AgentRegistry }
-	| { type: "settings"; settings: SubagentSettings }
+	| { type: "settings"; settings: Readonly<SubagentSettings> }
 	| { type: "warning"; message: string };
 
 export interface SpawnRequest {
@@ -141,7 +150,7 @@ export interface SpawnRequest {
 	signal?: AbortSignal;
 	toolCallId?: string;
 	/** Called with the record as soon as it exists, before it starts; the bus adapter orders its reply with it. */
-	onCreated?: (record: SubagentRecord) => void;
+	onCreated?: (record: SubagentView) => void;
 }
 
 /** What became of a steer: `steer_subagent` and the conversation viewer report each kind. */
@@ -150,6 +159,25 @@ export type SteerOutcome =
 	| { kind: "queued" }
 	| { kind: "refused"; reason: string }
 	| { kind: "failed"; error: string };
+
+/** A child session's conversation, for the viewer: the live messages and a change feed. */
+export interface SubagentConversation {
+	/** The child's messages now; read again after each change. */
+	readonly messages: readonly AgentMessage[];
+	/** Calls `listener` whenever a message starts, streams or ends; returns the unsubscriber. */
+	subscribe(listener: () => void): () => void;
+}
+
+/** Each service's records, for `inspectRecord` alone. */
+const recordMaps = new WeakMap<SubagentService, ReadonlyMap<string, SubagentRecord>>();
+
+/**
+ * @internal Tests only: the service's own record behind an id, with its child session, run and
+ * waiters (P33). Production code reads views and the service's accessors.
+ */
+export function inspectRecord(service: SubagentService, id: string): SubagentRecord | undefined {
+	return recordMaps.get(service)?.get(id);
+}
 
 export class SubagentService {
 	private readonly session: AgentSession;
@@ -164,7 +192,7 @@ export class SubagentService {
 	private readonly groups: GroupJoin;
 	private readonly batch: SpawnBatch;
 	private readonly unregisterCleanup: () => void;
-	private current: SubagentSettings;
+	private current: Readonly<SubagentSettings>;
 	private registryCache: AgentRegistry;
 	private agentFilesCache?: AgentFileLoad;
 	private disposed = false;
@@ -172,6 +200,7 @@ export class SubagentService {
 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
 		this.session = session;
 		this.context = context;
+		recordMaps.set(this, this.records);
 		this.current = this.reloadSettings();
 		for (const warning of context.warnings?.splice(0) ?? []) this.warn(warning);
 		this.registryCache = buildAgentRegistry({ userAgents: new Map() });
@@ -204,8 +233,8 @@ export class SubagentService {
 		return this.disposed;
 	}
 
-	/** The settings read at the last spawn or refresh. */
-	get settings(): SubagentSettings {
+	/** The settings read at the last spawn or refresh; frozen, and replaced by each reread. */
+	get settings(): Readonly<SubagentSettings> {
 		return this.current;
 	}
 
@@ -252,11 +281,11 @@ export class SubagentService {
 	}
 
 	/** Rereads the settings, as every spawn does, and returns them; a change from the last read is announced. */
-	reloadSettings(): SubagentSettings {
+	reloadSettings(): Readonly<SubagentSettings> {
 		const { settings, warnings } = readSubagentSettings(this.session.settingsManager);
 		for (const warning of warnings) this.warn(warning);
 		// Undefined only during construction, when there is nothing to compare with.
-		const previous: SubagentSettings | undefined = this.current;
+		const previous: Readonly<SubagentSettings> | undefined = this.current;
 		this.current = settings;
 		if (previous && JSON.stringify(previous) !== JSON.stringify(settings)) this.emit({ type: "settings", settings });
 		return settings;
@@ -311,7 +340,7 @@ export class SubagentService {
 	 * Starts an agent, or queues it when its pool is full, and returns its record at once. Throws
 	 * when the type or the caller's model is refused. A foreground caller then awaits `waitForResult`.
 	 */
-	async spawn(request: SpawnRequest): Promise<SubagentRecord> {
+	async spawn(request: SpawnRequest): Promise<SubagentView> {
 		return this.spawnRecord(request, (registry, settings) =>
 			resolveSpawnType(registry, request.type, settings.fallbackSubagent),
 		);
@@ -321,22 +350,24 @@ export class SubagentService {
 	 * @internal `NestedRuntime` spawns through here, after its permission checks. `parent` owns the
 	 * record, and `resolveType` applies the parent's allowlist instead of `fallbackSubagent`.
 	 */
-	spawnOwned(
-		parent: SubagentRecord,
+	async spawnOwned(
+		parent: SubagentView,
 		request: SpawnRequest,
 		resolveType: (registry: AgentRegistry) => SpawnTypeResolution,
-	): Promise<SubagentRecord> {
-		return this.spawnRecord(request, resolveType, parent);
+	): Promise<SubagentView> {
+		const owner = this.records.get(parent.id);
+		if (!owner) throw new Error(`Agent "${parent.definition.name}" is not running; it cannot spawn subagents.`);
+		return this.spawnRecord(request, resolveType, owner);
 	}
 
 	/** The nested runtime of an agent: what it may spawn and reach. */
-	nested(parent: SubagentRecord): NestedRuntime {
+	nested(parent: SubagentView): NestedRuntime {
 		return new NestedRuntime(this, parent);
 	}
 
 	private async spawnRecord(
 		request: SpawnRequest,
-		resolveType: (registry: AgentRegistry, settings: SubagentSettings) => SpawnTypeResolution,
+		resolveType: (registry: AgentRegistry, settings: Readonly<SubagentSettings>) => SpawnTypeResolution,
 		parent?: SubagentRecord,
 	): Promise<SubagentRecord> {
 		this.assertLive();
@@ -446,6 +477,7 @@ export class SubagentService {
 			startedAt: Date.now(),
 			depth: parent ? parent.depth + 1 : 1,
 			parent,
+			parentId: parent?.id,
 			mode: input.mode,
 			resultConsumed: false,
 			joinMode: input.mode === "background" && !parent ? this.current.defaultJoinMode : undefined,
@@ -536,6 +568,7 @@ export class SubagentService {
 		);
 		try {
 			record.worktree = await creation;
+			record.worktreePath = record.worktree.workPath;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return { status: "error", text: "", error: message, usage: emptyUsage(), turns: 0 };
@@ -662,18 +695,22 @@ export class SubagentService {
 		if (this.groups.complete(record) === "pass") this.notifications.park(record.id, [record]);
 	}
 
-	/** Any record by id, whoever owns it: the bus adapter tells "not found" from "not yours" with it. */
-	lookup(id: string): SubagentRecord | undefined {
+	/** Any agent by id, whoever owns it: the bus adapter tells "not found" from "not yours" with it. */
+	lookup(id: string): SubagentView | undefined {
 		return this.records.get(id);
 	}
 
 	/**
-	 * A record by id, handle or alias among the session's own agents, or by id among the agents
-	 * `owner` spawned. A nested record is unreachable from the session (T6).
+	 * An agent by id, handle or alias among the session's own agents, or by id among the agents
+	 * `owner` spawned. A nested agent is unreachable from the session (T6).
 	 */
-	get(ref: string, owner?: SubagentRecord): SubagentRecord | undefined {
+	get(ref: string, owner?: SubagentView): SubagentView | undefined {
+		return this.find(ref, owner);
+	}
+
+	private find(ref: string, owner?: SubagentView): SubagentRecord | undefined {
 		const byId = this.records.get(ref);
-		if (byId) return byId.parent === owner ? byId : undefined;
+		if (byId) return byId.parent?.id === owner?.id ? byId : undefined;
 		if (owner) return undefined;
 		const wanted = ref.toLowerCase();
 		return [...this.records.values()].find(
@@ -681,8 +718,8 @@ export class SubagentService {
 		);
 	}
 
-	/** The session's own records, newest first. */
-	list(): SubagentRecord[] {
+	/** The session's own agents, newest first. */
+	list(): SubagentView[] {
 		return [...this.records.values()].filter((record) => !record.parent).sort((a, b) => b.startedAt - a.startedAt);
 	}
 
@@ -691,16 +728,56 @@ export class SubagentService {
 		return this.retention.tombstones.list();
 	}
 
+	/** The conversation of an agent whose child session exists; undefined for a queued or evicted one. */
+	conversation(id: string): SubagentConversation | undefined {
+		const session = this.records.get(id)?.child?.session;
+		if (!session) return undefined;
+		return {
+			get messages() {
+				return session.messages;
+			},
+			subscribe: (listener) =>
+				session.subscribe((event) => {
+					if (event.type === "message_start" || event.type === "message_update" || event.type === "message_end") {
+						listener();
+					}
+				}),
+		};
+	}
+
+	/** How full the agent's context window is, in percent; undefined when no child session reports it. */
+	contextPercent(id: string): number | undefined {
+		try {
+			return this.records.get(id)?.child?.session.getSessionStats().contextUsage?.percent ?? undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/** A queued agent's place in its pool's queue, 1 for the next to start; undefined when it is not queued. */
+	queuePosition(id: string): number | undefined {
+		const record = this.records.get(id);
+		return record ? this.queue.position(record) : undefined;
+	}
+
+	/**
+	 * The event bus of whoever owns the agent: the session's own bus for a top-level agent, the bus of
+	 * the child session its parent runs in for a nested one. The adapter emits the agent's events there.
+	 */
+	ownerBusOf(view: SubagentView): EventBus | undefined {
+		return view.parentId ? this.records.get(view.parentId)?.child?.loader.getEventBus() : this.context.eventBus;
+	}
+
 	/**
 	 * Resolves with the record once its current run ends. Aborting `signal` rejects only this wait:
 	 * the agent keeps running, its result stays unread, and its notification still arrives.
 	 */
-	waitForResult(ref: string, signal?: AbortSignal, owner?: SubagentRecord): Promise<SubagentRecord> {
-		const record = this.get(ref, owner);
+	waitForResult(ref: string, signal?: AbortSignal, owner?: SubagentView): Promise<SubagentView> {
+		const record = this.find(ref, owner);
 		if (!record) return Promise.reject(new Error(notFound(ref)));
 		if (isTerminal(record) && !record.run) return Promise.resolve(record);
 		if (signal?.aborted) return Promise.reject(signal.reason);
-		return new Promise<SubagentRecord>((resolve, reject) => {
+		return new Promise<SubagentView>((resolve, reject) => {
 			const onAbort = () => {
 				record.waiters.delete(done);
 				reject(signal?.reason);
@@ -719,16 +796,17 @@ export class SubagentService {
 	 * not (D33). The caller reports that error, so the record's own notification is dropped. A queued
 	 * run, or one without a worktree, returns at once.
 	 */
-	async worktreeStarted(record: SubagentRecord): Promise<void> {
-		const error = await record.worktreeStart;
-		if (!error) return;
+	async worktreeStarted(view: SubagentView): Promise<void> {
+		const record = this.records.get(view.id);
+		const error = await record?.worktreeStart;
+		if (!record || !error) return;
 		record.resultConsumed = true;
 		throw error;
 	}
 
 	/** Marks a finished agent's result as read, which drops its notification. False for a running or unknown agent. */
-	consume(ref: string, owner?: SubagentRecord): boolean {
-		const record = this.get(ref, owner);
+	consume(ref: string, owner?: SubagentView): boolean {
+		const record = this.find(ref, owner);
 		if (!record || !isTerminal(record) || record.run) return false;
 		record.resultConsumed = true;
 		return true;
@@ -741,8 +819,8 @@ export class SubagentService {
 	 * was being delivered. `failed`: the child's steer rejected, as it does for extension-command text.
 	 * Only `delivered` and `queued` announce `steered`.
 	 */
-	async steer(ref: string, message: string, owner?: SubagentRecord): Promise<SteerOutcome> {
-		const record = this.get(ref, owner);
+	async steer(ref: string, message: string, owner?: SubagentView): Promise<SteerOutcome> {
+		const record = this.find(ref, owner);
 		if (!record) return { kind: "refused", reason: notFound(ref) };
 		const notRunning = (): SteerOutcome => ({
 			kind: "refused",
@@ -773,8 +851,8 @@ export class SubagentService {
 	}
 
 	/** Stops a running or queued agent; it ends `stopped`, keeping any partial output. */
-	stop(ref: string, owner?: SubagentRecord): boolean {
-		const record = this.get(ref, owner);
+	stop(ref: string, owner?: SubagentView): boolean {
+		const record = this.find(ref, owner);
 		return record ? this.endRecord(record, "stopped") : false;
 	}
 
@@ -825,10 +903,10 @@ export class SubagentService {
 	resume(
 		ref: string,
 		prompt: string,
-		options: { background: boolean; signal?: AbortSignal; toolCallId?: string; owner?: SubagentRecord },
-	): SubagentRecord {
+		options: { background: boolean; signal?: AbortSignal; toolCallId?: string; owner?: SubagentView },
+	): SubagentView {
 		this.assertLive();
-		const record = this.get(ref, options.owner);
+		const record = this.find(ref, options.owner);
 		if (!record) throw new Error(notFound(ref));
 		if (!isTerminal(record) || record.run) throw new Error(`Agent "${ref}" is still running; steer it instead.`);
 		if (!record.child) throw new Error(`Agent "${ref}" has no session to resume.`);

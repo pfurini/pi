@@ -13,7 +13,11 @@ import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-work
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
-import { PARENT_ENDED_ERROR, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import {
+	inspectRecord,
+	PARENT_ENDED_ERROR,
+	type SubagentService,
+} from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import { addUsage, emptyUsage } from "../../src/core/fork-builtins/subagents/usage.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
@@ -98,8 +102,9 @@ async function runLead(harness: Harness, type: string, prompt: string): Promise<
 	const record = serviceOf(harness)
 		.list()
 		.find((candidate) => candidate.prompt === prompt);
-	if (!record) throw new Error(`no record for ${prompt}`);
-	return record;
+	const internal = record && inspectRecord(serviceOf(harness), record.id);
+	if (!internal) throw new Error(`no record for ${prompt}`);
+	return internal;
 }
 
 function sum(session: AgentSession | undefined) {
@@ -171,7 +176,8 @@ describe("nested inheritance", () => {
 		await harness.session.prompt("main secret");
 		const mentor = await runLead(harness, "mentor", "mentor task");
 		const id = /Agent ID: (\S+)/.exec(toolResults(mentor.child?.session, "Agent")[0])?.[1] ?? "";
-		const echo = serviceOf(harness).nested(mentor).get(id);
+		const owned = serviceOf(harness).nested(mentor).get(id);
+		const echo = owned && inspectRecord(serviceOf(harness), owned.id);
 		if (!echo?.child) throw new Error("the nested child was not kept");
 		expect([mentor.model?.id, echo.model?.id]).toEqual(["faux-b", "faux-b"]);
 		const first = echo.child.session.messages.find((message) => message.role === "user");
@@ -217,7 +223,7 @@ describe("nested ownership", () => {
 			depth: 2,
 			handle: undefined,
 		});
-		expect(child.parent).toBe(lead);
+		expect(inspectRecord(serviceOf(harness), child.id)?.parent).toBe(lead);
 	});
 
 	it("reports a nested steer the child refuses as a failed delivery", async () => {
@@ -302,9 +308,10 @@ describe("nested ownership", () => {
 		);
 		await call(harness, "Agent", { subagent_type: "lead", prompt: "alpha task", description: "alpha" });
 		await vi.waitFor(() => expect(stuck.requests()).toBe(1), CHILD_START);
-		const alpha = serviceOf(harness)
+		const alphaView = serviceOf(harness)
 			.list()
 			.find((record) => record.prompt === "alpha task");
+		const alpha = alphaView && inspectRecord(serviceOf(harness), alphaView.id);
 		xrayId = /Agent ID: (\S+)/.exec(toolResults(alpha?.child?.session, "Agent")[0])?.[1] ?? "";
 		expect(xrayId).not.toBe("");
 
@@ -362,9 +369,12 @@ describe("nested accounting", () => {
 			description: "gamma",
 			run_in_background: false,
 		});
-		const [lead] = serviceOf(harness).list();
+		const [leadView] = serviceOf(harness).list();
+		const lead = inspectRecord(serviceOf(harness), leadView.id);
+		if (!lead) throw new Error("no lead record");
 		const id = /Agent ID: (\S+)/.exec(toolResults(lead.child?.session, "Agent")[0])?.[1] ?? "";
-		const nested = serviceOf(harness).nested(lead).get(id);
+		const owned = serviceOf(harness).nested(lead).get(id);
+		const nested = owned && inspectRecord(serviceOf(harness), owned.id);
 		if (!nested) throw new Error("the nested record is gone");
 		expect(toolResults(lead.child?.session, "get_subagent_result")).toEqual(["delta done"]);
 		expect(toolResults(lead.child?.session, "Agent")[1]).toBe("delta done");

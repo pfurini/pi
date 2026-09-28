@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as worktreeModule from "../../src/core/fork-builtins/subagents/runner/worktree.ts";
-import type { SubagentRecord } from "../../src/core/fork-builtins/subagents/service/records.ts";
-import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
+import type { SubagentView } from "../../src/core/fork-builtins/subagents/service/records.ts";
+import { inspectRecord, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import {
@@ -133,7 +133,9 @@ describe("worktree isolation through the service", () => {
 		expect(git(repo, "show", `${branch}:note.txt`)).toBe("from the agent");
 		expect(existsSync(join(repo, "note.txt"))).toBe(false);
 		expect(worktrees(repo)).toEqual([repo]);
-		expect(record.child?.session.systemPrompt).toContain(`isolated git worktree copy of ${repo}`);
+		expect(inspectRecord(serviceOf(harness), record.id)?.child?.session.systemPrompt).toContain(
+			`isolated git worktree copy of ${repo}`,
+		);
 		const resumed = await call(harness, "Agent", { ...isolated("again"), resume: record.id });
 		expect(text(resumed)).toBe(
 			`Agent "${record.id}" ran in an isolated worktree and cannot be resumed; start a new agent.`,
@@ -223,13 +225,16 @@ describe("worktree isolation through the service", () => {
 			join(harness.tempDir, "agents", "relay.md"),
 			"---\ndescription: delegating relay\ntools: read\nextensions: false\nallowed_subagents: scribe\n---\nYou relay.",
 		);
-		const started: SubagentRecord[] = [];
+		const started: SubagentView[] = [];
 		serviceOf(harness).subscribe((event) => {
 			if (event.type === "started") started.push(event.record);
 		});
 		let runningAtFinish: string[] | undefined;
 		finishHooks.onFinish = () => {
-			runningAtFinish = started.filter((record) => record.parent && record.run).map((record) => record.type);
+			runningAtFinish = started.flatMap((record) => {
+				const internal = inspectRecord(serviceOf(harness), record.id);
+				return internal?.parent && internal.run ? [internal.type] : [];
+			});
 		};
 		await call(harness, "Agent", {
 			subagent_type: "lead",

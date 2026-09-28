@@ -70,11 +70,14 @@ export function responseText(messages: readonly AgentMessage[]): string | undefi
 	return undefined;
 }
 
-/** A model's short label for tight rows (`haiku 4.5`) and its `provider/id` for roomy ones. */
-export function describeModel(model: { provider: string; id: string; name?: string }): { name: string; id: string } {
+/**
+ * A model's short label for tight rows (`haiku 4.5`) and its `provider/id` for roomy ones; a model
+ * that names no provider has no canonical id, and roomy rows fall back to the short label.
+ */
+export function describeModel(model: { provider: string; id: string; name?: string }): { name: string; id?: string } {
 	return {
 		name: (model.name ?? model.id).replace(/^Claude\s+/i, "").toLowerCase(),
-		id: `${model.provider}/${model.id}`,
+		id: model.provider ? `${model.provider}/${model.id}` : undefined,
 	};
 }
 

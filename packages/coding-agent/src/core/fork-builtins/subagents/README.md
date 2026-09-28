@@ -1,4 +1,4 @@
-# subagents (fork-owned service and base tools)
+# subagents (fork-owned service, base tools and presentation)
 
 This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D40 in the session-control handoff govern it. `docs/plans/subagents-native-phase1.plan.md` records phase 1, and `docs/plans/subagents-native-phase2.plan.md` records phase 2.
 

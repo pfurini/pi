@@ -388,6 +388,11 @@ export class SubagentService {
 		// Outside a repository the spawn fails here, before any record exists.
 		if (invocation.isolation === "worktree") await worktreeBase(cwd);
 		this.assertLive();
+		// A finished agent's session stays retained with its bus, and the agent may also end while this
+		// spawn awaits. Either way a child started now would outlive its parent's cascade (R6).
+		if (parent && parent.status !== "running") {
+			throw new Error(`Agent "${parent.definition.name}" is not running; it cannot spawn subagents.`);
+		}
 		const background = request.detached ? request.detached.isBackground : invocation.runInBackground;
 		const record = this.createRecord({
 			definition,

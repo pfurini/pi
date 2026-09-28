@@ -575,6 +575,54 @@ describe("ownership across buses", () => {
 		}
 	});
 
+	it("refuses an RPC spawn on the bus of an agent whose run has ended", async () => {
+		const { harness, bus } = await session();
+		const id = await spawnId(bus, {
+			type: "lead",
+			prompt: "alpha task",
+			options: { description: "alpha task", isBackground: true },
+		});
+		await serviceOf(harness).waitForResult(id);
+		const lead = serviceOf(harness).get(id);
+		if (!lead) throw new Error("no record");
+		// The finished lead's session stays retained, and so does the adapter on its bus.
+		const started = listen(childBus(lead), ["subagents:started"]);
+		expect(
+			await rpc(childBus(lead), "subagents:rpc:spawn", { type: "worker", prompt: "late task", options: {} }),
+		).toEqual({ success: false, error: 'Agent "lead" is not running; it cannot spawn subagents.' });
+		await sleep(20);
+		expect(started.events).toEqual([]);
+	});
+
+	it("starts nothing for a spawn whose delegating agent ends while the spawn resolves its model", async () => {
+		const { harness, bus } = await session({}, { alpha: [held().behavior] });
+		const model = harness.getModel();
+		// A worker that names its model makes the spawn resolve it, which the test holds open.
+		writeFileSync(
+			join(harness.tempDir, "agents", "worker.md"),
+			`---\ndescription: test worker\nmodel: ${model.provider}/${model.id}\ntools: read\nextensions: false\n---\nYou are worker.`,
+		);
+		const lead = await openChild(harness, bus, "lead", "alpha task");
+		const started = listen(childBus(lead), ["subagents:started"]);
+		let release = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const runtime = harness.session.modelRuntime;
+		const available = runtime.getAvailable.bind(runtime);
+		const resolving = vi.spyOn(runtime, "getAvailable").mockImplementation(async () => {
+			await gate;
+			return available();
+		});
+		const reply = rpc(childBus(lead), "subagents:rpc:spawn", { type: "worker", prompt: "racing task", options: {} });
+		await vi.waitFor(() => expect(resolving).toHaveBeenCalled());
+		serviceOf(harness).stop(lead.id);
+		release();
+		expect(await reply).toEqual({ success: false, error: 'Agent "lead" is not running; it cannot spawn subagents.' });
+		await sleep(20);
+		expect(started.events).toEqual([]);
+	});
+
 	it("spawns a nested agent from a permitted child's bus and reports it on that bus only", async () => {
 		const { harness, bus } = await session(
 			{},

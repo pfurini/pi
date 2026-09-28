@@ -421,20 +421,20 @@ Amendment 3 added this task on 2026-09-27 (handoff D31). T9's mapping found thre
 
 **Commit.** `fix(coding-agent): cover the subagent tool veto, failed notifications and reported session usage`.
 
-### T8b. Fail an Agent call whose worktree cannot start, and count definition loads
+### T8b. Fail an Agent call whose worktree cannot start, and load agent files once per spawn
 
 Amendment 4 added this task on 2026-09-28 (handoff D33). T9's review found two more old test files that the port does not cover.
 
-**Changes.** A fix and its tests, and one new test:
+**Changes.** Two fixes and their tests:
 
 | Old file at `79a7c42` | Change and test |
 | --- | --- |
 | `test/agent-startup-error.test.ts` | `subagents/tools/agent.ts` lets a spawn refusal escape when its worktree cannot be created, so Pi marks the `Agent` call failed. Every other spawn refusal stays a text result. The suite test "fails the spawn with a named error outside a git repository" keeps its name and now expects the call to reject, in the foreground and the background, with no record created. In `test/suite/fork-subagents-worktree.test.ts`. |
-| `test/perf/spawn-invariants.perf.test.ts` | A new test counts agent-definition loads: one background `Agent` call loads the agent files once, and five calls load them at most five times. In `test/suite/fork-subagents-tools.test.ts`. |
+| `test/perf/spawn-invariants.perf.test.ts` | A child's adapter builds its skill-agent rewrite maps from the agent files its owner service loaded, plus the child's own skill agents, so a child's startup loads no agent file (handoff D34). A new test counts every load of the agent files, child sessions included: one background `Agent` call loads them once, and five calls load them five times. In `test/suite/fork-subagents-tools.test.ts`. |
 
 **Validation.** Each changed or new test passes and gets one mutation check. `npm run check` exits 0. Regression rule, with `$E/removed.txt`. Review gate.
 
-**Commit.** `fix(coding-agent): fail an Agent call whose worktree cannot start, and count definition loads`.
+**Commit.** `fix(coding-agent): fail an Agent call whose worktree cannot start, and load agent files once per spawn`.
 
 ### T9. Documentation
 
@@ -822,3 +822,7 @@ The owner ruled D31 on 2026-09-27. T9's mapping of the old tests found three fil
 ### Amendment 4: 2026-09-28, during implementation
 
 The owner ruled D33 on 2026-09-28. T9's review found two more old test files that the port does not cover: `agent-startup-error` and `perf/spawn-invariants`. Task T8b makes an `Agent` call fail when its worktree cannot start, and counts definition loads per call, before T9. The regression rule and T12 name T8b, and T9's checklist check reads T8b's candidate.
+
+### Amendment 5: 2026-09-28, during implementation
+
+The owner ruled D34 on 2026-09-28. A count found two sweeps of the agent directories per spawn: the spawn's, and the child adapter's when it publishes its rewrite maps. T8b now also makes a child's adapter reuse the agent files its owner loaded, and its test counts every load, child sessions included.

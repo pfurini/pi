@@ -376,3 +376,69 @@ Each task section above lists its own deviations. Across the phase:
 - Phase 3 review F10: a user-facing documentation page for subagents, mentions included.
 - The agent files' `persistSession` and `thinkingLevel` keys in `~/.pi/agent/agents/` and `.pi/agents/` become `persist_session` and `thinking`, after Paolo's yes (plan Section 10).
 - The plan's T1 case 9 says ids match "case-insensitively"; the code and phase review F9 keep exact ids. The plan's wording can say "case-insensitive handles and aliases; exact ids".
+
+## Cutover
+
+Outcome: completed
+Files: backed up
+Source: 57e5e56be0e2c928f93d534c1b9268188ac81dac
+Entry: absent
+Build: native
+
+The cutover ran on 2026-09-29. All four steps ran with Paolo's yes, recorded in /tmp/sn3-impl/approvals.md before each step, and all six checklist items passed. No rollback step ran.
+
+Note on `Files`: the plan's State table reads the fact with `test -e $M/docs/plans/subagents-native-phase1.plan.md`. After C2 that path exists again, as the tracked file the fast-forward brought, so the command now reports `in place`. C1's untracked copies stay in /tmp/sn3-impl/cutover-backup. The record states `backed up`, as Paolo chose on 2026-09-29 ("Files: backed up, with a note"). The tracked plan differs from the moved copy, which equals `ea2e39c01`'s; the five evidence files equal the moved copies.
+
+Note on the executor: this session's tools could not write the main checkout. C1's two `mv` commands failed with `rename …: No such file or directory`, nothing moved, and the status stayed unchanged. Paolo chose on 2026-09-29 to run each cutover command in his own terminal ("I run each step in my own terminal (Recommended)"). This session verified each step read-only.
+
+### T11 checks
+
+All passed on 2026-09-29:
+
+- The main checkout is on `personal`, and `personal` equals /tmp/sn3-impl/personal.ref (`83af84af2`).
+- `personal` is an ancestor of `feat/subagents-native`.
+- The main checkout's full status equals /tmp/sn3-impl/main-status.pre-cutover: the six untracked phase 1 paths.
+- The untracked plan equals `ea2e39c01`'s, and the five evidence files equal the branch's.
+- The live settings hold the pi-subagents entry once, after `npm:@narumitw/pi-btw` on line 24, and still matched /tmp/sn3-impl/live-settings.sha256.
+- No lockfile, shrinkwrap or `package.json` differs between `personal` and the branch.
+- Nothing outside `docs/plans/` changed between T9's commit `c27453bf6` and the branch head.
+- No backup destination existed, and the disk held 839,856,952 KB free.
+
+### Steps
+
+| Step | Command | Exit | Approval |
+| --- | --- | --- | --- |
+| C1 | `sed 's/^?? //' $R/main-status.pre-cutover \| xargs shasum -a 256 > $R/cutover-backup.sha256`; `mkdir -p $R/cutover-backup/docs/plans` (this session); both `mv` commands (this session, failed; then Paolo's terminal) | 0; 0; 1 and 1, then 0 and 0 | C1: 2026-09-29, Paolo selected "Yes, run C1" |
+| C2 | `git -C $M merge --ff-only feat/subagents-native > $R/C2-merge.log 2>&1` (Paolo's terminal) | 0 | C2: 2026-09-29, Paolo selected "Yes, I will run C2" (Paolo runs the command in his terminal) |
+| C3 | `cp $LIVE $R/settings.json.pre-cutover` and `cmp`; `node $E3/settings-entry.mjs --save $R/C3 $LIVE remove ../../Developer/ai/pi-subagents > $R/C3.log 2>&1` (Paolo's terminal) | 0; 0 | C3: 2026-09-29, Paolo selected "Yes, I will run C3" (Paolo runs the commands in his terminal) |
+| C4 | `ls -d … > $R/dist-dirs.txt`; `tar -cf $R/dist-pre-cutover.tar …`; `find … \| xargs -0 shasum -a 256 > $R/dist-pre-cutover.sha256`; `npm run build:offline > $R/C4-build.log 2>&1` (Paolo's terminal) | 0; 0; 0; 0 | C4: 2026-09-29, Paolo selected "Yes, I accept the risk and will run C4" (P21 list shown: 22 running pi processes; Paolo runs the commands in his terminal) |
+
+Verifications:
+
+- C1: the main checkout's status was empty, and `shasum -a 256 -c $R/cutover-backup.sha256` from the backup reported six `OK` lines.
+- C2: the merge log reads `Updating 83af84af2..57e5e56be`, `Fast-forward`. `personal` equals the branch head, written to /tmp/sn3-impl/cutover-head.ref. The status stayed empty.
+- C3: the helper printed `before 0c155540…` and `after 8b386434…`. `diff $R/C3.before $R/C3.after` shows exactly one removed line, `    "../../Developer/ai/pi-subagents",`, and no added line. The live file equals `C3.after`, and `jq -r '.packages[]'` still lists `../../Developer/ai/pi-tasks`.
+- C4: `dist-dirs.txt` lists 12 directories, all within RB4's guard pattern. The snapshot is 53 MB with a 3,580-file manifest. The build log's last line is `Built packages/coding-agent/dist/bundle (56 files, 8.8 MiB)`. `dist/core/fork-builtins/subagents/ui/mentions.js` exists, and the status stayed empty. `cli.js --help` with the isolated home /tmp/sn3-impl/c4-home exited 0 and wrote only `auth.json` and `models-store.json` there.
+- P21: `pgrep -fl 'Developer/ai/pi/packages/coding-agent/dist/cli.js'` printed nothing, because Pi retitles its processes `pi`. `ps` listed 22 `pi` processes, which Paolo saw before he approved C4.
+
+### T16 checklist
+
+Paolo ran the checklist in a new session with PATH `pi` in `/Users/paolof/Developer/Projects/neomedica-yaoteq`. The session files holding the marker `sn3-cutover-2026` are `2026-09-29T11-18-51-559Z_01a0ece3-8fa7-7391-b851-ebaaf8de9e12.jsonl` and `2026-09-29T11-37-32-762Z_01a0ecf4-ab59-7398-91fd-2537b71cece9.jsonl`, both under `~/.pi/agent/sessions/--Users-paolof-Developer-Projects-neomedica-yaoteq--/`. /tmp/sn3-impl/checklist.md records:
+
+1. pass: Paolo: "ok"
+2. pass: Paolo: "model" (the Agent mentions value; nothing changed)
+3. pass: Paolo: "tested every mode and it works"
+4. pass: Paolo: "it works"
+5. pass: Paolo: "it completes fine"
+6. pass: Paolo: "yes it works"
+
+### Handoff
+
+With Paolo's yes ("Yes, update 14.1 and 14.5", 2026-09-29), the handoff's section 14.1 marks pi-subagents as not loaded since 2026-09-29, and section 14.5 records the cutover with a pointer to this section.
+
+### Open items after the cutover
+
+- The workflow work's worker exclusion stays open (D43; `## Open items` above).
+- `personal` receives this record with phase 4's fast-forward (P22).
+- /tmp/sn3-impl keeps the cutover backup, the `dist` snapshot and the settings record; removing them, `/tmp/sn3-probe`, `/tmp/sn3-plan` or this worktree needs Paolo's yes.
+- The plan's State table reads `Files` with a path the fast-forward brings back. A later plan should read the fact from the backup, for example `test -e $R/cutover-backup/docs/plans/subagents-native-phase1.plan.md`.

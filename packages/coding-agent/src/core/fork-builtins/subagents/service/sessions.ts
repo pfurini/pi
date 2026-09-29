@@ -74,7 +74,8 @@ export function existingSubagentService(session: AgentSession): SubagentService 
 /**
  * Where a typed caller spawns and reaches agents (D19): the session's own service, or, in a child
  * session, its owner's service and the nested runtime of the agent the child runs as. Undefined for a
- * session with no record. The bus adapter, skill-fork and the task tools share this scope.
+ * session with no record. The task service spawns through it; the bus adapter (`adapter/rpc.ts`) and
+ * skill-fork resolve the same scope from the lineage.
  */
 export interface SubagentScope {
 	service: SubagentService;

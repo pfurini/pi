@@ -1,6 +1,6 @@
 # subagents (fork-owned service, base tools and presentation)
 
-This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D45 in the session-control handoff govern it. `docs/plans/subagents-native-phase1.plan.md`, `-phase2.plan.md` and `-phase3.plan.md` record phases 1 to 3.
+This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. Skill-fork and the task service (`../tasks/`) are typed consumers of its API (D19). A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D53 in the session-control handoff govern it. The phase 1 to 4 plans (`docs/plans/subagents-native-phase<n>.plan.md`) record the port.
 
 ## Layout
 
@@ -28,6 +28,8 @@ The module root holds leaves every layer may import: `binding.ts`, `names.ts`, `
 | In the `SkillForkClient` options | Sends `context: fork` skills through the service instead of the bus. |
 
 `PI_FORK_BUILTINS=off` registers none of the tools and stores no record, so skill-fork keeps its event-bus path.
+
+`subagentScope(session)` (`service/sessions.ts`) gives a typed caller its scope. In a top-level session, the scope is the session's own service. In a child, it is the owner's service, the record the child runs as, and that record's nested runtime. The task service's `TaskExecute`, `TaskOutput` and `TaskStop` go through it. The bus adapter (`adapter/rpc.ts`) and skill-fork resolve the same scope from the lineage.
 
 ## The service
 
@@ -304,9 +306,3 @@ The settings menu lists the 22 settings in pi-subagents' order. Booleans and enu
 - A custom `ResourceLoader`, or an `extensionsOverride` that drops `<inline:subagents>`, removes the presentation and the awaited quit. The session's `dispose()` still ends every child, without awaiting its teardown.
 - A mention's clone still waiting for its reply at `/reload` or at the session's end is aborted, and no agent starts.
 - The CLI reads an argument that starts with `@` as a file to attach, so `pi "@explore …"` sends no mention. A mention reaches the hook only as typed or piped text.
-
-## Later phases
-
-| Phase | Adds |
-| --- | --- |
-| 4 | pi-tasks on the typed service. |

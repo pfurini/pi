@@ -5,10 +5,13 @@
  * mention-start-notification (see docs/plans/subagents-native-phase3-evidence/old-cases.md).
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../../src/core/event-bus.ts";
 import type {
@@ -20,6 +23,11 @@ import { inspectRecord, type SubagentService } from "../../src/core/fork-builtin
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import subagentsPresentation from "../../src/core/fork-builtins/subagents/ui/index.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
+import type { LoadedSkill } from "../../src/core/skills/frontmatter.ts";
+import { getSkillSetController } from "../../src/core/skills/skill-set-events.ts";
+import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import type { ResourceLoader } from "../../src/index.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import {
 	type Behavior,
 	CHILD_START,
@@ -34,6 +42,12 @@ import {
 	use,
 } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
+
+// Pass-through spies, so the popup test can show that a keystroke reads no file.
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof fs>();
+	return { ...actual, readFileSync: vi.fn(actual.readFileSync), readdirSync: vi.fn(actual.readdirSync) };
+});
 
 const harnesses: Harness[] = [];
 
@@ -1087,4 +1101,202 @@ describe("the input hook", () => {
 			expect(notes).toEqual(["Started @worker"]);
 		});
 	}
+});
+
+/** A skill the session's skill set publishes, bundling one agent file per entry of `agents`. */
+function skill(root: string, name: string, agents: Record<string, string>): LoadedSkill {
+	const baseDir = join(root, "skills", name);
+	mkdirSync(join(baseDir, "agents"), { recursive: true });
+	const filePath = join(baseDir, "SKILL.md");
+	writeFileSync(filePath, `---\nname: ${name}\ndescription: ${name} skill\n---\n${name} body`);
+	for (const [agent, frontmatter] of Object.entries(agents)) {
+		writeFileSync(join(baseDir, "agents", `${agent}.md`), `---\n${frontmatter}\n---\nYou are ${agent}.`);
+	}
+	return {
+		name,
+		description: `${name} skill`,
+		filePath,
+		baseDir,
+		sourceInfo: createSyntheticSourceInfo(filePath, {
+			source: "local",
+			scope: "project",
+			origin: "top-level",
+			baseDir,
+		}),
+		disableModelInvocation: false,
+		id: filePath,
+		listingName: name,
+		frontmatter: { name, description: `${name} skill` },
+		argumentHint: undefined,
+		userInvocable: true,
+		commandNameValid: true,
+	};
+}
+
+/** A provider below the popup that answers nothing, or throws `error`. */
+function below(error?: Error): AutocompleteProvider {
+	return {
+		getSuggestions: async () => {
+			if (error) throw error;
+			return null;
+		},
+		applyCompletion: (lines, cursorLine, cursorCol) => ({ lines, cursorLine, cursorCol }),
+	};
+}
+
+/** The popup rows for `line`, as `<value> <description>`. */
+async function popup(provider: AutocompleteProvider, line: string): Promise<string[]> {
+	const result = await provider.getSuggestions([line], 0, line.length, { signal: new AbortController().signal });
+	return (result?.items ?? []).map((item) => `${item.value} ${item.description ?? ""}`.trim());
+}
+
+describe("the @ popup", () => {
+	it("adds agent rows above the wrapped provider's rows, and answers a live agent's handle", async () => {
+		const gate = held();
+		const harness = await parent({ "task eta": [gate.behavior] });
+		const { wrappers } = await bind(harness);
+		expect(wrappers).toHaveLength(1);
+		const inner: AutocompleteProvider = {
+			getSuggestions: async () => ({ items: [{ value: "@src/", label: "src/" }], prefix: "@" }),
+			applyCompletion: (lines, cursorLine, cursorCol) => ({ lines, cursorLine, cursorCol }),
+		};
+		const provider = wrappers[0](inner);
+		const signal = new AbortController().signal;
+		const before = await provider.getSuggestions(["@"], 0, 1, { signal });
+		expect(before?.items.map((item) => item.value)).toEqual([
+			"@general-purpose",
+			"@explore",
+			"@plan",
+			"@worker",
+			"@src/",
+		]);
+		await harness.session.prompt("@worker task eta");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const after = await provider.getSuggestions(["@wo"], 0, 3, { signal });
+		expect(after?.items[0]).toMatchObject({
+			value: "@worker",
+			description: expect.stringMatching(/^send message · running/),
+		});
+		gate.release();
+	});
+
+	it("registers the provider once per activation, in TUI mode only, and again after /reload", async () => {
+		vi.stubEnv("PI_FORK_BUILTINS", "on");
+		// A loader whose reload runs the factory again, as interactive mode's `/reload` does.
+		const cwd = mkdtempSync(join(tmpdir(), "pi-mention-reload-"));
+		const bus = createEventBus();
+		const load = () => createTestExtensionsResult([{ name: "subagents", factory: subagentsPresentation }], cwd, bus);
+		let extensions = await load();
+		const resourceLoader: ResourceLoader = {
+			...createTestResourceLoader({ eventBus: bus }),
+			getExtensions: () => extensions,
+			reload: async () => {
+				extensions = await load();
+			},
+		};
+		const harness = await createHarness({
+			cwd,
+			eventBus: bus,
+			resourceLoader,
+			settings: { forkBuiltins: { subagents: { agentMentions: "direct" } } } as unknown as Partial<Settings>,
+		});
+		harnesses.push(harness);
+		mkdirSync(join(cwd, "agents"), { recursive: true });
+		writeFileSync(join(cwd, "agents", "worker.md"), "---\ndescription: Test worker.\ntools: read\n---\nYou work.");
+		const first = await bind(harness);
+		const second = await bind(harness);
+		expect([first.wrappers.length, second.wrappers.length]).toEqual([1, 0]);
+		await harness.session.reload();
+		expect(second.wrappers).toHaveLength(1);
+		expect(await popup(second.wrappers[0](below()), "@wor")).toEqual(["@worker start agent · Test worker."]);
+		for (const mode of ["rpc", "json", "print"] as const) {
+			const other = await parent({});
+			const { wrappers } = await bind(other, mode);
+			expect(wrappers, mode).toEqual([]);
+		}
+	});
+
+	it("keeps the agent rows when the wrapped provider fails, and the service warns once", async () => {
+		const harness = await parent({});
+		const { wrappers } = await bind(harness);
+		const provider = wrappers[0](below(new Error("inner broke")));
+		for (const line of ["@w", "@wo", "@wor"]) {
+			expect(await popup(provider, line)).toEqual(["@worker start agent · Test worker."]);
+		}
+		expect(service(harness).warnings.filter((warning) => warning.includes("inner broke"))).toEqual([
+			"The autocomplete provider below agent mentions failed: inner broke",
+		]);
+	});
+
+	it("lists no skill-bundled agent, nested agent or disabled type, and the hook still reaches a skill agent by its handle", async () => {
+		const gate = held();
+		const harness = await parent({
+			"task skill": [gate.behavior],
+			"task lead": [gate.behavior],
+			"nested task": [gate.behavior],
+			"task kept": [say("kept done")],
+		});
+		const subagents = service(harness);
+		const bus = subagents.eventBus;
+		if (!bus) throw new Error("no event bus");
+		getSkillSetController(bus).publish([
+			skill(harness.tempDir, "audit", { checker: "description: Checks things.\ntools: read" }),
+		]);
+		writeFileSync(
+			join(harness.tempDir, "agents", "idle.md"),
+			"---\ndescription: Idle.\nenabled: false\n---\nYou idle.",
+		);
+		const { notes, wrappers } = await bind(harness);
+		const kept = await spawnWorker(subagents, "task kept");
+		await vi.waitFor(() => expect(kept.status).toBe("completed"), CHILD_START);
+		// A disabled type keeps its existing agent in the popup, but never lists as a start.
+		workerFile(harness, "description: Test worker. It does work.\nenabled: false");
+		subagents.refreshDefinitions();
+		const checker = await subagents.spawn({
+			type: "audit:checker",
+			prompt: "task skill",
+			description: "skill work",
+			mode: "detached-background",
+		});
+		const lead = await subagents.spawn({
+			type: "general-purpose",
+			prompt: "task lead",
+			description: "lead",
+			mode: "detached-background",
+		});
+		await vi.waitFor(() => expect(gate.requests()).toBe(2), CHILD_START);
+		await subagents.spawnOwned(
+			lead,
+			{ type: "general-purpose", prompt: "nested task", description: "nested" },
+			(registry) => {
+				const definition = registry.agents.get("general-purpose");
+				return definition ? { ok: true, definition } : { ok: false, message: "no general-purpose" };
+			},
+		);
+		await vi.waitFor(() => expect(gate.requests()).toBe(3), CHILD_START);
+		expect(checker.handle).toBe("audit-checker");
+		const rows = await popup(wrappers[0](below()), "@");
+		expect(rows).toEqual([
+			"@general-purpose send message · running · lead",
+			"@worker resume · completed · task kept",
+			expect.stringMatching(/^@explore start agent/),
+			expect.stringMatching(/^@plan start agent/),
+		]);
+		await harness.session.prompt("@audit-checker look closer");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @audit-checker"));
+		gate.release();
+	});
+
+	it("reads no file while it answers a keystroke", async () => {
+		const harness = await parent({ "task read": [say("read done")] });
+		const { wrappers } = await bind(harness);
+		const done = await spawnWorker(service(harness), "task read");
+		await vi.waitFor(() => expect(done.status).toBe("completed"), CHILD_START);
+		const provider = wrappers[0](below());
+		vi.mocked(fs.readFileSync).mockClear();
+		vi.mocked(fs.readdirSync).mockClear();
+		for (const line of ["@", "@w", "@wo", "ask @pl"]) expect(await popup(provider, line)).not.toEqual([]);
+		expect(vi.mocked(fs.readFileSync)).not.toHaveBeenCalled();
+		expect(vi.mocked(fs.readdirSync)).not.toHaveBeenCalled();
+	});
 });

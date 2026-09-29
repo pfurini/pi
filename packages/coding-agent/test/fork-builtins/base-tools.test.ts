@@ -8,7 +8,17 @@ import type { AgentSession } from "../../src/core/agent-session.ts";
 import type { ToolDefinition } from "../../src/core/extensions/types.ts";
 import { addForkBaseTools, forkBaseToolNames } from "../../src/core/fork-builtins/base-tools.ts";
 
-const NAMES = ["ask_user_question", "vcc_recall", "Agent", "get_subagent_result", "steer_subagent"];
+const NAMES = [
+	"ask_user_question",
+	"vcc_recall",
+	"Agent",
+	"get_subagent_result",
+	"steer_subagent",
+	"TaskCreate",
+	"TaskList",
+	"TaskGet",
+	"TaskUpdate",
+];
 
 /** Registration never touches the session; the subagent service is built on the first Agent call. */
 const unusedSession = new Proxy(

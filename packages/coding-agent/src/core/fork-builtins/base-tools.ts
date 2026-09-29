@@ -2,11 +2,11 @@
  * Fork-owned: the base tools the fork adds to every `AgentSession` (ADR-0009).
  * `agent-session.ts` keeps thin call sites into this module (ADR-0003).
  *
- * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`
- *   and `steer_subagent` next to `read`. `PI_FORK_BUILTINS=off` registers none of them. A caller's
- *   base tool of the same name stays. It also stores the session's subagent record, reading nothing
- *   from the session: the subagent service is built from that record on first use. With an event
- *   bus, it installs the `subagents:*` adapter on it.
+ * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`,
+ *   `steer_subagent` and the task tools next to `read`. `PI_FORK_BUILTINS=off` registers none of
+ *   them. A caller's base tool of the same name stays. It also stores the session's subagent record and
+ *   registers the session for its task service, reading nothing from the session: both services are
+ *   built on first use. With an event bus, it installs the `subagents:*` adapter on it.
  * - `forkBaseToolNames` names the registered fork tools. `AgentSession` activates them
  *   wherever it activates every extension tool: at construction and on `/reload`.
  * - `forkBaseToolsNeverCarried` names the fork tools a restored transcript never added.
@@ -38,6 +38,8 @@ import { createResultToolDefinition } from "./subagents/tools/result.ts";
 import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
 import { withAgentToolRenderers } from "./subagents/ui/tool-renderers.ts";
 import { forkBuiltinsEnabled } from "./switch.ts";
+import { registerTaskSession } from "./tasks/service/sessions.ts";
+import { TASK_TOOL_FACTORIES } from "./tasks/tools/tools.ts";
 import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
 
 /** What the fork's base tools need from the session. */
@@ -76,6 +78,8 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
 	);
 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
 	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
+	registerTaskSession(options.session);
+	for (const [name, create] of TASK_TOOL_FACTORIES) addOwned(definitions, name, () => create(options.session));
 	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);
 }
 

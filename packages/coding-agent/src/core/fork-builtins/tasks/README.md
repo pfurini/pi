@@ -95,7 +95,7 @@ The store reads its file once and writes it after every change through `writeFil
 
 | Case | Ruling | What happens |
 | --- | --- | --- |
-| A write fails | D50 | The file keeps its last content. `/reload` calls `retryWrite`, which saves the list there again once the write succeeds. |
+| A write, or the deletion of an emptied list's file, fails | D50 | The file keeps its last content. `/reload` calls `retryWrite`, which saves the list there again once the write succeeds. |
 | A path check cannot run | D50 | The same as a failed write, `retryWrite` included. |
 | The file cannot be read, is not JSON or holds no `tasks` array | D50 | Nothing ever writes it, `retryWrite` included. A new session and a resume open it again. |
 | A path component below the project root is a symlink, the file included | D52 | Nothing is read, written or deleted through the link. The project root itself may be a link. |
@@ -113,7 +113,7 @@ After 4 turns without a task tool call, or 2 while a task is in progress, a remi
 | `on_task_complete` | Each completed task leaves 4 turns after it completed; a reverted or deleted task is forgotten. |
 | `never` | Nothing leaves on its own. |
 
-The countdowns tick at a turn's start, so they stop with the agent. A finished list therefore leaves at once when a later run creates a task. A list that auto-clear, a deletion or a clear empties deletes its file and leaves `.pi/tasks/` in place.
+The countdowns tick at a turn's start, so they stop with the agent. A finished list therefore leaves at once when a later run creates a task. When auto-clear, a deletion or a clear empties the list, the service deletes the list's file. The directory `.pi/tasks/` stays.
 
 ## Presentation
 

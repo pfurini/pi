@@ -201,6 +201,18 @@ describe("the clone's request", () => {
 		expect(getCurrentSystemPrompt(request.messages)).toBe(getCurrentSystemPrompt(turn.messages));
 	});
 
+	// T8-F2: before the session's first turn its messages hold no system prompt, and the clone sent none.
+	it("carries the system prompt the session's first turn sends, when the mention is the first prompt", async () => {
+		const { harness, state } = await session();
+		state.clone = () => agentCall(CALL);
+		expect(await clone(harness)).toMatchObject({ ok: true });
+		const cloned = getCurrentSystemPrompt(state.requests.at(-1)?.messages ?? []);
+		await harness.session.prompt("hello");
+		const turn = getCurrentSystemPrompt(state.requests.at(-1)?.messages ?? []);
+		expect(turn).toBeTruthy();
+		expect(cloned).toBe(turn);
+	});
+
 	it("declares the Agent tool and nothing else", async () => {
 		const { harness, state } = await session();
 		state.clone = () => agentCall(CALL);

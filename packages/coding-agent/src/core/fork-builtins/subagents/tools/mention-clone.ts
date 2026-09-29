@@ -7,7 +7,8 @@
  * - the conversation the session would send next, through `convertToLlm`, so the live system prompt
  *   arrives byte for byte: the session's messages, which are its projection plus the skill bodies a
  *   compaction carried forward, as its own requests are;
- * - one system message that leaves `Agent` as the only declared tool;
+ * - one system message that leaves `Agent` as the only declared tool; before the session's first
+ *   turn, it also carries the session's system prompt;
  * - the user's message, then the reminder.
  *
  * The session's model, thinking level and session id serve the request. Only the reply's first
@@ -16,7 +17,14 @@
  * the model's prompt, description, name and invocation parameters; `resume` and `run_in_background`
  * are ignored.
  */
-import { getCurrentTools, type Message, type Tool, type ToolCall, validateToolArguments } from "@earendil-works/pi-ai";
+import {
+	getCurrentSystemPrompt,
+	getCurrentTools,
+	type Message,
+	type Tool,
+	type ToolCall,
+	validateToolArguments,
+} from "@earendil-works/pi-ai";
 import type { AgentSession } from "../../../agent-session.ts";
 import { convertToLlm } from "../../../messages.ts";
 import { AGENT_TOOL_NAME } from "../names.ts";
@@ -60,12 +68,14 @@ export async function runMentionClone(
 		const declaration: Tool = { name: tool.name, description: tool.description, parameters: tool.parameters };
 		// The finalized state after each turn: the projection plus the carried skill bodies, as a request sends it.
 		const conversation: Message[] = convertToLlm(session.messages);
+		// Before its first turn the session holds no system message; the clone carries the prompt that turn would.
+		const systemPrompt = getCurrentSystemPrompt(conversation) ? "" : session.systemPrompt;
 		const now = Date.now();
 		const request: Message[] = [
 			...conversation,
 			{
 				role: "system",
-				content: "",
+				content: systemPrompt,
 				toolsRemoved: getCurrentTools(conversation)
 					.filter((current) => current.name !== declaration.name)
 					.map(({ name }) => ({ name })),

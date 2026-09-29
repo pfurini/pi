@@ -9,8 +9,8 @@
  *   loads any extension path.
  * - Fork-owned modules live under `src/core/fork-builtins/<name>/` and have no upstream. Each
  *   entry of `FORK_OWNED_BUILTINS` registers through an inline factory, with no package resolution.
- *   The inline factories are tokensave (pi-tokensave) and the subagents presentation
- *   (`subagents/ui/index.ts`).
+ *   The inline factories are tokensave (pi-tokensave), the subagents presentation
+ *   (`subagents/ui/index.ts`) and the tasks presentation (`tasks/ui/index.ts`).
  *
  * `ask_user_question` and `vcc_recall` are fork-owned base tools instead: `AgentSession`
  * registers them next to `read` (`fork-builtins/base-tools.ts`), so no loader affects them.
@@ -23,6 +23,7 @@ import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
 import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
 import subagentsPresentation from "./fork-builtins/subagents/ui/index.ts";
 import { forkBuiltinsEnabled } from "./fork-builtins/switch.ts";
+import tasksPresentation from "./fork-builtins/tasks/ui/index.ts";
 import pluginTokensave from "./fork-builtins/tokensave/index.ts";
 
 export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
@@ -31,6 +32,7 @@ export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
 export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [
 	{ name: "tokensave", factory: pluginTokensave, hidden: true },
 	{ name: "subagents", factory: subagentsPresentation, hidden: true },
+	{ name: "tasks", factory: tasksPresentation, hidden: true },
 ];
 
 const requireFromHere = createRequire(import.meta.url);

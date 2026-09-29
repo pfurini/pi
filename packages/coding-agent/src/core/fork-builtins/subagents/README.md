@@ -1,6 +1,6 @@
 # subagents (fork-owned service, base tools and presentation)
 
-This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D40 in the session-control handoff govern it. `docs/plans/subagents-native-phase1.plan.md` records phase 1, and `docs/plans/subagents-native-phase2.plan.md` records phase 2.
+This module runs subagents natively in Pi. Each `AgentSession` owns one headless subagent service. The base tools `Agent`, `get_subagent_result` and `steer_subagent` call that service. A bus adapter keeps pi-subagents' `subagents:*` events and RPC channels for third-party extensions such as pi-tasks. The fork rebuilt the feature from pi-subagents (`github.com/tintinweb/pi-subagents`, commit `79a7c42`) and takes no upstream sync. Rulings D16 to D45 in the session-control handoff govern it. `docs/plans/subagents-native-phase1.plan.md`, `-phase2.plan.md` and `-phase3.plan.md` record phases 1 to 3.
 
 ## Layout
 
@@ -9,10 +9,10 @@ This module runs subagents natively in Pi. Each `AgentSession` owns one headless
 | `definitions/` | Agent files, the three default agents, skill-bundled agents and type resolution |
 | `settings/` | `forkBuiltins.subagents` settings, the project settings writer, model resolution and the invocation merge |
 | `runner/` | Child sessions: tool scoping, prompts, memory, transcripts, turn limits, lineage, worktrees and teardown |
-| `service/` | `SubagentService`: records, pools, notifications, usage and the nested runtime |
-| `tools/` | The three base tools and the `Agent` tool description |
+| `service/` | `SubagentService`: records, pools, notifications, usage, the nested runtime, the mention grammar, mention resolution and reopening |
+| `tools/` | The three base tools, the `Agent` tool description and the mention clone |
 | `adapter/` | The `subagents:*` bus adapter and the skill-agent rewrite maps |
-| `ui/` | The presentation factory: status line, widget, FleetView, conversation viewer, `/agents` with the create wizard and the settings menu, the `Agent` tool rows and the notification renderer |
+| `ui/` | The presentation factory: status line, widget, FleetView, conversation viewer, `/agents` with the create wizard and the settings menu, the `Agent` tool rows, the notification renderer, and the mention hook and `@` popup |
 
 The module root holds leaves every layer may import: `binding.ts`, `names.ts`, `usage.ts` and `atomic-write.ts`. Imports point down only: the root, `definitions/` and `settings/`, then `runner/`, `service/`, `tools/` and `adapter/`, and `ui/` last. `test/fork-builtins/subagents/layering.test.ts` checks the layers and the absence of import cycles (F14).
 
@@ -76,7 +76,7 @@ Settings live under `forkBuiltins.subagents` in Pi's global and project `setting
 | `disableDefaultAgents` | false | Drops `general-purpose`, `Explore` and `Plan`. |
 | `toolDescriptionMode` | `full` | `full`, `compact` or `custom`. |
 | `fleetView` | true | Shows FleetView below the editor. |
-| `agentMentions` | `model` | Phase 3: `model`, `direct` or `off`. |
+| `agentMentions` | `model` | How an `@` mention starts an agent: `model`, `direct` or `off` (see Mentions). |
 | `rememberAgents` | true | Persists the session's own agents unless an agent file's `persist_session` says otherwise. |
 | `widgetMode` | `background` | The widget above the editor: `all` agents, `background` ones only, or `off`. |
 | `outputTranscript` | true | Writes each agent's `.output` transcript unless its `output_transcript` says otherwise. |
@@ -176,7 +176,7 @@ The factory finds its session over the loader's event bus (`binding.ts`). At loa
 
 | Mode | Surfaces |
 | --- | --- |
-| `tui` | The status line, the `agents` widget above the editor, FleetView below it, the conversation viewer and `/agents`. |
+| `tui` | The status line, the `agents` widget above the editor, FleetView below it, the conversation viewer, `/agents`, and agent mentions with their `@` popup. |
 | `rpc` | The status line only. `/agents` answers `/agents needs the interactive TUI.` |
 | `print`, `json` | None. Quit still awaits the children. |
 
@@ -190,6 +190,59 @@ The factory finds its session over the loader's event bus (`binding.ts`). At loa
 | Notifications (`ui/notification.ts`) | The `subagent-notification` renderer: one heading, stats line and result per agent, and a total under `showCost`. |
 
 Every `session_shutdown` unbinds the UI: timers, subscriptions, terminal input, widgets and the status line. A `reload` then keeps the service and its agents. Any other reason awaits the service's `shutdown()`, and never builds a service to do so. `shutdown()` runs `dispose()`, waits at most 3 s for children still starting, then awaits every teardown started by then. Each teardown bounds the child's `session_shutdown` handlers at 3 s. Quit and session replacement therefore wait for the children's teardown, within a bound (D21).
+
+## Mentions
+
+`@handle message` at the start of a prompt addresses an agent instead of the main model (`ui/mentions.ts`, `service/mentions.ts`). The handle names the agent across its life. Mentions act only in the interactive TUI (D44). In print, JSON and RPC mode, the input hook passes every prompt on unchanged.
+
+The grammar follows Claude Code:
+
+- A send is a leading `@handle`, whitespace, then a message. A bare `@handle`, a file path such as `@src/a.ts` and a mention after other text stay the main model's.
+- `@main <text>` sends `<text>`, with its images, to the main model. No agent may hold the handle `main`, even a type that slugs to it.
+- `@agent-<x>`, Claude Code's manual spelling, resolves `<x>` when the handle as typed resolves nothing. An agent named `agent-<x>` wins.
+- Handles match whatever their casing. An agent's raw id reaches it too. A nested agent has no handle, and a mention never reaches it.
+
+The first target that matches decides (`SubagentService.resolveMention`, then the hook):
+
+| Target | Action | Notices |
+| --- | --- | --- |
+| A running or queued agent | Steers it. | `Sent to @<handle>`; `Could not send to @<handle>: <reason>` |
+| A finished agent with a child session | Resumes it in the background, with no tool call. | `Resuming @<handle>`; `Could not resume @<handle>: <error>` |
+| An evicted agent's tombstone | Reopens its session file as a detached background run that takes back the tombstone's handle, alias and description. | `Resuming @<handle>`; `Could not resume @<handle>: <error>` |
+| A listed type with no agent under the handle | Starts it as `agentMentions` says. | See the table below. |
+| Anything else | Passes the prompt to the main model. | None |
+
+- A record whose run failed before its session existed yields to the tombstone, so a failed reopen can be retried on the same conversation.
+- A tombstone whose session file is gone is dropped with `Could not resume @<handle>: its session is gone.`; the next mention starts afresh.
+- A reopen accepts only the tombstone's exact type as an enabled agent. Otherwise it answers `The <type> agent is no longer available.`, and the tombstone stays.
+- A second reopen of one tombstone while the first still starts joins it: its message steers the same agent.
+
+| `agentMentions` | Start of a listed type |
+| --- | --- |
+| `model` (default) | `Prompting @<handle>…`, then a clone of the conversation writes the agent's prompt. When the clone starts nothing, the hook starts the agent directly with `Started @<handle> directly: <reason>`. |
+| `direct` | `Started @<handle>`: the typed message is the prompt, its first line the description. |
+| `off` | Every prompt goes to the main model, and the popup shows no agent row. |
+
+A start runs `detached-background`: it takes a background slot, joins no batch and notifies on completion. It starts exactly the listed type, with no `fallbackSubagent` substitute (`SubagentService.spawnListed`); a type no longer listed answers `Could not start @<handle>: The <type> agent is no longer available.` A start whose worktree fails is reported once, and nothing else starts.
+
+The clone (`tools/mention-clone.ts`) sends one model request, which no session keeps:
+
+- the conversation the session would send next: `session.messages`, which holds the projection plus the skill bodies a compaction carried forward, through `convertToLlm`;
+- one system message that leaves `Agent` as the only declared tool;
+- the typed message, a blank line, then Claude Code's reminder that names the agent.
+
+The request uses the session's model, thinking level and session id. The reply's first `Agent` call counts, after `prepareArguments` and schema validation. The spawn keeps the mentioned type and takes the call's `prompt`, `description`, `name`, `model`, `thinking`, `max_turns`, `inherit_context`, `isolated` and `isolation`. It ignores `resume` and `run_in_background`. The clone never rejects, and each mention in `model` mode costs one model request.
+
+The hook never waits. It claims the prompt at once and reports each outcome as a notification. After the session's end or `/reload`, it reports nothing, and the factory aborts a clone still waiting for its reply.
+
+The `@` popup adds agent rows above Pi's file rows, under one prefix, and hands every other token to the provider it wraps:
+
+- Rows list running and queued agents first, then the other agents from the earliest, then evicted agents, then listed types with no agent under their handle.
+- A named agent lists once, under its alias, with its type label or `display_name`. A row names the action a send takes: `send message`, `resume` or `start agent`.
+- Skill-bundled agents never list, running or evicted (ADR-0008), yet keep their handles reserved. The hook still reaches one by its exact handle.
+- A disabled type never lists as a start; its existing agents still list.
+- The popup reads the service's cached registry, so a keystroke reads no file. The factory refreshes it at a `tui` `session_start`, and every spawn refreshes it again.
+- The factory registers the provider once per activation. Interactive mode drops every wrapper before `/reload` and a session replacement, and both load the factory again.
 
 ## Keys
 
@@ -247,10 +300,11 @@ The settings menu lists the 22 settings in pi-subagents' order. Booleans and enu
 - A `pi -p` run aborts its background agents at exit: nothing holds the process for them (phase 2 plan P26).
 - A child whose startup outlasts quit's 3 s wait is torn down when it attaches, after quit returned. A process that exits at once cuts that child's `session_shutdown` handlers short.
 - A custom `ResourceLoader`, or an `extensionsOverride` that drops `<inline:subagents>`, removes the presentation and the awaited quit. The session's `dispose()` still ends every child, without awaiting its teardown.
+- A mention's clone still waiting for its reply at `/reload` or at the session's end is aborted, and no agent starts.
+- The CLI reads an argument that starts with `@` as a file to attach, so `pi "@explore …"` sends no mention. A mention reaches the hook only as typed or piped text.
 
 ## Later phases
 
 | Phase | Adds |
 | --- | --- |
-| 3 | Agent mentions and the cutover that removes pi-subagents from the live settings. |
 | 4 | pi-tasks on the typed service. |

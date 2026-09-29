@@ -124,6 +124,16 @@ A 2026-09-28 amendment added the subagents presentation as the second inline fac
 | The settings menu writes only the project's own subagent values plus the changed key, and nothing in an untrusted project | `test/suite/fork-subagents-settings-menu.test.ts`, on a file-backed session. |
 | The upstream footprint in `agent-session.ts` is unchanged | `git diff --numstat 941bec9ab -- packages/coding-agent/src/core/agent-session.ts` prints nothing. |
 
+A 2026-09-29 amendment added agent mentions to the subagents presentation. `<inline:subagents>` now also registers an `input` handler, and in the interactive TUI one autocomplete provider per activation. The handler routes a leading `@handle message` to an agent, and the provider adds agent rows to the `@` popup. Mentions act only in the interactive TUI; print, JSON and RPC prompts pass to the main model unchanged (D44). A scripted TUI smoke with an isolated home and a faux provider gates the first cutover step (D45). The cutover removes pi-subagents from the live settings. `docs/plans/subagents-native-phase3.plan.md` records the proof, and `docs/plans/subagents-native-phase3.results.md` its outcome. The rulings are D16 to D45 in the session-control handoff.
+
+| Rule | Evidence |
+| --- | --- |
+| The mention hook and the `@` popup live in `<inline:subagents>`; the service imports no presentation code | `test/fork-builtins/subagents/layering.test.ts`; `test/suite/fork-subagents-mentions.test.ts`, describes "the input hook" and "the @ popup". |
+| A mention acts only in the interactive TUI (D44) | `test/suite/fork-subagents-mentions.test.ts` "passes every mention on in print, JSON and RPC mode, and leaves a running agent alone". |
+| The provider registers once per activation, only in `tui` mode, and again after `/reload` loads the factory anew | `test/suite/fork-subagents-mentions.test.ts` "registers the provider once per activation, in TUI mode only, and again after /reload". |
+| The built CLI shows the mentions, the popup and the phase 2 surfaces before the cutover (D45) | `docs/plans/subagents-native-phase3-evidence/run-smoke.sh`, run by the phase 3 plan's T9 in `direct` and `model` mode. |
+| The upstream footprint is unchanged | `git diff --numstat af021d3cc -- packages/coding-agent/src/core/agent-session.ts packages/coding-agent/src/modes/interactive/interactive-mode.ts packages/coding-agent/src/core/keybindings.ts` prints nothing. |
+
 ## Upstream sync
 
 A ported package takes upstream changes through `scripts/fork/sync-upstream.sh`, a guarded merge in a scratch repository. SPIKE-0004 proved it on the fork's real sync history: it reproduced Git's own merge result for five consecutive pi-claude-bridge syncs and one rpiv-mono sub-folder sync (`openintent/experiments/spikes/0004-guarded-scratch-merge-sync/report.md`, verdict `PROVEN`). `.pi/skills/sync-upstream/SKILL.md` gives the procedure.

@@ -632,6 +632,25 @@ describe("the input hook", () => {
 		expect(child.seen.at(-1)).toEqual(expect.arrayContaining(["task delta", "come back"]));
 	});
 
+	// T8-F1: the tombstone's old id kept pointing at the tombstone, so a second mention reopened it again.
+	it("answers an evicted agent's old id with its reopened agent, so its session never reopens twice", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const gate = held();
+		const harness = await parent({ "task sigma": [say("sigma done")], "first again": [gate.behavior] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task sigma");
+		await harness.session.prompt(`@${entry.id} first again`);
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const [reopened] = subagents.list();
+		expect(reopened.id).not.toBe(entry.id);
+		await harness.session.prompt(`@${entry.id} second message`);
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker"));
+		expect(notes.filter((note) => note === "Resuming @worker")).toHaveLength(1);
+		expect(subagents.list()).toEqual([reopened]);
+		gate.release();
+	});
+
 	it("drops a tombstone whose session file is gone, and the next mention starts afresh", async () => {
 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
 		const harness = await parent({ "task kappa": [say("kappa done")], "third try": [say("third done")] });

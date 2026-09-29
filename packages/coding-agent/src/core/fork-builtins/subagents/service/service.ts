@@ -843,20 +843,29 @@ export class SubagentService {
 	 * What `@name` addresses among the session's own agents, by handle, alias or id. A running or queued
 	 * agent wins, then the newest one with a session, then an evicted one by the same names. A record
 	 * whose run failed before its session existed comes last, so a reopen that failed to start leaves
-	 * the tombstone reachable and the retry reopens the same conversation.
+	 * the tombstone reachable and the retry reopens the same conversation. A reopened agent holds its
+	 * tombstone's names under a new id, so the tombstone's old id reaches that agent too.
 	 */
 	resolveMention(name: string): MentionTarget | undefined {
 		const wanted = name.toLowerCase();
+		const entry = this.retention.tombstones
+			.list()
+			.find((tombstone) => tombstone.handle === wanted || tombstone.alias === wanted || tombstone.id === name);
+		const names = new Set([wanted]);
+		if (entry) names.add(entry.handle);
+		if (entry?.alias) names.add(entry.alias);
 		const named = [...this.records.values()]
-			.filter((record) => !record.parent && (record.handle === wanted || record.alias === wanted))
+			.filter(
+				(record) =>
+					!record.parent &&
+					((record.handle !== undefined && names.has(record.handle)) ||
+						(record.alias !== undefined && names.has(record.alias))),
+			)
 			.sort((a, b) => b.startedAt - a.startedAt);
 		const byId = this.records.get(name);
 		if (byId && !byId.parent) named.unshift(byId);
 		const live = named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child);
 		if (live) return { kind: "live", view: live };
-		const entry = this.retention.tombstones
-			.list()
-			.find((tombstone) => tombstone.handle === wanted || tombstone.alias === wanted || tombstone.id === name);
 		if (entry) return { kind: "tombstone", entry };
 		return named[0] ? { kind: "live", view: named[0] } : undefined;
 	}

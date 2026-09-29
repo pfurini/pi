@@ -175,8 +175,11 @@ export function handleMentionInput(
 	};
 	if (target && dispatchExisting(target, mention.message, env, notify)) return { action: "handled" };
 	const types = listedAgents(service.registry).map(([name]) => name);
+	// A record that never reached a session starts afresh as its own type, whatever name reached it.
 	const type =
-		resolveHandleToType(mention.handle, types) ?? (unwrapped ? resolveHandleToType(unwrapped, types) : undefined);
+		(target && target.kind === "live" ? target.view.type : undefined) ??
+		resolveHandleToType(mention.handle, types) ??
+		(unwrapped ? resolveHandleToType(unwrapped, types) : undefined);
 	if (!type) return CONTINUE;
 	void start(type, mention.message, mode, env, notify);
 	return { action: "handled" };

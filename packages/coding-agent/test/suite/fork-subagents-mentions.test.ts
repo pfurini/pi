@@ -998,6 +998,46 @@ describe("the input hook", () => {
 		gate.release();
 	});
 
+	// T8-F3: an alias or a numbered handle named no type, so the mention fell through to the main model.
+	it("starts a fresh agent of a record's own type when the record never reached a session, by its alias or numbered handle", async () => {
+		const gate = held();
+		const harness = await parent({
+			"task first": [say("first done")],
+			"task second": [say("second done")],
+			"retry one": [gate.behavior],
+			"retry two": [gate.behavior],
+		});
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const first = await spawnWorker(subagents, "task first");
+		const second = await spawnWorker(subagents, "task second", "Reviewer");
+		await vi.waitFor(() => expect([first.status, second.status]).toEqual(["completed", "completed"]), CHILD_START);
+		expect([second.handle, second.alias]).toEqual(["worker-2", "reviewer"]);
+		// Stands in for runs that failed before their session existed; the children return at the end.
+		const records = [first, second].map((view) => inspectRecord(subagents, view.id));
+		const children = records.map((record) => record?.child);
+		for (const record of records) if (record) record.child = undefined;
+		try {
+			await harness.session.prompt("@reviewer retry one");
+			await harness.session.prompt("@worker-2 retry two");
+			await vi.waitFor(() => expect(gate.requests()).toBe(2), CHILD_START);
+			expect(notes).toEqual(["Started @worker", "Started @worker"]);
+			expect(userTexts(harness)).toEqual([]);
+			expect(
+				subagents
+					.list()
+					.filter((view) => view.prompt.startsWith("retry"))
+					.map((view) => `${view.type} ${view.prompt}`)
+					.sort(),
+			).toEqual(["worker retry one", "worker retry two"]);
+		} finally {
+			records.forEach((record, index) => {
+				if (record) record.child = children[index];
+			});
+			gate.release();
+		}
+	});
+
 	it("starts afresh when an evicted agent left no session file", async () => {
 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
 		const harness = await parent(

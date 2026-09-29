@@ -216,6 +216,8 @@ The first target that matches decides (`SubagentService.resolveMention`, then th
 - A tombstone whose session file is gone is dropped with `Could not resume @<handle>: its session is gone.`; the next mention starts afresh.
 - A reopen accepts only the tombstone's exact type as an enabled agent. Otherwise it answers `The <type> agent is no longer available.`, and the tombstone stays.
 - A second reopen of one tombstone while the first still starts joins it: its message steers the same agent.
+- A reopened agent holds its tombstone's names under a new id. The tombstone's old id reaches that agent too, so the session never reopens twice.
+- A finished record that never reached a session starts afresh as its own type, by any of its names.
 
 | `agentMentions` | Start of a listed type |
 | --- | --- |
@@ -223,17 +225,17 @@ The first target that matches decides (`SubagentService.resolveMention`, then th
 | `direct` | `Started @<handle>`: the typed message is the prompt, its first line the description. |
 | `off` | Every prompt goes to the main model, and the popup shows no agent row. |
 
-A start runs `detached-background`: it takes a background slot, joins no batch and notifies on completion. It starts exactly the listed type, with no `fallbackSubagent` substitute (`SubagentService.spawnListed`); a type no longer listed answers `Could not start @<handle>: The <type> agent is no longer available.` A start whose worktree fails is reported once, and nothing else starts.
+A start runs `detached-background`: it takes a background slot, joins no batch and notifies on completion. A start takes exactly the listed type, with no `fallbackSubagent` substitute (`SubagentService.spawnListed`). A type no longer listed answers `Could not start @<handle>: The <type> agent is no longer available.` A start whose worktree fails is reported once, and nothing else starts. The hook rereads the settings only for a prompt shaped as a mention.
 
 The clone (`tools/mention-clone.ts`) sends one model request, which no session keeps:
 
 - the conversation the session would send next: `session.messages`, which holds the projection plus the skill bodies a compaction carried forward, through `convertToLlm`;
-- one system message that leaves `Agent` as the only declared tool;
+- one system message that leaves `Agent` as the only declared tool; before the session's first turn, it also carries the session's system prompt;
 - the typed message, a blank line, then Claude Code's reminder that names the agent.
 
-The request uses the session's model, thinking level and session id. The reply's first `Agent` call counts, after `prepareArguments` and schema validation. The spawn keeps the mentioned type and takes the call's `prompt`, `description`, `name`, `model`, `thinking`, `max_turns`, `inherit_context`, `isolated` and `isolation`. It ignores `resume` and `run_in_background`. The clone never rejects, and each mention in `model` mode costs one model request.
+The request uses the session's model, thinking level and session id. The reply's first `Agent` call counts, after `prepareArguments` and schema validation. The spawn keeps the mentioned type. The spawn takes these fields of the call: `prompt`, `description`, `name`, `model`, `thinking`, `max_turns`, `inherit_context`, `isolated` and `isolation`. The spawn ignores `resume` and `run_in_background`. The clone never rejects, and each mention in `model` mode costs one model request.
 
-The hook never waits. It claims the prompt at once and reports each outcome as a notification. After the session's end or `/reload`, it reports nothing, and the factory aborts a clone still waiting for its reply.
+The hook never waits. The hook claims the prompt at once and reports each outcome as a notification. After the session's end or `/reload`, the hook reports nothing, and the factory aborts a clone still waiting for its reply.
 
 The `@` popup adds agent rows above Pi's file rows, under one prefix, and hands every other token to the provider it wraps:
 

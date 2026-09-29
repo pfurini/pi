@@ -201,7 +201,8 @@ function workerFile(harness: Harness, frontmatter: string | undefined): void {
 }
 
 describe("handle resolution", () => {
-	it("finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one", async () => {
+	// Renamed by T8-F5: ids match exactly; handles and aliases match whatever their casing.
+	it("finds a top-level agent by handle or alias whatever the casing, or by its exact id, and never a nested one", async () => {
 		const gate = held();
 		const harness = await parent({ "task one": [gate.behavior] });
 		const subagents = service(harness);

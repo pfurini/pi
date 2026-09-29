@@ -1,18 +1,23 @@
 /**
  * Fork-owned: agent mentions at the prompt (pi-subagents `src/index.ts:1043-1270` and
  * `src/ui/agent-mention.ts` at 79a7c42). `@handle message` addresses an agent instead of the main
- * model. The handle names the agent across its life: a running or queued agent is steered, a
- * finished one resumed, an evicted one reopened from its session file, and an agent type with no
- * instance started. Starting follows `agentMentions`: `model` lets a clone of the conversation write
- * the agent's prompt (`../tools/mention-clone.ts`), `direct` starts the agent with the typed message,
- * and `off` leaves every prompt to the main model.
+ * model. The handle names the agent across its life:
  *
- * Mentions act only in the interactive TUI (D44). In print, JSON and RPC mode the hook passes every
- * prompt on unchanged. The hook never waits for an agent: it claims the prompt at once and reports
- * each outcome through a notification.
+ * - a running or queued agent is steered;
+ * - a finished one is resumed;
+ * - an evicted one is reopened from its session file;
+ * - an agent type with no instance is started.
  *
- * `@` is also Pi's file picker. The autocomplete provider adds rows for agents above Pi's file rows
- * and hands everything else to the provider it wraps.
+ * A start follows `agentMentions`. `model` lets a clone of the conversation write the agent's prompt
+ * (`../tools/mention-clone.ts`). `direct` starts the agent with the typed message. `off` leaves
+ * every prompt to the main model.
+ *
+ * Mentions act only in the interactive TUI (D44). In print, JSON and RPC mode, the hook passes every
+ * prompt on unchanged. The hook never waits for an agent. The hook claims the prompt at once and
+ * reports each outcome through a notification.
+ *
+ * `@` is also Pi's file picker. The autocomplete provider adds agent rows above Pi's file rows. The
+ * provider hands every other token to the provider it wraps.
  */
 import { existsSync } from "node:fs";
 import type { AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions } from "@earendil-works/pi-tui";
@@ -39,15 +44,18 @@ export type MentionRow =
 	| { kind: "type"; handle: string; type: string; description: string };
 
 /**
- * Everything `@` can reach, in popup order: running and queued agents first, then the other live
- * ones, earliest first; then evicted agents; then listed agent types with no agent under their
- * handle. A named agent lists once, under its alias. Skill-bundled and disabled agents never list
- * (ADR-0008), yet a skill agent's handle stays reserved, so no type row promises another agent under
- * it. Reads the service's cached registry, so a keystroke reads no file.
+ * Everything `@` can reach, in popup order:
+ *
+ * 1. running and queued agents, then the other live ones, earliest first;
+ * 2. evicted agents;
+ * 3. listed agent types with no agent under their handle.
+ *
+ * A named agent lists once, under its alias. Skill-bundled and disabled agents never list (ADR-0008).
+ * A skill agent's handle still stays reserved, so no type row promises another agent under it. The
+ * roster reads the service's cached registry, so a keystroke reads no file.
  */
 export function mentionRoster(service: SubagentService): MentionRow[] {
 	const registry = service.registry;
-	const label = (type: string) => registry.agents.get(type)?.displayName ?? type;
 	const live = (view: SubagentView) => !isTerminal(view);
 	const views = service
 		.list()
@@ -69,7 +77,8 @@ export function mentionRoster(service: SubagentService): MentionRow[] {
 		taken.add(handle);
 		taken.add(entry.handle);
 		if (registry.agents.get(entry.type)?.hidden) continue;
-		rows.push({ kind: "tombstone", handle, entry, typeLabel: label(entry.type) });
+		const typeLabel = registry.agents.get(entry.type)?.displayName ?? entry.type;
+		rows.push({ kind: "tombstone", handle, entry, typeLabel });
 	}
 	for (const [name, definition] of listedAgents(registry)) {
 		const handle = handleBase(name);

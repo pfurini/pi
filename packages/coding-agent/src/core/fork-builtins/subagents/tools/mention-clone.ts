@@ -1,21 +1,20 @@
 /**
  * Fork-owned: starts a mentioned agent from a clone of the session's conversation, with no visible
  * turn (pi-subagents `src/mention-clone.ts` at 79a7c42). Claude Code turns `@agent-<type>` into a
- * reminder that asks the main model to call its agent tool, so the agent's prompt carries the
+ * reminder that asks the main model to call its agent tool. The agent's prompt then carries the
  * conversation's context. The clone takes that turn off-screen, as one model request:
  *
- * - the conversation the session would send next, through `convertToLlm`, so the live system prompt
- *   arrives byte for byte: the session's messages, which are its projection plus the skill bodies a
- *   compaction carried forward, as its own requests are;
+ * - the conversation the session would send next, through `convertToLlm`: the session's messages,
+ *   which hold its projection plus the skill bodies a compaction carried forward;
  * - one system message that leaves `Agent` as the only declared tool; before the session's first
  *   turn, it also carries the session's system prompt;
  * - the user's message, then the reminder.
  *
- * The session's model, thinking level and session id serve the request. Only the reply's first
- * `Agent` call counts. Its arguments are prepared and validated as Pi's agent loop does. The spawn
- * keeps the mentioned type, with no fallback to another, runs detached in the background, and takes
- * the model's prompt, description, name and invocation parameters; `resume` and `run_in_background`
- * are ignored.
+ * The live system prompt thus arrives byte for byte. The session's model, thinking level and session
+ * id serve the request. Only the reply's first `Agent` call counts. Its arguments are prepared and
+ * validated as Pi's agent loop does. The spawn keeps the mentioned type, with no fallback, and runs
+ * detached in the background. The spawn takes the call's prompt, description, name and invocation
+ * parameters, and ignores `resume` and `run_in_background`.
  */
 import {
 	getCurrentSystemPrompt,

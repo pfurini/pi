@@ -842,9 +842,9 @@ export class SubagentService {
 	/**
 	 * What `@name` addresses among the session's own agents, by handle, alias or id. A running or queued
 	 * agent wins, then the newest one with a session, then an evicted one by the same names. A record
-	 * whose run failed before its session existed comes last, so a reopen that failed to start leaves
-	 * the tombstone reachable and the retry reopens the same conversation. A reopened agent holds its
-	 * tombstone's names under a new id, so the tombstone's old id reaches that agent too.
+	 * whose run failed before its session existed comes last. A reopen that failed to start therefore
+	 * leaves the tombstone reachable, and the retry reopens the same conversation. A reopened agent
+	 * holds its tombstone's names under a new id, so the tombstone's old id reaches that agent too.
 	 */
 	resolveMention(name: string): MentionTarget | undefined {
 		const wanted = name.toLowerCase();

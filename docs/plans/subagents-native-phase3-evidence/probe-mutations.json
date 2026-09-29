@@ -1,0 +1,238 @@
+[
+ {
+  "id": "Q1",
+  "what": "a direct mention starts another type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\ttype,\n\t\t\tprompt: message,",
+  "new": "\t\t\ttype: \"general-purpose\",\n\t\t\tprompt: message,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions starts an agent of the mentioned type with the message as its prompt, and spends no parent turn"
+  ]
+ },
+ {
+  "id": "Q2",
+  "what": "a mention steers no agent",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "void service.steer(view.id, message)",
+  "new": "void service.steer(\"nobody\", message)",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions steers a running agent by its handle"
+  ]
+ },
+ {
+  "id": "Q3",
+  "what": "a resume drops the message",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "service.resume(view.id, message, { background: true });",
+  "new": "service.resume(view.id, \"other\", { background: true });",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions resumes a finished agent in the background"
+  ]
+ },
+ {
+  "id": "Q4",
+  "what": "a reopen starts an empty conversation",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "resumeSessionFile: record.reopenFrom,",
+  "new": "resumeSessionFile: undefined,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions reopens an evicted agent's session under its old handle"
+  ]
+ },
+ {
+  "id": "Q5",
+  "what": "a reopen takes a new handle",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "handle = input.reopen.handle;",
+  "new": "handle = `${input.reopen.handle}-x`;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions reopens an evicted agent's session under its old handle"
+  ]
+ },
+ {
+  "id": "Q6",
+  "what": "the clone keeps every tool",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": ".filter((current) => current.name !== declaration.name)",
+  "new": ".filter(() => false)",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions in model mode, a clone of the conversation writes the prompt, with Agent as its only tool"
+  ]
+ },
+ {
+  "id": "Q7",
+  "what": "the clone's type wins",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\t\ttype,\n",
+  "new": "\t\t\ttype: (call.arguments as { subagent_type: string }).subagent_type,\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions in model mode, a clone of the conversation writes the prompt, with Agent as its only tool"
+  ]
+ },
+ {
+  "id": "Q8",
+  "what": "a failed clone starts nothing",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "else fallback = cloned.error;",
+  "new": "else return;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions in model mode, starts the agent directly when the clone calls no tool"
+  ]
+ },
+ {
+  "id": "Q9",
+  "what": "mentions act in rpc mode",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "const mentionAbort = tui ? new AbortController() : undefined;",
+  "new": "const mentionAbort = new AbortController();",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions passes @main, unknown handles, print mode and the off setting to the main model"
+  ]
+ },
+ {
+  "id": "Q10",
+  "what": "@main keeps its prefix",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "text: mention.message, ...(event.images",
+  "new": "text: event.text, ...(event.images",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions passes @main, unknown handles, print mode and the off setting to the main model"
+  ]
+ },
+ {
+  "id": "Q11",
+  "what": "agent rows follow the file rows",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "[...mine.items, ...theirs.items]",
+  "new": "[...theirs.items, ...mine.items]",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions adds agent rows above the wrapped provider's rows"
+  ]
+ },
+ {
+  "id": "Q12",
+  "what": "the registry stays empty until a spawn",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\t\tservice.refreshDefinitions();\n",
+  "new": "\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions adds agent rows above the wrapped provider's rows",
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions starts an agent of the mentioned type with the message as its prompt, and spends no parent turn"
+  ]
+ },
+ {
+  "id": "Q13",
+  "what": "a failing mention wiring leaves the UI bound",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\t// Set before the mention wiring, so a failure there still leaves the UI to unbind.\n\t\tunbind = () => {",
+  "new": "\t\tif (mentionAbort) ctx.ui.addAutocompleteProvider((current) => current);\n\t\tunbind = () => {",
+  "files": [
+   "test/suite/fork-subagents-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit",
+   "test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode"
+  ]
+ },
+ {
+  "id": "Q14",
+  "what": "a failed reopen shadows its tombstone",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child);",
+  "new": "named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child) ?? named[0];",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions reopens the same conversation on a retry after a reopen failed to start"
+  ]
+ },
+ {
+  "id": "Q15",
+  "what": "a reopen worktree failure escapes the rejection handler",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": ".then((view) => service.worktreeStarted(view))\n\t\t\t.then(\n\t\t\t\t() => notify(`Resuming ${name}`, \"info\"),",
+  "new": ".then(\n\t\t\t\tasync (view) => { await service.worktreeStarted(view); notify(`Resuming ${name}`, \"info\"); },",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > agent mentions reports a reopen whose worktree fails to start once, with no unhandled rejection"
+  ]
+ },
+ {
+  "id": "Q16",
+  "what": "the roster lists running skill-bundled agents",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "view.handle !== undefined && !view.definition.hidden",
+  "new": "view.handle !== undefined",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > the @ roster lists no skill-bundled agent, running or evicted"
+  ]
+ },
+ {
+  "id": "Q17",
+  "what": "the roster lists evicted skill-bundled agents",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\tif (registry.agents.get(entry.type)?.hidden) continue;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > the @ roster lists no skill-bundled agent, running or evicted"
+  ]
+ },
+ {
+  "id": "Q18",
+  "what": "a cancelled clone still starts its agent",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\tif (signal?.aborted) return { ok: false, error: \"the clone was cancelled\" };\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mention-clone.test.ts > the mention clone starts no agent when it was cancelled before a provider that ignores the abort answered"
+  ]
+ }
+]

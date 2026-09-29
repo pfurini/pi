@@ -18,6 +18,7 @@ import {
 	PRESENTATION_BIND_CHANNEL,
 	type PresentationBindRequest,
 } from "../../subagents/binding.ts";
+import { displayText } from "../../subagents/ui/format.ts";
 import { existingTaskService, taskServiceFor } from "../service/sessions.ts";
 import { showTasksMenu } from "./menu.ts";
 import { TaskWidget } from "./widget.ts";
@@ -63,7 +64,8 @@ export default function tasksPresentation(pi: ExtensionAPI): void {
 		const offWarnings = service.subscribe((change) => {
 			if (change.type !== "warning") return;
 			try {
-				ctx.ui.notify(change.message, "warning");
+				// A warning may quote a task file or a settings key, either of which may hold escape sequences.
+				ctx.ui.notify(displayText(change.message), "warning");
 			} catch {
 				// A UI that cannot notify cannot show the widget's failure either.
 			}

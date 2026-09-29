@@ -312,6 +312,17 @@ describe("the task settings list", () => {
 		expect(readFileSync(join(space.cwd, ".pi", "settings.json"), "utf8")).toBe(before);
 	});
 
+	it("strips escape sequences from the reason a failed save notifies", async () => {
+		const space = workspace({}, undefined);
+		mkdirSync(join(space.cwd, ".pi"));
+		writeFileSync(join(space.cwd, ".pi", "settings.json"), '{ "a": \u001b[2J }');
+		const { ui, notices } = scriptedUi(["Settings", undefined], [], [KEY.space]);
+		await showTasksMenu(env(space, ui));
+		expect(notices).toHaveLength(1);
+		expect(notices[0]).toMatch(/^Task settings not saved: /);
+		expect(notices[0]).not.toContain("\u001b");
+	});
+
 	it("warns when the write fails and changes nothing", async () => {
 		const space = workspace({}, undefined);
 		mkdirSync(join(space.cwd, ".pi"));

@@ -170,7 +170,8 @@ async function save(env: TasksMenuEnvironment, row: Row, value: string): Promise
 		await env.settingsManager.reload();
 		env.service.reloadSettings();
 	} catch (error) {
-		env.ui.notify(`Task settings not saved: ${error instanceof Error ? error.message : String(error)}`, "warning");
+		const reason = error instanceof Error ? error.message : String(error);
+		env.ui.notify(`Task settings not saved: ${displayText(reason)}`, "warning");
 	}
 }
 

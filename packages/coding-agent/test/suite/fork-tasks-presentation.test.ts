@@ -254,6 +254,13 @@ describe("the tasks presentation factory", () => {
 		expect(notices.at(-1)).toBe("a later warning");
 	});
 
+	it("strips escape sequences from the warnings it notifies", async () => {
+		const harness = await unbound({ tasks: { "\u001b]52;c;YWJj\u0007key": 1 } });
+		const { ui, notices } = fakeUi();
+		await harness.session.bindExtensions({ uiContext: ui, mode: "tui" });
+		expect(notices).toEqual(["forkBuiltins.tasks in the global settings.json: unknown key key; it is ignored."]);
+	});
+
 	it("removes the widget at session_shutdown", async () => {
 		const harness = await unbound();
 		const { ui, widgets } = fakeUi();

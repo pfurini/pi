@@ -395,7 +395,10 @@ export class TaskStore {
 		this.save();
 	}
 
-	/** Deletes the file of an empty list; true when the list is empty and was saved to a file. */
+	/**
+	 * Deletes the file of an empty list; true when the list is empty and its file is gone. A failed
+	 * deletion moves the list to memory, and `retryWrite` saves it there again.
+	 */
 	deleteFileIfEmpty(): boolean {
 		const path = this.path;
 		if (!path || this.tasks.size > 0) return false;
@@ -410,8 +413,13 @@ export class TaskStore {
 				return false;
 			}
 			unlinkSync(path);
-		} catch {
-			// Already gone, or never written.
+		} catch (error) {
+			// A file already gone needs no deletion; any other failure leaves it, as a failed write does (D50).
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				this.toMemory(`${path} could not be deleted (${errorText(error)})`);
+				this.unsavedPath = path;
+				return false;
+			}
 		}
 		this.lastText = undefined;
 		return true;

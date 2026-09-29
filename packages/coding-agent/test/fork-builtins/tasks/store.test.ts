@@ -510,6 +510,32 @@ describe("the task store", () => {
 		expect(existsSync(file)).toBe(true);
 	});
 
+	it("moves the list to memory when the file of an emptied list cannot be deleted, and retries the save later", () => {
+		const root = tempDir("pi-tasks-undeletable-");
+		const dir = join(root, "tasks");
+		const file = join(dir, "tasks-1.json");
+		const warnings: string[] = [];
+		const store = new TaskStore(file, (message) => warnings.push(message), root);
+		store.create("a", "d");
+		store.clearAll();
+		chmodSync(dir, 0o555);
+		try {
+			expect(store.deleteFileIfEmpty()).toBe(false);
+		} finally {
+			chmodSync(dir, 0o755);
+		}
+		expect(existsSync(file)).toBe(true);
+		expect(store.file).toBeUndefined();
+		expect(warnings).toEqual([
+			expect.stringMatching(/^Tasks are not saved: .*tasks-1\.json could not be deleted \(EACCES/),
+		]);
+		store.create("b", "d");
+		expect(store.retryWrite()).toBe(true);
+		expect(JSON.parse(readFileSync(file, "utf8")).tasks.map((task: { subject: string }) => task.subject)).toEqual([
+			"b",
+		]);
+	});
+
 	it("refuses a symlinked task file and reads, writes and deletes nothing through it (D52)", () => {
 		const root = tempDir("pi-tasks-filelink-");
 		const outside = tempDir("pi-tasks-outside-");

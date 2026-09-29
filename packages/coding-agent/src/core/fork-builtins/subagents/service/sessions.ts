@@ -5,6 +5,8 @@
  * spawn. A session with no record (fork built-ins off) has no service.
  */
 import type { AgentSession } from "../../../agent-session.ts";
+import type { NestedRuntime } from "./nested.ts";
+import type { SubagentView } from "./records.ts";
 import { SubagentService, type SubagentSessionContext } from "./service.ts";
 
 const sessionRecords = new WeakMap<AgentSession, SubagentSessionContext>();
@@ -67,4 +69,30 @@ export function subagentServiceFor(session: AgentSession): SubagentService | und
 /** The session's subagent service when one was built; never builds one. */
 export function existingSubagentService(session: AgentSession): SubagentService | undefined {
 	return services.get(session);
+}
+
+/**
+ * Where a typed caller spawns and reaches agents (D19): the session's own service, or, in a child
+ * session, its owner's service and the nested runtime of the agent the child runs as. Undefined for a
+ * session with no record. The bus adapter, skill-fork and the task tools share this scope.
+ */
+export interface SubagentScope {
+	service: SubagentService;
+	/** The agent a child session runs as; absent in a top-level session. */
+	owner?: SubagentView;
+	nested?: NestedRuntime;
+}
+
+export function subagentScope(session: AgentSession): SubagentScope | undefined {
+	const context = sessionRecords.get(session);
+	const lineage = context?.lineage;
+	if (lineage) {
+		return {
+			service: lineage.owner,
+			owner: lineage.parentRecord,
+			nested: lineage.owner.nested(lineage.parentRecord),
+		};
+	}
+	const service = subagentServiceFor(session);
+	return service ? { service } : undefined;
 }

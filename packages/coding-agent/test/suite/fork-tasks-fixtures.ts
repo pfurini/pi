@@ -13,7 +13,7 @@ import type { Settings } from "../../src/core/settings-manager.ts";
 import { type Behavior, router } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
-export const TASK_TOOLS = ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate"];
+export const TASK_TOOLS = ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskExecute", "TaskOutput", "TaskStop"];
 
 /** A session with fork built-ins on; `settings` becomes its `forkBuiltins` object. Callers clean it up. */
 export async function taskSession(

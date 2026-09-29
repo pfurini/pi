@@ -1,5 +1,5 @@
 /**
- * Fork-owned: the task base tools (D47). pi-tasks `src/index.ts:570-1260` at 83480bd is the
+ * Fork-owned: the seven task base tools (D47). pi-tasks `src/index.ts:570-1260` at 83480bd is the
  * behavior reference; the names, parameters and descriptions follow Claude Code's tools. Each tool
  * calls the session's `TaskService`.
  */
@@ -7,15 +7,27 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { AgentSession } from "../../../agent-session.ts";
 import type { ToolDefinition } from "../../../extensions/types.ts";
-import { TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME } from "../names.ts";
+import {
+	TASK_CREATE_TOOL_NAME,
+	TASK_EXECUTE_TOOL_NAME,
+	TASK_GET_TOOL_NAME,
+	TASK_LIST_TOOL_NAME,
+	TASK_OUTPUT_TOOL_NAME,
+	TASK_STOP_TOOL_NAME,
+	TASK_UPDATE_TOOL_NAME,
+} from "../names.ts";
 import type { TaskService } from "../service/service.ts";
 import { requireTaskService } from "../service/sessions.ts";
 import type { Task } from "../store.ts";
 import {
 	TASK_CREATE_DESCRIPTION,
 	TASK_CREATE_GUIDELINES,
+	TASK_EXECUTE_DESCRIPTION,
+	TASK_EXECUTE_GUIDELINES,
 	TASK_GET_DESCRIPTION,
 	TASK_LIST_DESCRIPTION,
+	TASK_OUTPUT_DESCRIPTION,
+	TASK_STOP_DESCRIPTION,
 	TASK_UPDATE_DESCRIPTION,
 } from "./descriptions.ts";
 
@@ -74,6 +86,24 @@ const UPDATE_PARAMETERS = Type.Object({
 	),
 	addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that this task blocks" })),
 	addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that block this task" })),
+});
+
+const OUTPUT_PARAMETERS = Type.Object({
+	task_id: Type.String({ description: "The task ID to get output from" }),
+	block: Type.Boolean({ description: "Whether to wait for completion", default: true }),
+	timeout: Type.Number({ description: "Max wait time in ms", default: 30000, minimum: 0, maximum: 600000 }),
+});
+
+const STOP_PARAMETERS = Type.Object({
+	task_id: Type.String({ description: "The ID of the task whose agent to stop" }),
+});
+
+const EXECUTE_PARAMETERS = Type.Object({
+	task_ids: Type.Array(Type.String(), { description: "Task IDs to execute as subagents" }),
+	additional_context: Type.Optional(Type.String({ description: "Extra context for agent prompts" })),
+	model: Type.Optional(Type.String({ description: "Model override for agents" })),
+	thinking: Type.Optional(Type.String({ description: 'Thinking level override for agents (e.g. "low", "high")' })),
+	max_turns: Type.Optional(Type.Number({ description: "Max turns per agent", minimum: 1 })),
 });
 
 export function createTaskCreateToolDefinition(session: AgentSession): ToolDefinition<typeof CREATE_PARAMETERS> {
@@ -163,10 +193,62 @@ export function createTaskUpdateToolDefinition(session: AgentSession): ToolDefin
 	};
 }
 
+export function createTaskOutputToolDefinition(session: AgentSession): ToolDefinition<typeof OUTPUT_PARAMETERS> {
+	return {
+		name: TASK_OUTPUT_TOOL_NAME,
+		label: TASK_OUTPUT_TOOL_NAME,
+		description: TASK_OUTPUT_DESCRIPTION,
+		parameters: OUTPUT_PARAMETERS,
+		async execute(_toolCallId, params, signal) {
+			const text = await requireTaskService(session).output(
+				params.task_id,
+				params.block ?? true,
+				params.timeout ?? 30000,
+				signal,
+			);
+			return textResult(text);
+		},
+	};
+}
+
+export function createTaskStopToolDefinition(session: AgentSession): ToolDefinition<typeof STOP_PARAMETERS> {
+	return {
+		name: TASK_STOP_TOOL_NAME,
+		label: TASK_STOP_TOOL_NAME,
+		description: TASK_STOP_DESCRIPTION,
+		parameters: STOP_PARAMETERS,
+		async execute(_toolCallId, params) {
+			return textResult(requireTaskService(session).stop(params.task_id));
+		},
+	};
+}
+
+export function createTaskExecuteToolDefinition(session: AgentSession): ToolDefinition<typeof EXECUTE_PARAMETERS> {
+	return {
+		name: TASK_EXECUTE_TOOL_NAME,
+		label: TASK_EXECUTE_TOOL_NAME,
+		description: TASK_EXECUTE_DESCRIPTION,
+		promptGuidelines: [...TASK_EXECUTE_GUIDELINES],
+		parameters: EXECUTE_PARAMETERS,
+		async execute(_toolCallId, params) {
+			const text = await requireTaskService(session).execute(params.task_ids, {
+				additionalContext: params.additional_context,
+				model: params.model,
+				thinking: params.thinking,
+				maxTurns: params.max_turns,
+			});
+			return textResult(text);
+		},
+	};
+}
+
 /** Each task tool's name and factory, in registration order. */
 export const TASK_TOOL_FACTORIES: ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]> = [
 	[TASK_CREATE_TOOL_NAME, createTaskCreateToolDefinition],
 	[TASK_LIST_TOOL_NAME, createTaskListToolDefinition],
 	[TASK_GET_TOOL_NAME, createTaskGetToolDefinition],
 	[TASK_UPDATE_TOOL_NAME, createTaskUpdateToolDefinition],
+	[TASK_EXECUTE_TOOL_NAME, createTaskExecuteToolDefinition],
+	[TASK_OUTPUT_TOOL_NAME, createTaskOutputToolDefinition],
+	[TASK_STOP_TOOL_NAME, createTaskStopToolDefinition],
 ] as ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]>;

@@ -18,6 +18,9 @@ const NAMES = [
 	"TaskList",
 	"TaskGet",
 	"TaskUpdate",
+	"TaskExecute",
+	"TaskOutput",
+	"TaskStop",
 ];
 
 /** Registration never touches the session; the subagent service is built on the first Agent call. */

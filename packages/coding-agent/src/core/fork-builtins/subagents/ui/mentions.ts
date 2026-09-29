@@ -158,11 +158,12 @@ export function handleMentionInput(
 ): InputEventResult {
 	// The factory builds `env` in TUI mode only (D44), so print, JSON and RPC prompts pass on here.
 	if (!env || event.source === "extension") return CONTINUE;
-	const { service } = env;
-	const mode = service.reloadSettings().agentMentions;
-	if (mode === "off") return CONTINUE;
 	const mention = parseMention(event.text);
 	if (!mention) return CONTINUE;
+	const { service } = env;
+	// Reread only for a mention, so an ordinary prompt costs no settings read.
+	const mode = service.reloadSettings().agentMentions;
+	if (mode === "off") return CONTINUE;
 	if (isReservedHandle(mention.handle)) {
 		return { action: "transform", text: mention.message, ...(event.images && { images: event.images }) };
 	}

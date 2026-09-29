@@ -860,6 +860,17 @@ describe("the input hook", () => {
 		}
 	});
 
+	// T8-F4: the hook reread every settings file for each prompt before it checked for a mention.
+	it("rereads the settings only for a prompt shaped as a mention", async () => {
+		const harness = await parent({});
+		await bind(harness);
+		const reads = vi.spyOn(service(harness), "reloadSettings");
+		for (const prompt of ["hello", "@worker", "ask @worker later"]) await harness.session.prompt(prompt);
+		expect(reads).not.toHaveBeenCalled();
+		await harness.session.prompt("@nobody hi");
+		expect(reads).toHaveBeenCalledTimes(1);
+	});
+
 	it("passes every mention on while agentMentions is off, for a running, a finished and a never-started agent", async () => {
 		const gate = held();
 		const harness = await parent({ "task pi": [gate.behavior], "task rho": [say("rho")] }, { agentMentions: "off" });

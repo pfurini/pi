@@ -1,0 +1,1112 @@
+diff --git a/packages/coding-agent/src/core/fork-builtins/base-tools.ts b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+index a2a613c80..b2fb7e1fb 100644
+--- a/packages/coding-agent/src/core/fork-builtins/base-tools.ts
++++ b/packages/coding-agent/src/core/fork-builtins/base-tools.ts
+@@ -2,11 +2,11 @@
+  * Fork-owned: the base tools the fork adds to every `AgentSession` (ADR-0009).
+  * `agent-session.ts` keeps thin call sites into this module (ADR-0003).
+  *
+- * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`
+- *   and `steer_subagent` next to `read`. `PI_FORK_BUILTINS=off` registers none of them. A caller's
+- *   base tool of the same name stays. It also stores the session's subagent record, reading nothing
+- *   from the session: the subagent service is built from that record on first use. With an event
+- *   bus, it installs the `subagents:*` adapter on it.
++ * - `addForkBaseTools` registers `ask_user_question`, `vcc_recall`, `Agent`, `get_subagent_result`,
++ *   `steer_subagent` and the task tools next to `read`. `PI_FORK_BUILTINS=off` registers none of
++ *   them. A caller's base tool of the same name stays. It also stores the session's subagent record and
++ *   registers the session for its task service, reading nothing from the session: both services are
++ *   built on first use. With an event bus, it installs the `subagents:*` adapter on it.
+  * - `forkBaseToolNames` names the registered fork tools. `AgentSession` activates them
+  *   wherever it activates every extension tool: at construction and on `/reload`.
+  * - `forkBaseToolsNeverCarried` names the fork tools a restored transcript never added.
+@@ -38,6 +38,8 @@ import { createResultToolDefinition } from "./subagents/tools/result.ts";
+ import { createSteerToolDefinition } from "./subagents/tools/steer.ts";
+ import { withAgentToolRenderers } from "./subagents/ui/tool-renderers.ts";
+ import { forkBuiltinsEnabled } from "./switch.ts";
++import { registerTaskSession } from "./tasks/service/sessions.ts";
++import { TASK_TOOL_FACTORIES } from "./tasks/tools/tools.ts";
+ import { createRecallToolDefinition, VCC_RECALL_TOOL_NAME } from "./vcc-recall/recall.ts";
+ 
+ /** What the fork's base tools need from the session. */
+@@ -76,6 +78,8 @@ export function addForkBaseTools(definitions: Map<string, ToolDefinition>, optio
+ 	);
+ 	addOwned(definitions, GET_RESULT_TOOL_NAME, () => createResultToolDefinition(options.session));
+ 	addOwned(definitions, STEER_TOOL_NAME, () => createSteerToolDefinition(options.session));
++	registerTaskSession(options.session);
++	for (const [name, create] of TASK_TOOL_FACTORIES) addOwned(definitions, name, () => create(options.session));
+ 	if (options.eventBus) installSubagentAdapter(options.session, options.eventBus);
+ }
+ 
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/auto-clear.ts b/packages/coding-agent/src/core/fork-builtins/tasks/auto-clear.ts
+new file mode 100644
+index 000000000..2c561a2af
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/auto-clear.ts
+@@ -0,0 +1,90 @@
++/**
++ * Fork-owned: turn-based clearing of completed tasks (pi-tasks `src/auto-clear.ts` at 83480bd).
++ *
++ * - `on_task_complete`: each completed task leaves after `CLEAR_DELAY_TURNS` turns.
++ * - `on_list_complete`: the whole list leaves `CLEAR_DELAY_TURNS` turns after its last task completed.
++ * - `never`: nothing leaves on its own.
++ *
++ * The countdowns tick at a turn's start, so they stop with the agent. A run that ends right after
++ * its last completion freezes one. `startNewBatch` therefore retires a finished list when the first
++ * task of a later run is created: work added after the run that finished the list is a new batch.
++ */
++import type { AutoClearMode } from "./settings.ts";
++import type { TaskStore } from "./store.ts";
++
++/** Turns a completed task lingers before it leaves. */
++export const CLEAR_DELAY_TURNS = 4;
++
++export class AutoClear {
++	private readonly store: () => TaskStore;
++	private readonly mode: () => AutoClearMode;
++	/** `on_task_complete`: the turn each task completed at. */
++	private readonly completedAtTurn = new Map<string, number>();
++	/** `on_list_complete`: the turn the whole list completed at. */
++	private allCompletedAtTurn: number | undefined;
++	/** A run ended since the list was last added to. */
++	private runEnded = false;
++
++	constructor(store: () => TaskStore, mode: () => AutoClearMode) {
++		this.store = store;
++		this.mode = mode;
++	}
++
++	trackCompletion(taskId: string, currentTurn: number): void {
++		const mode = this.mode();
++		if (mode === "on_task_complete") this.completedAtTurn.set(taskId, currentTurn);
++		else if (mode === "on_list_complete") {
++			const tasks = this.store().list();
++			if (tasks.length > 0 && tasks.every((task) => task.status === "completed"))
++				this.allCompletedAtTurn ??= currentTurn;
++			else this.allCompletedAtTurn = undefined;
++		}
++	}
++
++	/** A task went back to work, so the list is no longer complete. */
++	resetBatchCountdown(): void {
++		this.allCompletedAtTurn = undefined;
++	}
++
++	/** The run ended: the list as it stands is that run's last one. A list a resume or fork carried in counts too. */
++	onRunEnded(): void {
++		this.runEnded = true;
++	}
++
++	/** A task is about to be created; a finished list from an ended run leaves first. */
++	startNewBatch(): void {
++		this.allCompletedAtTurn = undefined;
++		const afterFinishedRun = this.runEnded;
++		this.runEnded = false;
++		if (!afterFinishedRun || this.mode() === "never") return;
++		const tasks = this.store().list();
++		if (tasks.length > 0 && tasks.every((task) => task.status === "completed")) {
++			this.store().clearCompleted();
++			this.completedAtTurn.clear();
++		}
++	}
++
++	/** Clears tasks whose linger period ended; true when any left. */
++	onTurnStart(currentTurn: number): boolean {
++		const mode = this.mode();
++		const store = this.store();
++		let cleared = false;
++		if (mode === "on_task_complete") {
++			for (const [taskId, turn] of this.completedAtTurn) {
++				if (store.get(taskId)?.status !== "completed") this.completedAtTurn.delete(taskId);
++				else if (currentTurn - turn >= CLEAR_DELAY_TURNS) {
++					store.delete(taskId);
++					this.completedAtTurn.delete(taskId);
++					cleared = true;
++				}
++			}
++		} else if (mode === "on_list_complete" && this.allCompletedAtTurn !== undefined) {
++			if (currentTurn - this.allCompletedAtTurn >= CLEAR_DELAY_TURNS) {
++				store.clearCompleted();
++				this.allCompletedAtTurn = undefined;
++				cleared = true;
++			}
++		}
++		return cleared;
++	}
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/reminder.ts b/packages/coding-agent/src/core/fork-builtins/tasks/reminder.ts
+new file mode 100644
+index 000000000..9eea36d33
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/reminder.ts
+@@ -0,0 +1,110 @@
++/**
++ * Fork-owned: the task reminder (pi-tasks `src/reminder-cadence.ts` and `src/index.ts:60-128` at
++ * 83480bd). After `REMINDER_INTERVAL` turns without a task tool call, or `ACTIVE_REMINDER_INTERVAL`
++ * while a task is in progress, the next model request carries one transient user message: a nudge
++ * for an empty list, or the list itself. No session keeps the message. The wording follows Claude
++ * Code's todo reminders.
++ */
++import type { Task } from "./store.ts";
++
++/** Turns without a task tool call before a reminder is due. */
++export const REMINDER_INTERVAL = 4;
++/** The shorter interval while a task is in progress, so stale work is caught sooner. */
++export const ACTIVE_REMINDER_INTERVAL = 2;
++/** The most tasks the reminder lists. */
++const REMINDER_MAX_TASKS = 10;
++
++export interface Cadence {
++	currentTurn: number;
++	lastTaskToolUseTurn: number;
++	/** A reminder went out since the last task tool call. */
++	injectedThisCycle: boolean;
++	/** The next model request carries a reminder. */
++	due: boolean;
++}
++
++export function createCadence(): Cadence {
++	return { currentTurn: 0, lastTaskToolUseTurn: 0, injectedThisCycle: false, due: false };
++}
++
++export function intervalFor(tasks: readonly Task[]): number {
++	return tasks.some((task) => task.status === "in_progress") ? ACTIVE_REMINDER_INTERVAL : REMINDER_INTERVAL;
++}
++
++/** A task tool call resets the cadence and cancels a pending reminder. */
++export function onTaskToolUse(cadence: Cadence): void {
++	cadence.lastTaskToolUseTurn = cadence.currentTurn;
++	cadence.injectedThisCycle = false;
++	cadence.due = false;
++}
++
++/** Another tool's result marks a reminder due once the interval has passed and the list holds tasks. */
++export function onOtherToolResult(cadence: Cadence, tasks: readonly Task[]): void {
++	if (cadence.injectedThisCycle || cadence.due || tasks.length === 0) return;
++	if (cadence.currentTurn - cadence.lastTaskToolUseTurn >= intervalFor(tasks)) cadence.due = true;
++}
++
++/**
++ * A turn ended. A text-only turn runs no tool, so an in-progress task left behind is caught here:
++ * the reminder is due once the in-progress interval has passed.
++ */
++export function onTurnEnd(cadence: Cadence, tasks: readonly Task[]): void {
++	if (cadence.injectedThisCycle || cadence.due) return;
++	if (cadence.currentTurn - cadence.lastTaskToolUseTurn < ACTIVE_REMINDER_INTERVAL) return;
++	if (tasks.some((task) => task.status === "in_progress")) cadence.due = true;
++}
++
++/** True when the next request carries the reminder; the cadence then waits a full interval again. */
++export function drainReminder(cadence: Cadence): boolean {
++	if (!cadence.due) return false;
++	cadence.due = false;
++	cadence.injectedThisCycle = true;
++	cadence.lastTaskToolUseTurn = cadence.currentTurn;
++	return true;
++}
++
++/** Collapses newlines and strips reminder tags, so a task field cannot close the reminder early. */
++function sanitizeField(value: string): string {
++	return value
++		.replace(/[\r\n]+/g, " ")
++		.replace(/<\/?system-reminder>/gi, "")
++		.trim();
++}
++
++const rank = (task: Task): number => (task.status === "in_progress" ? 0 : task.status === "pending" ? 1 : 2);
++
++export function buildReminder(tasks: readonly Task[]): string {
++	if (tasks.length === 0) {
++		return [
++			"<system-reminder>",
++			"This is a reminder that your task list is currently empty. DO NOT mention this to the user explicitly because they are already aware. If you are working on tasks that would benefit from a task list please use the TaskCreate tool to create one. If not, please feel free to ignore. Again do not mention this message to the user.",
++			"</system-reminder>",
++		].join("\n");
++	}
++	// Over the cap, unfinished tasks come first: the reminder exists to surface them.
++	const shown =
++		tasks.length > REMINDER_MAX_TASKS
++			? [...tasks].sort((a, b) => rank(a) - rank(b)).slice(0, REMINDER_MAX_TASKS)
++			: tasks;
++	const hidden = tasks.length - shown.length;
++	const items = shown.map((task) => ({
++		id: task.id,
++		content: sanitizeField(task.subject),
++		status: task.status,
++		...(task.activeForm && { activeForm: sanitizeField(task.activeForm) }),
++	}));
++	const prefix = "The task tools haven't been used recently. DO NOT mention this explicitly to the user.";
++	const header =
++		hidden > 0
++			? `${prefix} Here are your most relevant tasks (list truncated):`
++			: `${prefix} Here are the latest contents of your task list:`;
++	const overflow =
++		hidden > 0 ? ` (${hidden} more task${hidden === 1 ? "" : "s"} not shown; use TaskList for the full list.)` : "";
++	return [
++		"<system-reminder>",
++		header,
++		"",
++		`${JSON.stringify(items)}.${overflow} Continue on with the tasks at hand if applicable.`,
++		"</system-reminder>",
++	].join("\n");
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts b/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts
+new file mode 100644
+index 000000000..05f582d3c
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts
+@@ -0,0 +1,298 @@
++/**
++ * Fork-owned: the task service of one `AgentSession` (D46, D47). pi-tasks `src/index.ts` at 83480bd is
++ * the behavior reference. The seven task base tools and the presentation factory call it; it imports
++ * no presentation code.
++ *
++ * - The list lives in a `TaskStore`: under `taskScope: session`, the file
++ *   `<cwd>/.pi/tasks/tasks-<sessionId>.json` of a session Pi saves, otherwise memory (D50).
++ * - The service follows the session's own events: turns tick the reminder cadence and the
++ *   auto-clear countdowns, and a settled run marks the batch boundary.
++ * - `/reload` keeps the service and its list. The session's end leaves the list for a fork of it.
++ */
++import { join } from "node:path";
++import type { Usage } from "@earendil-works/pi-ai";
++import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
++import type { AgentSession, AgentSessionEvent } from "../../../agent-session.ts";
++import { AutoClear } from "../auto-clear.ts";
++import { TASK_CREATE_TOOL_NAME, TASK_TOOL_NAMES } from "../names.ts";
++import {
++	buildReminder,
++	type Cadence,
++	createCadence,
++	drainReminder,
++	onOtherToolResult,
++	onTaskToolUse,
++	onTurnEnd,
++} from "../reminder.ts";
++import { readTaskSettings, type TaskSettings } from "../settings.ts";
++import { type Task, TaskStore, type TaskStoreData, type TaskUpdate, type TaskUpdateResult } from "../store.ts";
++
++export type TaskEvent = { type: "changed" } | { type: "warning"; message: string };
++
++/** What the widget shows for a task the session works on now. */
++export interface TaskActivity {
++	readonly startedAt: number;
++	readonly inputTokens: number;
++	readonly outputTokens: number;
++}
++
++/**
++ * The lists ended sessions leave for a fork. Pi disposes a session before it starts the fork, and other
++ * sessions or children may end in between, so each keeps its own entry. A saved session's entry is keyed
++ * by its file, which the fork's `session_start` names; the oldest leave past `HANDOFF_LIMIT`. A fork of
++ * an unsaved session reuses the parent's session manager (`agent-session-runtime.ts`, `fork`), so that
++ * entry is keyed by the manager and leaves with it.
++ */
++const handoffsByFile = new Map<string, () => TaskStoreData>();
++const handoffsByManager = new WeakMap<object, () => TaskStoreData>();
++const HANDOFF_LIMIT = 16;
++
++export class TaskService {
++	readonly session: AgentSession;
++	private settingsValue: Readonly<TaskSettings>;
++	private readonly store: TaskStore;
++	private readonly cadence: Cadence = createCadence();
++	private readonly autoClear: AutoClear;
++	private readonly working = new Map<string, { startedAt: number; inputTokens: number; outputTokens: number }>();
++	private readonly listeners = new Set<(event: TaskEvent) => void>();
++	private readonly warned = new Set<string>();
++	/** Warnings sent before a presentation listened; the first listener receives them. */
++	private pendingWarnings: string[] = [];
++	private readonly offSession: () => void;
++	private readonly offCleanup: () => void;
++	private disposed = false;
++
++	constructor(session: AgentSession) {
++		this.session = session;
++		const { settings, warnings } = readTaskSettings(session.settingsManager);
++		this.settingsValue = settings;
++		for (const warning of warnings) this.warn(warning);
++		this.store = this.openStore();
++		this.autoClear = new AutoClear(
++			() => this.store,
++			() => this.settingsValue.autoClearCompleted,
++		);
++		this.offSession = session.subscribe((event) => this.onSessionEvent(event));
++		this.offCleanup = registerSessionResourceCleanup((sessionId) => {
++			if (sessionId === session.sessionId) this.dispose();
++		});
++	}
++
++	get settings(): Readonly<TaskSettings> {
++		return this.settingsValue;
++	}
++
++	/** The file the list is saved to; undefined while it lives in memory. */
++	get file(): string | undefined {
++		return this.store.file;
++	}
++
++	get isDisposed(): boolean {
++		return this.disposed;
++	}
++
++	private openStore(): TaskStore {
++		const manager = this.session.sessionManager;
++		// `--no-session` names a session id but never writes a session file, so its list is not saved either.
++		const path =
++			this.settingsValue.taskScope === "session" && manager.getSessionFile()
++				? join(manager.getCwd(), ".pi", "tasks", `tasks-${manager.getSessionId()}.json`)
++				: undefined;
++		return new TaskStore(path, (message) => this.warn(message), manager.getCwd());
++	}
++
++	subscribe(listener: (event: TaskEvent) => void): () => void {
++		this.listeners.add(listener);
++		const pending = this.pendingWarnings;
++		this.pendingWarnings = [];
++		for (const message of pending) listener({ type: "warning", message });
++		return () => this.listeners.delete(listener);
++	}
++
++	private emit(event: TaskEvent): void {
++		for (const listener of [...this.listeners]) listener(event);
++	}
++
++	private changed(): void {
++		this.emit({ type: "changed" });
++	}
++
++	/** Reports a warning once per distinct text. */
++	warn(message: string): void {
++		if (this.warned.has(message)) return;
++		this.warned.add(message);
++		if (this.listeners.size === 0) this.pendingWarnings.push(message);
++		else this.emit({ type: "warning", message });
++	}
++
++	reloadSettings(): void {
++		const { settings, warnings } = readTaskSettings(this.session.settingsManager);
++		this.settingsValue = settings;
++		for (const warning of warnings) this.warn(warning);
++		this.changed();
++	}
++
++	/**
++	 * The presentation calls it at each `session_start`. A fork takes the list its parent left, a
++	 * resume, fork or reload shows the carried list as a finished batch, and a startup or `/new`
++	 * clears a list whose tasks all completed. `/reload` retries a failed write (D50).
++	 */
++	onSessionStart(reason: "startup" | "reload" | "new" | "resume" | "fork", previousSessionFile?: string): void {
++		if (reason === "reload") {
++			this.reloadSettings();
++			this.store.retryWrite();
++		}
++		if (reason === "fork") {
++			const manager = this.session.sessionManager;
++			const read = previousSessionFile ? handoffsByFile.get(previousSessionFile) : handoffsByManager.get(manager);
++			if (previousSessionFile) handoffsByFile.delete(previousSessionFile);
++			else handoffsByManager.delete(manager);
++			if (read) this.store.seed(structuredClone(read()));
++		}
++		if (reason === "reload" || reason === "resume" || reason === "fork") this.autoClear.onRunEnded();
++		else {
++			const tasks = this.store.list();
++			if (tasks.length > 0 && tasks.every((task) => task.status === "completed")) {
++				this.store.clearCompleted();
++				this.store.deleteFileIfEmpty();
++			}
++		}
++		this.changed();
++	}
++
++	private onSessionEvent(event: AgentSessionEvent): void {
++		switch (event.type) {
++			case "turn_start":
++				this.cadence.currentTurn++;
++				if (this.autoClear.onTurnStart(this.cadence.currentTurn)) {
++					this.store.deleteFileIfEmpty();
++					this.changed();
++				}
++				return;
++			case "turn_end": {
++				const usage = (event.message as { role?: string; usage?: Usage }).usage;
++				if (event.message.role === "assistant" && usage) {
++					for (const activity of this.working.values()) {
++						activity.inputTokens += usage.input ?? 0;
++						activity.outputTokens += usage.output ?? 0;
++					}
++				}
++				onTurnEnd(this.cadence, this.store.list());
++				return;
++			}
++			case "tool_execution_end":
++				if (TASK_TOOL_NAMES.has(event.toolName)) onTaskToolUse(this.cadence);
++				else onOtherToolResult(this.cadence, this.store.list());
++				return;
++			case "agent_settled":
++				this.autoClear.onRunEnded();
++				return;
++		}
++	}
++
++	/**
++	 * The reminder the next model request carries, or undefined. Only a session whose model can call
++	 * `TaskCreate` gets one.
++	 */
++	takeReminder(): string | undefined {
++		if (!this.session.getActiveToolNames().includes(TASK_CREATE_TOOL_NAME)) return undefined;
++		if (!drainReminder(this.cadence)) return undefined;
++		return buildReminder(this.store.list());
++	}
++
++	list(): Task[] {
++		return this.store.list();
++	}
++
++	get(id: string): Task | undefined {
++		return this.store.get(id);
++	}
++
++	/** What the widget shows for each task the session works on now. */
++	activity(taskId: string): TaskActivity | undefined {
++		return this.working.get(taskId);
++	}
++
++	private markWorking(taskId: string, on: boolean): void {
++		if (on) {
++			if (!this.working.has(taskId))
++				this.working.set(taskId, { startedAt: Date.now(), inputTokens: 0, outputTokens: 0 });
++		} else this.working.delete(taskId);
++	}
++
++	/** Task ids shown with the spinner: in progress and worked on in this session. */
++	workingIds(): string[] {
++		for (const id of this.working.keys()) {
++			if (this.store.get(id)?.status !== "in_progress") this.working.delete(id);
++		}
++		return [...this.working.keys()];
++	}
++
++	create(
++		subject: string,
++		description: string,
++		activeForm?: string,
++		agentType?: string,
++		metadata?: Record<string, unknown>,
++	): Task {
++		// A finished list must not collect the batch that follows it (auto-clear.ts).
++		this.autoClear.startNewBatch();
++		const meta = { ...metadata };
++		if (agentType) meta.agentType = agentType;
++		const task = this.store.create(subject, description, activeForm, Object.keys(meta).length > 0 ? meta : undefined);
++		this.changed();
++		return task;
++	}
++
++	update(id: string, fields: TaskUpdate): TaskUpdateResult {
++		const result = this.store.update(id, fields);
++		if (fields.status === "in_progress") {
++			this.markWorking(id, true);
++			this.autoClear.resetBatchCountdown();
++		} else if (fields.status === "pending") {
++			this.autoClear.resetBatchCountdown();
++		} else if (fields.status === "completed" || fields.status === "deleted") {
++			this.markWorking(id, false);
++			if (fields.status === "completed") this.autoClear.trackCompletion(id, this.cadence.currentTurn);
++		}
++		if (fields.status === "deleted") this.store.deleteFileIfEmpty();
++		this.changed();
++		return result;
++	}
++
++	clearCompleted(): number {
++		const count = this.store.clearCompleted();
++		this.store.deleteFileIfEmpty();
++		this.changed();
++		return count;
++	}
++
++	clearAll(): number {
++		const count = this.store.clearAll();
++		this.store.deleteFileIfEmpty();
++		this.changed();
++		return count;
++	}
++
++	/** The session ended: the list stays readable for a fork of this session. */
++	dispose(): void {
++		if (this.disposed) return;
++		this.disposed = true;
++		this.offSession();
++		this.offCleanup();
++		const store = this.store;
++		const read = () => store.snapshot();
++		const file = this.session.sessionFile;
++		if (!file) {
++			handoffsByManager.set(this.session.sessionManager, read);
++		} else {
++			handoffsByFile.delete(file);
++			handoffsByFile.set(file, read);
++			for (const oldest of handoffsByFile.keys()) {
++				if (handoffsByFile.size <= HANDOFF_LIMIT) break;
++				handoffsByFile.delete(oldest);
++			}
++		}
++		this.listeners.clear();
++	}
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/service/sessions.ts b/packages/coding-agent/src/core/fork-builtins/tasks/service/sessions.ts
+new file mode 100644
+index 000000000..0438bd8f4
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/service/sessions.ts
+@@ -0,0 +1,35 @@
++/**
++ * Fork-owned: which session owns which task service (D47). `addForkBaseTools` registers the session
++ * without reading it; the service is built on first use, by a task tool call or the presentation's
++ * `session_start`. A session never registered (fork built-ins off) has no service.
++ */
++import type { AgentSession } from "../../../agent-session.ts";
++import { TaskService } from "./service.ts";
++
++const registered = new WeakSet<AgentSession>();
++const services = new WeakMap<AgentSession, TaskService>();
++
++export function registerTaskSession(session: AgentSession): void {
++	registered.add(session);
++}
++
++/** The session's task service, built on first use; undefined for a session never registered. */
++export function taskServiceFor(session: AgentSession): TaskService | undefined {
++	let service = services.get(session);
++	if (service) return service;
++	if (!registered.has(session)) return undefined;
++	service = new TaskService(session);
++	services.set(session, service);
++	return service;
++}
++
++export function requireTaskService(session: AgentSession): TaskService {
++	const service = taskServiceFor(session);
++	if (!service) throw new Error("This session has no task service.");
++	return service;
++}
++
++/** The session's task service when one was built; never builds one. */
++export function existingTaskService(session: AgentSession): TaskService | undefined {
++	return services.get(session);
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/tools/descriptions.ts b/packages/coding-agent/src/core/fork-builtins/tasks/tools/descriptions.ts
+new file mode 100644
+index 000000000..805993002
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/tools/descriptions.ts
+@@ -0,0 +1,36 @@
++/**
++ * Fork-owned: the task tools' descriptions and prompt guidelines, verbatim from pi-tasks `src/index.ts` at
++ * 83480bd, which follows Claude Code's tools. TaskOutput and TaskStop describe agents only: their shell
++ * branches are dropped (D49).
++ */
++
++export const TASK_CREATE_DESCRIPTION =
++	'Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.\nIt also helps the user understand the progress of the task and overall progress of their requests.\n\n## When to Use This Tool\n\nUse this tool proactively in these scenarios:\n\n- Complex multi-step tasks - When a task requires 3 or more distinct steps or actions\n- Non-trivial and complex tasks - Tasks that require careful planning or multiple operations\n- Plan mode - When using plan mode, create a task list to track the work\n- User explicitly requests todo list - When the user directly asks you to use the todo list\n- User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated). Create them all in one response with one TaskCreate call per task\n- After receiving new instructions - Immediately capture user requirements as tasks\n- When you start working on a task - Mark it as in_progress BEFORE beginning work\n- After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation\n\n## When NOT to Use This Tool\n\nSkip using this tool when:\n- There is only a single, straightforward task\n- The task is trivial and tracking it provides no organizational benefit\n- The task can be completed in less than 3 trivial steps\n- The task is purely conversational or informational\n\nNOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.\n\n## Task Fields\n\n- **subject**: A brief, actionable title in imperative form (e.g., "Fix authentication bug in login flow")\n- **description**: Detailed description of what needs to be done, including context and acceptance criteria\n- **activeForm** (optional): Present continuous form shown in the spinner when the task is in_progress (e.g., "Fixing authentication bug"). If omitted, the spinner shows the subject instead.\n\nAll tasks are created with status `pending`.\n\n## Tips\n\n- Create tasks with clear, specific subjects that describe the outcome\n- Include enough detail in the description for another agent to understand and complete the task\n- After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed\n- Check TaskList first to avoid creating duplicate tasks\n- Include `agentType` (e.g., "general-purpose", "Explore") to mark tasks for subagent execution via TaskExecute\n- To create several tasks at once, call TaskCreate multiple times in a single response — independent tool calls run in parallel, so the whole batch is created in one turn (one task per call).';
++
++export const TASK_LIST_DESCRIPTION =
++	"Use this tool to list all tasks in the task list.\n\n## When to Use This Tool\n\n- To see what tasks are available to work on (status: 'pending', no owner, not blocked)\n- To check overall progress on the project\n- To find tasks that are blocked and need dependencies resolved\n- After completing a task, to check for newly unblocked work or claim the next available task\n- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones\n\n## Output\n\nReturns a summary of each task:\n- **id**: Task identifier (use with TaskGet, TaskUpdate)\n- **subject**: Brief description of the task\n- **status**: 'pending', 'in_progress', or 'completed'\n- **owner**: Agent ID if assigned, empty if available\n- **blockedBy**: List of open task IDs that must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)\n\nUse TaskGet with a specific task ID to view full details including description and comments.";
++
++export const TASK_GET_DESCRIPTION =
++	"Use this tool to retrieve a task by its ID from the task list.\n\n## When to Use This Tool\n\n- When you need the full description and context before starting work on a task\n- To understand task dependencies (what it blocks, what blocks it)\n- After being assigned a task, to get complete requirements\n\n## Output\n\nReturns full task details:\n- **subject**: Task title\n- **description**: Detailed requirements and context\n- **status**: 'pending', 'in_progress', or 'completed'\n- **blocks**: Tasks waiting on this one to complete\n- **blockedBy**: Tasks that must complete before this one can start\n\n## Tips\n\n- After fetching a task, verify its blockedBy list is empty before beginning work.\n- Use TaskList to see all tasks in summary form.";
++
++export const TASK_UPDATE_DESCRIPTION =
++	'Use this tool to update a task in the task list.\n\n## When to Use This Tool\n\n**Before starting work on a task:**\n- Mark it in_progress BEFORE beginning — do not start work without updating status first\n- After resolving, call TaskList to find your next task\n\n**Mark tasks as resolved:**\n- When you have completed the work described in a task\n- When a task is no longer needed or has been superseded\n- IMPORTANT: Always mark your assigned tasks as resolved when you finish them\n- After resolving, call TaskList to find your next task\n\n- ONLY mark a task as completed when you have FULLY accomplished it\n- If you encounter errors, blockers, or cannot finish, keep the task as in_progress\n- When blocked, create a new task describing what needs to be resolved\n- Never mark a task as completed if:\n  - Tests are failing\n  - Implementation is partial\n  - You encountered unresolved errors\n  - You couldn\'t find necessary files or dependencies\n\n**Delete tasks:**\n- When a task is no longer relevant or was created in error\n- Setting status to `deleted` permanently removes the task\n\n**Update task details:**\n- When requirements change or become clearer\n- When establishing dependencies between tasks\n\n## Fields You Can Update\n\n- **status**: The task status (see Status Workflow below)\n- **subject**: Change the task title (imperative form, e.g., "Run tests")\n- **description**: Change the task description\n- **activeForm**: Present continuous form shown in spinner when in_progress (e.g., "Running tests")\n- **owner**: Change the task owner (agent name)\n- **metadata**: Merge metadata keys into the task (set a key to null to delete it)\n- **addBlocks**: Mark tasks that cannot start until this one completes\n- **addBlockedBy**: Mark tasks that must complete before this one can start\n\n## Status Workflow\n\nStatus progresses: `pending` → `in_progress` → `completed`\n\nUse `deleted` to permanently remove a task.\n\n## Staleness\n\nMake sure to read a task\'s latest state using `TaskGet` before updating it.\n\n## Examples\n\nMark task as in progress when starting work:\n```json\n{"taskId": "1", "status": "in_progress"}\n```\n\nMark task as completed after finishing work:\n```json\n{"taskId": "1", "status": "completed"}\n```\n\nDelete a task:\n```json\n{"taskId": "1", "status": "deleted"}\n```\n\nClaim a task by setting owner:\n```json\n{"taskId": "1", "owner": "my-name"}\n```\n\nSet up task dependencies:\n```json\n{"taskId": "2", "addBlockedBy": ["1"]}\n```';
++
++export const TASK_OUTPUT_DESCRIPTION =
++	"- Retrieves the output of the subagent that runs a task, running or completed\n- Takes a task_id parameter: a task ID, or the ID of the agent that runs it\n- Returns the task's status with the agent's result or error\n- Use block=true (default) to wait for the agent to finish\n- Use block=false for a non-blocking check of the current status\n- Task IDs can be found using TaskList or the /tasks command";
++
++export const TASK_STOP_DESCRIPTION =
++	"- Stops the subagent that runs a task\n- Takes a task_id parameter: a task ID, or the ID of the agent that runs it\n- Marks the task completed and keeps the agent's partial output\n- Use this tool when you need to terminate a long-running task";
++
++export const TASK_EXECUTE_DESCRIPTION =
++	'Execute one or more tasks as subagents.\n\n## When to Use This Tool\n\n- To start execution of tasks that have `agentType` set (created via TaskCreate with agentType parameter)\n- Tasks must be `pending` with all blockedBy dependencies `completed`\n- Each task runs as an independent background subagent\n\n## Parameters\n\n- **task_ids**: Array of task IDs to execute\n- **additional_context**: Extra context appended to each agent\'s prompt\n- **model**: Model override for agents (e.g., "sonnet", "haiku")\n- **thinking**: Thinking level override for agents (e.g., "low", "high")\n- **max_turns**: Maximum turns per agent';
++
++export const TASK_CREATE_GUIDELINES: readonly string[] = [
++	"When working on complex multi-step tasks, use TaskCreate to track progress and TaskUpdate to update status.",
++	"Mark tasks as in_progress before starting work and completed when done.",
++	"Use TaskList to check for available work after completing a task.",
++];
++
++export const TASK_EXECUTE_GUIDELINES: readonly string[] = [
++	"Never use the Agent tool for tasks launched via TaskExecute — agents are already running.",
++];
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts b/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts
+new file mode 100644
+index 000000000..242170678
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts
+@@ -0,0 +1,172 @@
++/**
++ * Fork-owned: the task base tools (D47). pi-tasks `src/index.ts:570-1260` at 83480bd is the
++ * behavior reference; the names, parameters and descriptions follow Claude Code's tools. Each tool
++ * calls the session's `TaskService`.
++ */
++import type { AgentToolResult } from "@earendil-works/pi-agent-core";
++import { Type } from "typebox";
++import type { AgentSession } from "../../../agent-session.ts";
++import type { ToolDefinition } from "../../../extensions/types.ts";
++import { TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME } from "../names.ts";
++import type { TaskService } from "../service/service.ts";
++import { requireTaskService } from "../service/sessions.ts";
++import type { Task } from "../store.ts";
++import {
++	TASK_CREATE_DESCRIPTION,
++	TASK_CREATE_GUIDELINES,
++	TASK_GET_DESCRIPTION,
++	TASK_LIST_DESCRIPTION,
++	TASK_UPDATE_DESCRIPTION,
++} from "./descriptions.ts";
++
++function textResult(text: string): AgentToolResult<undefined> {
++	return { content: [{ type: "text", text }], details: undefined };
++}
++
++/** The blockers of a task that are not completed yet. */
++function openBlockers(service: TaskService, task: Task): string[] {
++	return task.blockedBy.filter((id) => {
++		const blocker = service.get(id);
++		return blocker && blocker.status !== "completed";
++	});
++}
++
++const hashes = (ids: readonly string[]): string => ids.map((id) => `#${id}`).join(", ");
++
++const CREATE_PARAMETERS = Type.Object({
++	subject: Type.String({ description: "A brief title for the task" }),
++	description: Type.String({ description: "A detailed description of what needs to be done" }),
++	activeForm: Type.Optional(
++		Type.String({ description: "Present continuous form shown in spinner when in_progress (e.g., 'Running tests')" }),
++	),
++	agentType: Type.Optional(
++		Type.String({
++			description:
++				"Agent type for subagent execution (e.g., 'general-purpose', 'Explore'). Tasks with agentType can be started via TaskExecute.",
++		}),
++	),
++	metadata: Type.Optional(
++		Type.Record(Type.String(), Type.Any(), { description: "Arbitrary metadata to attach to the task" }),
++	),
++});
++
++const GET_PARAMETERS = Type.Object({
++	taskId: Type.String({ description: "The ID of the task to retrieve" }),
++});
++
++const UPDATE_PARAMETERS = Type.Object({
++	taskId: Type.String({ description: "The ID of the task to update" }),
++	status: Type.Optional(
++		Type.Unsafe<"pending" | "in_progress" | "completed" | "deleted">({
++			type: "string",
++			enum: ["pending", "in_progress", "completed", "deleted"],
++			description: "New status for the task",
++		}),
++	),
++	subject: Type.Optional(Type.String({ description: "New subject for the task" })),
++	description: Type.Optional(Type.String({ description: "New description for the task" })),
++	activeForm: Type.Optional(Type.String({ description: "Present continuous form shown in spinner when in_progress" })),
++	owner: Type.Optional(Type.String({ description: "New owner for the task" })),
++	metadata: Type.Optional(
++		Type.Record(Type.String(), Type.Any(), {
++			description: "Metadata keys to merge into the task. Set a key to null to delete it.",
++		}),
++	),
++	addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that this task blocks" })),
++	addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that block this task" })),
++});
++
++export function createTaskCreateToolDefinition(session: AgentSession): ToolDefinition<typeof CREATE_PARAMETERS> {
++	return {
++		name: TASK_CREATE_TOOL_NAME,
++		label: TASK_CREATE_TOOL_NAME,
++		description: TASK_CREATE_DESCRIPTION,
++		promptGuidelines: [...TASK_CREATE_GUIDELINES],
++		parameters: CREATE_PARAMETERS,
++		async execute(_toolCallId, params) {
++			const task = requireTaskService(session).create(
++				params.subject,
++				params.description,
++				params.activeForm,
++				params.agentType,
++				params.metadata,
++			);
++			return textResult(`Task #${task.id} created successfully: ${task.subject}`);
++		},
++	};
++}
++
++const STATUS_ORDER: Record<string, number> = { pending: 0, in_progress: 1, completed: 2 };
++
++export function createTaskListToolDefinition(session: AgentSession): ToolDefinition {
++	return {
++		name: TASK_LIST_TOOL_NAME,
++		label: TASK_LIST_TOOL_NAME,
++		description: TASK_LIST_DESCRIPTION,
++		parameters: Type.Object({}),
++		async execute() {
++			const service = requireTaskService(session);
++			const tasks = service.list();
++			if (tasks.length === 0) return textResult("No tasks found");
++			const sorted = [...tasks].sort(
++				(a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || Number(a.id) - Number(b.id),
++			);
++			const lines = sorted.map((task) => {
++				let line = `#${task.id} [${task.status}] ${task.subject}`;
++				if (task.owner) line += ` (${task.owner})`;
++				const open = openBlockers(service, task);
++				if (open.length > 0) line += ` [blocked by ${hashes(open)}]`;
++				return line;
++			});
++			return textResult(lines.join("\n"));
++		},
++	};
++}
++
++export function createTaskGetToolDefinition(session: AgentSession): ToolDefinition<typeof GET_PARAMETERS> {
++	return {
++		name: TASK_GET_TOOL_NAME,
++		label: TASK_GET_TOOL_NAME,
++		description: TASK_GET_DESCRIPTION,
++		parameters: GET_PARAMETERS,
++		async execute(_toolCallId, params) {
++			const service = requireTaskService(session);
++			const task = service.get(params.taskId);
++			if (!task) return textResult("Task not found");
++			const lines = [`Task #${task.id}: ${task.subject}`, `Status: ${task.status}`];
++			if (task.owner) lines.push(`Owner: ${task.owner}`);
++			// A model sometimes double-escapes newlines in its JSON arguments.
++			lines.push(`Description: ${task.description.replace(/\\n/g, "\n")}`);
++			const open = openBlockers(service, task);
++			if (open.length > 0) lines.push(`Blocked by: ${hashes(open)}`);
++			if (task.blocks.length > 0) lines.push(`Blocks: ${hashes(task.blocks)}`);
++			if (Object.keys(task.metadata).length > 0) lines.push(`Metadata: ${JSON.stringify(task.metadata)}`);
++			return textResult(lines.join("\n"));
++		},
++	};
++}
++
++export function createTaskUpdateToolDefinition(session: AgentSession): ToolDefinition<typeof UPDATE_PARAMETERS> {
++	return {
++		name: TASK_UPDATE_TOOL_NAME,
++		label: TASK_UPDATE_TOOL_NAME,
++		description: TASK_UPDATE_DESCRIPTION,
++		parameters: UPDATE_PARAMETERS,
++		async execute(_toolCallId, params) {
++			const { taskId, ...fields } = params;
++			const { task, changedFields, warnings } = requireTaskService(session).update(taskId, fields);
++			if (changedFields.length === 0 && !task) return textResult(`Task #${taskId} not found`);
++			let text = `Updated task #${taskId} ${changedFields.join(", ")}`;
++			if (warnings.length > 0) text += ` (warning: ${warnings.join("; ")})`;
++			return textResult(text);
++		},
++	};
++}
++
++/** Each task tool's name and factory, in registration order. */
++export const TASK_TOOL_FACTORIES: ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]> = [
++	[TASK_CREATE_TOOL_NAME, createTaskCreateToolDefinition],
++	[TASK_LIST_TOOL_NAME, createTaskListToolDefinition],
++	[TASK_GET_TOOL_NAME, createTaskGetToolDefinition],
++	[TASK_UPDATE_TOOL_NAME, createTaskUpdateToolDefinition],
++] as ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]>;
+diff --git a/packages/coding-agent/test/fork-builtins/base-tools.test.ts b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+index e850045c7..148b952d4 100644
+--- a/packages/coding-agent/test/fork-builtins/base-tools.test.ts
++++ b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+@@ -8,7 +8,17 @@ import type { AgentSession } from "../../src/core/agent-session.ts";
+ import type { ToolDefinition } from "../../src/core/extensions/types.ts";
+ import { addForkBaseTools, forkBaseToolNames } from "../../src/core/fork-builtins/base-tools.ts";
+ 
+-const NAMES = ["ask_user_question", "vcc_recall", "Agent", "get_subagent_result", "steer_subagent"];
++const NAMES = [
++	"ask_user_question",
++	"vcc_recall",
++	"Agent",
++	"get_subagent_result",
++	"steer_subagent",
++	"TaskCreate",
++	"TaskList",
++	"TaskGet",
++	"TaskUpdate",
++];
+ 
+ /** Registration never touches the session; the subagent service is built on the first Agent call. */
+ const unusedSession = new Proxy(
+diff --git a/packages/coding-agent/test/fork-builtins/tasks/layering.test.ts b/packages/coding-agent/test/fork-builtins/tasks/layering.test.ts
+new file mode 100644
+index 000000000..4325c50aa
+--- /dev/null
++++ b/packages/coding-agent/test/fork-builtins/tasks/layering.test.ts
+@@ -0,0 +1,114 @@
++/**
++ * Fork-owned: the tasks module's layering (D47). Value imports only point down: the module root (0),
++ * `service/` (1), `tools/` (2), `ui/` (3). No value import cycle exists. The subagents module never
++ * imports the tasks module, and the tasks service never imports presentation code. Imports,
++ * re-exports and side-effect imports count; type-only ones are erased and exempt.
++ */
++import { readdirSync, readFileSync, statSync } from "node:fs";
++import { dirname, join, relative, resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++
++const ROOT = resolve(__dirname, "../../../src/core/fork-builtins/tasks");
++const SUBAGENTS = resolve(__dirname, "../../../src/core/fork-builtins/subagents");
++
++const LAYERS: Record<string, number> = {
++	service: 1,
++	tools: 2,
++	ui: 3,
++};
++
++function files(dir: string): string[] {
++	return readdirSync(dir).flatMap((name) => {
++		const path = join(dir, name);
++		if (statSync(path).isDirectory()) return files(path);
++		return path.endsWith(".ts") ? [path] : [];
++	});
++}
++
++function layerOf(path: string): number {
++	const top = relative(ROOT, path).split("/");
++	return top.length === 1 ? 0 : (LAYERS[top[0]] ?? Number.NaN);
++}
++
++/** Whether `import { … }` or `export { … }` names only types, so the statement is erased. */
++function onlyTypes(names: string): boolean {
++	const inner = names.trim();
++	return (
++		inner.startsWith("{") &&
++		inner
++			.slice(1, -1)
++			.split(",")
++			.every((name) => !name.trim() || /^type\s/.test(name.trim()))
++	);
++}
++
++/** The module files each file imports or re-exports at run time, side-effect imports included. */
++function valueImports(root = ROOT, within = ROOT): Map<string, string[]> {
++	const graph = new Map<string, string[]>();
++	for (const file of files(root)) {
++		const source = readFileSync(file, "utf8");
++		const specs: string[] = [];
++		for (const [, typeOnly, names, spec] of source.matchAll(
++			// `[^;]` keeps a match inside one statement, so `export type X = …;` never swallows a later re-export.
++			/^(?:import|export)\s+(type\s+)?([^;]*?)\s+from\s+"([^"]+)";/gm,
++		)) {
++			if (!typeOnly && !onlyTypes(names)) specs.push(spec);
++		}
++		for (const [, spec] of source.matchAll(/^import\s+"([^"]+)";/gm)) specs.push(spec);
++		const edges = specs
++			.filter((spec) => spec.startsWith("."))
++			.map((spec) => resolve(dirname(file), spec))
++			.filter((target) => target.startsWith(`${within}/`));
++		graph.set(file, edges);
++	}
++	return graph;
++}
++
++describe("tasks module layering", () => {
++	it("imports only from its own or a lower layer", () => {
++		const upward: string[] = [];
++		for (const [file, edges] of valueImports()) {
++			for (const target of edges) {
++				if (!(layerOf(target) <= layerOf(file)))
++					upward.push(`${relative(ROOT, file)} -> ${relative(ROOT, target)}`);
++			}
++		}
++		expect(upward).toEqual([]);
++	});
++
++	it("has no value import cycle", () => {
++		const graph = valueImports();
++		const cycles: string[] = [];
++		const state = new Map<string, "open" | "done">();
++		const stack: string[] = [];
++		const visit = (node: string) => {
++			if (state.get(node) === "done") return;
++			if (state.get(node) === "open") {
++				cycles.push([...stack.slice(stack.indexOf(node)), node].map((path) => relative(ROOT, path)).join(" -> "));
++				return;
++			}
++			state.set(node, "open");
++			stack.push(node);
++			for (const next of graph.get(node) ?? []) visit(next);
++			stack.pop();
++			state.set(node, "done");
++		};
++		for (const node of graph.keys()) visit(node);
++		expect(cycles).toEqual([]);
++	});
++	it("is never imported by the subagents module", () => {
++		const edges = [...valueImports(SUBAGENTS, ROOT)].flatMap(([file, targets]) =>
++			targets.map((target) => `${relative(SUBAGENTS, file)} -> ${relative(ROOT, target)}`),
++		);
++		expect(edges).toEqual([]);
++	});
++
++	it("keeps presentation code out of the service", () => {
++		const service = join(ROOT, "service");
++		const edges = [...valueImports(service, resolve(ROOT, ".."))]
++			.flatMap(([file, targets]) => targets.map((target) => [file, target] as const))
++			.filter(([, target]) => target.includes("/ui/"))
++			.map(([file, target]) => `${relative(ROOT, file)} -> ${target}`);
++		expect(edges).toEqual([]);
++	});
++});
+diff --git a/packages/coding-agent/test/suite/fork-tasks-fixtures.ts b/packages/coding-agent/test/suite/fork-tasks-fixtures.ts
+new file mode 100644
+index 000000000..f9b138bc0
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-tasks-fixtures.ts
+@@ -0,0 +1,47 @@
++/**
++ * Fork-owned: what the task suite tests share. A session holds the `worker` agent, which names no task
++ * tool, and the `tasker` agent, which names `TaskCreate` and `TaskExecute`; the faux router of
++ * `fork-subagents-fixtures.ts` answers the parent and every child.
++ */
++import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { vi } from "vitest";
++import type { SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
++import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
++import type { Settings } from "../../src/core/settings-manager.ts";
++import { type Behavior, router } from "./fork-subagents-fixtures.ts";
++import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
++
++export const TASK_TOOLS = ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate"];
++
++/** A session with fork built-ins on; `settings` becomes its `forkBuiltins` object. Callers clean it up. */
++export async function taskSession(
++	settings: Record<string, unknown> = {},
++	options: HarnessOptions = {},
++): Promise<Harness> {
++	vi.stubEnv("PI_FORK_BUILTINS", "on");
++	const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "pi-tasks-"));
++	mkdirSync(join(cwd, "agents"), { recursive: true });
++	writeFileSync(
++		join(cwd, "agents", "worker.md"),
++		"---\ndescription: test worker\ntools: read\nextensions: false\n---\nYou are a test worker.",
++	);
++	writeFileSync(
++		join(cwd, "agents", "tasker.md"),
++		"---\ndescription: keeps tasks\ntools: read, TaskCreate, TaskExecute\nextensions: false\n---\nYou keep tasks.",
++	);
++	return createHarness({ ...options, cwd, settings: { forkBuiltins: settings } as unknown as Partial<Settings> });
++}
++
++/** Answers every request of the session and its children through the faux router. */
++export function withRouter(harness: Harness, script: Record<string, Behavior[]> = {}, main?: Behavior): Harness {
++	harness.setResponses(Array.from({ length: 300 }, () => router(script, main)));
++	return harness;
++}
++
++export function subagentsOf(harness: Harness): SubagentService {
++	const service = subagentServiceFor(harness.session);
++	if (!service) throw new Error("no subagent service");
++	return service;
++}
+diff --git a/packages/coding-agent/test/suite/fork-tasks-service.test.ts b/packages/coding-agent/test/suite/fork-tasks-service.test.ts
+new file mode 100644
+index 000000000..31a3f4cc1
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-tasks-service.test.ts
+@@ -0,0 +1,94 @@
++/**
++ * Fork-owned: the task base tools' registration and the task service on real sessions (plan T2).
++ */
++import { existsSync, mkdtempSync, readFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import type { AgentSession } from "../../src/core/agent-session.ts";
++import { TaskService } from "../../src/core/fork-builtins/tasks/service/service.ts";
++import { existingTaskService } from "../../src/core/fork-builtins/tasks/service/sessions.ts";
++import { SessionManager } from "../../src/core/session-manager.ts";
++import { SettingsManager } from "../../src/core/settings-manager.ts";
++import { TASK_TOOLS, taskSession } from "./fork-tasks-fixtures.ts";
++import type { Harness } from "./harness.ts";
++
++const harnesses: Harness[] = [];
++
++afterEach(() => {
++	for (const harness of harnesses.splice(0)) harness.cleanup();
++	vi.unstubAllEnvs();
++});
++
++async function session(...args: Parameters<typeof taskSession>): Promise<Harness> {
++	const harness = await taskSession(...args);
++	harnesses.push(harness);
++	return harness;
++}
++
++/** A task service on a fake session that holds only what the service reads. */
++function service(manager: SessionManager): TaskService {
++	return new TaskService({
++		sessionManager: manager,
++		settingsManager: SettingsManager.inMemory(),
++		subscribe: () => () => {},
++		getActiveToolNames: () => [],
++		sessionId: manager.getSessionId(),
++		sessionFile: manager.getSessionFile(),
++	} as unknown as AgentSession);
++}
++
++describe("the task service", () => {
++	it("registers the task tools as active fork base tools", async () => {
++		const harness = await session();
++		const active = harness.session.getActiveToolNames();
++		for (const name of TASK_TOOLS) expect(active).toContain(name);
++	});
++
++	it("is never built by existingTaskService", async () => {
++		const harness = await session();
++		expect(existingTaskService(harness.session)).toBeUndefined();
++	});
++
++	it("hands a fork of an unsaved session its list, which shares the parent's session manager", () => {
++		const cwd = mkdtempSync(join(tmpdir(), "pi-tasks-fork-memory-"));
++		const manager = SessionManager.inMemory(cwd);
++		const parent = service(manager);
++		parent.create("carry me", "d");
++		const unrelated = service(SessionManager.inMemory(cwd));
++		unrelated.create("unrelated task", "d");
++		parent.dispose();
++		unrelated.dispose();
++		const fork = service(manager);
++		fork.onSessionStart("fork", undefined);
++		expect(fork.list().map((task) => task.subject)).toEqual(["carry me"]);
++	});
++
++	it("hands a fork its parent's list even when another saved session ends first", () => {
++		const cwd = mkdtempSync(join(tmpdir(), "pi-tasks-fork-"));
++		const parentManager = SessionManager.create(cwd, join(cwd, "sessions"));
++		const parent = service(parentManager);
++		parent.create("parent task", "d");
++		const unrelated = service(SessionManager.create(cwd, join(cwd, "sessions")));
++		unrelated.create("unrelated task", "d");
++		parent.dispose();
++		unrelated.dispose();
++		const fork = service(SessionManager.create(cwd, join(cwd, "sessions")));
++		fork.onSessionStart("fork", parentManager.getSessionFile());
++		expect(fork.list().map((task) => task.subject)).toEqual(["parent task"]);
++	});
++
++	it("saves the list of a session Pi saves in <cwd>/.pi/tasks, and none of an in-memory session", () => {
++		const cwd = mkdtempSync(join(tmpdir(), "pi-tasks-file-"));
++		const saved = SessionManager.create(cwd, join(cwd, "sessions"));
++		const tasks = service(saved);
++		tasks.create("persisted", "d");
++		const file = join(cwd, ".pi", "tasks", `tasks-${saved.getSessionId()}.json`);
++		expect(tasks.file).toBe(file);
++		expect(JSON.parse(readFileSync(file, "utf8")).tasks[0].subject).toBe("persisted");
++		const memory = service(SessionManager.inMemory(cwd));
++		memory.create("not saved", "d");
++		expect(memory.file).toBeUndefined();
++		expect(existsSync(join(cwd, ".pi", "tasks", `tasks-${memory.session.sessionId}.json`))).toBe(false);
++	});
++});

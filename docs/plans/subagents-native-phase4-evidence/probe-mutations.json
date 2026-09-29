@@ -1,0 +1,384 @@
+[
+ {
+  "id": "Q1",
+  "what": "TaskExecute spawns without a background slot",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "mode: \"detached-background\",",
+  "new": "mode: \"detached\",",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ]
+ },
+ {
+  "id": "Q2",
+  "what": "a completed agent leaves its task in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (status === \"completed\" || status === \"steered\") {",
+  "new": "if (status === \"never\") {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ]
+ },
+ {
+  "id": "Q3",
+  "what": "TaskOutput consumes nothing",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "scope.service.consume(agentId, scope.owner);",
+  "new": "void scope;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ]
+ },
+ {
+  "id": "Q4",
+  "what": "the session's end leaves agent tasks in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (this.store.get(taskId)?.status !== \"in_progress\") continue;",
+  "new": "continue;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents the session's end sends a task whose agent still runs back to pending"
+  ]
+ },
+ {
+  "id": "Q5",
+  "what": "a session without TaskCreate still gets the reminder",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (!this.session.getActiveToolNames().includes(TASK_CREATE_TOOL_NAME)) return undefined;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder never reaches a session whose model cannot call TaskCreate"
+  ]
+ },
+ {
+  "id": "Q6",
+  "what": "other tools never mark a reminder due",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "else onOtherToolResult(this.cadence, this.store.list());",
+  "new": "else void onOtherToolResult;",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder reaches the model after four turns without a task tool, while the list holds tasks"
+  ]
+ },
+ {
+  "id": "Q7",
+  "what": "a failed write throws instead of falling back",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tthis.toMemory(errorText(error));\n\t\t\treturn \"failed\";",
+  "new": "\t\t\tthrow error;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory with one warning when the file cannot be written"
+  ]
+ },
+ {
+  "id": "Q8",
+  "what": "a file that holds no task list is overwritten",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "this.toMemory(`${path} is not a task list (${errorText(error)})`);\n\t\t\treturn;",
+  "new": "this.path = path;\n\t\t\treturn;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list"
+  ]
+ },
+ {
+  "id": "Q9",
+  "what": "a fork takes no list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (read) this.store.seed(structuredClone(read()));",
+  "new": "if (read) void read;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager",
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first"
+  ]
+ },
+ {
+  "id": "Q10",
+  "what": "a child's TaskExecute ignores its nested runtime",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const view = scope.nested ? await scope.nested.spawn(request) : await scope.service.spawn(request);",
+  "new": "const view = await scope.service.spawn(request);",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights"
+  ]
+ },
+ {
+  "id": "Q11",
+  "what": "TaskStop leaves the agent running",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "scope.service.stop(agentId, scope.owner);",
+  "new": "void scope;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskStop stops the agent, and the task completes"
+  ]
+ },
+ {
+  "id": "Q12",
+  "what": "a refused spawn leaves the task in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.store.update(id, { status: \"pending\" });\n\t\t\t\tskipped.push",
+  "new": "skipped.push",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents a refused spawn leaves the task pending and names the reason"
+  ]
+ },
+ {
+  "id": "Q13",
+  "what": "old files are not normalized",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "loaded.push(normalizeTask(task));",
+  "new": "loaded.push(task);",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) resumes a pi-tasks file, filling the fields old files lack"
+  ]
+ },
+ {
+  "id": "Q14",
+  "what": "the scope ignores a child's lineage",
+  "path": "src/core/fork-builtins/subagents/service/sessions.ts",
+  "old": "\tif (lineage) {\n\t\treturn",
+  "new": "\tif (lineage && false) {\n\t\treturn",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights"
+  ]
+ },
+ {
+  "id": "Q15",
+  "what": "task tools are no fork base tools",
+  "path": "src/core/fork-builtins/base-tools.ts",
+  "old": "for (const [name, create] of TASK_TOOL_FACTORIES) addOwned(definitions, name, () => create(options.session));",
+  "new": "for (const [name, create] of TASK_TOOL_FACTORIES) definitions.set(name, create(options.session));",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts",
+   "test/suite/fork-tasks-service.test.ts",
+   "test/fork-builtins/base-tools.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights",
+   "test/suite/fork-tasks-service.test.ts > the task service registers the task tools as active fork base tools"
+  ]
+ },
+ {
+  "id": "Q16",
+  "what": "the service imports the widget",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "import { AutoClear } from \"../auto-clear.ts\";",
+  "new": "import { AutoClear } from \"../auto-clear.ts\";\nimport \"../ui/widget.ts\";",
+  "files": [
+   "test/fork-builtins/tasks/layering.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering keeps presentation code out of the service",
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering imports only from its own or a lower layer"
+  ]
+ },
+ {
+  "id": "Q17",
+  "what": "the subagents module imports the tasks module",
+  "path": "src/core/fork-builtins/subagents/names.ts",
+  "old": "/** Fork-owned: the names of the three subagent base tools (plan T5). */",
+  "new": "import \"../tasks/names.ts\";\n/** Fork-owned: the names of the three subagent base tools (plan T5). */",
+  "files": [
+   "test/fork-builtins/tasks/layering.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering is never imported by the subagents module"
+  ]
+ },
+ {
+  "id": "Q18",
+  "what": "a retried write never saves again",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tif (outcome === \"refused\") return false;\n\t\tthis.path = path;\n\t\treturn true;",
+  "new": "\t\tif (outcome === \"refused\") return false;\n\t\treturn false;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks"
+  ]
+ },
+ {
+  "id": "Q19",
+  "what": "a file that holds no task list is taken over and overwritten",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tthis.toMemory(`${path} is not a task list (${errorText(error)})`);\n\t\t\treturn;",
+  "new": "\t\t\tthis.path = path;\n\t\t\tthis.lastText = text;\n\t\t\treturn;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list"
+  ]
+ },
+ {
+  "id": "Q20",
+  "what": "a session Pi saves keeps its list in memory",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.settingsValue.taskScope === \"session\" && manager.getSessionFile()",
+  "new": "this.settingsValue.taskScope === \"never\" && manager.getSessionFile()",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service saves the list of a session Pi saves in <cwd>/.pi/tasks, and none of an in-memory session"
+  ]
+ },
+ {
+  "id": "Q21",
+  "what": "a failing setWidget escapes the update",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\ttry {\n\t\t\tthis.sync();\n\t\t} catch (error) {\n\t\t\tthis.stopTimer();\n\t\t\tthis.onError(error);\n\t\t}",
+  "new": "\t\tthis.sync();",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change"
+  ]
+ },
+ {
+  "id": "Q22",
+  "what": "a failed registration counts as registered",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\t// Only a registration that succeeded counts; a failed one is tried again at the next change.\n\t\tthis.registered = true;\n\t}",
+  "new": "\t}",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change"
+  ]
+ },
+ {
+  "id": "Q23",
+  "what": "a failing removal escapes dispose",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\ttry {\n\t\t\tthis.ui.setWidget(WIDGET_KEY, undefined);\n\t\t} catch (error) {\n\t\t\tthis.onError(error);\n\t\t}",
+  "new": "\t\tthis.ui.setWidget(WIDGET_KEY, undefined);",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing removal at dispose"
+  ]
+ },
+ {
+  "id": "Q24",
+  "what": "a saved session's fork takes the latest list, whoever left it",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "previousSessionFile ? handoffsByFile.get(previousSessionFile) :",
+  "new": "previousSessionFile ? [...handoffsByFile.values()].at(-1) :",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first"
+  ]
+ },
+ {
+  "id": "Q25",
+  "what": "the store follows a symlink below the project root",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tconst link = this.root ? symlinkBelow(this.root, path) : undefined;",
+  "new": "\t\tconst link = undefined;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never writes or deletes through a symlink below the project root (D52)"
+  ]
+ },
+ {
+  "id": "Q26",
+  "what": "a write overwrites another process's change",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tif (readIfExists(path) !== this.lastText) {\n\t\t\t\tthis.toMemory(`${path} changed outside this session`);\n\t\t\t\treturn \"refused\";\n\t\t\t}",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file another process changed since this store read it (D53)"
+  ]
+ },
+ {
+  "id": "Q27",
+  "what": "an ancestor that cannot be checked throws out of the store",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t} catch (error) {\n\t\t\treturn { reason: `${path} could not be checked (${errorText(error)})`, outcome: \"failed\" };\n\t\t}",
+  "new": "\t\t} finally {\n\t\t}",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory when an ancestor cannot be checked"
+  ]
+ },
+ {
+  "id": "Q28",
+  "what": "a fork of an unsaved session takes no list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": ": handoffsByManager.get(manager);",
+  "new": ": undefined;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager"
+  ]
+ },
+ {
+  "id": "Q29",
+  "what": "a check that could not run is never retried",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "could not be checked (${errorText(error)})`, outcome: \"failed\" }",
+  "new": "could not be checked (${errorText(error)})`, outcome: \"refused\" }",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again"
+  ]
+ }
+]

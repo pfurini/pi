@@ -1,0 +1,748 @@
+diff --git a/packages/coding-agent/src/core/fork-builtins.ts b/packages/coding-agent/src/core/fork-builtins.ts
+index f3725b1f8..e8e3b6385 100644
+--- a/packages/coding-agent/src/core/fork-builtins.ts
++++ b/packages/coding-agent/src/core/fork-builtins.ts
+@@ -9,8 +9,8 @@
+  *   loads any extension path.
+  * - Fork-owned modules live under `src/core/fork-builtins/<name>/` and have no upstream. Each
+  *   entry of `FORK_OWNED_BUILTINS` registers through an inline factory, with no package resolution.
+- *   The inline factories are tokensave (pi-tokensave) and the subagents presentation
+- *   (`subagents/ui/index.ts`).
++ *   The inline factories are tokensave (pi-tokensave), the subagents presentation
++ *   (`subagents/ui/index.ts`) and the tasks presentation (`tasks/ui/index.ts`).
+  *
+  * `ask_user_question` and `vcc_recall` are fork-owned base tools instead: `AgentSession`
+  * registers them next to `read` (`fork-builtins/base-tools.ts`), so no loader affects them.
+@@ -23,6 +23,7 @@ import { loadExtensionFactoryFromPath } from "./extensions/loader.ts";
+ import type { ExtensionFactory, InlineExtension } from "./extensions/types.ts";
+ import subagentsPresentation from "./fork-builtins/subagents/ui/index.ts";
+ import { forkBuiltinsEnabled } from "./fork-builtins/switch.ts";
++import tasksPresentation from "./fork-builtins/tasks/ui/index.ts";
+ import pluginTokensave from "./fork-builtins/tokensave/index.ts";
+ 
+ export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
+@@ -31,6 +32,7 @@ export const FORK_BUILTIN_PACKAGES: readonly string[] = [];
+ export const FORK_OWNED_BUILTINS: readonly InlineExtension[] = [
+ 	{ name: "tokensave", factory: pluginTokensave, hidden: true },
+ 	{ name: "subagents", factory: subagentsPresentation, hidden: true },
++	{ name: "tasks", factory: tasksPresentation, hidden: true },
+ ];
+ 
+ const requireFromHere = createRequire(import.meta.url);
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/ui/index.ts b/packages/coding-agent/src/core/fork-builtins/tasks/ui/index.ts
+new file mode 100644
+index 000000000..56cad8f54
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/ui/index.ts
+@@ -0,0 +1,100 @@
++/**
++ * Fork-owned: the tasks presentation factory (D47). `FORK_OWNED_BUILTINS` lists it as
++ * `<inline:tasks>`, so every `DefaultResourceLoader` loads it. It finds its session over the bus
++ * (`../../subagents/binding.ts`), as the subagents presentation does, and calls the session's
++ * `TaskService`; the service imports nothing from here.
++ *
++ * - Every session, a child included, gets the `context` hook: the next model request carries the
++ *   service's reminder when one is due. The service gives one only while `TaskCreate` is active.
++ * - A top-level session in `tui` mode shows the `tasks` widget; in `rpc` mode the widget goes out as
++ *   plain lines. Both show the service's warnings and offer `/tasks`.
++ * - `session_start` tells the service the reason, so a fork takes its parent's list.
++ */
++import type { AgentSession } from "../../../agent-session.ts";
++import type { ExtensionAPI, ExtensionContext } from "../../../extensions/types.ts";
++import {
++	CHILD_SESSION_QUERY_CHANNEL,
++	type ChildSessionQuery,
++	PRESENTATION_BIND_CHANNEL,
++	type PresentationBindRequest,
++} from "../../subagents/binding.ts";
++import { existingTaskService, taskServiceFor } from "../service/sessions.ts";
++import { showTasksMenu } from "./menu.ts";
++import { TaskWidget } from "./widget.ts";
++
++export default function tasksPresentation(pi: ExtensionAPI): void {
++	const query: ChildSessionQuery = { child: false };
++	pi.events.emit(CHILD_SESSION_QUERY_CHANNEL, query);
++	const child = query.child;
++
++	let session: AgentSession | undefined;
++	let unbind: (() => void) | undefined;
++
++	const resolve = (ctx: ExtensionContext): AgentSession | undefined => {
++		if (session) return session;
++		const request: PresentationBindRequest = { sessionManager: ctx.sessionManager };
++		pi.events.emit(PRESENTATION_BIND_CHANNEL, request);
++		session = request.session;
++		return session;
++	};
++
++	pi.on("context", (event, ctx) => {
++		const bound = resolve(ctx);
++		const reminder = bound ? existingTaskService(bound)?.takeReminder() : undefined;
++		if (!reminder) return;
++		return {
++			messages: [
++				...event.messages,
++				{ role: "user" as const, content: [{ type: "text" as const, text: reminder }], timestamp: Date.now() },
++			],
++		};
++	});
++
++	pi.on("session_start", (event, ctx) => {
++		// A child's list starts with its first task tool call; the parent owns the child's presentation.
++		if (child) return;
++		const bound = resolve(ctx);
++		const service = bound ? taskServiceFor(bound) : undefined;
++		if (!service) return;
++		service.onSessionStart(event.reason, "previousSessionFile" in event ? event.previousSessionFile : undefined);
++		if (ctx.mode !== "tui" && ctx.mode !== "rpc") return;
++		unbind?.();
++		const widget = new TaskWidget(service, ctx.ui, ctx.mode === "rpc", (error) =>
++			service.warn(`The tasks widget failed: ${error instanceof Error ? error.message : String(error)}`),
++		);
++		const offWarnings = service.subscribe((change) => {
++			if (change.type !== "warning") return;
++			try {
++				ctx.ui.notify(change.message, "warning");
++			} catch {
++				// A UI that cannot notify cannot show the widget's failure either.
++			}
++		});
++		unbind = () => {
++			offWarnings();
++			widget.dispose();
++		};
++	});
++
++	pi.on("session_shutdown", () => {
++		unbind?.();
++		unbind = undefined;
++	});
++
++	if (child) return;
++	pi.registerCommand("tasks", {
++		description: "Manage tasks: view, create, clear completed, settings",
++		handler: async (_args, ctx) => {
++			const bound = resolve(ctx);
++			const service = bound ? taskServiceFor(bound) : undefined;
++			if (!bound || !service) return;
++			await showTasksMenu({
++				ui: ctx.ui,
++				service,
++				settingsManager: bound.settingsManager,
++				cwd: bound.sessionManager.getCwd(),
++				tui: ctx.mode === "tui",
++			});
++		},
++	});
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/ui/menu.ts b/packages/coding-agent/src/core/fork-builtins/tasks/ui/menu.ts
+new file mode 100644
+index 000000000..1bb412b4d
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/ui/menu.ts
+@@ -0,0 +1,200 @@
++/**
++ * Fork-owned: the `/tasks` command (pi-tasks `src/index.ts:1263-1380` and `src/ui/settings-menu.ts` at
++ * 83480bd). The menu views, creates, starts, completes, deletes and clears tasks through `select` and
++ * `input` dialogs, which the TUI and RPC both show. `Settings` opens a settings list in the TUI only.
++ * A save writes the project's own values plus the changed key to `forkBuiltins.tasks`, never a global
++ * value, then reloads the session's settings. An untrusted project shows the values read-only.
++ */
++import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
++import type { ExtensionUIContext } from "../../../extensions/types.ts";
++import type { SettingsManager } from "../../../settings-manager.ts";
++import { settingsListTheme } from "../../subagents/ui/settings-menu.ts";
++import { CLEAR_DELAY_TURNS } from "../auto-clear.ts";
++import type { TaskService } from "../service/service.ts";
++import { projectTaskValues, type TaskSettings, writeProjectTaskSettings } from "../settings.ts";
++
++export interface TasksMenuEnvironment {
++	ui: Pick<ExtensionUIContext, "select" | "input" | "notify" | "custom">;
++	service: TaskService;
++	settingsManager: Pick<SettingsManager, "getProjectSettings" | "isProjectTrusted" | "reload">;
++	cwd: string;
++	/** The settings list needs the interactive TUI. */
++	tui: boolean;
++}
++
++const GLYPHS: Record<string, string> = { completed: "✔", in_progress: "◼", pending: "◻" };
++const BACK = "← Back";
++
++export async function showTasksMenu(env: TasksMenuEnvironment): Promise<void> {
++	const { ui, service } = env;
++	for (;;) {
++		const tasks = service.list();
++		const done = tasks.filter((task) => task.status === "completed").length;
++		const choices = [`View all tasks (${tasks.length})`, "Create task"];
++		if (done > 0) choices.push(`Clear completed (${done})`);
++		if (tasks.length > 0) choices.push(`Clear all (${tasks.length})`);
++		if (env.tui) choices.push("Settings");
++		const choice = await ui.select("Tasks", choices);
++		if (!choice) return;
++		if (choice.startsWith("View")) await viewTasks(env);
++		else if (choice === "Create task") await createTask(env);
++		else if (choice === "Settings") await showTaskSettings(env);
++		else if (choice.startsWith("Clear completed")) service.clearCompleted();
++		else if (choice.startsWith("Clear all")) service.clearAll();
++	}
++}
++
++async function viewTasks(env: TasksMenuEnvironment): Promise<void> {
++	for (;;) {
++		const tasks = env.service.list();
++		if (tasks.length === 0) {
++			await env.ui.select("No tasks", [BACK]);
++			return;
++		}
++		const choices = tasks.map((task) => `${GLYPHS[task.status]} #${task.id} [${task.status}] ${task.subject}`);
++		choices.push(BACK);
++		const selected = await env.ui.select("Tasks", choices);
++		if (!selected || selected === BACK) return;
++		// By row position: a subject may contain text such as `#42`.
++		const picked = tasks[choices.indexOf(selected)];
++		if (picked) await taskDetail(env, picked.id);
++	}
++}
++
++async function taskDetail(env: TasksMenuEnvironment, taskId: string): Promise<void> {
++	const task = env.service.get(taskId);
++	if (!task) return;
++	const actions: string[] = [];
++	if (task.status === "pending") actions.push("▸ Start (in_progress)");
++	if (task.status === "in_progress") actions.push("✓ Complete");
++	actions.push("✗ Delete", BACK);
++	const action = await env.ui.select(`#${task.id} [${task.status}] ${task.subject}\n${task.description}`, actions);
++	if (action === "▸ Start (in_progress)") env.service.update(taskId, { status: "in_progress" });
++	else if (action === "✓ Complete") env.service.update(taskId, { status: "completed" });
++	else if (action === "✗ Delete") env.service.update(taskId, { status: "deleted" });
++}
++
++async function createTask(env: TasksMenuEnvironment): Promise<void> {
++	const subject = await env.ui.input("Task subject");
++	if (!subject) return;
++	const description = await env.ui.input("Task description");
++	if (!description) return;
++	env.service.create(subject, description);
++}
++
++type Row = { key: keyof TaskSettings; label: string; description: string; values: string[] };
++
++const onOff = ["on", "off"];
++
++const ROWS: readonly Row[] = [
++	{
++		key: "taskScope",
++		label: "Task storage",
++		description:
++			"session: saved per session in the workspace (.pi/tasks/tasks-<sessionId>.json), survives resume. " +
++			"memory: tasks live only in memory and are lost when the session ends. Takes effect on the next session.",
++		values: ["session", "memory"],
++	},
++	{
++		key: "collapseCompleted",
++		label: "Collapse completed tasks",
++		description:
++			"When on, completed tasks are replaced by a single 'N completed' line and the visible limit applies " +
++			"only to the tasks left. When off, they are listed individually.",
++		values: onOff,
++	},
++	{
++		key: "showAll",
++		label: "Show all tasks in widget",
++		description:
++			"When on, every listed task is shown whatever the visible limit. When off, 'Max visible tasks' caps the list.",
++		values: onOff,
++	},
++	{
++		key: "maxVisible",
++		label: "Max visible tasks in widget",
++		description: "Only applies when 'Show all tasks' is off. Caps how many task lines the widget shows.",
++		values: ["5", "10", "15", "20", "30", "50", "100"],
++	},
++	{
++		key: "sortOrder",
++		label: "Widget sort order",
++		description:
++			'"active" groups by in-progress, pending, completed; "status" is the reverse. "id" sorts by creation ' +
++			'order. "recent" and "oldest" sort by the last change.',
++		values: ["id", "status", "active", "recent", "oldest"],
++	},
++	{
++		key: "hiddenAt",
++		label: "Hidden tasks position",
++		description: '"bottom" hides tasks from the end of the list; "top" hides them from the start.',
++		values: ["bottom", "top"],
++	},
++	{
++		key: "autoClearCompleted",
++		label: "Auto-clear completed tasks",
++		description:
++			"never: completed tasks stay until cleared. on_list_complete: cleared after all tasks are done. " +
++			`on_task_complete: each task cleared shortly after it completes. Clearing lags ~${CLEAR_DELAY_TURNS} ` +
++			"turns, or happens at once when a later batch of work starts.",
++		values: ["never", "on_list_complete", "on_task_complete"],
++	},
++];
++
++function shown(value: TaskSettings[keyof TaskSettings]): string {
++	return typeof value === "boolean" ? (value ? "on" : "off") : String(value);
++}
++
++function parsed(row: Row, value: string): TaskSettings[keyof TaskSettings] {
++	if (row.values === onOff) return value === "on";
++	// The row offers only the values the reader accepts; `writeProjectTaskSettings` checks them again.
++	return row.key === "maxVisible" ? Number(value) : (value as TaskSettings[keyof TaskSettings]);
++}
++
++/** The settings list: each change saves the project's own values plus that key. */
++async function showTaskSettings(env: TasksMenuEnvironment): Promise<void> {
++	const trusted = env.settingsManager.isProjectTrusted();
++	if (!trusted) env.ui.notify("This project is not trusted: task settings are read-only here.", "info");
++	await env.ui.custom<void>((_tui, theme, _keybindings, done) => {
++		const items: SettingItem[] = ROWS.map((row) => ({
++			id: row.key,
++			label: row.label,
++			description: row.description,
++			currentValue: shown(env.service.settings[row.key]),
++			values: trusted ? row.values : [shown(env.service.settings[row.key])],
++		}));
++		const list = new SettingsList(
++			items,
++			10,
++			settingsListTheme(theme),
++			(id, value) => {
++				const row = ROWS.find((candidate) => candidate.key === id);
++				if (!row || !trusted) return;
++				try {
++					writeProjectTaskSettings(env.cwd, {
++						...projectTaskValues(env.settingsManager),
++						[row.key]: parsed(row, value),
++					});
++					env.settingsManager.reload();
++					env.service.reloadSettings();
++				} catch (error) {
++					env.ui.notify(
++						`Task settings not saved: ${error instanceof Error ? error.message : String(error)}`,
++						"warning",
++					);
++				}
++			},
++			() => done(undefined),
++		);
++		class Panel extends Container {
++			handleInput(data: string): void {
++				list.handleInput(data);
++			}
++		}
++		const root = new Panel();
++		root.addChild(new Text(theme.bold(theme.fg("accent", "Task Settings")), 0, 0));
++		root.addChild(new Spacer(1));
++		root.addChild(list);
++		return root;
++	});
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/ui/widget.ts b/packages/coding-agent/src/core/fork-builtins/tasks/ui/widget.ts
+new file mode 100644
+index 000000000..bf41087e3
+--- /dev/null
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/ui/widget.ts
+@@ -0,0 +1,243 @@
++/**
++ * Fork-owned: the `tasks` widget above the editor (pi-tasks `src/ui/task-widget.ts` and
++ * `src/task-glyphs.ts` at 83480bd, with the default glyphs only, D49). It shows in `tui` mode, and in
++ * `rpc` mode as plain lines, which RPC forwards to its client.
++ *
++ * A summary line counts the tasks by status. Each row shows a status glyph, the id and the subject;
++ * a completed row is struck through, a pending row names its open blockers, and a task the session
++ * or an agent works on now shows a spinner, its active form, its elapsed time and its tokens.
++ * `sortOrder`, `collapseCompleted`, `showAll`, `maxVisible` and `hiddenAt` are read when rendering.
++ *
++ * No UI failure escapes. A render that throws draws nothing for one frame. A failed `setWidget`,
++ * `requestRender` or removal goes to `onError` and stops the spinner, and the next change tries again:
++ * an exception out of a timer or a microtask would end Pi's interactive mode.
++ */
++import { type Component, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
++import type { ExtensionUIContext } from "../../../extensions/types.ts";
++import type { TaskService } from "../service/service.ts";
++import { sortTasks } from "../sort.ts";
++import type { Task } from "../store.ts";
++
++const WIDGET_KEY = "tasks";
++/** How often the spinner advances while a task is worked on. */
++const FRAME_MS = 150;
++const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
++
++export interface WidgetTheme {
++	fg(color: string, text: string): string;
++	strikethrough(text: string): string;
++}
++
++/** The plain look RPC lines use. */
++const PLAIN: WidgetTheme = { fg: (_color, text) => text, strikethrough: (text) => text };
++
++/** What the widget reads from the service. */
++export type TaskWidgetSource = Pick<TaskService, "list" | "get" | "settings" | "activity" | "workingIds" | "subscribe">;
++
++function formatDuration(ms: number): string {
++	const seconds = Math.floor(ms / 1000);
++	if (seconds < 60) return `${seconds}s`;
++	const minutes = Math.floor(seconds / 60);
++	const restSeconds = seconds % 60;
++	if (minutes < 60) return restSeconds > 0 ? `${minutes}m ${restSeconds}s` : `${minutes}m`;
++	const hours = Math.floor(minutes / 60);
++	const restMinutes = minutes % 60;
++	return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`;
++}
++
++function formatTokens(count: number): string {
++	return count < 1000 ? String(count) : `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
++}
++
++/** The widget's lines for one frame; empty when the list is empty. */
++export function renderTaskLines(source: TaskWidgetSource, theme: WidgetTheme, frame: number): string[] {
++	const settings = source.settings;
++	const tasks = sortTasks(source.list(), settings.sortOrder);
++	if (tasks.length === 0) return [];
++	const completed = tasks.filter((task) => task.status === "completed");
++	const inProgress = tasks.filter((task) => task.status === "in_progress");
++	const pending = tasks.filter((task) => task.status === "pending");
++	const counts = [
++		completed.length > 0 ? `${completed.length} done` : "",
++		inProgress.length > 0 ? `${inProgress.length} in progress` : "",
++		pending.length > 0 ? `${pending.length} open` : "",
++	].filter(Boolean);
++	const lines = [`${theme.fg("accent", "●")} ${theme.fg("accent", `${tasks.length} tasks (${counts.join(", ")})`)}`];
++	const listed = settings.collapseCompleted ? tasks.filter((task) => task.status !== "completed") : tasks;
++	const top = settings.hiddenAt === "top";
++	const visible = settings.showAll
++		? listed
++		: top
++			? listed.slice(-settings.maxVisible)
++			: listed.slice(0, settings.maxVisible);
++	const hidden = listed.length - visible.length;
++	const overflow = hidden > 0 ? theme.fg("dim", `    … and ${hidden} more`) : undefined;
++	if (overflow && top) lines.push(overflow);
++	const working = new Set(source.workingIds());
++	for (const task of visible) lines.push(row(source, task, working.has(task.id), theme, frame));
++	if (overflow && !top) lines.push(overflow);
++	if (settings.collapseCompleted && completed.length > 0) {
++		lines.push(`  ${theme.fg("success", "✔")} ${theme.fg("dim", `${completed.length} completed`)}`);
++	}
++	return lines;
++}
++
++function row(source: TaskWidgetSource, task: Task, working: boolean, theme: WidgetTheme, frame: number): string {
++	const agentId = typeof task.metadata.agentId === "string" ? task.metadata.agentId : undefined;
++	if (working && task.status === "in_progress") {
++		const spinner = theme.fg("accent", SPINNER[frame % SPINNER.length]);
++		const agent = agentId ? ` (agent ${agentId.slice(0, 5)})` : "";
++		const activity = source.activity(task.id);
++		let stats = "";
++		if (activity) {
++			const tokens = [
++				activity.inputTokens > 0 ? `↑ ${formatTokens(activity.inputTokens)}` : "",
++				activity.outputTokens > 0 ? `↓ ${formatTokens(activity.outputTokens)}` : "",
++			].filter(Boolean);
++			const elapsed = formatDuration(Date.now() - activity.startedAt);
++			stats = ` ${theme.fg("dim", tokens.length > 0 ? `(${elapsed} · ${tokens.join(" ")})` : `(${elapsed})`)}`;
++		}
++		return `  ${spinner} ${theme.fg("dim", `#${task.id}`)} ${theme.fg("accent", `${task.activeForm || task.subject}${agent}…`)}${stats}`;
++	}
++	if (task.status === "completed") {
++		return `  ${theme.fg("success", "✔")} ${theme.fg("dim", theme.strikethrough(`#${task.id} ${task.subject}`))}`;
++	}
++	const glyph = task.status === "in_progress" ? theme.fg("accent", "◼") : "◻";
++	const agent = task.status === "in_progress" && agentId ? theme.fg("dim", ` (agent ${agentId.slice(0, 5)})`) : "";
++	const open =
++		task.status === "pending"
++			? task.blockedBy.filter((id) => {
++					const blocker = source.get(id);
++					return blocker && blocker.status !== "completed";
++				})
++			: [];
++	const blocked = open.length > 0 ? theme.fg("dim", ` › blocked by ${open.map((id) => `#${id}`).join(", ")}`) : "";
++	return `  ${glyph} ${theme.fg("dim", `#${task.id}`)} ${task.subject}${agent}${blocked}`;
++}
++
++export class TaskWidget {
++	private readonly source: TaskWidgetSource;
++	private readonly ui: Pick<ExtensionUIContext, "setWidget">;
++	/** RPC takes plain lines; the TUI takes a component. */
++	private readonly plain: boolean;
++	private readonly onError: (error: unknown) => void;
++	private readonly unsubscribe: () => void;
++	private registered = false;
++	private tui?: TUI;
++	private timer?: ReturnType<typeof setInterval>;
++	private frame = 0;
++	private pending = false;
++	private disposed = false;
++
++	constructor(
++		source: TaskWidgetSource,
++		ui: Pick<ExtensionUIContext, "setWidget">,
++		plain: boolean,
++		onError: (error: unknown) => void,
++	) {
++		this.source = source;
++		this.ui = ui;
++		this.plain = plain;
++		this.onError = onError;
++		this.unsubscribe = source.subscribe((event) => {
++			if (event.type === "changed") this.schedule();
++		});
++		this.update();
++	}
++
++	dispose(): void {
++		if (this.disposed) return;
++		this.disposed = true;
++		this.unsubscribe();
++		this.stopTimer();
++		const registered = this.registered;
++		this.registered = false;
++		this.tui = undefined;
++		if (!registered) return;
++		try {
++			this.ui.setWidget(WIDGET_KEY, undefined);
++		} catch (error) {
++			this.onError(error);
++		}
++	}
++
++	/** Several changes in one tick redraw once. */
++	private schedule(): void {
++		if (this.pending) return;
++		this.pending = true;
++		queueMicrotask(() => {
++			this.pending = false;
++			this.update();
++		});
++	}
++
++	private update(): void {
++		if (this.disposed) return;
++		try {
++			this.sync();
++		} catch (error) {
++			this.stopTimer();
++			this.onError(error);
++		}
++	}
++
++	private sync(): void {
++		const tasks = this.source.list();
++		if (tasks.length === 0) {
++			if (this.registered) this.ui.setWidget(WIDGET_KEY, undefined);
++			this.registered = false;
++			this.tui = undefined;
++			this.stopTimer();
++			return;
++		}
++		if (this.plain) {
++			this.ui.setWidget(WIDGET_KEY, renderTaskLines(this.source, PLAIN, 0), { placement: "aboveEditor" });
++			this.registered = true;
++			return;
++		}
++		const spinning = this.source.workingIds().length > 0;
++		if (spinning) this.startTimer();
++		else this.stopTimer();
++		if (this.registered) {
++			this.tui?.requestRender();
++			return;
++		}
++		this.ui.setWidget(
++			WIDGET_KEY,
++			(tui, theme) => {
++				this.tui = tui;
++				return { render: (width: number) => this.render(theme, width), invalidate: () => {} } satisfies Component;
++			},
++			{ placement: "aboveEditor" },
++		);
++		// Only a registration that succeeded counts; a failed one is tried again at the next change.
++		this.registered = true;
++	}
++
++	private render(theme: WidgetTheme, width: number): string[] {
++		try {
++			return renderTaskLines(this.source, theme, this.frame).map((line) => truncateToWidth(line, width, "..."));
++		} catch {
++			return [];
++		}
++	}
++
++	private startTimer(): void {
++		if (this.timer) return;
++		this.timer = setInterval(() => {
++			this.frame++;
++			try {
++				this.tui?.requestRender();
++			} catch (error) {
++				this.stopTimer();
++				this.onError(error);
++			}
++		}, FRAME_MS);
++		this.timer.unref?.();
++	}
++
++	private stopTimer(): void {
++		clearInterval(this.timer);
++		this.timer = undefined;
++	}
++}
+diff --git a/packages/coding-agent/test/fork-builtins/tasks/ui-widget.test.ts b/packages/coding-agent/test/fork-builtins/tasks/ui-widget.test.ts
+new file mode 100644
+index 000000000..0e207cc64
+--- /dev/null
++++ b/packages/coding-agent/test/fork-builtins/tasks/ui-widget.test.ts
+@@ -0,0 +1,75 @@
++/**
++ * Fork-owned: the tasks widget (plan T4) over a fixed source: no UI failure escapes, and a failed
++ * registration is tried again at the next change.
++ */
++import { afterEach, describe, expect, it, vi } from "vitest";
++import type { TaskEvent } from "../../../src/core/fork-builtins/tasks/service/service.ts";
++import { DEFAULT_TASK_SETTINGS } from "../../../src/core/fork-builtins/tasks/settings.ts";
++import type { Task } from "../../../src/core/fork-builtins/tasks/store.ts";
++import { TaskWidget, type TaskWidgetSource } from "../../../src/core/fork-builtins/tasks/ui/widget.ts";
++
++const task = (id: string, status: Task["status"] = "pending"): Task => ({
++	id,
++	subject: `task ${id}`,
++	description: "d",
++	status,
++	metadata: {},
++	blocks: [],
++	blockedBy: [],
++	createdAt: 0,
++	updatedAt: 0,
++});
++
++/** A source whose list the test sets, and whose `changed` event it fires. */
++function source(tasks: Task[]) {
++	let listener: ((event: TaskEvent) => void) | undefined;
++	const value: TaskWidgetSource = {
++		list: () => tasks,
++		get: (id) => tasks.find((candidate) => candidate.id === id),
++		settings: DEFAULT_TASK_SETTINGS,
++		activity: () => undefined,
++		workingIds: () => [],
++		subscribe: (next) => {
++			listener = next;
++			return () => {
++				listener = undefined;
++			};
++		},
++	};
++	return { value, changed: () => listener?.({ type: "changed" }) };
++}
++
++afterEach(() => vi.useRealTimers());
++
++describe("the tasks widget", () => {
++	it("contains a failing setWidget and registers at the next change", async () => {
++		const errors: unknown[] = [];
++		let calls = 0;
++		const ui = {
++			setWidget: vi.fn(() => {
++				calls++;
++				if (calls === 1) throw new Error("no terminal");
++			}),
++		};
++		const { value, changed } = source([task("1")]);
++		const widget = new TaskWidget(value, ui, false, (error) => errors.push(error));
++		expect(errors).toHaveLength(1);
++		changed();
++		await Promise.resolve();
++		expect(ui.setWidget).toHaveBeenCalledTimes(2);
++		widget.dispose();
++		expect(ui.setWidget).toHaveBeenLastCalledWith("tasks", undefined);
++	});
++
++	it("contains a failing removal at dispose", () => {
++		const errors: unknown[] = [];
++		const ui = {
++			setWidget: vi.fn((_key: string, content: unknown) => {
++				if (content === undefined) throw new Error("gone");
++			}),
++		};
++		const widget = new TaskWidget(source([task("1")]).value, ui, true, (error) => errors.push(error));
++		expect(() => widget.dispose()).not.toThrow();
++		expect(errors).toHaveLength(1);
++	});
++});
+diff --git a/packages/coding-agent/test/suite/fork-tasks-presentation.test.ts b/packages/coding-agent/test/suite/fork-tasks-presentation.test.ts
+new file mode 100644
+index 000000000..75677fcd7
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-tasks-presentation.test.ts
+@@ -0,0 +1,69 @@
++/**
++ * Fork-owned: the tasks presentation factory on real sessions (plan T4): the `context` hook that adds
++ * the task reminder to the next model request.
++ */
++import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { createEventBus } from "../../src/core/event-bus.ts";
++import { requireTaskService } from "../../src/core/fork-builtins/tasks/service/sessions.ts";
++import tasksPresentation from "../../src/core/fork-builtins/tasks/ui/index.ts";
++import { type Behavior, textOf } from "./fork-subagents-fixtures.ts";
++import { taskSession, withRouter } from "./fork-tasks-fixtures.ts";
++import type { Harness, HarnessOptions } from "./harness.ts";
++
++const harnesses: Harness[] = [];
++
++afterEach(() => {
++	for (const harness of harnesses.splice(0)) harness.cleanup();
++	vi.unstubAllEnvs();
++});
++
++/** A session that loads the tasks presentation, bound in print mode. */
++async function presented(options: HarnessOptions = {}): Promise<Harness> {
++	const harness = await taskSession(
++		{},
++		{ ...options, eventBus: createEventBus(), extensionFactories: [{ name: "tasks", factory: tasksPresentation }] },
++	);
++	harnesses.push(harness);
++	await harness.session.bindExtensions({ mode: "print" });
++	return harness;
++}
++
++/** A parent that reads a file five times, then answers; every request is recorded. */
++function reader(requests: Context[]): Behavior {
++	return (context) => {
++		requests.push(structuredClone(context));
++		const reads = context.messages.filter((message) => message.role === "toolResult").length;
++		return reads < 5
++			? fauxAssistantMessage([fauxToolCall("read", { path: "agents/worker.md" })], { stopReason: "toolUse" })
++			: fauxAssistantMessage("done");
++	};
++}
++
++const reminded = (requests: Context[]) =>
++	requests.some((request) =>
++		request.messages.some(
++			(message) => message.role === "user" && textOf(message.content).includes("<system-reminder>"),
++		),
++	);
++
++describe("the task reminder", () => {
++	it("reaches the model after four turns without a task tool, while the list holds tasks", async () => {
++		const requests: Context[] = [];
++		const harness = withRouter(await presented(), {}, reader(requests));
++		requireTaskService(harness.session).create("open work", "d");
++		await harness.session.prompt("go");
++		expect(reminded(requests)).toBe(true);
++		// No session keeps it.
++		expect(JSON.stringify(harness.session.messages)).not.toContain("<system-reminder>");
++	});
++
++	it("never reaches a session whose model cannot call TaskCreate", async () => {
++		const requests: Context[] = [];
++		const harness = withRouter(await presented({ excludedToolNames: ["TaskCreate"] }), {}, reader(requests));
++		requireTaskService(harness.session).create("open work", "d");
++		await harness.session.prompt("go");
++		expect(requests.length).toBeGreaterThan(4);
++		expect(reminded(requests)).toBe(false);
++	});
++});

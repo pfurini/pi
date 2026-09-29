@@ -1,0 +1,596 @@
+diff --git a/packages/coding-agent/src/core/fork-builtins/subagents/service/sessions.ts b/packages/coding-agent/src/core/fork-builtins/subagents/service/sessions.ts
+index d9c1c8165..b4644601b 100644
+--- a/packages/coding-agent/src/core/fork-builtins/subagents/service/sessions.ts
++++ b/packages/coding-agent/src/core/fork-builtins/subagents/service/sessions.ts
+@@ -5,6 +5,8 @@
+  * spawn. A session with no record (fork built-ins off) has no service.
+  */
+ import type { AgentSession } from "../../../agent-session.ts";
++import type { NestedRuntime } from "./nested.ts";
++import type { SubagentView } from "./records.ts";
+ import { SubagentService, type SubagentSessionContext } from "./service.ts";
+ 
+ const sessionRecords = new WeakMap<AgentSession, SubagentSessionContext>();
+@@ -68,3 +70,29 @@ export function subagentServiceFor(session: AgentSession): SubagentService | und
+ export function existingSubagentService(session: AgentSession): SubagentService | undefined {
+ 	return services.get(session);
+ }
++
++/**
++ * Where a typed caller spawns and reaches agents (D19): the session's own service, or, in a child
++ * session, its owner's service and the nested runtime of the agent the child runs as. Undefined for a
++ * session with no record. The bus adapter, skill-fork and the task tools share this scope.
++ */
++export interface SubagentScope {
++	service: SubagentService;
++	/** The agent a child session runs as; absent in a top-level session. */
++	owner?: SubagentView;
++	nested?: NestedRuntime;
++}
++
++export function subagentScope(session: AgentSession): SubagentScope | undefined {
++	const context = sessionRecords.get(session);
++	const lineage = context?.lineage;
++	if (lineage) {
++		return {
++			service: lineage.owner,
++			owner: lineage.parentRecord,
++			nested: lineage.owner.nested(lineage.parentRecord),
++		};
++	}
++	const service = subagentServiceFor(session);
++	return service ? { service } : undefined;
++}
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts b/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts
+index 05f582d3c..03d1bc051 100644
+--- a/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/service/service.ts
+@@ -7,12 +7,20 @@
+  *   `<cwd>/.pi/tasks/tasks-<sessionId>.json` of a session Pi saves, otherwise memory (D50).
+  * - The service follows the session's own events: turns tick the reminder cadence and the
+  *   auto-clear countdowns, and a settled run marks the batch boundary.
+- * - `/reload` keeps the service and its list. The session's end leaves the list for a fork of it.
++ * - `TaskExecute` spawns through the typed subagent API (D19): the session's own service, or in a
++ *   child the nested runtime of the agent the child runs as. The subagent service's `ended` event
++ *   completes or reverts the task.
++ * - `/reload` keeps the service, its list and its agents. The session's end reverts every task whose
++ *   agent still runs, because the session's end aborts that agent (D21), and leaves the list for a
++ *   fork of the session.
+  */
+ import { join } from "node:path";
+ import type { Usage } from "@earendil-works/pi-ai";
+ import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
+ import type { AgentSession, AgentSessionEvent } from "../../../agent-session.ts";
++import type { SubagentView } from "../../subagents/service/records.ts";
++import { SESSION_ENDED_ERROR, type SpawnRequest, type SubagentEvent } from "../../subagents/service/service.ts";
++import { type SubagentScope, subagentScope } from "../../subagents/service/sessions.ts";
+ import { AutoClear } from "../auto-clear.ts";
+ import { TASK_CREATE_TOOL_NAME, TASK_TOOL_NAMES } from "../names.ts";
+ import {
+@@ -36,6 +44,18 @@ export interface TaskActivity {
+ 	readonly outputTokens: number;
+ }
+ 
++export interface ExecuteOptions {
++	additionalContext?: string;
++	model?: string;
++	thinking?: string;
++	maxTurns?: number;
++}
++
++/** The longest prerequisite result a task prompt carries in full. */
++const PREREQUISITE_RESULT_LIMIT = 4000;
++
++const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
++
+ /**
+  * The lists ended sessions leave for a fork. Pi disposes a session before it starts the fork, and other
+  * sessions or children may end in between, so each keeps its own entry. A saved session's entry is keyed
+@@ -53,11 +73,15 @@ export class TaskService {
+ 	private readonly store: TaskStore;
+ 	private readonly cadence: Cadence = createCadence();
+ 	private readonly autoClear: AutoClear;
++	/** Agent id to task id, for every agent `TaskExecute` started that has not reported back. */
++	private readonly agentTasks = new Map<string, string>();
+ 	private readonly working = new Map<string, { startedAt: number; inputTokens: number; outputTokens: number }>();
+ 	private readonly listeners = new Set<(event: TaskEvent) => void>();
+ 	private readonly warned = new Set<string>();
+ 	/** Warnings sent before a presentation listened; the first listener receives them. */
+ 	private pendingWarnings: string[] = [];
++	private scope: SubagentScope | undefined;
++	private offSubagents: (() => void) | undefined;
+ 	private readonly offSession: () => void;
+ 	private readonly offCleanup: () => void;
+ 	private disposed = false;
+@@ -172,7 +196,8 @@ export class TaskService {
+ 			case "turn_end": {
+ 				const usage = (event.message as { role?: string; usage?: Usage }).usage;
+ 				if (event.message.role === "assistant" && usage) {
+-					for (const activity of this.working.values()) {
++					for (const [taskId, activity] of this.working) {
++						if (this.agentOf(taskId)) continue;
+ 						activity.inputTokens += usage.input ?? 0;
+ 						activity.outputTokens += usage.output ?? 0;
+ 					}
+@@ -208,9 +233,21 @@ export class TaskService {
+ 		return this.store.get(id);
+ 	}
+ 
+-	/** What the widget shows for each task the session works on now. */
++	/** What the widget shows for each task the session or one of its agents works on now. */
+ 	activity(taskId: string): TaskActivity | undefined {
+-		return this.working.get(taskId);
++		const working = this.working.get(taskId);
++		if (!working) return undefined;
++		const agent = this.agentOf(taskId);
++		return agent
++			? { startedAt: working.startedAt, inputTokens: agent.usage.input, outputTokens: agent.usage.output }
++			: working;
++	}
++
++	/** The running agent `TaskExecute` started for the task. */
++	private agentOf(taskId: string): SubagentView | undefined {
++		const agentId = this.store.get(taskId)?.metadata.agentId;
++		if (typeof agentId !== "string" || !this.agentTasks.has(agentId)) return undefined;
++		return this.scope?.service.lookup(agentId);
+ 	}
+ 
+ 	private markWorking(taskId: string, on: boolean): void {
+@@ -274,10 +311,187 @@ export class TaskService {
+ 		return count;
+ 	}
+ 
+-	/** The session ended: the list stays readable for a fork of this session. */
++	/** The subagent scope, subscribed once; throws when the session has no subagent service. */
++	private subagents(): SubagentScope {
++		if (!this.scope) {
++			const scope = subagentScope(this.session);
++			if (!scope) throw new Error("This session has no subagent service.");
++			this.scope = scope;
++			this.offSubagents = scope.service.subscribe((event) => this.onSubagentEvent(event));
++		}
++		return this.scope;
++	}
++
++	/** The prompt of a task an agent runs: the task, its prerequisites' results, and the caller's context. */
++	private taskPrompt(task: Task, additionalContext?: string): string {
++		let prompt = `You are executing task #${task.id}: "${task.subject}"\n\n${task.description}`;
++		const results: string[] = [];
++		for (const id of task.blockedBy) {
++			const prerequisite = this.store.get(id);
++			const result = prerequisite?.metadata.result;
++			if (typeof result !== "string" || !result) continue;
++			const text =
++				result.length > PREREQUISITE_RESULT_LIMIT
++					? `${result.slice(0, PREREQUISITE_RESULT_LIMIT)}\n\n[... truncated; use TaskGet for full output]`
++					: result;
++			results.push(`### Task #${id}: ${prerequisite?.subject}\n${text}`);
++		}
++		if (results.length > 0) prompt += `\n\n## Prerequisite task results\n\n${results.join("\n\n")}`;
++		if (additionalContext) prompt += `\n\n${additionalContext}`;
++		return `${prompt}\n\nComplete this task fully. Do not attempt to manage tasks yourself.`;
++	}
++
++	/** Starts one background agent per ready task; the text lists what started and what was skipped. */
++	async execute(taskIds: readonly string[], options: ExecuteOptions): Promise<string> {
++		const scope = this.subagents();
++		const skipped: string[] = [];
++		const launched: string[] = [];
++		for (const id of taskIds) {
++			const task = this.store.get(id);
++			if (!task) {
++				skipped.push(`#${id}: not found`);
++				continue;
++			}
++			if (task.status !== "pending") {
++				skipped.push(`#${id}: not pending (status: ${task.status})`);
++				continue;
++			}
++			const agentType = task.metadata.agentType;
++			if (typeof agentType !== "string" || !agentType) {
++				skipped.push(`#${id}: no agentType set; create with agentType parameter or update metadata`);
++				continue;
++			}
++			const open = task.blockedBy.filter((blocker) => this.store.get(blocker)?.status !== "completed");
++			if (open.length > 0) {
++				skipped.push(`#${id}: blocked by ${open.map((blocker) => `#${blocker}`).join(", ")}`);
++				continue;
++			}
++			this.store.update(id, { status: "in_progress" });
++			try {
++				const request: SpawnRequest = {
++					type: agentType,
++					prompt: this.taskPrompt(task, options.additionalContext),
++					description: task.subject,
++					model: options.model ? await scope.service.resolveCallerModel(options.model, agentType) : undefined,
++					params: { max_turns: options.maxTurns, thinking: options.thinking },
++					mode: "detached-background",
++					// Mapped before the run starts, so even an instant end finds its task.
++					onCreated: (view) => this.agentTasks.set(view.id, id),
++				};
++				const view = scope.nested ? await scope.nested.spawn(request) : await scope.service.spawn(request);
++				this.store.update(id, { owner: view.id, metadata: { agentId: view.id } });
++				this.markWorking(id, true);
++				launched.push(`#${id} → agent ${view.id}`);
++			} catch (error) {
++				this.store.update(id, { status: "pending" });
++				skipped.push(`#${id}: spawn failed: ${errorText(error)}`);
++			}
++		}
++		this.changed();
++		const lines: string[] = [];
++		if (launched.length > 0) {
++			lines.push(
++				`Launched ${launched.length} agent(s):\n${launched.join("\n")}\nUse TaskOutput to check progress. Do not spawn additional agents for these tasks.`,
++			);
++		}
++		if (skipped.length > 0) lines.push(`Skipped:\n${skipped.join("\n")}`);
++		return lines.length > 0 ? lines.join("\n\n") : "No tasks to execute.";
++	}
++
++	/** An agent `TaskExecute` started ended: its task completes, keeps a stopped agent's partial output, or goes back to pending. */
++	private onSubagentEvent(event: SubagentEvent): void {
++		if (event.type !== "ended") return;
++		const { id: agentId, status, result, error } = event.record;
++		const taskId = this.agentTasks.get(agentId);
++		if (!taskId) return;
++		this.agentTasks.delete(agentId);
++		const task = this.store.get(taskId);
++		if (!task) return;
++		if (status === "completed" || status === "steered") {
++			this.store.update(taskId, { status: "completed", metadata: { result: result ?? null } });
++			this.autoClear.trackCompletion(taskId, this.cadence.currentTurn);
++		} else if (status === "stopped") {
++			this.store.update(taskId, {
++				status: "completed",
++				metadata: { result: result || task.metadata.result || null },
++			});
++			this.autoClear.trackCompletion(taskId, this.cadence.currentTurn);
++		} else {
++			// A task back to pending has no current result; an earlier run's would outrank this error.
++			this.store.update(taskId, { status: "pending", metadata: { result: null, lastError: error || status } });
++			this.autoClear.resetBatchCountdown();
++		}
++		this.markWorking(taskId, false);
++		this.changed();
++	}
++
++	/** A task id, or the id or id prefix of an agent `TaskExecute` started; undefined when neither matches. */
++	private resolve(ref: string): Task | undefined {
++		const task = this.store.get(ref);
++		if (task) return task;
++		for (const [agentId, taskId] of this.agentTasks) {
++			if (agentId === ref || agentId.startsWith(ref)) return this.store.get(taskId);
++		}
++		return undefined;
++	}
++
++	/**
++	 * The task's agent outcome. With `block`, waits up to `timeout` ms for a running agent. A result
++	 * handed over here is consumed, so its completion notification is dropped.
++	 */
++	async output(ref: string, block: boolean, timeout: number, signal?: AbortSignal): Promise<string> {
++		// An empty id would prefix-match whichever agent comes first.
++		if (!ref) throw new Error("task_id is required");
++		const task = this.resolve(ref);
++		if (!task) throw new Error(`No task found with ID ${ref}`);
++		const agentId = task.metadata.agentId;
++		if (typeof agentId !== "string") throw new Error(`No background process for task ${ref}`);
++		const scope = this.subagents();
++		if (block && task.status === "in_progress" && this.agentTasks.has(agentId)) {
++			const signals = [AbortSignal.timeout(timeout), ...(signal ? [signal] : [])];
++			await scope.service.waitForResult(agentId, AbortSignal.any(signals), scope.owner).catch(() => undefined);
++		}
++		const current = this.store.get(task.id) ?? task;
++		// Consume only an outcome the task holds; a status alone leaves the notification to announce it.
++		if (!this.agentTasks.has(agentId) && current.status !== "in_progress")
++			scope.service.consume(agentId, scope.owner);
++		const result = current.metadata.result;
++		const lastError = current.metadata.lastError;
++		const output = typeof result === "string" ? result : lastError ? `Error: ${String(lastError)}` : undefined;
++		return `Task #${current.id} [${current.status}]: subagent ${agentId}${output ? `\n\n${output}` : ""}`;
++	}
++
++	/** Stops the task's running agent; the task completes and keeps the agent's partial output. */
++	stop(ref: string): string {
++		if (!ref) throw new Error("task_id is required");
++		const task = this.resolve(ref);
++		const agentId = task?.metadata.agentId;
++		if (!task || typeof agentId !== "string" || task.status !== "in_progress") {
++			throw new Error(`No running background process for task ${ref}`);
++		}
++		this.store.update(task.id, { status: "completed" });
++		this.autoClear.trackCompletion(task.id, this.cadence.currentTurn);
++		const scope = this.subagents();
++		scope.service.stop(agentId, scope.owner);
++		this.markWorking(task.id, false);
++		this.changed();
++		return `Task #${task.id} stopped successfully`;
++	}
++
++	/**
++	 * The session ended. Its agents end with it (D21), so every task whose agent still runs goes back to
++	 * pending. The list stays readable for a fork of this session until the next session ends.
++	 */
+ 	dispose(): void {
+ 		if (this.disposed) return;
+ 		this.disposed = true;
++		// The subagent service may end the agents first; either way the task carries the same error.
++		for (const taskId of this.agentTasks.values()) {
++			if (this.store.get(taskId)?.status !== "in_progress") continue;
++			this.store.update(taskId, { status: "pending", metadata: { result: null, lastError: SESSION_ENDED_ERROR } });
++		}
++		this.agentTasks.clear();
++		this.offSubagents?.();
+ 		this.offSession();
+ 		this.offCleanup();
+ 		const store = this.store;
+diff --git a/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts b/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts
+index 242170678..53f3a6d6f 100644
+--- a/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts
++++ b/packages/coding-agent/src/core/fork-builtins/tasks/tools/tools.ts
+@@ -1,5 +1,5 @@
+ /**
+- * Fork-owned: the task base tools (D47). pi-tasks `src/index.ts:570-1260` at 83480bd is the
++ * Fork-owned: the seven task base tools (D47). pi-tasks `src/index.ts:570-1260` at 83480bd is the
+  * behavior reference; the names, parameters and descriptions follow Claude Code's tools. Each tool
+  * calls the session's `TaskService`.
+  */
+@@ -7,15 +7,27 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+ import { Type } from "typebox";
+ import type { AgentSession } from "../../../agent-session.ts";
+ import type { ToolDefinition } from "../../../extensions/types.ts";
+-import { TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME } from "../names.ts";
++import {
++	TASK_CREATE_TOOL_NAME,
++	TASK_EXECUTE_TOOL_NAME,
++	TASK_GET_TOOL_NAME,
++	TASK_LIST_TOOL_NAME,
++	TASK_OUTPUT_TOOL_NAME,
++	TASK_STOP_TOOL_NAME,
++	TASK_UPDATE_TOOL_NAME,
++} from "../names.ts";
+ import type { TaskService } from "../service/service.ts";
+ import { requireTaskService } from "../service/sessions.ts";
+ import type { Task } from "../store.ts";
+ import {
+ 	TASK_CREATE_DESCRIPTION,
+ 	TASK_CREATE_GUIDELINES,
++	TASK_EXECUTE_DESCRIPTION,
++	TASK_EXECUTE_GUIDELINES,
+ 	TASK_GET_DESCRIPTION,
+ 	TASK_LIST_DESCRIPTION,
++	TASK_OUTPUT_DESCRIPTION,
++	TASK_STOP_DESCRIPTION,
+ 	TASK_UPDATE_DESCRIPTION,
+ } from "./descriptions.ts";
+ 
+@@ -76,6 +88,24 @@ const UPDATE_PARAMETERS = Type.Object({
+ 	addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that block this task" })),
+ });
+ 
++const OUTPUT_PARAMETERS = Type.Object({
++	task_id: Type.String({ description: "The task ID to get output from" }),
++	block: Type.Boolean({ description: "Whether to wait for completion", default: true }),
++	timeout: Type.Number({ description: "Max wait time in ms", default: 30000, minimum: 0, maximum: 600000 }),
++});
++
++const STOP_PARAMETERS = Type.Object({
++	task_id: Type.String({ description: "The ID of the task whose agent to stop" }),
++});
++
++const EXECUTE_PARAMETERS = Type.Object({
++	task_ids: Type.Array(Type.String(), { description: "Task IDs to execute as subagents" }),
++	additional_context: Type.Optional(Type.String({ description: "Extra context for agent prompts" })),
++	model: Type.Optional(Type.String({ description: "Model override for agents" })),
++	thinking: Type.Optional(Type.String({ description: 'Thinking level override for agents (e.g. "low", "high")' })),
++	max_turns: Type.Optional(Type.Number({ description: "Max turns per agent", minimum: 1 })),
++});
++
+ export function createTaskCreateToolDefinition(session: AgentSession): ToolDefinition<typeof CREATE_PARAMETERS> {
+ 	return {
+ 		name: TASK_CREATE_TOOL_NAME,
+@@ -163,10 +193,62 @@ export function createTaskUpdateToolDefinition(session: AgentSession): ToolDefin
+ 	};
+ }
+ 
++export function createTaskOutputToolDefinition(session: AgentSession): ToolDefinition<typeof OUTPUT_PARAMETERS> {
++	return {
++		name: TASK_OUTPUT_TOOL_NAME,
++		label: TASK_OUTPUT_TOOL_NAME,
++		description: TASK_OUTPUT_DESCRIPTION,
++		parameters: OUTPUT_PARAMETERS,
++		async execute(_toolCallId, params, signal) {
++			const text = await requireTaskService(session).output(
++				params.task_id,
++				params.block ?? true,
++				params.timeout ?? 30000,
++				signal,
++			);
++			return textResult(text);
++		},
++	};
++}
++
++export function createTaskStopToolDefinition(session: AgentSession): ToolDefinition<typeof STOP_PARAMETERS> {
++	return {
++		name: TASK_STOP_TOOL_NAME,
++		label: TASK_STOP_TOOL_NAME,
++		description: TASK_STOP_DESCRIPTION,
++		parameters: STOP_PARAMETERS,
++		async execute(_toolCallId, params) {
++			return textResult(requireTaskService(session).stop(params.task_id));
++		},
++	};
++}
++
++export function createTaskExecuteToolDefinition(session: AgentSession): ToolDefinition<typeof EXECUTE_PARAMETERS> {
++	return {
++		name: TASK_EXECUTE_TOOL_NAME,
++		label: TASK_EXECUTE_TOOL_NAME,
++		description: TASK_EXECUTE_DESCRIPTION,
++		promptGuidelines: [...TASK_EXECUTE_GUIDELINES],
++		parameters: EXECUTE_PARAMETERS,
++		async execute(_toolCallId, params) {
++			const text = await requireTaskService(session).execute(params.task_ids, {
++				additionalContext: params.additional_context,
++				model: params.model,
++				thinking: params.thinking,
++				maxTurns: params.max_turns,
++			});
++			return textResult(text);
++		},
++	};
++}
++
+ /** Each task tool's name and factory, in registration order. */
+ export const TASK_TOOL_FACTORIES: ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]> = [
+ 	[TASK_CREATE_TOOL_NAME, createTaskCreateToolDefinition],
+ 	[TASK_LIST_TOOL_NAME, createTaskListToolDefinition],
+ 	[TASK_GET_TOOL_NAME, createTaskGetToolDefinition],
+ 	[TASK_UPDATE_TOOL_NAME, createTaskUpdateToolDefinition],
++	[TASK_EXECUTE_TOOL_NAME, createTaskExecuteToolDefinition],
++	[TASK_OUTPUT_TOOL_NAME, createTaskOutputToolDefinition],
++	[TASK_STOP_TOOL_NAME, createTaskStopToolDefinition],
+ ] as ReadonlyArray<readonly [string, (session: AgentSession) => ToolDefinition]>;
+diff --git a/packages/coding-agent/test/fork-builtins/base-tools.test.ts b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+index 148b952d4..3b4bf1952 100644
+--- a/packages/coding-agent/test/fork-builtins/base-tools.test.ts
++++ b/packages/coding-agent/test/fork-builtins/base-tools.test.ts
+@@ -18,6 +18,9 @@ const NAMES = [
+ 	"TaskList",
+ 	"TaskGet",
+ 	"TaskUpdate",
++	"TaskExecute",
++	"TaskOutput",
++	"TaskStop",
+ ];
+ 
+ /** Registration never touches the session; the subagent service is built on the first Agent call. */
+diff --git a/packages/coding-agent/test/suite/fork-tasks-execute.test.ts b/packages/coding-agent/test/suite/fork-tasks-execute.test.ts
+new file mode 100644
+index 000000000..3247f4fa6
+--- /dev/null
++++ b/packages/coding-agent/test/suite/fork-tasks-execute.test.ts
+@@ -0,0 +1,108 @@
++/**
++ * Fork-owned: tasks run by subagents through the typed service (plan T3, D19): `TaskExecute`,
++ * `TaskOutput` and `TaskStop`, the session's end, and task tools in a child session (D22).
++ */
++import { getCurrentTools } from "@earendil-works/pi-ai";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { inspectRecord } from "../../src/core/fork-builtins/subagents/service/service.ts";
++import { requireTaskService } from "../../src/core/fork-builtins/tasks/service/sessions.ts";
++import { type Behavior, CHILD_START, call, held, text, textOf } from "./fork-subagents-fixtures.ts";
++import { subagentsOf, taskSession, withRouter } from "./fork-tasks-fixtures.ts";
++import type { Harness } from "./harness.ts";
++
++const harnesses: Harness[] = [];
++
++afterEach(() => {
++	for (const harness of harnesses.splice(0)) harness.cleanup();
++	vi.unstubAllEnvs();
++});
++
++async function session(...args: Parameters<typeof taskSession>): Promise<Harness> {
++	const harness = await taskSession(...args);
++	harnesses.push(harness);
++	return harness;
++}
++
++describe("tasks run by subagents", () => {
++	it("TaskExecute runs a task through the subagent service, and TaskOutput hands over its result", async () => {
++		const harness = withRouter(await session());
++		await call(harness, "TaskCreate", { subject: "survey", description: "survey the repo", agentType: "worker" });
++		const launched = text(await call(harness, "TaskExecute", { task_ids: ["1"] }));
++		expect(launched).toMatch(/^Launched 1 agent\(s\):\n#1 → agent \S+/);
++		const tasks = requireTaskService(harness.session);
++		const agentId = tasks.get("1")?.metadata.agentId as string;
++		const record = subagentsOf(harness).get(agentId);
++		expect(record?.mode).toBe("detached-background");
++		expect(record?.prompt).toContain('You are executing task #1: "survey"');
++		const output = text(await call(harness, "TaskOutput", { task_id: "1", block: true, timeout: 8000 }));
++		expect(output).toMatch(/^Task #1 \[completed\]: subagent \S+\n\nreply to You are executing task #1/);
++		expect(tasks.get("1")?.status).toBe("completed");
++		expect(subagentsOf(harness).get(agentId)?.resultConsumed).toBe(true);
++	});
++
++	it("a refused spawn leaves the task pending and names the reason", async () => {
++		const harness = withRouter(await session({ subagents: { fallbackSubagent: "none" } }));
++		await call(harness, "TaskCreate", { subject: "x", description: "x", agentType: "nope" });
++		const result = text(await call(harness, "TaskExecute", { task_ids: ["1"] }));
++		expect(result).toMatch(/^Skipped:\n#1: spawn failed: /);
++		expect(requireTaskService(harness.session).get("1")?.status).toBe("pending");
++	});
++
++	it("TaskStop stops the agent, and the task completes", async () => {
++		const hold = held();
++		const harness = withRouter(await session(), { survey: [hold.behavior] });
++		await call(harness, "TaskCreate", { subject: "survey", description: "survey", agentType: "worker" });
++		await call(harness, "TaskExecute", { task_ids: ["1"] });
++		const tasks = requireTaskService(harness.session);
++		const agentId = tasks.get("1")?.metadata.agentId as string;
++		await vi.waitFor(() => expect(hold.requests()).toBe(1), CHILD_START);
++		expect(text(await call(harness, "TaskStop", { task_id: "1" }))).toBe("Task #1 stopped successfully");
++		const done = await subagentsOf(harness).waitForResult(agentId);
++		expect(done.status).toBe("stopped");
++		expect(tasks.get("1")?.status).toBe("completed");
++	});
++
++	it("the session's end sends a task whose agent still runs back to pending", async () => {
++		const hold = held();
++		const harness = withRouter(await session(), { survey: [hold.behavior] });
++		await call(harness, "TaskCreate", { subject: "survey", description: "survey", agentType: "worker" });
++		await call(harness, "TaskExecute", { task_ids: ["1"] });
++		await vi.waitFor(() => expect(hold.requests()).toBe(1), CHILD_START);
++		const tasks = requireTaskService(harness.session);
++		harness.session.dispose();
++		expect(tasks.isDisposed).toBe(true);
++		expect(tasks.get("1")?.status).toBe("pending");
++		expect(tasks.get("1")?.metadata.lastError).toBe("The session ended before the agent finished.");
++	});
++});
++
++describe("task tools in a child session (D22)", () => {
++	it("reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights", async () => {
++		const seen = new Map<string, string[]>();
++		const hold = held();
++		const record: Behavior = (context) => {
++			const first = context.messages.find((message) => message.role === "user");
++			const task = textOf(first?.content).split(" ")[0];
++			seen.set(
++				task,
++				getCurrentTools(context.messages).map((tool) => tool.name),
++			);
++			return hold.behavior(context);
++		};
++		const harness = withRouter(await session(), { plain: [record], keeper: [record] });
++		const service = subagentsOf(harness);
++		const plain = await service.spawn({ type: "worker", prompt: "plain work", description: "p", mode: "detached" });
++		const keeper = await service.spawn({ type: "tasker", prompt: "keeper work", description: "k", mode: "detached" });
++		await vi.waitFor(() => expect(seen.size).toBe(2), CHILD_START);
++		expect(seen.get("plain")).not.toContain("TaskCreate");
++		expect(seen.get("keeper")).toEqual(expect.arrayContaining(["TaskCreate", "TaskExecute"]));
++		const child = inspectRecord(service, keeper.id)?.child?.session;
++		if (!child) throw new Error("no child session");
++		const tasks = requireTaskService(child);
++		tasks.create("nested", "d", undefined, "worker");
++		expect(await tasks.execute(["1"], {})).toMatch(/^Skipped:\n#1: spawn failed: .*has no allowed_subagents/);
++		hold.release();
++		await service.waitForResult(plain.id);
++		await service.waitForResult(keeper.id);
++	});
++});
+diff --git a/packages/coding-agent/test/suite/fork-tasks-fixtures.ts b/packages/coding-agent/test/suite/fork-tasks-fixtures.ts
+index f9b138bc0..f436ea3ea 100644
+--- a/packages/coding-agent/test/suite/fork-tasks-fixtures.ts
++++ b/packages/coding-agent/test/suite/fork-tasks-fixtures.ts
+@@ -13,7 +13,7 @@ import type { Settings } from "../../src/core/settings-manager.ts";
+ import { type Behavior, router } from "./fork-subagents-fixtures.ts";
+ import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
+ 
+-export const TASK_TOOLS = ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate"];
++export const TASK_TOOLS = ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskExecute", "TaskOutput", "TaskStop"];
+ 
+ /** A session with fork built-ins on; `settings` becomes its `forkBuiltins` object. Callers clean it up. */
+ export async function taskSession(

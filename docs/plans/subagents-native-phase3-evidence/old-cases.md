@@ -101,14 +101,14 @@ Each task T1 to T5 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 92 | test/agent-mention-wiring.test.ts > @agent-<type> — Claude Code's manual spelling > reaches a running agent, not a second copy of it | T4.10 |  |
 | 93 | test/agent-mention-wiring.test.ts > @agent-<type> — Claude Code's manual spelling > prefers an agent literally named agent-<x> over the unwrapped spelling | T4.10 |  |
 | 94 | test/agent-mention-wiring.test.ts > @agent-<type> — Claude Code's manual spelling > still falls through when nothing answers either spelling | T4.10 |  |
-| 95 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > reopens the conversation instead of starting a fresh agent | T2.1 |  |
-| 96 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > hands the resumed agent the handle back instead of numbering it | T2.2 |  |
-| 97 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > stops resolving to the tombstone once the resume has taken the name | T2.3 |  |
-| 98 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > gives a named agent its alias back too | T2.2 |  |
-| 99 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > refuses to reopen a conversation under a substitute agent | T2.4 |  |
-| 100 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > resumes again once the agent is re-enabled | T2.5 |  |
+| 95 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > reopens the conversation instead of starting a fresh agent | T2.1 | test/suite/fork-subagents-mentions.test.ts > reopen reopens the evicted conversation: the child's first request holds the old user messages, then the new prompt |
+| 96 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > hands the resumed agent the handle back instead of numbering it | T2.2 | test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back |
+| 97 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > stops resolving to the tombstone once the resume has taken the name | T2.3 | test/suite/fork-subagents-mentions.test.ts > reopen resolves the name to the reopened agent, not the tombstone |
+| 98 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > gives a named agent its alias back too | T2.2 | test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back |
+| 99 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > refuses to reopen a conversation under a substitute agent | T2.4 | test/suite/fork-subagents-mentions.test.ts > reopen refuses a deleted or disabled type, creating no record and keeping the tombstone |
+| 100 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > resumes again once the agent is re-enabled | T2.5 | test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again |
 | 101 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > keeps the agent resolvable when the resume itself fails | T4.15 |  |
-| 102 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > keeps the original description rather than relabelling from the message | T2.6 |  |
+| 102 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > keeps the original description rather than relabelling from the message | T2.6 | test/suite/fork-subagents-mentions.test.ts > reopen keeps the tombstone's description rather than one derived from the prompt |
 | 103 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > does not let the tools steer or read an agent that is gone | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets the tools report an evicted agent's handle and an unknown one as not found |
 | 104 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > reports a session that is gone, rather than starting something else | T4.5 |  |
 | 105 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > forgets an unopenable session so the next mention starts fresh | T4.5 |  |

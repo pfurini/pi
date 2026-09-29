@@ -131,6 +131,8 @@ export interface SubagentRecord extends SubagentView {
 	detachSignal?: () => void;
 	/** Steers that arrived before the child existed. */
 	pendingSteers: string[];
+	/** The session file a mention reopens from a tombstone; the first start passes it to the runner. */
+	reopenFrom?: string;
 	/** Called once when the current run ends. */
 	readonly waiters: Set<() => void>;
 	/** The owner's end already reported this run's end. */

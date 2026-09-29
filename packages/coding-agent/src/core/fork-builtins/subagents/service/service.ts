@@ -38,6 +38,7 @@ import type { AgentFileLoad, SkillAgentSource } from "../definitions/load.ts";
 import {
 	type AgentRegistry,
 	buildAgentRegistry,
+	findEnabledAgent,
 	loadAgentRegistry,
 	resolveSpawnType,
 	type SpawnTypeResolution,
@@ -240,6 +241,8 @@ export class SubagentService {
 	/** The child teardowns `dispose()` and a late attach started; `shutdown()` awaits them. */
 	private readonly teardowns: Promise<void>[] = [];
 	private readonly startupWaitMs: number;
+	/** Reopens still starting, by tombstone handle: a second one would fork the same session file. */
+	private readonly reopening = new Map<string, Promise<SubagentView>>();
 
 	constructor(session: AgentSession, context: SubagentSessionContext, options: SubagentServiceOptions = {}) {
 		this.session = session;
@@ -419,6 +422,7 @@ export class SubagentService {
 		request: SpawnRequest,
 		resolveType: (registry: AgentRegistry, settings: Readonly<SubagentSettings>) => SpawnTypeResolution,
 		parent?: SubagentRecord,
+		reopen?: Tombstone,
 	): Promise<SubagentRecord> {
 		this.assertLive();
 		// An owned spawn without a cwd (RPC or a fork skill on a child's bus) works where its delegating agent works.
@@ -458,6 +462,7 @@ export class SubagentService {
 			mode,
 			fellBackFrom,
 			parent,
+			reopen,
 		});
 		// A background Agent spawn outlives the tool call; a foreground or detached one stops with its signal.
 		if (request.signal && mode !== "background") this.stopOn(request.signal, record);
@@ -516,12 +521,17 @@ export class SubagentService {
 		mode: SpawnMode;
 		fellBackFrom?: string;
 		parent?: SubagentRecord;
+		reopen?: Tombstone;
 	}): SubagentRecord {
 		const { parent } = input;
 		// Handles name the session's own agents; a nested one is reached by id through its parent.
 		let handle: string | undefined;
 		let alias: string | undefined;
-		if (!parent) {
+		if (input.reopen) {
+			// A reopened agent takes back the names its tombstone held; no live agent holds them.
+			handle = input.reopen.handle;
+			alias = input.reopen.alias;
+		} else if (!parent) {
 			const taken = new Set(this.retention.tombstones.names());
 			for (const record of this.records.values()) {
 				if (record.handle) taken.add(record.handle);
@@ -559,6 +569,7 @@ export class SubagentService {
 			activity: [],
 			effective: {},
 			pendingSteers: [],
+			reopenFrom: input.reopen?.sessionFile,
 			waiters: new Set(),
 		};
 		// Known at once, so a background spawn's result can name it before the child exists. The
@@ -677,6 +688,7 @@ export class SubagentService {
 			thinking: invocation.thinking,
 			isolated: invocation.isolated,
 			persist: definition.persistSession ?? (record.parent ? false : settings.rememberAgents),
+			resumeSessionFile: record.reopenFrom,
 			sessionName: `${definition.name}#${record.id.slice(0, 8)}`,
 			forkBaseToolNames: this.context.forkBaseToolNames(),
 			customTools: this.nestedToolsFor(record, settings),
@@ -837,6 +849,48 @@ export class SubagentService {
 	/** Forgets an evicted agent whose session is gone, so its names are free again. */
 	dropTombstone(handle: string): void {
 		this.retention.tombstones.delete(handle);
+	}
+
+	/**
+	 * Reopens an evicted agent's session with a new prompt, as a detached background run that takes
+	 * back the tombstone's names and description. Throws when the agent's type is no longer an enabled
+	 * agent: a conversation never continues under another agent's prompt and tools. While an earlier
+	 * reopen of the same tombstone still starts, this one joins it instead of forking the session file.
+	 */
+	async reopen(entry: Tombstone, prompt: string): Promise<SubagentView> {
+		// Checked and reserved before the first await, so two reopens in one tick cannot both start.
+		const earlier = this.reopening.get(entry.handle);
+		if (earlier) return this.joinReopen(earlier, entry, prompt);
+		const started = this.spawnRecord(
+			{ type: entry.type, prompt, description: entry.description, mode: "detached-background" },
+			(registry) => {
+				const definition = findEnabledAgent(registry, entry.type);
+				return definition
+					? { ok: true, definition }
+					: { ok: false, message: `The ${entry.type} agent is no longer available.` };
+			},
+			undefined,
+			entry,
+		);
+		this.reopening.set(entry.handle, started);
+		try {
+			return await started;
+		} finally {
+			if (this.reopening.get(entry.handle) === started) this.reopening.delete(entry.handle);
+		}
+	}
+
+	/**
+	 * Steers a prompt to the agent an earlier reopen of the same tombstone starts. When that reopen
+	 * failed, the tombstone is still there, and this call reopens it.
+	 */
+	private async joinReopen(earlier: Promise<SubagentView>, entry: Tombstone, prompt: string): Promise<SubagentView> {
+		const view = await earlier.catch(() => undefined);
+		if (!view) return this.reopen(entry, prompt);
+		const outcome = await this.steer(view.id, prompt);
+		if (outcome.kind === "refused") throw new Error(outcome.reason);
+		if (outcome.kind === "failed") throw new Error(outcome.error);
+		return view;
 	}
 
 	/**

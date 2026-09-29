@@ -4,15 +4,26 @@
  * prompts as a user would. Old pi-subagents tests at 79a7c42 this covers: agent-mention-wiring,
  * mention-start-notification (see docs/plans/subagents-native-phase3-evidence/old-cases.md).
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type Context, fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../../src/core/event-bus.ts";
 import { inspectRecord, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import subagentsPresentation from "../../src/core/fork-builtins/subagents/ui/index.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
-import { type Behavior, CHILD_START, call, held, router, say, text } from "./fork-subagents-fixtures.ts";
+import {
+	type Behavior,
+	CHILD_START,
+	call,
+	held,
+	notices,
+	router,
+	say,
+	text,
+	textOf,
+} from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 const harnesses: Harness[] = [];
@@ -74,6 +85,38 @@ function rename(subagents: SubagentService, id: string, handle: string): void {
 /** Ends every finished record's retention window, so the sweep evicts it. */
 function evict(): void {
 	vi.advanceTimersByTime(11 * 60_000);
+}
+
+/** The user messages of a request, as text. */
+function users(context: Context): string[] {
+	return context.messages.filter((message) => message.role === "user").map((message) => textOf(message.content));
+}
+
+/** A reply that records the user messages of each request it answers. */
+function recorder() {
+	const seen: string[][] = [];
+	const behavior: Behavior = (context) => {
+		seen.push(users(context));
+		return fauxAssistantMessage("ok");
+	};
+	return { seen, behavior };
+}
+
+/** Runs a `worker` agent to its end, evicts it, and returns its tombstone. Needs fake `setInterval` and `Date`. */
+async function evictedWorker(subagents: SubagentService, prompt: string, name?: string) {
+	const view = await spawnWorker(subagents, prompt, name);
+	await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+	evict();
+	const entry = subagents.listTombstones().find((tombstone) => tombstone.id === view.id);
+	if (!entry) throw new Error(`no tombstone for ${view.id}`);
+	return entry;
+}
+
+/** Rewrites the `worker` agent file, or deletes it with `undefined`. */
+function workerFile(harness: Harness, frontmatter: string | undefined): void {
+	const path = join(harness.tempDir, "agents", "worker.md");
+	if (frontmatter === undefined) unlinkSync(path);
+	else writeFileSync(path, `---\n${frontmatter}\ntools: read\n---\nYou are a test worker.`);
 }
 
 describe("handle resolution", () => {
@@ -196,5 +239,121 @@ describe("handle resolution", () => {
 		expect(target(subagents, "keeper")).toBeUndefined();
 		const second = await spawnWorker(subagents, "task second", "Keeper");
 		expect(second).toMatchObject({ handle: "worker", alias: "keeper" });
+	});
+});
+
+describe("reopen", () => {
+	it("reopens the evicted conversation: the child's first request holds the old user messages, then the new prompt", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const child = recorder();
+		const harness = await parent({ "task delta": [child.behavior], "come back": [child.behavior] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task delta");
+		const before = child.seen.length;
+		const view = await subagents.reopen(entry, "come back");
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		const first = child.seen[before];
+		expect(first).toEqual(expect.arrayContaining(["task delta", "come back"]));
+		expect(first.indexOf("task delta")).toBeLessThan(first.indexOf("come back"));
+	});
+
+	it("gives the reopened agent its tombstone's handle and alias back", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const gate = held();
+		const harness = await parent({ "task audit": [say("audit done")], "anything else": [gate.behavior] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task audit", "Auth Audit");
+		expect(entry).toMatchObject({ handle: "worker", alias: "auth-audit" });
+		const view = await subagents.reopen(entry, "anything else");
+		expect(view).toMatchObject({ handle: "worker", alias: "auth-audit" });
+		gate.release();
+	});
+
+	it("resolves the name to the reopened agent, not the tombstone", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const gate = held();
+		const harness = await parent({ "task epsilon": [say("epsilon done")], "once more": [gate.behavior] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task epsilon");
+		const view = await subagents.reopen(entry, "once more");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		expect(target(subagents, "worker")).toBe(`live:${view.id}`);
+		gate.release();
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		expect(target(subagents, "worker")).toBe(`live:${view.id}`);
+	});
+
+	it("refuses a deleted or disabled type, creating no record and keeping the tombstone", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent({ "task zeta": [say("zeta done")] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task zeta");
+		workerFile(harness, "description: Test worker. It does work.\nenabled: false");
+		await expect(subagents.reopen(entry, "hi")).rejects.toThrow("The worker agent is no longer available.");
+		workerFile(harness, undefined);
+		await expect(subagents.reopen(entry, "hi")).rejects.toThrow("The worker agent is no longer available.");
+		expect(subagents.list()).toEqual([]);
+		expect(subagents.listTombstones()).toEqual([entry]);
+	});
+
+	it("reopens the same tombstone once its type is enabled again", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const child = recorder();
+		const harness = await parent({ "task eta": [child.behavior], "hi again": [child.behavior] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task eta");
+		workerFile(harness, "description: Test worker. It does work.\nenabled: false");
+		await expect(subagents.reopen(entry, "hi")).rejects.toThrow("no longer available");
+		workerFile(harness, "description: Test worker. It does work.");
+		// The refusal kept the tombstone, so the name still reaches it.
+		const again = subagents.resolveMention("worker");
+		if (again?.kind !== "tombstone") throw new Error("the tombstone is gone");
+		const before = child.seen.length;
+		const view = await subagents.reopen(again.entry, "hi again");
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		expect(view.handle).toBe("worker");
+		expect(child.seen[before]).toEqual(expect.arrayContaining(["task eta", "hi again"]));
+	});
+
+	it("keeps the tombstone's description rather than one derived from the prompt", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const gate = held();
+		const harness = await parent({ "find flaky tests": [say("found")], "anything else": [gate.behavior] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "find flaky tests");
+		const view = await subagents.reopen(entry, "anything else");
+		expect(view.description).toBe("find flaky tests");
+		gate.release();
+	});
+
+	it("runs detached in the background: it notifies once on completion and joins no batch", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent({ "task theta": [say("theta done")], "report back": [say("reported back")] });
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task theta");
+		const view = await subagents.reopen(entry, "report back");
+		expect(view).toMatchObject({ mode: "detached-background", joinMode: undefined });
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		const reported = () => notices(harness.session).filter((notice) => notice.includes("reported back"));
+		await vi.waitFor(() => expect(reported()).toHaveLength(1), CHILD_START);
+	});
+
+	it("joins a reopen that is still starting, so one agent continues the conversation and gets both prompts", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const child = recorder();
+		const harness = await parent({
+			"task kappa": [child.behavior],
+			"go on": [child.behavior],
+			"and more": [child.behavior],
+		});
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task kappa");
+		const [first, second] = await Promise.all([
+			subagents.reopen(entry, "go on"),
+			subagents.reopen(entry, "and more"),
+		]);
+		expect(second.id).toBe(first.id);
+		expect(subagents.list()).toHaveLength(1);
+		await vi.waitFor(() => expect(child.seen.flat()).toContain("and more"), CHILD_START);
 	});
 });

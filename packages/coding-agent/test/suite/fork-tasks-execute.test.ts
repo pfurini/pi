@@ -463,6 +463,28 @@ describe("the session's end and /reload", () => {
 		},
 	);
 
+	it.each(["the task service", "the subagent service"])(
+		"sends a task the model changed while its agent ran back to pending too when %s ends first",
+		async (first) => {
+			const hold = held();
+			const harness = withRouter(await session(), { done: [hold.behavior], reset: [hold.behavior] });
+			if (first === "the subagent service") subagentsOf(harness);
+			const tasks = await workerTasks(harness, "done", "reset");
+			await call(harness, "TaskExecute", { task_ids: ["1", "2"] });
+			await vi.waitFor(() => expect(hold.requests()).toBe(2), CHILD_START);
+			await call(harness, "TaskUpdate", { taskId: "1", status: "completed" });
+			await call(harness, "TaskUpdate", { taskId: "2", status: "pending" });
+			harness.session.dispose();
+			await vi.waitFor(() => expect(tasks.isDisposed).toBe(true));
+			for (const id of ["1", "2"]) {
+				expect(tasks.get(id), id).toMatchObject({
+					status: "pending",
+					metadata: { lastError: "The session ended before the agent finished." },
+				});
+			}
+		},
+	);
+
 	it("keeps the service, the list and the agents across /reload, so an agent's end still reaches its task", async () => {
 		const hold = held(() => fauxAssistantMessage("after reload"));
 		const doom = held(() => fauxAssistantMessage([], { stopReason: "error", errorMessage: "broke after reload" }));

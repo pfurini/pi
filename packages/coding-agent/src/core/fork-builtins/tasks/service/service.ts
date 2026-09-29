@@ -493,9 +493,9 @@ export class TaskService {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		// The subagent service may end the agents first; either way the task carries the same error.
+		// The subagent service may end the agents first, and its `aborted` event reverts every mapped task,
+		// whatever the model set meanwhile; this loop gives each such task the same outcome.
 		for (const taskId of this.agentTasks.values()) {
-			if (this.store.get(taskId)?.status !== "in_progress") continue;
 			this.store.update(taskId, { status: "pending", metadata: { result: null, lastError: SESSION_ENDED_ERROR } });
 		}
 		this.agentTasks.clear();

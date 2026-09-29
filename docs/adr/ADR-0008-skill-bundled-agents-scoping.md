@@ -6,7 +6,8 @@ status: accepted
 # Skill-bundled agents: qualified-always, bare-when-free, soft scoping
 
 Skills may ship agent definitions in `<skill>/agents/*.md` as a first-class Pi feature
-(implemented in the pi-subagents fork; CC itself only has this via skills-dir plugins).
+(implemented by the fork's native subagent service, `core/fork-builtins/subagents/`, after the
+pi-subagents fork first shipped it; CC itself only has this via skills-dir plugins).
 Registration rule: every bundled agent is always registered under its qualified name
 (`skillname:agentname`); its bare name is registered only when that name is globally free. On a
 bare-name collision, the render pipeline (ADR-0004) rewrites exact matches of the skill's own

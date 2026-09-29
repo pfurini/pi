@@ -1,0 +1,673 @@
+[
+ {
+  "id": "T5-M1",
+  "cases": [
+   1
+  ],
+  "what": "agent rows follow the file rows (probe Q11)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "[...mine.items, ...theirs.items]",
+  "new": "[...theirs.items, ...mine.items]",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts",
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent rows lists matching agents above the wrapped provider's rows, under the agents' prefix",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers every agent on a bare @, and still the files",
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup adds agent rows above the wrapped provider's rows, and answers a live agent's handle"
+  ]
+ },
+ {
+  "id": "T5-M2",
+  "cases": [
+   1
+  ],
+  "what": "agents alone are dropped",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!theirs) return mine;",
+  "new": "if (!theirs) return null;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers agents alone when no file matched"
+  ]
+ },
+ {
+  "id": "T5-M3",
+  "cases": [
+   1
+  ],
+  "what": "the wrapped list is copied",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!mine) return theirs;",
+  "new": "if (!mine) return theirs && { ...theirs };",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent rows returns the wrapped list unchanged when no handle matches or no agent exists"
+  ]
+ },
+ {
+  "id": "T5-M4",
+  "cases": [
+   2
+  ],
+  "what": "a failing wrapped provider fails the popup",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\ttry {\n\t\t\t\ttheirs = await current.getSuggestions(lines, cursorLine, cursorCol, options);\n\t\t\t} catch (error) {\n\t\t\t\twarn(`The autocomplete provider below agent mentions failed: ${errorText(error)}`);\n\t\t\t}",
+  "new": "\t\t\ttheirs = await current.getSuggestions(lines, cursorLine, cursorCol, options);",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts",
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider costs its own rows, never the agents', whether it rejects or throws synchronously",
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup keeps the agent rows when the wrapped provider fails, and the service warns once"
+  ]
+ },
+ {
+  "id": "T5-M5",
+  "cases": [
+   2
+  ],
+  "what": "each failure warns with another text",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "warn(`The autocomplete provider below agent mentions failed: ${errorText(error)}`);",
+  "new": "warn(`The autocomplete provider below agent mentions failed at ${lines[cursorLine]}: ${errorText(error)}`);",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts",
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider reports every failure with the same text, so the service warns once",
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup keeps the agent rows when the wrapped provider fails, and the service warns once"
+  ]
+ },
+ {
+  "id": "T5-M6",
+  "cases": [
+   3
+  ],
+  "what": "agents list by start time alone",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": ".sort((a, b) => Number(live(b)) - Number(live(a)) || a.startedAt - b.startedAt);",
+  "new": ".sort((a, b) => a.startedAt - b.startedAt);",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > row order puts running and queued agents first, then the others from the earliest"
+  ]
+ },
+ {
+  "id": "T5-M7",
+  "cases": [
+   3,
+   11
+  ],
+  "what": "evicted agents list first",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "rows.push({ kind: \"tombstone\", handle, entry, typeLabel: label(entry.type) });",
+  "new": "rows.unshift({ kind: \"tombstone\", handle, entry, typeLabel: label(entry.type) });",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > row order lists live agents before evicted ones, and both before startable types",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones"
+  ]
+ },
+ {
+  "id": "T5-M8",
+  "cases": [
+   4
+  ],
+  "what": "matching is case-sensitive",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const typed = match[2].toLowerCase();",
+  "new": "const typed = match[2];",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > matching matches a case-insensitive prefix"
+  ]
+ },
+ {
+  "id": "T5-M9",
+  "cases": [
+   4
+  ],
+  "what": "a mention completes only at the line's start",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "MENTION_TRIGGER.exec(line.slice(0, cursorCol))",
+  "new": "MENTION_TRIGGER.exec(line.slice(0, cursorCol).startsWith(\"@\") ? line.slice(0, cursorCol) : \"\")",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > matching completes a mention typed mid-message"
+  ]
+ },
+ {
+  "id": "T5-M10",
+  "cases": [
+   5
+  ],
+  "what": "a type row shows the whole description",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "`start agent · ${summarize(row.description)}`",
+  "new": "`start agent · ${row.description}`",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a type with no agent as a start, with its description's first sentence"
+  ]
+ },
+ {
+  "id": "T5-M11",
+  "cases": [
+   5
+  ],
+  "what": "a type lists under a live agent's handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\tconst handle = handleBase(name);\n\t\tif (taken.has(handle)) continue;\n",
+  "new": "\t\tconst handle = handleBase(name);\n",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent types lets a live agent own its handle, so the type does not list twice"
+  ]
+ },
+ {
+  "id": "T5-M12",
+  "cases": [
+   5
+  ],
+  "what": "a finished agent offers a message",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const action = isTerminal(row.view) ? \"resume\" : \"send message\";",
+  "new": "const action = \"send message\";",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a finished agent as a resume"
+  ]
+ },
+ {
+  "id": "T5-M13",
+  "cases": [
+   6
+  ],
+  "what": "a path-shaped token lists agents",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "MENTION_TRIGGER.exec(line.slice(0, cursorCol))",
+  "new": "MENTION_TRIGGER.exec(line.slice(0, cursorCol).replace(/\\/.*$/, \"\"))",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off"
+  ]
+ },
+ {
+  "id": "T5-M14",
+  "cases": [
+   6
+  ],
+  "what": "an @ inside a word lists agents",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/(^|[\\s。、？！])@([\\w-]*)$/",
+  "new": "/(^|[\\s\\S])@([\\w-]*)$/",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off"
+  ]
+ },
+ {
+  "id": "T5-M15",
+  "cases": [
+   6
+  ],
+  "what": "agents list while mentions are off",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const mine = enabled() ? mentionItems(roster(), lines[cursorLine] ?? \"\", cursorCol) : null;",
+  "new": "const mine = true ? mentionItems(roster(), lines[cursorLine] ?? \"\", cursorCol) : null;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off"
+  ]
+ },
+ {
+  "id": "T5-M16",
+  "cases": [
+   6
+  ],
+  "what": "an agent without a handle lists",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": ".filter((view) => view.handle !== undefined)",
+  "new": ".filter(() => true)",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone never lists a nested agent, which has no handle"
+  ]
+ },
+ {
+  "id": "T5-M17",
+  "cases": [
+   7
+  ],
+  "what": "the provider declares the wrapped provider's characters",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "triggerCharacters: [\"@\"],",
+  "new": "triggerCharacters: [\"@\", \"#\"],",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers declares only @, so Pi unions the chain's characters",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone"
+  ]
+ },
+ {
+  "id": "T5-M18",
+  "cases": [
+   7
+  ],
+  "what": "tokens without agent rows answer nothing",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!mine) return theirs;",
+  "new": "if (!mine) return null;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers wraps a provider registered before it, and is reached through one registered after it"
+  ]
+ },
+ {
+  "id": "T5-M19",
+  "cases": [
+   7
+  ],
+  "what": "the provider caches its rows across builds",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const mine = enabled() ? mentionItems(roster(), lines[cursorLine] ?? \"\", cursorCol) : null;",
+  "new": "const mine = enabled() ? ((globalThis as { sn3Rows?: AutocompleteSuggestions | null }).sn3Rows ??= mentionItems(roster(), lines[cursorLine] ?? \"\", cursorCol)) : null;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers carries no state from one build of the chain to the next"
+  ]
+ },
+ {
+  "id": "T5-M20",
+  "cases": [
+   8
+  ],
+  "what": "the prefix drops the @",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "return items.length > 0 ? { items, prefix: `@${match[2]}` } : null;",
+  "new": "return items.length > 0 ? { items, prefix: match[2] } : null;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts a file row from the agents' prefix, character for character"
+  ]
+ },
+ {
+  "id": "T5-M21",
+  "cases": [
+   8
+  ],
+  "what": "a row's value drops the @",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "value: `@${row.handle}`, label:",
+  "new": "value: row.handle, label:",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line",
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor"
+  ]
+ },
+ {
+  "id": "T5-M22",
+  "cases": [
+   8
+  ],
+  "what": "the provider declares a second character",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "triggerCharacters: [\"@\"],",
+  "new": "triggerCharacters: [\"@\", \"@@\"],",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider declares trigger characters the editor accepts"
+  ]
+ },
+ {
+  "id": "T5-M23",
+  "cases": [
+   9
+  ],
+  "what": "applyCompletion is not delegated",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "current.applyCompletion(lines, cursorLine, cursorCol, item, prefix),",
+  "new": "({ lines, cursorLine, cursorCol }),",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone"
+  ]
+ },
+ {
+  "id": "T5-M24",
+  "cases": [
+   9
+  ],
+  "what": "the file-completion gate is forced open",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true,",
+  "new": "true,",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone"
+  ]
+ },
+ {
+  "id": "T5-M25",
+  "cases": [
+   10
+  ],
+  "what": "a named agent lists under its handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const handle = view.alias ?? (view.handle as string);",
+  "new": "const handle = view.handle as string;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists a named agent once, under its alias, with its type"
+  ]
+ },
+ {
+  "id": "T5-M26",
+  "cases": [
+   10
+  ],
+  "what": "every row repeats its type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "${alias ? `${row.typeLabel} · ` : \"\"}${status}",
+  "new": "${row.typeLabel} · ${status}",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents repeats no type for an unnamed agent"
+  ]
+ },
+ {
+  "id": "T5-M27",
+  "cases": [
+   10
+  ],
+  "what": "a named agent frees its type handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\ttaken.add(view.handle as string);\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps a named agent's type handle out of the startable types"
+  ]
+ },
+ {
+  "id": "T5-M28",
+  "cases": [
+   11
+  ],
+  "what": "an evicted row names no type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "`resume · ${row.typeLabel} · ${row.entry.description}`",
+  "new": "`resume · ${row.entry.description}`",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones"
+  ]
+ },
+ {
+  "id": "T5-M29",
+  "cases": [
+   11
+  ],
+  "what": "a tombstone reserves no handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\ttaken.add(handle);\n\t\ttaken.add(entry.handle);\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps an aliased tombstone's type handle reserved, and lists no type whose handle a tombstone holds"
+  ]
+ },
+ {
+  "id": "T5-M30",
+  "cases": [
+   12
+  ],
+  "what": "a record row shows the raw type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "typeLabel: view.definition.displayName ?? view.type",
+  "new": "typeLabel: view.type",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name"
+  ]
+ },
+ {
+  "id": "T5-M31",
+  "cases": [
+   12
+  ],
+  "what": "a tombstone row shows the raw type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const label = (type: string) => registry.agents.get(type)?.displayName ?? type;",
+  "new": "const label = (type: string) => type;",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name"
+  ]
+ },
+ {
+  "id": "T5-M32",
+  "cases": [
+   12
+  ],
+  "what": "a row without a display_name shows no type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "registry.agents.get(type)?.displayName ?? type;",
+  "new": "registry.agents.get(type)?.displayName ?? \"agent\";",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > display names falls back to the raw type without a display_name"
+  ]
+ },
+ {
+  "id": "T5-M33",
+  "cases": [
+   13
+  ],
+  "what": "every session_start registers the provider",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "if (!mentionProvider) {",
+  "new": "if (true) {",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup registers the provider once per activation, in TUI mode only, and again after /reload"
+  ]
+ },
+ {
+  "id": "T5-M34",
+  "cases": [
+   13
+  ],
+  "what": "RPC registers the provider too",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\tif (!mentionAbort) return;\n",
+  "new": "\t\tif (!mentionAbort) {\n\t\t\tctx.ui.addAutocompleteProvider((current) => current);\n\t\t\treturn;\n\t\t}\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup registers the provider once per activation, in TUI mode only, and again after /reload"
+  ]
+ },
+ {
+  "id": "T5-M35",
+  "cases": [
+   13
+  ],
+  "what": "the provider lists no agent",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "() => mentionRoster(service),",
+  "new": "() => [],",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup adds agent rows above the wrapped provider's rows, and answers a live agent's handle"
+  ]
+ },
+ {
+  "id": "T5-M36",
+  "cases": [
+   14
+  ],
+  "what": "the roster lists running skill-bundled agents (probe Q16)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\tif (view.definition.hidden) continue;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents lists no skill-bundled agent, running or evicted"
+  ]
+ },
+ {
+  "id": "T5-M37",
+  "cases": [
+   14
+  ],
+  "what": "a running skill agent frees its handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\ttaken.add(handle);\n\t\ttaken.add(view.handle as string);\n\t\t// Skill-bundled agents stay out of the popup even once they run (ADR-0008); their exact handle still works.\n\t\tif (view.definition.hidden) continue;",
+  "new": "\t\tif (view.definition.hidden) continue;\n\t\ttaken.add(handle);\n\t\ttaken.add(view.handle as string);",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it"
+  ]
+ },
+ {
+  "id": "T5-M38",
+  "cases": [
+   14
+  ],
+  "what": "an evicted skill agent frees its handle",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\ttaken.add(handle);\n\t\ttaken.add(entry.handle);\n\t\tif (registry.agents.get(entry.type)?.hidden) continue;",
+  "new": "\t\tif (registry.agents.get(entry.type)?.hidden) continue;\n\t\ttaken.add(handle);\n\t\ttaken.add(entry.handle);",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it"
+  ]
+ },
+ {
+  "id": "T5-M39",
+  "cases": [
+   14
+  ],
+  "what": "the roster lists evicted skill-bundled agents (probe Q17)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\tif (registry.agents.get(entry.type)?.hidden) continue;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents lists no skill-bundled agent, running or evicted"
+  ]
+ },
+ {
+  "id": "T5-M40",
+  "cases": [
+   14
+  ],
+  "what": "every registered type lists as a start",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "for (const [name, definition] of listedAgents(registry)) {",
+  "new": "for (const [name, definition] of registry.agents) {",
+  "files": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts",
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents never lists a disabled type as a start, but still lists its existing agent",
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup lists no skill-bundled agent, nested agent or disabled type, and the hook still reaches a skill agent by its handle"
+  ]
+ },
+ {
+  "id": "T5-M41",
+  "cases": [
+   15
+  ],
+  "what": "a keystroke reloads the agent files",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const registry = service.registry;",
+  "new": "const registry = service.refreshDefinitions();",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the @ popup reads no file while it answers a keystroke"
+  ]
+ }
+]

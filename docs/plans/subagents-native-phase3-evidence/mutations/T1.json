@@ -1,0 +1,564 @@
+[
+ {
+  "id": "T1-M1",
+  "cases": [
+   1
+  ],
+  "what": "handleBase keeps capitals",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": ".toLowerCase()\n\t\t.replace(/[^a-z0-9_-]+/g",
+  "new": ".replace(/[^a-z0-9_-]+/g",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase lowercases and keeps hyphens"
+  ]
+ },
+ {
+  "id": "T1-M2",
+  "cases": [
+   1
+  ],
+  "what": "handleBase keeps edge hyphens",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": ".replace(/^-+|-+$/g, \"\")",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase turns other characters into single hyphens, without edge hyphens"
+  ]
+ },
+ {
+  "id": "T1-M3",
+  "cases": [
+   1
+  ],
+  "what": "handleBase may return an empty handle",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "return slug || \"agent\";",
+  "new": "return slug;",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase never returns an empty handle"
+  ]
+ },
+ {
+  "id": "T1-M4",
+  "cases": [
+   1
+  ],
+  "what": "handleBase has no length cap",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": ".slice(0, MAX_HANDLE_LENGTH)",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen"
+  ]
+ },
+ {
+  "id": "T1-M5",
+  "cases": [
+   1
+  ],
+  "what": "handleBase keeps a trailing hyphen the cap sliced into",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": ".slice(0, MAX_HANDLE_LENGTH)\n\t\t.replace(/-+$/, \"\");",
+  "new": ".slice(0, MAX_HANDLE_LENGTH);",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen"
+  ]
+ },
+ {
+  "id": "T1-M6",
+  "cases": [
+   1
+  ],
+  "what": "the trigger misses hyphenated handles",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "@([\\w-]*)$/;",
+  "new": "@(\\w*)$/;",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > handleBase only produces handles the suggestion trigger matches"
+  ]
+ },
+ {
+  "id": "T1-M7",
+  "cases": [
+   2
+  ],
+  "what": "assignHandle numbers from 3",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "for (let n = 2;",
+  "new": "for (let n = 3;",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > assignHandle takes the free base, then numbers from 2 past every taken form"
+  ]
+ },
+ {
+  "id": "T1-M8",
+  "cases": [
+   2
+  ],
+  "what": "assignHandle hands out main",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "taken.has(candidate) || RESERVED_HANDLES.has(candidate)",
+  "new": "taken.has(candidate)",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > assignHandle never hands out main"
+  ]
+ },
+ {
+  "id": "T1-M9",
+  "cases": [
+   2
+  ],
+  "what": "assignHandle counts from the taken total and skips no gap",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "for (let n = 2;",
+  "new": "for (let n = taken.size + 1;",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > assignHandle skips a gap rather than reusing a live handle"
+  ]
+ },
+ {
+  "id": "T1-M10",
+  "cases": [
+   3
+  ],
+  "what": "resolveHandleToType is case-sensitive",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "const wanted = handle.toLowerCase();",
+  "new": "const wanted = handle;",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing"
+  ]
+ },
+ {
+  "id": "T1-M11",
+  "cases": [
+   3
+  ],
+  "what": "resolveHandleToType matches a prefix",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "handleBase(type) === wanted",
+  "new": "handleBase(type).startsWith(wanted)",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType matches exactly, never a prefix or a numbered handle"
+  ]
+ },
+ {
+  "id": "T1-M12",
+  "cases": [
+   3
+  ],
+  "what": "resolveHandleToType compares the raw type",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "handleBase(type) === wanted",
+  "new": "type.toLowerCase() === wanted",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType round-trips every registered type",
+   "test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing"
+  ]
+ },
+ {
+  "id": "T1-M13",
+  "cases": [
+   3
+  ],
+  "what": "resolveHandleToType resolves main",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "\tif (isReservedHandle(wanted)) return undefined;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType refuses main, even for a type named main"
+  ]
+ },
+ {
+  "id": "T1-M14",
+  "cases": [
+   4
+  ],
+  "what": "isReservedHandle is case-sensitive",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "RESERVED_HANDLES.has(handle.toLowerCase())",
+  "new": "RESERVED_HANDLES.has(handle)",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else"
+  ]
+ },
+ {
+  "id": "T1-M15",
+  "cases": [
+   4
+  ],
+  "what": "isReservedHandle takes any handle starting with ma",
+  "path": "src/core/fork-builtins/subagents/service/records.ts",
+  "old": "RESERVED_HANDLES.has(handle.toLowerCase())",
+  "new": "handle.toLowerCase().startsWith(\"ma\")",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else"
+  ]
+ },
+ {
+  "id": "T1-M16",
+  "cases": [
+   5
+  ],
+  "what": "stripAgentPrefix unwraps every repeated prefix",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/^agent-(.+)$/i",
+  "new": "/^(?:agent-)+(.+)$/i",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix unwraps agent-<x> once"
+  ]
+ },
+ {
+  "id": "T1-M17",
+  "cases": [
+   5
+  ],
+  "what": "stripAgentPrefix unwraps a prefix anywhere",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/^agent-(.+)$/i",
+  "new": "/agent-(.+)$/i",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix returns nothing without the prefix, without a remainder, or with the prefix inside"
+  ]
+ },
+ {
+  "id": "T1-M18",
+  "cases": [
+   6
+  ],
+  "what": "describeMention keeps every line",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "message.split(\"\\n\", 1)[0]",
+  "new": "message",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > describeMention keeps the first line and collapses whitespace"
+  ]
+ },
+ {
+  "id": "T1-M19",
+  "cases": [
+   6
+  ],
+  "what": "describeMention clips at 400",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "oneLine.length > 40",
+  "new": "oneLine.length > 400",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > describeMention clips a long message at 40 characters with an ellipsis"
+  ]
+ },
+ {
+  "id": "T1-M20",
+  "cases": [
+   7
+  ],
+  "what": "parseMention keeps surrounding whitespace",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "const message = match[2].trim();",
+  "new": "const message = match[2];",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > parseMention splits a leading handle from a trimmed message"
+  ]
+ },
+ {
+  "id": "T1-M21",
+  "cases": [
+   7
+  ],
+  "what": "parseMention needs a space as the separator",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/^@([\\w-]+)\\s+([\\s\\S]+)$/",
+  "new": "/^@([\\w-]+) +([\\s\\S]+)$/",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > parseMention accepts a newline as the separator"
+  ]
+ },
+ {
+  "id": "T1-M22",
+  "cases": [
+   7
+  ],
+  "what": "parseMention accepts an empty message",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "return message ? { handle: match[1], message } : null;",
+  "new": "return { handle: match[1], message };",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a bare handle"
+  ]
+ },
+ {
+  "id": "T1-M23",
+  "cases": [
+   7
+  ],
+  "what": "parseMention accepts a path as the handle",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/^@([\\w-]+)\\s+([\\s\\S]+)$/",
+  "new": "/^@([\\w\\-./]+)\\s+([\\s\\S]+)$/",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a leading file path"
+  ]
+ },
+ {
+  "id": "T1-M24",
+  "cases": [
+   7
+  ],
+  "what": "parseMention accepts a mention after other text",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "/^@([\\w-]+)\\s+([\\s\\S]+)$/",
+  "new": "/@([\\w-]+)\\s+([\\s\\S]+)$/",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a mention after other text"
+  ]
+ },
+ {
+  "id": "T1-M25",
+  "cases": [
+   8
+  ],
+  "what": "the reminder loses its trailing space",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "passing in the required context to it. \\n",
+  "new": "passing in the required context to it.\\n",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder equals Claude Code's string byte for byte, trailing space included"
+  ]
+ },
+ {
+  "id": "T1-M26",
+  "cases": [
+   8
+  ],
+  "what": "the reminder names no agent",
+  "path": "src/core/fork-builtins/subagents/service/mentions.ts",
+  "old": "invoke the agent \"${type}\"",
+  "new": "invoke the agent \"agent\"",
+  "files": [
+   "test/fork-builtins/subagents/mentions.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder names its agent"
+  ]
+ },
+ {
+  "id": "T1-M27",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention is case-sensitive",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "const wanted = name.toLowerCase();",
+  "new": "const wanted = name;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one",
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name"
+  ]
+ },
+ {
+  "id": "T1-M28",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention reaches a nested agent by id",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "if (byId && !byId.parent) named.unshift(byId);",
+  "new": "if (byId) named.unshift(byId);",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one"
+  ]
+ },
+ {
+  "id": "T1-M29",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention prefers any agent with a session over a running one",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child);",
+  "new": "named.find((record) => record.child);",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution prefers a running agent over finished ones by the same name, then the newest one with a session"
+  ]
+ },
+ {
+  "id": "T1-M30",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention prefers the oldest agent with a session",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": ".sort((a, b) => b.startedAt - a.startedAt);\n\t\tconst byId",
+  "new": ".sort((a, b) => a.startedAt - b.startedAt);\n\t\tconst byId",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution prefers a running agent over finished ones by the same name, then the newest one with a session"
+  ]
+ },
+ {
+  "id": "T1-M31",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention ignores a tombstone's alias",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "tombstone.handle === wanted || tombstone.alias === wanted || tombstone.id === name",
+  "new": "tombstone.handle === wanted || tombstone.id === name",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name"
+  ]
+ },
+ {
+  "id": "T1-M32",
+  "cases": [
+   9
+  ],
+  "what": "resolveMention prefers a tombstone over a live agent",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "\t\tif (live) return { kind: \"live\", view: live };\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name"
+  ]
+ },
+ {
+  "id": "T1-M33",
+  "cases": [
+   10
+  ],
+  "what": "the service's lookup ignores aliases",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "(record) => !record.parent && (record.handle === wanted || record.alias === wanted),\n",
+  "new": "(record) => !record.parent && record.handle === wanted,\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution lets steer_subagent and get_subagent_result reach an agent by its handle and its alias"
+  ]
+ },
+ {
+  "id": "T1-M34",
+  "cases": [
+   10
+  ],
+  "what": "eviction keeps the record",
+  "path": "src/core/fork-builtins/subagents/service/retention.ts",
+  "old": "\t\t\tthis.records.delete(record.id);\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution lets the tools report an evicted agent's handle and an unknown one as not found"
+  ]
+ },
+ {
+  "id": "T1-M35",
+  "cases": [
+   11
+  ],
+  "what": "dropping a tombstone keeps its names",
+  "path": "src/core/fork-builtins/subagents/service/retention.ts",
+  "old": "\t\tthis.entries.delete(handle);\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > handle resolution frees an evicted agent's names when its tombstone is dropped, so the next agent takes the bare handle"
+  ]
+ }
+]

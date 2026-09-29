@@ -1,0 +1,12 @@
+[
+ {
+  "id": "T8-F4-M1",
+  "cases": [1],
+  "what": "every prompt rereads the settings",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\tconst mention = parseMention(event.text);\n\tif (!mention) return CONTINUE;\n\tconst { service } = env;",
+  "new": "\tenv.service.reloadSettings();\n\tconst mention = parseMention(event.text);\n\tif (!mention) return CONTINUE;\n\tconst { service } = env;",
+  "files": ["test/suite/fork-subagents-mentions.test.ts"],
+  "expect": ["test/suite/fork-subagents-mentions.test.ts > the input hook rereads the settings only for a prompt shaped as a mention"]
+ }
+]

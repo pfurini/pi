@@ -1,0 +1,12 @@
+[
+ {
+  "id": "T8-F1-M1",
+  "cases": [1],
+  "what": "the tombstone's old id does not reach its reopened agent",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "\t\tif (entry) names.add(entry.handle);\n\t\tif (entry?.alias) names.add(entry.alias);\n",
+  "new": "",
+  "files": ["test/suite/fork-subagents-mentions.test.ts"],
+  "expect": ["test/suite/fork-subagents-mentions.test.ts > the input hook answers an evicted agent's old id with its reopened agent, so its session never reopens twice"]
+ }
+]

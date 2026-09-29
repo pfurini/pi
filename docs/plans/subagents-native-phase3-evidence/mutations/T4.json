@@ -1,0 +1,799 @@
+[
+ {
+  "id": "T4-M1",
+  "cases": [
+   1
+  ],
+  "what": "a direct mention starts another type (probe Q1)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\ttype,\n\t\t\tprompt: message,",
+  "new": "\t\t\ttype: \"general-purpose\",\n\t\t\tprompt: message,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn"
+  ]
+ },
+ {
+  "id": "T4-M2",
+  "cases": [
+   1
+  ],
+  "what": "the registry stays empty until a spawn (probe Q12)",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\t\tservice.refreshDefinitions();\n",
+  "new": "\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn"
+  ]
+ },
+ {
+  "id": "T4-M3",
+  "cases": [
+   1
+  ],
+  "what": "a direct start takes the whole message as its description",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "description: describeMention(message),",
+  "new": "description: message,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn"
+  ]
+ },
+ {
+  "id": "T4-M4",
+  "cases": [
+   1
+  ],
+  "what": "a direct start runs detached without a notification",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "mode: \"detached-background\",\n\t\t});\n\t\tawait service.worktreeStarted",
+  "new": "mode: \"detached\",\n\t\t});\n\t\tawait service.worktreeStarted",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook relays a direct start's answer through the ordinary completion notification"
+  ]
+ },
+ {
+  "id": "T4-M5",
+  "cases": [
+   1
+  ],
+  "what": "a run shows no turn limit",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "record.maxTurns = maxTurns > 0 ? maxTurns : undefined;",
+  "new": "record.maxTurns = undefined;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity"
+  ]
+ },
+ {
+  "id": "T4-M6",
+  "cases": [
+   1
+  ],
+  "what": "a run counts no tool use",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "if (activity.type === \"tool_end\") record.toolUses++;",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity"
+  ]
+ },
+ {
+  "id": "T4-M7",
+  "cases": [
+   2
+  ],
+  "what": "a start ignores its worktree's failure",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\tawait service.worktreeStarted(view);\n\t\tif (mode === \"direct\")",
+  "new": "\t\tif (mode === \"direct\")",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent"
+  ]
+ },
+ {
+  "id": "T4-M8",
+  "cases": [
+   2,
+   6
+  ],
+  "what": "a failed start does not name its error",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "notify(`Could not start ${name}: ${errorText(error)}`, \"error\");",
+  "new": "notify(`Could not start ${name}`, \"error\");",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, reports a fallback start that also fails"
+  ]
+ },
+ {
+  "id": "T4-M9",
+  "cases": [
+   2
+  ],
+  "what": "a direct start falls back to another type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "view ??= await service.spawnListed({",
+  "new": "view ??= await service.spawn({",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook refuses a type disabled after the hook read the registry, rather than starting another type"
+  ]
+ },
+ {
+  "id": "T4-M10",
+  "cases": [
+   2
+  ],
+  "what": "the clone's spawn falls back to another type",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const view = await service.spawnListed({",
+  "new": "const view = await service.spawn({",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts nothing when the mentioned type is no longer a listed agent"
+  ]
+ },
+ {
+  "id": "T4-M11",
+  "cases": [
+   2
+  ],
+  "what": "spawnListed substitutes general-purpose",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "const definition = listedAgents(registry).find(([name]) => name === request.type)?.[1];",
+  "new": "const definition = listedAgents(registry).find(([name]) => name === request.type)?.[1] ?? registry.agents.get(\"general-purpose\");",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts",
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook refuses a type disabled after the hook read the registry, rather than starting another type",
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts nothing when the mentioned type is no longer a listed agent"
+  ]
+ },
+ {
+  "id": "T4-M12",
+  "cases": [
+   3
+  ],
+  "what": "a mention steers no agent (probe Q2)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "void service.steer(view.id, message)",
+  "new": "void service.steer(\"nobody\", message)",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent"
+  ]
+ },
+ {
+  "id": "T4-M13",
+  "cases": [
+   3
+  ],
+  "what": "a queued steer is not announced",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (outcome.kind === \"delivered\" || outcome.kind === \"queued\") notify(",
+  "new": "if (outcome.kind === \"delivered\") notify(",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reaches a sibling by its numbered handle, and an agent still waiting for a slot"
+  ]
+ },
+ {
+  "id": "T4-M14",
+  "cases": [
+   3
+  ],
+  "what": "a failed steer does not name its reason",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "`Could not send to ${name}: ${outcome.kind === \"failed\" ? outcome.error : outcome.reason}`",
+  "new": "`Could not send to ${name}`",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a steer that fails"
+  ]
+ },
+ {
+  "id": "T4-M15",
+  "cases": [
+   3
+  ],
+  "what": "a running agent is resumed instead of steered",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\tif (!isTerminal(view)) {\n",
+  "new": "\tif (false) {\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent"
+  ]
+ },
+ {
+  "id": "T4-M16",
+  "cases": [
+   4
+  ],
+  "what": "a resume drops the message (probe Q3)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "service.resume(view.id, message, { background: true });",
+  "new": "service.resume(view.id, \"other\", { background: true });",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer"
+  ]
+ },
+ {
+  "id": "T4-M17",
+  "cases": [
+   4
+  ],
+  "what": "a resume answers a tool call",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "service.resume(view.id, message, { background: true });",
+  "new": "service.resume(view.id, message, { background: true, toolCallId: \"call-1\" });",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer"
+  ]
+ },
+ {
+  "id": "T4-M18",
+  "cases": [
+   4
+  ],
+  "what": "a resume runs in the foreground",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "service.resume(view.id, message, { background: true });",
+  "new": "service.resume(view.id, message, { background: false });",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer"
+  ]
+ },
+ {
+  "id": "T4-M19",
+  "cases": [
+   4
+  ],
+  "what": "the agent file's output_transcript is ignored",
+  "path": "src/core/fork-builtins/subagents/runner/run.ts",
+  "old": "const enabled = definition.outputTranscript ?? request.transcript.enabled;",
+  "new": "const enabled = request.transcript.enabled;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook keeps an agent file's output_transcript: false when resuming"
+  ]
+ },
+ {
+  "id": "T4-M20",
+  "cases": [
+   5
+  ],
+  "what": "a reopen worktree failure escapes the rejection handler (probe Q15)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": ".then((view) => service.worktreeStarted(view))\n\t\t\t.then(\n\t\t\t\t() => notify(`Resuming ${name}`, \"info\"),",
+  "new": ".then(\n\t\t\t\tasync (view) => { await service.worktreeStarted(view); notify(`Resuming ${name}`, \"info\"); },",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection"
+  ]
+ },
+ {
+  "id": "T4-M21",
+  "cases": [
+   5
+  ],
+  "what": "a tombstone whose session is gone stays",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\tservice.dropTombstone(entry.handle);\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook drops a tombstone whose session file is gone, and the next mention starts afresh"
+  ]
+ },
+ {
+  "id": "T4-M22",
+  "cases": [
+   5
+  ],
+  "what": "a tombstone whose session is gone is reopened",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!existsSync(entry.sessionFile)) {",
+  "new": "if (false) {",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook drops a tombstone whose session file is gone, and the next mention starts afresh"
+  ]
+ },
+ {
+  "id": "T4-M23",
+  "cases": [
+   5
+  ],
+  "what": "a failed reopen is not reported",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "(error: unknown) => notify(`Could not resume ${name}: ${errorText(error)}`, \"warning\"),",
+  "new": "() => undefined,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen of an agent type that is no longer available, and keeps the tombstone",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection"
+  ]
+ },
+ {
+  "id": "T4-M24",
+  "cases": [
+   5
+  ],
+  "what": "a reopen is not announced",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "() => notify(`Resuming ${name}`, \"info\"),",
+  "new": "() => undefined,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reopens an evicted agent's session under its old handle"
+  ]
+ },
+ {
+  "id": "T4-M25",
+  "cases": [
+   6
+  ],
+  "what": "a failed clone starts nothing (probe Q8)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "else fallback = cloned.error;",
+  "new": "else return;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, starts the agent directly when the clone calls no tool",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start"
+  ]
+ },
+ {
+  "id": "T4-M26",
+  "cases": [
+   6
+  ],
+  "what": "the clone gets another type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "runMentionClone(env.session, service, type, message, env.signal)",
+  "new": "runMentionClone(env.session, service, \"general-purpose\", message, env.signal)",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt"
+  ]
+ },
+ {
+  "id": "T4-M27",
+  "cases": [
+   6
+  ],
+  "what": "a clone is not announced",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\tnotify(`Prompting ${name}…`, \"info\");\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt"
+  ]
+ },
+ {
+  "id": "T4-M28",
+  "cases": [
+   6
+  ],
+  "what": "a direct fallback is not announced",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\telse if (fallback !== undefined) notify(`Started ${name} directly: ${fallback}`, \"warning\");\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, starts the agent directly when the clone calls no tool",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start"
+  ]
+ },
+ {
+  "id": "T4-M29",
+  "cases": [
+   6
+  ],
+  "what": "direct mode clones too",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (mode === \"model\") {",
+  "new": "if (mode === \"model\" || mode === \"direct\") {",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting"
+  ]
+ },
+ {
+  "id": "T4-M30",
+  "cases": [
+   6
+  ],
+  "what": "model mode clones instead of steering or resuming",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (target && dispatchExisting(target, mention.message, env, notify)) return { action: \"handled\" };",
+  "new": "if (target && mode === \"direct\" && dispatchExisting(target, mention.message, env, notify)) return { action: \"handled\" };",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting"
+  ]
+ },
+ {
+  "id": "T4-M31",
+  "cases": [
+   6
+  ],
+  "what": "the hook waits for the clone",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\tvoid start(type, mention.message, mode, env, notify);\n\treturn { action: \"handled\" };",
+  "new": "\treturn start(type, mention.message, mode, env, notify).then(() => ({ action: \"handled\" as const }));",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt"
+  ]
+ },
+ {
+  "id": "T4-M32",
+  "cases": [
+   7
+  ],
+  "what": "mentions act in RPC mode (probe Q9)",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "const mentionAbort = tui ? new AbortController() : undefined;",
+  "new": "const mentionAbort = new AbortController();",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook passes every mention on in print, JSON and RPC mode, and leaves a running agent alone"
+  ]
+ },
+ {
+  "id": "T4-M33",
+  "cases": [
+   7
+  ],
+  "what": "an extension's prompt is a mention",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!env || event.source === \"extension\") return CONTINUE;",
+  "new": "if (!env) return CONTINUE;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook passes an unknown handle, a bare handle, a leading file path and an extension's prompt to the main model"
+  ]
+ },
+ {
+  "id": "T4-M34",
+  "cases": [
+   7
+  ],
+  "what": "an unknown handle is swallowed",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\tif (!type) return CONTINUE;\n",
+  "new": "\tif (!type) return { action: \"handled\" };\n",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook passes an unknown handle, a bare handle, a leading file path and an extension's prompt to the main model"
+  ]
+ },
+ {
+  "id": "T4-M35",
+  "cases": [
+   8
+  ],
+  "what": "mentions act while off",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\tif (mode === \"off\") return CONTINUE;\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook passes every mention on while agentMentions is off, for a running, a finished and a never-started agent"
+  ]
+ },
+ {
+  "id": "T4-M36",
+  "cases": [
+   9
+  ],
+  "what": "@main keeps its prefix (probe Q10)",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "text: mention.message, ...(event.images",
+  "new": "text: event.text, ...(event.images",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook sends @main's text with its images to the main model, and passes a bare @main unchanged",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook never starts an agent for @main, even when a type slugs to main"
+  ]
+ },
+ {
+  "id": "T4-M37",
+  "cases": [
+   9
+  ],
+  "what": "@main without images is no escape",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (isReservedHandle(mention.handle)) {",
+  "new": "if (isReservedHandle(mention.handle) && event.images) {",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook never starts an agent for @main, even when a type slugs to main"
+  ]
+ },
+ {
+  "id": "T4-M38",
+  "cases": [
+   10
+  ],
+  "what": "@agent-<x> is not unwrapped",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const unwrapped = stripAgentPrefix(mention.handle);",
+  "new": "const unwrapped = undefined as string | undefined;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent"
+  ]
+ },
+ {
+  "id": "T4-M39",
+  "cases": [
+   10
+  ],
+  "what": "the unwrapped spelling wins",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "const target = service.resolveMention(mention.handle) ?? (unwrapped && service.resolveMention(unwrapped));",
+  "new": "const target = (unwrapped && service.resolveMention(unwrapped)) || service.resolveMention(mention.handle);",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves"
+  ]
+ },
+ {
+  "id": "T4-M40",
+  "cases": [
+   11
+  ],
+  "what": "handles match case-sensitively",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "const wanted = name.toLowerCase();",
+  "new": "const wanted = name;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id"
+  ]
+ },
+ {
+  "id": "T4-M41",
+  "cases": [
+   11
+  ],
+  "what": "a raw id reaches nothing",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "const byId = this.records.get(name);",
+  "new": "const byId = this.records.get(name.slice(1));",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id"
+  ]
+ },
+ {
+  "id": "T4-M42",
+  "cases": [
+   11
+  ],
+  "what": "a nested agent's id reaches it",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "if (byId && !byId.parent) named.unshift(byId);",
+  "new": "if (byId) named.unshift(byId);",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook never reaches a nested agent: the mention starts a top-level agent instead"
+  ]
+ },
+ {
+  "id": "T4-M43",
+  "cases": [
+   11
+  ],
+  "what": "an agent without a session file leaves a tombstone",
+  "path": "src/core/fork-builtins/subagents/service/retention.ts",
+  "old": "if (record.handle && record.sessionFile && !record.parent) {",
+  "new": "if (record.handle && !record.parent) {",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook starts afresh when an evicted agent left no session file"
+  ]
+ },
+ {
+  "id": "T4-M44",
+  "cases": [
+   12
+  ],
+  "what": "the hook waits for a steer",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (target && dispatchExisting(target, mention.message, env, notify)) return { action: \"handled\" };",
+  "new": "if (target && dispatchExisting(target, mention.message, env, notify)) return target.kind === \"live\" && !isTerminal(target.view) ? service.steer(target.view.id, mention.message).then(() => ({ action: \"handled\" as const })) : { action: \"handled\" };",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves"
+  ]
+ },
+ {
+  "id": "T4-M45",
+  "cases": [
+   13
+  ],
+  "what": "the clone's signal stays alive across /reload",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\t\tmentionAbort?.abort();\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at the session's end"
+  ]
+ },
+ {
+  "id": "T4-M46",
+  "cases": [
+   13
+  ],
+  "what": "an aborted clone falls back to a direct start",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t\tif (env.signal.aborted) return;\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at the session's end"
+  ]
+ },
+ {
+  "id": "T4-M47",
+  "cases": [
+   14
+  ],
+  "what": "a failing mention wiring leaves the UI bound (probe Q13)",
+  "path": "src/core/fork-builtins/subagents/ui/index.ts",
+  "old": "\t\t// Set before the mention wiring, so a failure there still leaves the UI to unbind.\n\t\tunbind = () => {",
+  "new": "\t\tif (mentionAbort) ctx.ui.addAutocompleteProvider((current) => current);\n\t\tunbind = () => {",
+  "files": [
+   "test/suite/fork-subagents-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit",
+   "test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode"
+  ]
+ },
+ {
+  "id": "T4-M48",
+  "cases": [
+   15
+  ],
+  "what": "a failed reopen shadows its tombstone (probe Q14)",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child);",
+  "new": "named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child) ?? named[0];",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook reopens the same conversation on a retry after a reopen failed to start"
+  ]
+ },
+ {
+  "id": "T4-M49",
+  "cases": [
+   16
+  ],
+  "what": "a late outcome still notifies",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "if (!env.signal.aborted) ctx.ui.notify(message, type);",
+  "new": "ctx.ui.notify(message, type);",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection",
+   "test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection"
+  ]
+ }
+]

@@ -1,0 +1,148 @@
+[
+ {
+  "id": "T2-M1",
+  "cases": [
+   1
+  ],
+  "what": "a reopen starts an empty conversation (probe Q4)",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "resumeSessionFile: record.reopenFrom,",
+  "new": "resumeSessionFile: undefined,",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen reopens the evicted conversation: the child's first request holds the old user messages, then the new prompt",
+   "test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again"
+  ]
+ },
+ {
+  "id": "T2-M2",
+  "cases": [
+   2
+  ],
+  "what": "a reopen takes a new handle (probe Q5)",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "handle = input.reopen.handle;",
+  "new": "handle = `${input.reopen.handle}-x`;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back"
+  ]
+ },
+ {
+  "id": "T2-M3",
+  "cases": [
+   2
+  ],
+  "what": "a reopen drops the alias",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "alias = input.reopen.alias;",
+  "new": "alias = undefined;",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back"
+  ]
+ },
+ {
+  "id": "T2-M4",
+  "cases": [
+   3
+  ],
+  "what": "the spawn forgets the tombstone it reopens",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "\t\t\treopen,\n\t\t});",
+  "new": "\t\t\treopen: undefined,\n\t\t});",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen resolves the name to the reopened agent, not the tombstone"
+  ]
+ },
+ {
+  "id": "T2-M5",
+  "cases": [
+   4
+  ],
+  "what": "a reopen falls back to general-purpose",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "const definition = findEnabledAgent(registry, entry.type);",
+  "new": "const definition = findEnabledAgent(registry, entry.type) ?? findEnabledAgent(registry, \"general-purpose\");",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen refuses a deleted or disabled type, creating no record and keeping the tombstone"
+  ]
+ },
+ {
+  "id": "T2-M6",
+  "cases": [
+   5
+  ],
+  "what": "a refused reopen drops the tombstone",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": ": { ok: false, message: `The ${entry.type} agent is no longer available.` };",
+  "new": ": (this.dropTombstone(entry.handle), { ok: false, message: `The ${entry.type} agent is no longer available.` });",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again",
+   "test/suite/fork-subagents-mentions.test.ts > reopen refuses a deleted or disabled type, creating no record and keeping the tombstone"
+  ]
+ },
+ {
+  "id": "T2-M7",
+  "cases": [
+   6
+  ],
+  "what": "a reopen takes the prompt as its description",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "description: entry.description, mode: \"detached-background\" }",
+  "new": "description: prompt, mode: \"detached-background\" }",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen keeps the tombstone's description rather than one derived from the prompt"
+  ]
+ },
+ {
+  "id": "T2-M8",
+  "cases": [
+   7
+  ],
+  "what": "a reopen runs detached without a notification",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "description: entry.description, mode: \"detached-background\" }",
+  "new": "description: entry.description, mode: \"detached\" }",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen runs detached in the background: it notifies once on completion and joins no batch"
+  ]
+ },
+ {
+  "id": "T2-M9",
+  "cases": [
+   3
+  ],
+  "what": "a reopen still starting is not joined",
+  "path": "src/core/fork-builtins/subagents/service/service.ts",
+  "old": "\t\tif (earlier) return this.joinReopen(earlier, entry, prompt);\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mentions.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mentions.test.ts > reopen joins a reopen that is still starting, so one agent continues the conversation and gets both prompts"
+  ]
+ }
+]

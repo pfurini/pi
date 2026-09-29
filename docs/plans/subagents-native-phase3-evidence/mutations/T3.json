@@ -1,0 +1,355 @@
+[
+ {
+  "id": "T3-M1",
+  "cases": [
+   1
+  ],
+  "what": "the clone sends a second request",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": ".result();\n\t\tif (reply.stopReason",
+  "new": ".result();\n\t\tawait session.modelRuntime.streamSimple(model, { messages: request }, {}).result();\n\t\tif (reply.stopReason",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request is exactly one model request"
+  ]
+ },
+ {
+  "id": "T3-M2",
+  "cases": [
+   2
+  ],
+  "what": "the clone sends only the last message of the conversation",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "convertToLlm(session.messages)",
+  "new": "convertToLlm(session.messages.slice(-1))",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the session's projected conversation: after a compaction, the summary instead of the turns it replaced"
+  ]
+ },
+ {
+  "id": "T3-M3",
+  "cases": [
+   2
+  ],
+  "what": "the clone sends the persisted projection alone",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "convertToLlm(session.messages)",
+  "new": "convertToLlm(session.sessionManager.buildSessionProjection().messages)",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the skill bodies the session re-attached after a compaction, as its own requests do"
+  ]
+ },
+ {
+  "id": "T3-M4",
+  "cases": [
+   3
+  ],
+  "what": "the clone drops the conversation's system messages",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\t\t...conversation,\n",
+  "new": "\t\t\t...conversation.filter((message) => message.role !== \"system\"),\n",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request keeps the system prompt the session sent on its last turn, byte for byte"
+  ]
+ },
+ {
+  "id": "T3-M5",
+  "cases": [
+   4
+  ],
+  "what": "the clone keeps every tool (probe Q6)",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": ".filter((current) => current.name !== declaration.name)",
+  "new": ".filter(() => false)",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request declares the Agent tool and nothing else"
+  ]
+ },
+ {
+  "id": "T3-M6",
+  "cases": [
+   5
+  ],
+  "what": "the reminder comes before the message",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "`${message}\\n\\n${agentMentionReminder(type)}`",
+  "new": "`${agentMentionReminder(type)}\\n\\n${message}`",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request ends with one user message: the typed message, a blank line, then the reminder"
+  ]
+ },
+ {
+  "id": "T3-M7",
+  "cases": [
+   6
+  ],
+  "what": "the clone sends no session id",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "sessionId: session.sessionId,",
+  "new": "sessionId: undefined,",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request uses the session's model, session id and thinking level"
+  ]
+ },
+ {
+  "id": "T3-M8",
+  "cases": [
+   6
+  ],
+  "what": "the clone sends reasoning at off",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "...(thinking !== \"off\" && { reasoning: thinking }),",
+  "new": "reasoning: thinking,",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request sends no reasoning level when the session thinks at off"
+  ]
+ },
+ {
+  "id": "T3-M9",
+  "cases": [
+   7
+  ],
+  "what": "the clone writes the message into the session",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const now = Date.now();",
+  "new": "const now = Date.now();\n\t\tsession.sessionManager.appendMessage({ role: \"user\", content: [{ type: \"text\", text: message }], timestamp: now });",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's request leaves the session's projection, messages and turns unchanged"
+  ]
+ },
+ {
+  "id": "T3-M10",
+  "cases": [
+   8
+  ],
+  "what": "the clone's type wins (probe Q7)",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\t\ttype,\n",
+  "new": "\t\t\ttype: (call.arguments as { subagent_type: string }).subagent_type,\n",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts the mentioned type as the session's own detached background agent, with the call's prompt, description and name"
+  ]
+ },
+ {
+  "id": "T3-M11",
+  "cases": [
+   8
+  ],
+  "what": "the clone drops the forwarded parameters",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\t\tparams: {",
+  "new": "\t\t\tparams: {}, dropped: {",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn forwards the call's model, thinking, max_turns, inherit_context, isolated and isolation"
+  ]
+ },
+ {
+  "id": "T3-M12",
+  "cases": [
+   8
+  ],
+  "what": "the clone's agent runs detached without a notification",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "mode: \"detached-background\",",
+  "new": "mode: \"detached\",",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts the mentioned type as the session's own detached background agent, with the call's prompt, description and name",
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts a new detached background agent even when the call asks to resume or to run in the foreground"
+  ]
+ },
+ {
+  "id": "T3-M13",
+  "cases": [
+   8
+  ],
+  "what": "the clone honors run_in_background: false",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "mode: \"detached-background\",",
+  "new": "mode: (args as { run_in_background?: boolean }).run_in_background === false ? \"detached\" : \"detached-background\",",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts a new detached background agent even when the call asks to resume or to run in the foreground"
+  ]
+ },
+ {
+  "id": "T3-M14",
+  "cases": [
+   9
+  ],
+  "what": "the clone takes the last Agent call",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "reply.content.find(",
+  "new": "reply.content.findLast(",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn honours only the first Agent call of the reply"
+  ]
+ },
+ {
+  "id": "T3-M15",
+  "cases": [
+   10
+  ],
+  "what": "the clone skips prepareArguments",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const prepared = tool.prepareArguments\n",
+  "new": "const prepared = undefined\n",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn applies the tool's prepareArguments before validating"
+  ]
+ },
+ {
+  "id": "T3-M16",
+  "cases": [
+   11
+  ],
+  "what": "a reply without an Agent call is not reported",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\tif (!call) return { ok: false, error: \"the conversation clone did not start it\" };\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a reply that never called the tool"
+  ]
+ },
+ {
+  "id": "T3-M17",
+  "cases": [
+   11
+  ],
+  "what": "a provider error is not reported",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "if (reply.stopReason === \"error\" || reply.stopReason === \"aborted\") {",
+  "new": "if (reply.stopReason === \"aborted\") {",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a provider error"
+  ]
+ },
+ {
+  "id": "T3-M18",
+  "cases": [
+   11
+  ],
+  "what": "the clone skips validation",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const args = validateToolArguments(declaration, prepared) as CloneArguments;",
+  "new": "const args = prepared.arguments as CloneArguments;",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent rejects arguments that do not match the tool schema"
+  ]
+ },
+ {
+  "id": "T3-M19",
+  "cases": [
+   11
+  ],
+  "what": "a missing model is not reported",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\tif (!model) return { ok: false, error: \"no model is selected\" };\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a missing model without sending a request"
+  ]
+ },
+ {
+  "id": "T3-M20",
+  "cases": [
+   11
+  ],
+  "what": "a thrown error rejects",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "} catch (error) {\n\t\treturn { ok: false, error: errorText(error) };",
+  "new": "} catch (error) {\n\t\tthrow error;",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent returns a thrown error rather than rejecting"
+  ]
+ },
+ {
+  "id": "T3-M21",
+  "cases": [
+   12
+  ],
+  "what": "a cancelled clone still starts its agent (probe Q18)",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\tif (signal?.aborted) return { ok: false, error: \"the clone was cancelled\" };\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/subagents/mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/mention-clone.test.ts > the mention clone starts no agent when it was cancelled before a provider that ignores the abort answered"
+  ]
+ },
+ {
+  "id": "T3-M22",
+  "cases": [
+   12
+  ],
+  "what": "the clone's request ignores the signal",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "\t\t\t\t\tsignal,\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-subagents-mention-clone.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent ends the request when its signal aborts, and starts no agent"
+  ]
+ }
+]

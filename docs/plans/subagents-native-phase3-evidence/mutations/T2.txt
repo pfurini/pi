@@ -1,0 +1,28 @@
+T2-M1 [1] a reopen starts an empty conversation (probe Q4) | 2 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the evicted conversation: the child's first request holds the old user messages, then the new prompt
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again
+T2-M2 [2] a reopen takes a new handle (probe Q5) | 3 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back
+    test/suite/fork-subagents-mentions.test.ts > reopen resolves the name to the reopened agent, not the tombstone
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again
+T2-M3 [2] a reopen drops the alias | 1 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back
+T2-M4 [3] the spawn forgets the tombstone it reopens | 4 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the evicted conversation: the child's first request holds the old user messages, then the new prompt
+    test/suite/fork-subagents-mentions.test.ts > reopen gives the reopened agent its tombstone's handle and alias back
+    test/suite/fork-subagents-mentions.test.ts > reopen resolves the name to the reopened agent, not the tombstone
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again
+T2-M5 [4] a reopen falls back to general-purpose | 2 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen refuses a deleted or disabled type, creating no record and keeping the tombstone
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again
+T2-M6 [5] a refused reopen drops the tombstone | 2 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen refuses a deleted or disabled type, creating no record and keeping the tombstone
+    test/suite/fork-subagents-mentions.test.ts > reopen reopens the same tombstone once its type is enabled again
+T2-M7 [6] a reopen takes the prompt as its description | 1 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen keeps the tombstone's description rather than one derived from the prompt
+T2-M8 [7] a reopen runs detached without a notification | 1 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen runs detached in the background: it notifies once on completion and joins no batch
+T2-M9 [3] a reopen still starting is not joined | 1 of 14 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > reopen joins a reopen that is still starting, so one agent continues the conversation and gets both prompts
+restored | 0 of 14 failed
+clean: yes

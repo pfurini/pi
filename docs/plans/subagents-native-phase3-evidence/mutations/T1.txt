@@ -1,0 +1,84 @@
+T1-M1 [1] handleBase keeps capitals | 3 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase lowercases and keeps hyphens
+    test/fork-builtins/subagents/mentions.test.ts > handleBase turns other characters into single hyphens, without edge hyphens
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing
+T1-M2 [1] handleBase keeps edge hyphens | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase turns other characters into single hyphens, without edge hyphens
+T1-M3 [1] handleBase may return an empty handle | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase never returns an empty handle
+T1-M4 [1] handleBase has no length cap | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen
+T1-M5 [1] handleBase keeps a trailing hyphen the cap sliced into | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen
+T1-M6 [1] the trigger misses hyphenated handles | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > handleBase only produces handles the suggestion trigger matches
+T1-M7 [2] assignHandle numbers from 3 | 3 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle takes the free base, then numbers from 2 past every taken form
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle never hands out main
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle skips a gap rather than reusing a live handle
+T1-M8 [2] assignHandle hands out main | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle never hands out main
+T1-M9 [2] assignHandle counts from the taken total and skips no gap | 2 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle never hands out main
+    test/fork-builtins/subagents/mentions.test.ts > assignHandle skips a gap rather than reusing a live handle
+T1-M10 [3] resolveHandleToType is case-sensitive | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing
+T1-M11 [3] resolveHandleToType matches a prefix | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType matches exactly, never a prefix or a numbered handle
+T1-M12 [3] resolveHandleToType compares the raw type | 2 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType round-trips every registered type
+T1-M13 [3] resolveHandleToType resolves main | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType refuses main, even for a type named main
+T1-M14 [4] isReservedHandle is case-sensitive | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else
+T1-M15 [4] isReservedHandle takes any handle starting with ma | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else
+T1-M16 [5] stripAgentPrefix unwraps every repeated prefix | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix unwraps agent-<x> once
+T1-M17 [5] stripAgentPrefix unwraps a prefix anywhere | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix returns nothing without the prefix, without a remainder, or with the prefix inside
+T1-M18 [6] describeMention keeps every line | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > describeMention keeps the first line and collapses whitespace
+T1-M19 [6] describeMention clips at 400 | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > describeMention clips a long message at 40 characters with an ellipsis
+T1-M20 [7] parseMention keeps surrounding whitespace | 2 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > parseMention splits a leading handle from a trimmed message
+    test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a bare handle
+T1-M21 [7] parseMention needs a space as the separator | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > parseMention accepts a newline as the separator
+T1-M22 [7] parseMention accepts an empty message | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a bare handle
+T1-M23 [7] parseMention accepts a path as the handle | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a leading file path
+T1-M24 [7] parseMention accepts a mention after other text | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a mention after other text
+T1-M25 [8] the reminder loses its trailing space | 1 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder equals Claude Code's string byte for byte, trailing space included
+T1-M26 [8] the reminder names no agent | 2 of 24 failed, caught
+    test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder equals Claude Code's string byte for byte, trailing space included
+    test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder names its agent
+T1-M27 [9] resolveMention is case-sensitive | 2 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+T1-M28 [9] resolveMention reaches a nested agent by id | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one
+T1-M29 [9] resolveMention prefers any agent with a session over a running one | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution prefers a running agent over finished ones by the same name, then the newest one with a session
+T1-M30 [9] resolveMention prefers the oldest agent with a session | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution prefers a running agent over finished ones by the same name, then the newest one with a session
+T1-M31 [9] resolveMention ignores a tombstone's alias | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+T1-M32 [9] resolveMention prefers a tombstone over a live agent | 2 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution prefers a running agent over finished ones by the same name, then the newest one with a session
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+T1-M33 [10] the service's lookup ignores aliases | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution lets steer_subagent and get_subagent_result reach an agent by its handle and its alias
+T1-M34 [10] eviction keeps the record | 3 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+    test/suite/fork-subagents-mentions.test.ts > handle resolution lets the tools report an evicted agent's handle and an unknown one as not found
+    test/suite/fork-subagents-mentions.test.ts > handle resolution frees an evicted agent's names when its tombstone is dropped, so the next agent takes the bare handle
+T1-M35 [11] dropping a tombstone keeps its names | 1 of 6 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution frees an evicted agent's names when its tombstone is dropped, so the next agent takes the bare handle
+restored | 0 of 30 failed
+clean: yes

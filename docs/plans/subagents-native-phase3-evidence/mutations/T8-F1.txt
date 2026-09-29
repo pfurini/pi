@@ -1,0 +1,4 @@
+T8-F1-M1 [1] the tombstone's old id does not reach its reopened agent | 1 of 55 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook answers an evicted agent's old id with its reopened agent, so its session never reopens twice
+restored | 0 of 55 failed
+clean: yes

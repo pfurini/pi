@@ -1,0 +1,22 @@
+[
+ {
+  "id": "T8-F2-M1",
+  "cases": [1],
+  "what": "a first-prompt clone carries no system prompt",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const systemPrompt = getCurrentSystemPrompt(conversation) ? \"\" : session.systemPrompt;",
+  "new": "const systemPrompt = \"\";",
+  "files": ["test/suite/fork-subagents-mention-clone.test.ts"],
+  "expect": ["test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the system prompt the session's first turn sends, when the mention is the first prompt"]
+ },
+ {
+  "id": "T8-F2-M2",
+  "cases": [1],
+  "what": "every clone appends the system prompt again",
+  "path": "src/core/fork-builtins/subagents/tools/mention-clone.ts",
+  "old": "const systemPrompt = getCurrentSystemPrompt(conversation) ? \"\" : session.systemPrompt;",
+  "new": "const systemPrompt = session.systemPrompt;",
+  "files": ["test/suite/fork-subagents-mention-clone.test.ts"],
+  "expect": ["test/suite/fork-subagents-mention-clone.test.ts > the clone's request keeps the system prompt the session sent on its last turn, byte for byte"]
+ }
+]

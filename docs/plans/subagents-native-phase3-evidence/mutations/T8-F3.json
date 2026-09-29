@@ -1,0 +1,12 @@
+[
+ {
+  "id": "T8-F3-M1",
+  "cases": [1],
+  "what": "a never-started record's name resolves only as a type",
+  "path": "src/core/fork-builtins/subagents/ui/mentions.ts",
+  "old": "\t\t(target && target.kind === \"live\" ? target.view.type : undefined) ??\n",
+  "new": "",
+  "files": ["test/suite/fork-subagents-mentions.test.ts"],
+  "expect": ["test/suite/fork-subagents-mentions.test.ts > the input hook starts a fresh agent of a record's own type when the record never reached a session, by its alias or numbered handle"]
+ }
+]

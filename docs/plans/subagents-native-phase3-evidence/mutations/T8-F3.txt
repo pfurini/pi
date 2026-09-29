@@ -1,0 +1,4 @@
+T8-F3-M1 [1] a never-started record's name resolves only as a type | 1 of 56 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts a fresh agent of a record's own type when the record never reached a session, by its alias or numbered handle
+restored | 0 of 56 failed
+clean: yes

@@ -1,0 +1,52 @@
+T3-M1 [1] the clone sends a second request | 3 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request is exactly one model request
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request uses the session's model, session id and thinking level
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent ends the request when its signal aborts, and starts no agent
+T3-M2 [2] the clone sends only the last message of the conversation | 3 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the session's projected conversation: after a compaction, the summary instead of the turns it replaced
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the skill bodies the session re-attached after a compaction, as its own requests do
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request keeps the system prompt the session sent on its last turn, byte for byte
+T3-M3 [2] the clone sends the persisted projection alone | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the skill bodies the session re-attached after a compaction, as its own requests do
+T3-M4 [3] the clone drops the conversation's system messages | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request keeps the system prompt the session sent on its last turn, byte for byte
+T3-M5 [4] the clone keeps every tool (probe Q6) | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request declares the Agent tool and nothing else
+T3-M6 [5] the reminder comes before the message | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request ends with one user message: the typed message, a blank line, then the reminder
+T3-M7 [6] the clone sends no session id | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request uses the session's model, session id and thinking level
+T3-M8 [6] the clone sends reasoning at off | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request sends no reasoning level when the session thinks at off
+T3-M9 [7] the clone writes the message into the session | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request leaves the session's projection, messages and turns unchanged
+T3-M10 [8] the clone's type wins (probe Q7) | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts the mentioned type as the session's own detached background agent, with the call's prompt, description and name
+T3-M11 [8] the clone drops the forwarded parameters | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn forwards the call's model, thinking, max_turns, inherit_context, isolated and isolation
+T3-M12 [8] the clone's agent runs detached without a notification | 2 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts the mentioned type as the session's own detached background agent, with the call's prompt, description and name
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts a new detached background agent even when the call asks to resume or to run in the foreground
+T3-M13 [8] the clone honors run_in_background: false | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn starts a new detached background agent even when the call asks to resume or to run in the foreground
+T3-M14 [9] the clone takes the last Agent call | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn honours only the first Agent call of the reply
+T3-M15 [10] the clone skips prepareArguments | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's spawn applies the tool's prepareArguments before validating
+T3-M16 [11] a reply without an Agent call is not reported | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a reply that never called the tool
+T3-M17 [11] a provider error is not reported | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a provider error
+T3-M18 [11] the clone skips validation | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent rejects arguments that do not match the tool schema
+T3-M19 [11] a missing model is not reported | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent reports a missing model without sending a request
+T3-M20 [11] a thrown error rejects | 2 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent rejects arguments that do not match the tool schema
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent returns a thrown error rather than rejecting
+T3-M21 [12] a cancelled clone still starts its agent (probe Q18) | 1 of 1 failed, caught
+    test/fork-builtins/subagents/mention-clone.test.ts > the mention clone starts no agent when it was cancelled before a provider that ignores the abort answered
+T3-M22 [12] the clone's request ignores the signal | 1 of 20 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > when the clone cannot start the agent ends the request when its signal aborts, and starts no agent
+restored | 0 of 21 failed
+clean: yes

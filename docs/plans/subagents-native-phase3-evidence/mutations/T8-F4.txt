@@ -1,0 +1,4 @@
+T8-F4-M1 [1] every prompt rereads the settings | 1 of 57 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook rereads the settings only for a prompt shaped as a mention
+restored | 0 of 57 failed
+clean: yes

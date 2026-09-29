@@ -1,0 +1,6 @@
+T8-F2-M1 [1] a first-prompt clone carries no system prompt | 1 of 22 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request carries the system prompt the session's first turn sends, when the mention is the first prompt
+T8-F2-M2 [1] every clone appends the system prompt again | 1 of 22 failed, caught
+    test/suite/fork-subagents-mention-clone.test.ts > the clone's request keeps the system prompt the session sent on its last turn, byte for byte
+restored | 0 of 22 failed
+clean: yes

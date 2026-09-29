@@ -1,0 +1,163 @@
+T5-M1 [1] agent rows follow the file rows (probe Q11) | 7 of 87 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup adds agent rows above the wrapped provider's rows, and answers a live agent's handle
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows lists matching agents above the wrapped provider's rows, under the agents' prefix
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers every agent on a bare @, and still the files
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a finished agent as a resume
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents repeats no type for an unnamed agent
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names falls back to the raw type without a display_name
+T5-M2 [1] agents alone are dropped | 5 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers agents alone when no file matched
+    test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider costs its own rows, never the agents', whether it rejects or throws synchronously
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts a file row from the agents' prefix, character for character
+T5-M3 [1] the wrapped list is copied | 4 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows returns the wrapped list unchanged when no handle matches or no agent exists
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone never lists a nested agent, which has no handle
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers wraps a provider registered before it, and is reached through one registered after it
+T5-M4 [2] a failing wrapped provider fails the popup | 3 of 87 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup keeps the agent rows when the wrapped provider fails, and the service warns once
+    test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider costs its own rows, never the agents', whether it rejects or throws synchronously
+    test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider reports every failure with the same text, so the service warns once
+T5-M5 [2] each failure warns with another text | 2 of 87 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup keeps the agent rows when the wrapped provider fails, and the service warns once
+    test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider reports every failure with the same text, so the service warns once
+T5-M6 [3] agents list by start time alone | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order puts running and queued agents first, then the others from the earliest
+T5-M7 [3,11] evicted agents list first | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order lists live agents before evicted ones, and both before startable types
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones
+T5-M8 [4] matching is case-sensitive | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > matching matches a case-insensitive prefix
+T5-M9 [4] a mention completes only at the line's start | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > matching completes a mention typed mid-message
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line
+T5-M10 [5] a type row shows the whole description | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a type with no agent as a start, with its description's first sentence
+T5-M11 [5] a type lists under a live agent's handle | 4 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lets a live agent own its handle, so the type does not list twice
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps a named agent's type handle out of the startable types
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps an aliased tombstone's type handle reserved, and lists no type whose handle a tombstone holds
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M12 [5] a finished agent offers a message | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a finished agent as a resume
+T5-M13 [6] a path-shaped token lists agents | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+T5-M14 [6] an @ inside a word lists agents | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+T5-M15 [6] agents list while mentions are off | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+T5-M16 [6] an agent without a handle lists | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone never lists a nested agent, which has no handle
+T5-M17 [7] the provider declares the wrapped provider's characters | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers declares only @, so Pi unions the chain's characters
+    test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone
+T5-M18 [7] tokens without agent rows answer nothing | 4 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows returns the wrapped list unchanged when no handle matches or no agent exists
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone never lists a nested agent, which has no handle
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers wraps a provider registered before it, and is reached through one registered after it
+T5-M19 [7] the provider caches its rows across builds | 14 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers every agent on a bare @, and still the files
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows returns the wrapped list unchanged when no handle matches or no agent exists
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order puts running and queued agents first, then the others from the earliest
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order lists live agents before evicted ones, and both before startable types
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a type with no agent as a start, with its description's first sentence
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a finished agent as a resume
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone a path-shaped token, an @ inside a word, and every token while mentions are off
+    test/fork-builtins/subagents/ui-mentions.test.ts > what the wrapped provider answers alone never lists a nested agent, which has no handle
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers wraps a provider registered before it, and is reached through one registered after it
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers carries no state from one build of the chain to the next
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists a named agent once, under its alias, with its type
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names falls back to the raw type without a display_name
+T5-M20 [8] the prefix drops the @ | 7 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows lists matching agents above the wrapped provider's rows, under the agents' prefix
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers agents alone when no file matched
+    test/fork-builtins/subagents/ui-mentions.test.ts > matching completes a mention typed mid-message
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a type with no agent as a start, with its description's first sentence
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts a file row from the agents' prefix, character for character
+T5-M21 [8] a row's value drops the @ | 15 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows lists matching agents above the wrapped provider's rows, under the agents' prefix
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers every agent on a bare @, and still the files
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers agents alone when no file matched
+    test/fork-builtins/subagents/ui-mentions.test.ts > a failing wrapped provider costs its own rows, never the agents', whether it rejects or throws synchronously
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order puts running and queued agents first, then the others from the earliest
+    test/fork-builtins/subagents/ui-mentions.test.ts > row order lists live agents before evicted ones, and both before startable types
+    test/fork-builtins/subagents/ui-mentions.test.ts > matching matches a case-insensitive prefix
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a type with no agent as a start, with its description's first sentence
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lets a live agent own its handle, so the type does not list twice
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers wraps a provider registered before it, and is reached through one registered after it
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers carries no state from one build of the chain to the next
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists a named agent once, under its alias, with its type
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones
+T5-M22 [8] the provider declares a second character | 3 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > composing with other providers declares only @, so Pi unions the chain's characters
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider declares trigger characters the editor accepts
+    test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone
+T5-M23 [9] applyCompletion is not delegated | 4 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts the handle and a space at a line's start and mid-line
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider keeps the text after the cursor
+    test/fork-builtins/subagents/ui-mentions.test.ts > against Pi's real provider inserts a file row from the agents' prefix, character for character
+    test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone
+T5-M24 [9] the file-completion gate is forced open | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > delegation hands applyCompletion and the file-completion gate to the wrapped provider, and declares @ alone
+T5-M25 [10] a named agent lists under its handle | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists a named agent once, under its alias, with its type
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps a named agent's type handle out of the startable types
+T5-M26 [10] every row repeats its type | 5 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows lists matching agents above the wrapped provider's rows, under the agents' prefix
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent rows offers agents alone when no file matched
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lets a live agent own its handle, so the type does not list twice
+    test/fork-builtins/subagents/ui-mentions.test.ts > agent types lists a finished agent as a resume
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents repeats no type for an unnamed agent
+T5-M27 [10] a named agent frees its type handle | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps a named agent's type handle out of the startable types
+T5-M28 [11] an evicted row names no type | 3 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names falls back to the raw type without a display_name
+T5-M29 [11] a tombstone reserves no handle | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents keeps an aliased tombstone's type handle reserved, and lists no type whose handle a tombstone holds
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M30 [12] a record row shows the raw type | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name
+T5-M31 [12] a tombstone row shows the raw type | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names names a named agent and an evicted one by the agent's display_name
+T5-M32 [12] a row without a display_name shows no type | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > named and evicted agents lists an evicted agent as a resume, after the live ones
+    test/fork-builtins/subagents/ui-mentions.test.ts > display names falls back to the raw type without a display_name
+T5-M33 [13] every session_start registers the provider | 1 of 54 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup registers the provider once per activation, in TUI mode only, and again after /reload
+T5-M34 [13] RPC registers the provider too | 1 of 54 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup registers the provider once per activation, in TUI mode only, and again after /reload
+T5-M35 [13] the provider lists no agent | 5 of 54 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup adds agent rows above the wrapped provider's rows, and answers a live agent's handle
+    test/suite/fork-subagents-mentions.test.ts > the @ popup registers the provider once per activation, in TUI mode only, and again after /reload
+    test/suite/fork-subagents-mentions.test.ts > the @ popup keeps the agent rows when the wrapped provider fails, and the service warns once
+    test/suite/fork-subagents-mentions.test.ts > the @ popup lists no skill-bundled agent, nested agent or disabled type, and the hook still reaches a skill agent by its handle
+    test/suite/fork-subagents-mentions.test.ts > the @ popup reads no file while it answers a keystroke
+T5-M36 [14] the roster lists running skill-bundled agents (probe Q16) | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents lists no skill-bundled agent, running or evicted
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M37 [14] a running skill agent frees its handle | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M38 [14] an evicted skill agent frees its handle | 1 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M39 [14] the roster lists evicted skill-bundled agents (probe Q17) | 2 of 33 failed, caught
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents lists no skill-bundled agent, running or evicted
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents keeps a skill-bundled agent's handle reserved, running or evicted, so no type row lists under it
+T5-M40 [14] every registered type lists as a start | 2 of 87 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup lists no skill-bundled agent, nested agent or disabled type, and the hook still reaches a skill agent by its handle
+    test/fork-builtins/subagents/ui-mentions.test.ts > hidden and disabled agents never lists a disabled type as a start, but still lists its existing agent
+T5-M41 [15] a keystroke reloads the agent files | 1 of 54 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the @ popup reads no file while it answers a keystroke
+restored | 0 of 87 failed
+clean: yes

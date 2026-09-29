@@ -1,0 +1,184 @@
+T4-M1 [1] a direct mention starts another type (probe Q1) | 17 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn
+    test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer
+    test/suite/fork-subagents-mentions.test.ts > the input hook keeps an agent file's output_transcript: false when resuming
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens an evicted agent's session under its old handle
+    test/suite/fork-subagents-mentions.test.ts > the input hook drops a tombstone whose session file is gone, and the next mention starts afresh
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, reports a fallback start that also fails
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook never reaches a nested agent: the mention starts a top-level agent instead
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts afresh when an evicted agent left no session file
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens the same conversation on a retry after a reopen failed to start
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M2 [1] the registry stays empty until a spawn (probe Q12) | 21 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn
+    test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity
+    test/suite/fork-subagents-mentions.test.ts > the input hook relays a direct start's answer through the ordinary completion notification
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer
+    test/suite/fork-subagents-mentions.test.ts > the input hook keeps an agent file's output_transcript: false when resuming
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens an evicted agent's session under its old handle
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, starts the agent directly when the clone calls no tool
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, reports a fallback start that also fails
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts afresh when an evicted agent left no session file
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at the session's end
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens the same conversation on a retry after a reopen failed to start
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M3 [1] a direct start takes the whole message as its description | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn
+T4-M4 [1] a direct start runs detached without a notification | 3 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts an agent of the mentioned type with the message as its prompt, and spends no parent turn
+    test/suite/fork-subagents-mentions.test.ts > the input hook relays a direct start's answer through the ordinary completion notification
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start
+T4-M5 [1] a run shows no turn limit | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity
+T4-M6 [1] a run counts no tool use | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity
+T4-M7 [2] a start ignores its worktree's failure | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent
+T4-M8 [2,6] a failed start does not name its error | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a refused start, and a start whose worktree fails once, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, reports a fallback start that also fails
+T4-M9 [3] a mention steers no agent (probe Q2) | 9 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook reaches a sibling by its numbered handle, and an agent still waiting for a slot
+    test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M10 [3] a queued steer is not announced | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reaches a sibling by its numbered handle, and an agent still waiting for a slot
+T4-M11 [3] a failed steer does not name its reason | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a steer that fails
+T4-M12 [3] a running agent is resumed instead of steered | 10 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook reaches a sibling by its numbered handle, and an agent still waiting for a slot
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a steer that fails
+    test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M13 [4] a resume drops the message (probe Q3) | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer
+    test/suite/fork-subagents-mentions.test.ts > the input hook keeps an agent file's output_transcript: false when resuming
+T4-M14 [4] a resume answers a tool call | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer
+T4-M15 [4] a resume runs in the foreground | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook resumes a finished agent in the background with no tool call, and relays its answer
+T4-M16 [4] the agent file's output_transcript is ignored | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook keeps an agent file's output_transcript: false when resuming
+T4-M17 [5] a reopen worktree failure escapes the rejection handler (probe Q15) | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection
+T4-M18 [5] a tombstone whose session is gone stays | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook drops a tombstone whose session file is gone, and the next mention starts afresh
+T4-M19 [5] a tombstone whose session is gone is reopened | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook drops a tombstone whose session file is gone, and the next mention starts afresh
+T4-M20 [5] a failed reopen is not reported | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen of an agent type that is no longer available, and keeps the tombstone
+    test/suite/fork-subagents-mentions.test.ts > the input hook reports a reopen whose worktree fails to start once, with no unhandled rejection
+T4-M21 [5] a reopen is not announced | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens an evicted agent's session under its old handle
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens the same conversation on a retry after a reopen failed to start
+T4-M22 [6] a failed clone starts nothing (probe Q8) | 3 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, starts the agent directly when the clone calls no tool
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, reports a fallback start that also fails
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start
+T4-M23 [6] the clone gets another type | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt
+T4-M24 [6] a clone is not announced | 3 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at the session's end
+T4-M25 [6] a direct fallback is not announced | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, starts the agent directly when the clone calls no tool
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, relays the answer of an agent the clone fell back to start
+T4-M26 [6] direct mode clones too | 4 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M27 [6] model mode clones instead of steering or resuming | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting
+T4-M28 [6] the hook waits for the clone | 3 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at the session's end
+T4-M29 [7] mentions act in RPC mode (probe Q9) | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook passes every mention on in print, JSON and RPC mode, and leaves a running agent alone
+T4-M30 [7] an extension's prompt is a mention | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook passes an unknown handle, a bare handle, a leading file path and an extension's prompt to the main model
+T4-M31 [7] an unknown handle is swallowed | 4 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook never clones for a steer, a resume, an unknown handle, the direct mode or the off setting
+    test/suite/fork-subagents-mentions.test.ts > the input hook passes an unknown handle, a bare handle, a leading file path and an extension's prompt to the main model
+    test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook never reaches a nested agent: the mention starts a top-level agent instead
+T4-M32 [8] mentions act while off | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook passes every mention on while agentMentions is off, for a running, a finished and a never-started agent
+T4-M33 [9] @main keeps its prefix (probe Q10) | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook sends @main's text with its images to the main model, and passes a bare @main unchanged
+    test/suite/fork-subagents-mentions.test.ts > the input hook never starts an agent for @main, even when a type slugs to main
+T4-M34 [9] @main drops its images | 0 of 48 failed, not caught
+T4-M35 [9] @main without images is no escape | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook never starts an agent for @main, even when a type slugs to main
+T4-M36 [10] @agent-<x> is not unwrapped | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+T4-M37 [10] the unwrapped spelling wins | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves
+T4-M38 [11] handles match case-sensitively | 4 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts the type @agent-<type> names and reaches its running agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id
+T4-M39 [11] a raw id reaches nothing | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one
+    test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id
+T4-M40 [11] a nested agent's id reaches it | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a top-level agent by handle, alias or id, whatever the casing, and never a nested one
+    test/suite/fork-subagents-mentions.test.ts > the input hook never reaches a nested agent: the mention starts a top-level agent instead
+T4-M41 [11] an agent without a session file leaves a tombstone | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook starts afresh when an evicted agent left no session file
+T4-M42 [12] the hook waits for a steer | 7 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook steers a running agent by its handle, with no second agent
+    test/suite/fork-subagents-mentions.test.ts > the input hook reaches a sibling by its numbered handle, and an agent still waiting for a slot
+    test/suite/fork-subagents-mentions.test.ts > the input hook prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook matches a handle whatever its casing and reaches an agent by its raw id
+    test/suite/fork-subagents-mentions.test.ts > the input hook returns at once from a steer whose child input handler never resolves
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M43 [13] the clone's signal stays alive across /reload | 3 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+T4-M44 [13] an aborted clone falls back to a direct start | 1 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook aborts a clone still waiting for its reply at /reload
+T4-M45 [14] a failing mention wiring leaves the UI bound (probe Q13) | 2 of 15 failed, caught
+    test/suite/fork-subagents-presentation.test.ts > presentation factory shows an RPC-spawned background agent in the tui widget with its live activity, and no widget in rpc mode
+    test/suite/fork-subagents-presentation.test.ts > presentation factory captures terminal input, shows FleetView once a spawned agent has a session, and clears both on quit
+T4-M46 [15] a failed reopen shadows its tombstone (probe Q14) | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > handle resolution finds a tombstone by handle, alias or id only when no agent with a session or a run holds the name
+    test/suite/fork-subagents-mentions.test.ts > the input hook reopens the same conversation on a retry after a reopen failed to start
+T4-M47 [16] a late outcome still notifies | 2 of 48 failed, caught
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after /reload, and raises no unhandled rejection
+    test/suite/fork-subagents-mentions.test.ts > the input hook notifies nothing for a steer that settles after the session's end, and raises no unhandled rejection
+restored | 0 of 63 failed
+clean: yes

@@ -55,7 +55,7 @@ async function viewTasks(env: TasksMenuEnvironment): Promise<void> {
 		// Task text is the model's, maybe from a file holding escape sequences; so is a task file's id.
 		const seen = new Set<string>();
 		const choices = tasks.map((task, index) => {
-			let label = `${GLYPHS[task.status]} #${displayText(task.id)} [${task.status}] ${displayText(task.subject).replace(/\n/g, " ")}`;
+			let label = `${GLYPHS[task.status]} #${displayText(task.id)} [${displayText(task.status)}] ${displayText(task.subject).replace(/\n/g, " ")}`;
 			// Two ids that differ only in stripped characters show alike; the row number keeps the choice unique.
 			while (seen.has(label)) label += ` (row ${index + 1})`;
 			seen.add(label);
@@ -77,7 +77,7 @@ async function taskDetail(env: TasksMenuEnvironment, taskId: string): Promise<vo
 	if (task.status === "pending") actions.push("▸ Start (in_progress)");
 	if (task.status === "in_progress") actions.push("✓ Complete");
 	actions.push("✗ Delete", BACK);
-	const title = `#${displayText(task.id)} [${task.status}] ${displayText(task.subject)}\n${displayText(task.description)}`;
+	const title = `#${displayText(task.id)} [${displayText(task.status)}] ${displayText(task.subject)}\n${displayText(task.description)}`;
 	const action = await env.ui.select(title, actions);
 	if (action === "▸ Start (in_progress)") env.service.update(taskId, { status: "in_progress" });
 	else if (action === "✓ Complete") env.service.update(taskId, { status: "completed" });

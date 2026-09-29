@@ -368,6 +368,41 @@ describe("the task store", () => {
 		expect(ids({ nextId: 4, tasks: [{ id: "4", subject: "s", description: "d", status: "pending" }] })).toBe("5");
 	});
 
+	it("gives every field of a hand-edited or damaged record a valid value", () => {
+		const root = tempDir("pi-tasks-hostile-");
+		const file = join(root, "tasks-1.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				nextId: 2,
+				tasks: [
+					{
+						id: "1",
+						subject: null,
+						description: 5,
+						status: "\u001b]52;c;YWJj\u0007",
+						activeForm: 7,
+						owner: { name: "x" },
+						blocks: ["2", 3, null],
+						blockedBy: [4, "5"],
+					},
+					{ id: "2", subject: "kept", description: "d", status: "completed", activeForm: "Doing", owner: "me" },
+				],
+			}),
+		);
+		const store = new TaskStore(file, () => {}, root);
+		expect(store.get("1")).toMatchObject({
+			subject: "",
+			description: "",
+			status: "pending",
+			blocks: ["2"],
+			blockedBy: ["5"],
+		});
+		expect(store.get("1")?.activeForm).toBeUndefined();
+		expect(store.get("1")?.owner).toBeUndefined();
+		expect(store.get("2")).toMatchObject({ subject: "kept", status: "completed", activeForm: "Doing", owner: "me" });
+	});
+
 	it("leaves the saved file as it was when a later write fails, and keeps later changes in memory", () => {
 		const root = tempDir("pi-tasks-later-");
 		const file = join(root, "tasks-1.json");

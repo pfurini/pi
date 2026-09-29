@@ -56,17 +56,34 @@ export interface TaskUpdateResult {
 	warnings: string[];
 }
 
+const STATUSES: readonly TaskStatus[] = ["pending", "in_progress", "completed"];
+
+const text = (value: unknown): string => (typeof value === "string" ? value : "");
+const optionalText = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+const ids = (value: unknown): string[] =>
+	Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+
 /**
  * Fills the fields files written before dependencies existed lack, and replaces a field of the wrong
- * type, so every reader can trust the shape.
+ * type, so every reader can trust the shape. A hand-edited or damaged file may hold anything: a text
+ * field of another type becomes empty, an unknown status becomes `pending`, and a non-string edge goes.
  */
-function normalizeTask(raw: Task): Task {
+function normalizeTask(id: string, raw: Record<string, unknown>): Task {
 	const now = Date.now();
 	return {
 		...raw,
-		metadata: raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata) ? raw.metadata : {},
-		blocks: Array.isArray(raw.blocks) ? raw.blocks : [],
-		blockedBy: Array.isArray(raw.blockedBy) ? raw.blockedBy : [],
+		id,
+		subject: text(raw.subject),
+		description: text(raw.description),
+		status: STATUSES.includes(raw.status as TaskStatus) ? (raw.status as TaskStatus) : "pending",
+		activeForm: optionalText(raw.activeForm),
+		owner: optionalText(raw.owner),
+		metadata:
+			raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+				? (raw.metadata as Record<string, unknown>)
+				: {},
+		blocks: ids(raw.blocks),
+		blockedBy: ids(raw.blockedBy),
 		createdAt: typeof raw.createdAt === "number" ? raw.createdAt : now,
 		updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : now,
 	};
@@ -76,13 +93,13 @@ function normalizeTask(raw: Task): Task {
 function parseTaskFile(text: string): TaskStoreData | undefined {
 	const data: unknown = JSON.parse(text);
 	if (!data || typeof data !== "object") return undefined;
-	const { nextId, tasks } = data as Partial<TaskStoreData>;
+	const { nextId, tasks } = data as { nextId?: unknown; tasks?: unknown };
 	if (!Array.isArray(tasks)) return undefined;
 	const loaded: Task[] = [];
 	let maxId = 0;
-	for (const task of tasks) {
+	for (const task of tasks as Array<Record<string, unknown> | null>) {
 		if (!task || typeof task !== "object" || typeof task.id !== "string") continue;
-		loaded.push(normalizeTask(task));
+		loaded.push(normalizeTask(task.id, task));
 		const numeric = Number(task.id);
 		if (Number.isFinite(numeric) && numeric > maxId) maxId = numeric;
 	}

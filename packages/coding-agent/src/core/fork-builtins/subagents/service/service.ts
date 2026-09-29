@@ -39,6 +39,7 @@ import {
 	type AgentRegistry,
 	buildAgentRegistry,
 	findEnabledAgent,
+	listedAgents,
 	loadAgentRegistry,
 	resolveSpawnType,
 	type SpawnTypeResolution,
@@ -397,6 +398,20 @@ export class SubagentService {
 		return this.spawnRecord(request, (registry, settings) =>
 			resolveSpawnType(registry, request.type, settings.fallbackSubagent),
 		);
+	}
+
+	/**
+	 * Starts an agent of exactly `request.type`, which must still be a listed agent: enabled and not
+	 * skill-bundled. A mention names its type, so no `fallbackSubagent` substitute ever starts under
+	 * that name (P8). Throws `The <type> agent is no longer available.` otherwise.
+	 */
+	async spawnListed(request: SpawnRequest): Promise<SubagentView> {
+		return this.spawnRecord(request, (registry) => {
+			const definition = listedAgents(registry).find(([name]) => name === request.type)?.[1];
+			return definition
+				? { ok: true, definition }
+				: { ok: false, message: `The ${request.type} agent is no longer available.` };
+		});
 	}
 
 	/**

@@ -7,7 +7,8 @@
  *
  * In `tui` and `rpc` mode it builds the session's service at `session_start` and keeps the status
  * line `subagents` current (P7, P8); in `tui` mode it also shows the `agents` widget (`widget.ts`)
- * and FleetView (`fleet.ts`), whose viewer keeps its Markdown mode for the session.
+ * and FleetView (`fleet.ts`), whose viewer keeps its Markdown mode for the session, and routes `@handle`
+ * mentions at the prompt to agents (`mentions.ts`, D44).
  * Every `session_shutdown` unbinds the UI. A reason other than `reload` then awaits the service's
  * bounded `shutdown()`, so quit and session replacement wait for the children's teardown (R4, P6);
  * it never builds a service to do so. `/reload` keeps the service and its agents. The
@@ -27,6 +28,7 @@ import type { SubagentService } from "../service/service.ts";
 import { existingSubagentService, subagentServiceFor } from "../service/sessions.ts";
 import { showAgentsMenu } from "./agents-menu.ts";
 import { FleetView } from "./fleet.ts";
+import { handleMentionInput, type MentionEnv } from "./mentions.ts";
 import { notificationRenderer } from "./notification.ts";
 import type { ViewerSessionState } from "./viewer.ts";
 import { AgentWidget } from "./widget.ts";
@@ -99,6 +101,7 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 	let session: AgentSession | undefined;
 	let unbind: (() => void) | undefined;
 	let widget: AgentWidget | undefined;
+	let mentions: MentionEnv | undefined;
 
 	const resolve = (ctx: ExtensionContext): AgentSession | undefined => {
 		if (session) return session;
@@ -126,13 +129,28 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 		const tui = ctx.mode === "tui";
 		widget = tui ? new AgentWidget(service, ctx.ui) : undefined;
 		const fleet = tui ? new FleetView(service, ctx.ui, viewerStateOf(bound)) : undefined;
+		// Mentions act in the TUI only (D44); the session's end aborts a clone still asking its model.
+		const mentionAbort = tui ? new AbortController() : undefined;
+		// Set before the mention wiring, so a failure there still leaves the UI to unbind.
 		unbind = () => {
+			mentionAbort?.abort();
+			mentions = undefined;
 			fleet?.dispose();
 			widget?.dispose();
 			widget = undefined;
 			unbindStatus();
 		};
+		if (!mentionAbort) return;
+		// The hook reads the cached registry, so it starts filled.
+		try {
+			service.refreshDefinitions();
+		} catch (error) {
+			service.warn(`Agent definitions did not load: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		mentions = { session: bound, service, signal: mentionAbort.signal };
 	});
+
+	pi.on("input", (event, ctx) => handleMentionInput(event, ctx, mentions));
 
 	// Only the interactive TUI shows the menus; RPC's `custom()` returns nothing (P7).
 	pi.registerCommand("agents", {

@@ -321,6 +321,17 @@ describe("the clone's spawn", () => {
 		await vi.waitFor(() => expect(second.view.status).toBe("completed"), CHILD_START);
 	});
 
+	it("starts nothing when the mentioned type is no longer a listed agent", async () => {
+		const { harness, state, subagents } = await session();
+		writeFileSync(
+			join(harness.tempDir, "agents", "worker.md"),
+			"---\ndescription: Test worker.\nenabled: false\n---\nYou are a test worker.",
+		);
+		state.clone = () => agentCall(CALL);
+		expect(await clone(harness)).toEqual({ ok: false, error: "The worker agent is no longer available." });
+		expect(subagents.list()).toEqual([]);
+	});
+
 	it("honours only the first Agent call of the reply", async () => {
 		const { harness, state } = await session();
 		state.clone = () => agentCall(CALL, fauxToolCall("Agent", { ...CALL, prompt: "second call" }));

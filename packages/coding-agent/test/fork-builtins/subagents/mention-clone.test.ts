@@ -53,7 +53,7 @@ describe("the mention clone", () => {
 		} as unknown as AgentSession;
 		let spawns = 0;
 		const service = {
-			spawn: async () => {
+			spawnListed: async () => {
 				spawns++;
 				return { id: "x" };
 			},

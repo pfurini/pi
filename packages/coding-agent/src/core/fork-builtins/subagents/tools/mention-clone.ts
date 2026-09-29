@@ -12,8 +12,9 @@
  *
  * The session's model, thinking level and session id serve the request. Only the reply's first
  * `Agent` call counts. Its arguments are prepared and validated as Pi's agent loop does. The spawn
- * keeps the mentioned type, runs detached in the background, and takes the model's prompt,
- * description, name and invocation parameters; `resume` and `run_in_background` are ignored.
+ * keeps the mentioned type, with no fallback to another, runs detached in the background, and takes
+ * the model's prompt, description, name and invocation parameters; `resume` and `run_in_background`
+ * are ignored.
  */
 import { getCurrentTools, type Message, type Tool, type ToolCall, validateToolArguments } from "@earendil-works/pi-ai";
 import type { AgentSession } from "../../../agent-session.ts";
@@ -104,7 +105,7 @@ export async function runMentionClone(
 		const args = validateToolArguments(declaration, prepared) as CloneArguments;
 		// A provider may still answer after the abort; a cancelled clone never starts an agent.
 		if (signal?.aborted) return { ok: false, error: "the clone was cancelled" };
-		const view = await service.spawn({
+		const view = await service.spawnListed({
 			type,
 			prompt: args.prompt ?? message,
 			description: args.description ?? describeMention(message),

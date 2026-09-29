@@ -4,11 +4,18 @@
  * prompts as a user would. Old pi-subagents tests at 79a7c42 this covers: agent-mention-wiring,
  * mention-start-notification (see docs/plans/subagents-native-phase3-evidence/old-cases.md).
  */
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Context, fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
+import { type Context, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../../src/core/event-bus.ts";
+import type {
+	AutocompleteProviderFactory,
+	ExtensionMode,
+	ExtensionUIContext,
+} from "../../src/core/extensions/types.ts";
 import { inspectRecord, type SubagentService } from "../../src/core/fork-builtins/subagents/service/service.ts";
 import { subagentServiceFor } from "../../src/core/fork-builtins/subagents/service/sessions.ts";
 import subagentsPresentation from "../../src/core/fork-builtins/subagents/ui/index.ts";
@@ -21,8 +28,10 @@ import {
 	notices,
 	router,
 	say,
+	sleep,
 	text,
 	textOf,
+	use,
 } from "./fork-subagents-fixtures.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -30,9 +39,13 @@ const harnesses: Harness[] = [];
 
 afterEach(() => {
 	for (const harness of harnesses.splice(0)) harness.cleanup();
+	delete (globalThis as { __sn3Hold?: unknown }).__sn3Hold;
 	vi.useRealTimers();
+	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 });
+
+const REMINDER = "<system-reminder>";
 
 async function parent(
 	script: Record<string, Behavior[]>,
@@ -57,10 +70,64 @@ async function parent(
 	return harness;
 }
 
+/** A fake UI context with own methods (P17): it records notifications and the autocomplete wrappers. */
+async function bind(harness: Harness, mode: ExtensionMode = "tui") {
+	const notes: string[] = [];
+	const wrappers: AutocompleteProviderFactory[] = [];
+	const ui = {
+		notify: (message: string) => notes.push(message),
+		setStatus: () => {},
+		setWidget: () => {},
+		onTerminalInput: () => () => {},
+		getEditorText: () => "",
+		addAutocompleteProvider: (factory: AutocompleteProviderFactory) => wrappers.push(factory),
+	} as unknown as ExtensionUIContext;
+	await harness.session.bindExtensions({ uiContext: ui, mode });
+	return { notes, wrappers };
+}
+
 function service(harness: Harness) {
 	const subagents = subagentServiceFor(harness.session);
 	if (!subagents) throw new Error("no subagent service");
 	return subagents;
+}
+
+/** The user and assistant turns the parent holds; a claimed mention adds none. */
+const turns = (harness: Harness) =>
+	harness.session.messages.filter((message) => message.role === "user" || message.role === "assistant").length;
+
+/** The parent's user messages, as text. */
+const userTexts = (harness: Harness) =>
+	harness.session.messages.filter((message) => message.role === "user").map((message) => textOf(message.content));
+
+/**
+ * Makes every child that loads the agent directory's extensions hold an `input` of exactly `text`
+ * until `release()`: a steer awaits its child's input handlers.
+ */
+function holdChildInput(harness: Harness, text: string) {
+	let release!: () => void;
+	const promise = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const probe = { seen: false, promise };
+	(globalThis as { __sn3Hold?: typeof probe }).__sn3Hold = probe;
+	mkdirSync(join(harness.tempDir, "extensions"), { recursive: true });
+	writeFileSync(
+		join(harness.tempDir, "extensions", "hold-input.ts"),
+		`export default function (pi) {\n\tpi.on("input", (event) => {\n\t\tif (event.text !== ${JSON.stringify(text)}) return undefined;\n\t\tglobalThis.__sn3Hold.seen = true;\n\t\treturn globalThis.__sn3Hold.promise.then(() => undefined);\n\t});\n}\n`,
+	);
+	return { probe, release: () => release() };
+}
+
+/** Makes the session's directory a git repository with one commit. */
+function gitRepository(harness: Harness): void {
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: harness.tempDir, stdio: "pipe" });
+	git("init", "-q");
+	git("config", "user.email", "test@example.com");
+	git("config", "user.name", "Test");
+	writeFileSync(join(harness.tempDir, "README.md"), "repo\n");
+	git("add", "README.md");
+	git("commit", "-q", "-m", "initial");
 }
 
 /** What `@name` resolves to, as `live:<id>` or `tombstone:<id>`. */
@@ -356,4 +423,668 @@ describe("reopen", () => {
 		expect(subagents.list()).toHaveLength(1);
 		await vi.waitFor(() => expect(child.seen.flat()).toContain("and more"), CHILD_START);
 	});
+});
+
+describe("the input hook", () => {
+	it("starts an agent of the mentioned type with the message as its prompt, and spends no parent turn", async () => {
+		const gate = held();
+		const harness = await parent({ "task alpha": [gate.behavior] });
+		const { notes } = await bind(harness);
+		const message = "task alpha: find every retry marker in the codebase and list each one";
+		await harness.session.prompt(`@worker ${message}`);
+		expect(turns(harness)).toBe(0);
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		const [view] = service(harness).list();
+		expect(view).toMatchObject({
+			type: "worker",
+			prompt: message,
+			description: "task alpha: find every retry marker in…",
+			mode: "detached-background",
+		});
+		gate.release();
+	});
+
+	it("applies the agent file's model, thinking and turn limit, and shows its turn limit and tool activity", async () => {
+		const harness = await parent({ "task omega": [use("read", () => ({ path: "README.md" })), say("omega done")] });
+		writeFileSync(join(harness.tempDir, "README.md"), "readme\n");
+		const model = harness.getModel().id;
+		workerFile(harness, `description: Test worker. It does work.\nmodel: ${model}\nthinking: low\nmax_turns: 5`);
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task omega");
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		const [view] = service(harness).list();
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		expect(view.invocation).toMatchObject({ modelInput: model, thinking: "low", maxTurns: 5 });
+		expect(view.maxTurns).toBe(5);
+		expect(view.toolUses).toBe(1);
+		expect(view.activity).toEqual(expect.arrayContaining([expect.objectContaining({ type: "tool_start" })]));
+	});
+
+	it("relays a direct start's answer through the ordinary completion notification", async () => {
+		const harness = await parent({ "task rho": [say("rho answer")] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task rho");
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		await vi.waitFor(() => expect(notices(harness.session).join("\n")).toContain("rho answer"), CHILD_START);
+	});
+
+	it("reports a refused start, and a start whose worktree fails once, with no second agent", async () => {
+		const harness = await parent({});
+		workerFile(harness, "description: Test worker. It does work.\nisolation: worktree");
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task sigma");
+		await vi.waitFor(() =>
+			expect(notes.join("\n")).toMatch(
+				/Could not start @worker: Cannot run with isolation: "worktree": .* git repository/,
+			),
+		);
+		expect(service(harness).list()).toEqual([]);
+		gitRepository(harness);
+		// A file where git keeps its worktrees: the repository checks pass, and `git worktree add` fails.
+		writeFileSync(join(harness.tempDir, ".git", "worktrees"), "");
+		await harness.session.prompt("@worker task tau");
+		await vi.waitFor(
+			() => expect(notes.join("\n")).toMatch(/Could not start @worker: .*git worktree add failed/),
+			CHILD_START,
+		);
+		const views = service(harness).list();
+		expect(views).toHaveLength(1);
+		await vi.waitFor(() => expect(views[0]?.status).toBe("error"), CHILD_START);
+		await sleep(200);
+		expect(notes.filter((note) => note.startsWith("Could not start"))).toHaveLength(2);
+		expect(notes).not.toContain("Started @worker");
+		expect(service(harness).list()).toHaveLength(1);
+		expect(turns(harness)).toBe(0);
+	});
+
+	it("refuses a type disabled after the hook read the registry, rather than starting another type", async () => {
+		const harness = await parent({});
+		const { notes } = await bind(harness);
+		// The hook still lists `worker` from its cached registry; the spawn reads the file again.
+		workerFile(harness, "description: Test worker. It does work.\nenabled: false");
+		await harness.session.prompt("@worker go on");
+		await vi.waitFor(() =>
+			expect(notes).toContain("Could not start @worker: The worker agent is no longer available."),
+		);
+		expect(service(harness).list()).toEqual([]);
+		expect(turns(harness)).toBe(0);
+	});
+
+	it("steers a running agent by its handle, with no second agent", async () => {
+		const gate = held();
+		const harness = await parent({ "task beta": [gate.behavior] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task beta");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const steered: string[] = [];
+		service(harness).subscribe((event) => {
+			if (event.type === "steered") steered.push(event.message);
+		});
+		await harness.session.prompt("@worker keep going");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker"));
+		expect(steered).toEqual(["keep going"]);
+		expect(service(harness).list()).toHaveLength(1);
+		expect(turns(harness)).toBe(0);
+		gate.release();
+	});
+
+	it("reaches a sibling by its numbered handle, and an agent still waiting for a slot", async () => {
+		const gate = held();
+		const harness = await parent({ "task one": [gate.behavior], "task two": [gate.behavior] }, { maxConcurrent: 1 });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const first = await spawnWorker(subagents, "task one");
+		const second = await spawnWorker(subagents, "task two");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		expect([first.handle, first.status, second.handle, second.status]).toEqual([
+			"worker",
+			"running",
+			"worker-2",
+			"queued",
+		]);
+		const steered: string[] = [];
+		subagents.subscribe((event) => {
+			if (event.type === "steered") steered.push(`${event.record.handle}: ${event.message}`);
+		});
+		await harness.session.prompt("@worker-2 wait for me");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker-2"));
+		expect(steered).toEqual(["worker-2: wait for me"]);
+		expect(subagents.list()).toHaveLength(2);
+		gate.release();
+	});
+
+	it("reports a steer that fails", async () => {
+		const gate = held();
+		const harness = await parent({ "task chi": [gate.behavior] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		await spawnWorker(subagents, "task chi");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		vi.spyOn(subagents, "steer").mockResolvedValueOnce({ kind: "failed", error: "steer broke" });
+		await harness.session.prompt("@worker hello");
+		await vi.waitFor(() => expect(notes).toContain("Could not send to @worker: steer broke"));
+		gate.release();
+	});
+
+	it("resumes a finished agent in the background with no tool call, and relays its answer", async () => {
+		const harness = await parent({ "task gamma": [say("gamma done")], "follow up": [say("follow done")] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task gamma");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		const before = turns(harness);
+		await harness.session.prompt("@worker follow up");
+		// The completion notice of the first run may start a parent turn; the mention adds none.
+		expect(turns(harness)).toBe(before);
+		expect(notes).toContain("Resuming @worker");
+		const [view] = subagents.list();
+		expect(view).toMatchObject({ mode: "background", toolCallId: undefined });
+		await vi.waitFor(() => expect(view.result).toBe("follow done"), CHILD_START);
+		expect(subagents.list()).toHaveLength(1);
+		await vi.waitFor(() => expect(notices(harness.session).join("\n")).toContain("follow done"), CHILD_START);
+	});
+
+	it("keeps an agent file's output_transcript: false when resuming", async () => {
+		const harness = await parent({ "task psi": [say("psi done")], "psi again": [say("psi again done")] });
+		workerFile(harness, "description: Test worker. It does work.\noutput_transcript: false");
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task psi");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		const [view] = subagents.list();
+		expect(view.transcriptPath).toBeUndefined();
+		await harness.session.prompt("@worker psi again");
+		expect(notes).toContain("Resuming @worker");
+		await vi.waitFor(() => expect(view.result).toBe("psi again done"), CHILD_START);
+		expect(view.transcriptPath).toBeUndefined();
+	});
+
+	it("reopens an evicted agent's session under its old handle", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const child = recorder();
+		const harness = await parent({ "task delta": [child.behavior], "come back": [child.behavior] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task delta");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		evict();
+		expect(subagents.list()).toEqual([]);
+		expect(subagents.listTombstones()).toHaveLength(1);
+		await harness.session.prompt("@worker come back");
+		await vi.waitFor(() => expect(notes).toContain("Resuming @worker"), CHILD_START);
+		const [view] = subagents.list();
+		expect(view).toMatchObject({ handle: "worker", description: "task delta" });
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		expect(child.seen.at(-1)).toEqual(expect.arrayContaining(["task delta", "come back"]));
+	});
+
+	it("drops a tombstone whose session file is gone, and the next mention starts afresh", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent({ "task kappa": [say("kappa done")], "third try": [say("third done")] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const entry = await evictedWorker(subagents, "task kappa");
+		unlinkSync(entry.sessionFile);
+		await harness.session.prompt("@worker again");
+		expect(notes).toContain("Could not resume @worker: its session is gone.");
+		expect(subagents.listTombstones()).toEqual([]);
+		expect(subagents.list()).toEqual([]);
+		await harness.session.prompt("@worker third try");
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		expect(subagents.list()).toEqual([expect.objectContaining({ handle: "worker", prompt: "third try" })]);
+		expect(turns(harness)).toBe(0);
+	});
+
+	it("reports a reopen of an agent type that is no longer available, and keeps the tombstone", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent({ "task lambda": [say("lambda done")] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		await evictedWorker(subagents, "task lambda");
+		workerFile(harness, "description: Test worker. It does work.\nenabled: false");
+		await harness.session.prompt("@worker again");
+		await vi.waitFor(() =>
+			expect(notes).toContain("Could not resume @worker: The worker agent is no longer available."),
+		);
+		expect(notes).not.toContain("Resuming @worker");
+		expect(subagents.list()).toEqual([]);
+		expect(subagents.listTombstones()).toHaveLength(1);
+	});
+
+	it("reports a reopen whose worktree fails to start once, with no unhandled rejection", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent({ "task iota": [say("done")] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task iota");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		evict();
+		vi.spyOn(subagents, "worktreeStarted").mockRejectedValueOnce(new Error("worktree refused"));
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			await harness.session.prompt("@worker again");
+			await vi.waitFor(() => expect(notes).toContain("Could not resume @worker: worktree refused"), CHILD_START);
+			await new Promise((resolve) => setImmediate(resolve));
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+		expect(unhandled).toEqual([]);
+		expect(notes.filter((note) => note.startsWith("Could not resume"))).toHaveLength(1);
+		expect(notes).not.toContain("Resuming @worker");
+	});
+
+	it("in model mode, claims the prompt at once and lets a clone with Agent as its only tool write the prompt", async () => {
+		const requests: Context[] = [];
+		const reply = held(() =>
+			fauxAssistantMessage(
+				[
+					fauxToolCall("Agent", {
+						subagent_type: "general-purpose",
+						prompt: "clone wrote epsilon",
+						description: "clone desc",
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		);
+		const parentBehavior: Behavior = (context, options) => {
+			requests.push(context);
+			const last = context.messages.at(-1);
+			if (last?.role === "user" && textOf(last.content).includes(REMINDER)) return reply.behavior(context, options);
+			return fauxAssistantMessage("hello back");
+		};
+		const gate = held();
+		const harness = await parent(
+			{ "clone wrote epsilon": [gate.behavior] },
+			{ agentMentions: "model" },
+			parentBehavior,
+		);
+		const { notes } = await bind(harness);
+		await harness.session.prompt("hello");
+		const before = turns(harness);
+		// The prompt returns while the clone still waits for its reply.
+		await harness.session.prompt("@worker find epsilon");
+		expect(notes).toEqual(["Prompting @worker…"]);
+		await vi.waitFor(() => expect(reply.requests()).toBe(1));
+		expect(service(harness).list()).toEqual([]);
+		const clone = requests.at(-1) as Context;
+		expect(getCurrentTools(clone.messages).map((tool) => tool.name)).toEqual(["Agent"]);
+		expect(getCurrentSystemPrompt(clone.messages)).toBe(getCurrentSystemPrompt(requests[0].messages));
+		const last = textOf(clone.messages.at(-1)?.content);
+		expect(last).toMatch(/^find epsilon\n\n<system-reminder>/);
+		expect(last).toContain('invoke the agent "worker"');
+		reply.release();
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		expect(turns(harness)).toBe(before);
+		// The mentioned type wins over the clone's choice.
+		expect(service(harness).list()[0]).toMatchObject({ type: "worker", description: "clone desc" });
+		expect(notes).toEqual(["Prompting @worker…"]);
+		gate.release();
+	});
+
+	it("in model mode, starts the agent directly when the clone calls no tool", async () => {
+		const gate = held();
+		const harness = await parent({ "find zeta": [gate.behavior] }, { agentMentions: "model" }, () =>
+			fauxAssistantMessage("I will not call a tool"),
+		);
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker find zeta");
+		await vi.waitFor(
+			() => expect(notes).toContain("Started @worker directly: the conversation clone did not start it"),
+			CHILD_START,
+		);
+		expect(service(harness).list()[0]).toMatchObject({ prompt: "find zeta" });
+		gate.release();
+	});
+
+	it("in model mode, reports a fallback start that also fails", async () => {
+		const harness = await parent({}, { agentMentions: "model" }, () =>
+			fauxAssistantMessage("I will not call a tool"),
+		);
+		workerFile(harness, "description: Test worker. It does work.\nisolation: worktree");
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker find eta");
+		await vi.waitFor(() =>
+			expect(notes.join("\n")).toMatch(/Could not start @worker: Cannot run with isolation: "worktree"/),
+		);
+		expect(service(harness).list()).toEqual([]);
+	});
+
+	it("in model mode, relays the answer of an agent the clone fell back to start", async () => {
+		const harness = await parent({ "find theta": [say("theta answer")] }, { agentMentions: "model" }, () =>
+			fauxAssistantMessage("I will not call a tool"),
+		);
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker find theta");
+		await vi.waitFor(() => expect(notes.join("\n")).toContain("Started @worker directly"), CHILD_START);
+		await vi.waitFor(() => expect(notices(harness.session).join("\n")).toContain("theta answer"), CHILD_START);
+	});
+
+	it("never clones for a steer, a resume, an unknown handle, the direct mode or the off setting", async () => {
+		let clones = 0;
+		const counting: Behavior = (context) => {
+			const last = context.messages.at(-1);
+			if (last?.role === "user" && textOf(last.content).includes(REMINDER)) clones++;
+			return fauxAssistantMessage("main reply");
+		};
+		const gate = held();
+		const script = { "task mu": [gate.behavior], "mu again": [say("mu again done")], "task nu": [say("nu")] };
+		const model = await parent(script, { agentMentions: "model" }, counting);
+		const { notes } = await bind(model);
+		const subagents = service(model);
+		const view = await spawnWorker(subagents, "task mu");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		await model.session.prompt("@worker steer me");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker"));
+		gate.release();
+		await vi.waitFor(() => expect(view.status).toBe("completed"), CHILD_START);
+		await model.session.prompt("@worker mu again");
+		expect(notes).toContain("Resuming @worker");
+		await model.session.prompt("@nobody hello");
+		expect(userTexts(model)).toEqual(["@nobody hello"]);
+		for (const mode of ["direct", "off"]) {
+			const other = await parent(script, { agentMentions: mode }, counting);
+			await bind(other);
+			await other.session.prompt("@worker task nu");
+		}
+		await sleep(100);
+		expect(clones).toBe(0);
+	});
+
+	it("passes an unknown handle, a bare handle, a leading file path and an extension's prompt to the main model", async () => {
+		const harness = await parent({});
+		const { notes } = await bind(harness);
+		const prompts = ["@nobody hi", "@worker", "@src/index.ts summarize this"];
+		for (const prompt of prompts) await harness.session.prompt(prompt);
+		await harness.session.prompt("@worker from an extension", { source: "extension" });
+		expect(userTexts(harness)).toEqual([...prompts, "@worker from an extension"]);
+		expect(turns(harness)).toBe(8);
+		expect(service(harness).list()).toEqual([]);
+		expect(notes).toEqual([]);
+	});
+
+	it("passes every mention on in print, JSON and RPC mode, and leaves a running agent alone", async () => {
+		for (const mode of ["print", "json", "rpc"] as const) {
+			const gate = held();
+			const harness = await parent({ "task xi": [gate.behavior] });
+			const { notes } = await bind(harness, mode);
+			const subagents = service(harness);
+			await spawnWorker(subagents, "task xi");
+			await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+			const steered: string[] = [];
+			subagents.subscribe((event) => {
+				if (event.type === "steered") steered.push(event.message);
+			});
+			await harness.session.prompt("@worker hi");
+			await harness.session.prompt("@plan hi");
+			expect(userTexts(harness), mode).toEqual(["@worker hi", "@plan hi"]);
+			expect(steered, mode).toEqual([]);
+			expect(subagents.list(), mode).toHaveLength(1);
+			expect(notes, mode).toEqual([]);
+			gate.release();
+		}
+	});
+
+	it("passes every mention on while agentMentions is off, for a running, a finished and a never-started agent", async () => {
+		const gate = held();
+		const harness = await parent({ "task pi": [gate.behavior], "task rho": [say("rho")] }, { agentMentions: "off" });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const finished = await spawnWorker(subagents, "task rho", "Done");
+		await vi.waitFor(() => expect(finished.status).toBe("completed"), CHILD_START);
+		await spawnWorker(subagents, "task pi");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const prompts = ["@worker-2 steer", "@done resume", "@plan start"];
+		for (const prompt of prompts) await harness.session.prompt(prompt);
+		expect(userTexts(harness)).toEqual(prompts);
+		expect(subagents.list()).toHaveLength(2);
+		expect(finished.status).toBe("completed");
+		expect(notes).toEqual([]);
+		gate.release();
+	});
+
+	it("sends @main's text with its images to the main model, and passes a bare @main unchanged", async () => {
+		const harness = await parent({});
+		await bind(harness);
+		// A 1x1 PNG, so the image survives Pi's resize step.
+		const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+		const image = { type: "image" as const, data, mimeType: "image/png" };
+		await harness.session.prompt("@main look at this", { images: [image] });
+		await harness.session.prompt("@main");
+		expect(userTexts(harness)).toEqual(["look at this", "@main"]);
+		const [first] = harness.session.messages.filter((message) => message.role === "user");
+		expect(first?.role === "user" && Array.isArray(first.content) ? first.content : []).toEqual(
+			expect.arrayContaining([expect.objectContaining({ type: "image" })]),
+		);
+	});
+
+	it("never starts an agent for @main, even when a type slugs to main", async () => {
+		const harness = await parent({});
+		writeFileSync(join(harness.tempDir, "agents", "main.md"), "---\ndescription: Named main.\n---\nYou are main.");
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@main hello there");
+		expect(userTexts(harness)).toEqual(["hello there"]);
+		expect(service(harness).list()).toEqual([]);
+		expect(notes).toEqual([]);
+	});
+
+	it("starts the type @agent-<type> names and reaches its running agent", async () => {
+		const gate = held();
+		const harness = await parent({ "task tau": [gate.behavior] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@agent-worker task tau");
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		await harness.session.prompt("@Agent-Worker keep at it");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker"));
+		expect(service(harness).list()).toHaveLength(1);
+		expect(turns(harness)).toBe(0);
+		gate.release();
+	});
+
+	it("prefers an agent named agent-<x> over the unwrapped <x>, and passes on when neither spelling resolves", async () => {
+		const gate = held();
+		const harness = await parent({ "task upsilon": [gate.behavior], "task phi": [gate.behavior] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		await spawnWorker(subagents, "task upsilon");
+		const named = await spawnWorker(subagents, "task phi", "agent-worker");
+		await vi.waitFor(() => expect(gate.requests()).toBe(2), CHILD_START);
+		const steered: string[] = [];
+		subagents.subscribe((event) => {
+			if (event.type === "steered") steered.push(event.record.id);
+		});
+		await harness.session.prompt("@agent-worker for the named one");
+		await vi.waitFor(() => expect(notes).toContain("Sent to @agent-worker"));
+		expect(steered).toEqual([named.id]);
+		await harness.session.prompt("@agent-nobody hi");
+		expect(userTexts(harness)).toEqual(["@agent-nobody hi"]);
+		gate.release();
+	});
+
+	it("matches a handle whatever its casing and reaches an agent by its raw id", async () => {
+		const gate = held();
+		const harness = await parent({ "task chi": [gate.behavior] });
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const view = await spawnWorker(subagents, "task chi");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const steered: string[] = [];
+		subagents.subscribe((event) => {
+			if (event.type === "steered") steered.push(event.message);
+		});
+		await harness.session.prompt("@WORKER by casing");
+		await harness.session.prompt(`@${view.id} by id`);
+		await vi.waitFor(() => expect(steered).toEqual(["by casing", "by id"]));
+		expect(notes).toEqual(["Sent to @worker", "Sent to @worker"]);
+		expect(subagents.list()).toHaveLength(1);
+		gate.release();
+	});
+
+	it("never reaches a nested agent: the mention starts a top-level agent instead", async () => {
+		const gate = held();
+		const harness = await parent({
+			"task lead": [gate.behavior],
+			"nested psi": [gate.behavior],
+			"task new": [gate.behavior],
+		});
+		const { notes } = await bind(harness);
+		const subagents = service(harness);
+		const lead = await subagents.spawn({
+			type: "general-purpose",
+			prompt: "task lead",
+			description: "lead",
+			mode: "detached-background",
+		});
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const nested = await subagents.spawnOwned(
+			lead,
+			{ type: "worker", prompt: "nested psi", description: "nested" },
+			(registry) => {
+				const definition = registry.agents.get("worker");
+				return definition ? { ok: true, definition } : { ok: false, message: "no worker" };
+			},
+		);
+		await vi.waitFor(() => expect(gate.requests()).toBe(2), CHILD_START);
+		const steered: string[] = [];
+		subagents.subscribe((event) => {
+			if (event.type === "steered") steered.push(event.record.id);
+		});
+		await harness.session.prompt("@worker task new");
+		await vi.waitFor(() => expect(notes).toContain("Started @worker"), CHILD_START);
+		expect(steered).toEqual([]);
+		const started = subagents.list().find((view) => view.prompt === "task new");
+		expect(started).toMatchObject({ type: "worker", handle: "worker", parentId: undefined });
+		expect(started?.id).not.toBe(nested.id);
+		// Its raw id reaches nothing either: the prompt goes to the main model.
+		await harness.session.prompt(`@${nested.id} hello`);
+		expect(userTexts(harness)).toEqual([`@${nested.id} hello`]);
+		expect(steered).toEqual([]);
+		gate.release();
+	});
+
+	it("starts afresh when an evicted agent left no session file", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const harness = await parent(
+			{ "task omicron": [say("omicron done")], "second run": [say("second")] },
+			{ rememberAgents: false },
+		);
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task omicron");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		const [first] = subagents.list();
+		evict();
+		expect(subagents.list()).toEqual([]);
+		expect(subagents.listTombstones()).toEqual([]);
+		await harness.session.prompt("@worker second run");
+		await vi.waitFor(() => expect(notes.filter((note) => note === "Started @worker")).toHaveLength(2), CHILD_START);
+		const [second] = subagents.list();
+		expect(second).toMatchObject({ handle: "worker", prompt: "second run" });
+		expect(second.id).not.toBe(first.id);
+	});
+
+	it("returns at once from a steer whose child input handler never resolves", async () => {
+		const gate = held();
+		const harness = await parent({ "task sticky": [gate.behavior] });
+		const hold = holdChildInput(harness, "never taken");
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task sticky");
+		await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+		const returned = await Promise.race([
+			harness.session.prompt("@worker never taken").then(() => "returned"),
+			sleep(2_000).then(() => "blocked"),
+		]);
+		expect(returned).toBe("returned");
+		await vi.waitFor(() => expect(hold.probe.seen).toBe(true));
+		expect(notes).toEqual(["Started @worker"]);
+		hold.release();
+		await vi.waitFor(() => expect(notes).toContain("Sent to @worker"));
+		gate.release();
+	});
+
+	for (const end of ["reload", "shutdown"] as const) {
+		it(`aborts a clone still waiting for its reply at ${end === "reload" ? "/reload" : "the session's end"}`, async () => {
+			const reply = held(() =>
+				fauxAssistantMessage(
+					[fauxToolCall("Agent", { subagent_type: "worker", prompt: "late", description: "late" })],
+					{ stopReason: "toolUse" },
+				),
+			);
+			let released = false;
+			const parentBehavior: Behavior = (context, options) => {
+				const last = context.messages.at(-1);
+				if (last?.role !== "user" || !textOf(last.content).includes(REMINDER)) return fauxAssistantMessage("ok");
+				// Answers only once released, whatever the signal says: a provider that ignores the abort.
+				return reply.behavior(context, released ? options : undefined);
+			};
+			const harness = await parent({ late: [say("late done")] }, { agentMentions: "model" }, parentBehavior);
+			const { notes } = await bind(harness);
+			const subagents = service(harness);
+			await harness.session.prompt("@worker find sigma");
+			await vi.waitFor(() => expect(reply.requests()).toBe(1));
+			if (end === "reload") await harness.session.reload();
+			else await harness.session.shutdown();
+			released = true;
+			reply.release();
+			await sleep(300);
+			expect(subagents.list()).toEqual([]);
+			expect(notes).toEqual(["Prompting @worker…"]);
+		});
+	}
+
+	it("reopens the same conversation on a retry after a reopen failed to start", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+		const child = recorder();
+		const harness = await parent({ "task theta": [child.behavior], "try again": [child.behavior] });
+		const { notes } = await bind(harness);
+		await harness.session.prompt("@worker task theta");
+		const subagents = service(harness);
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("completed"), CHILD_START);
+		evict();
+		const [tombstone] = subagents.listTombstones();
+		// A directory at the session path makes the reopened child fail before its session exists.
+		renameSync(tombstone.sessionFile, `${tombstone.sessionFile}.aside`);
+		mkdirSync(tombstone.sessionFile);
+		await harness.session.prompt("@worker first try");
+		await vi.waitFor(() => expect(subagents.list()[0]?.status).toBe("error"), CHILD_START);
+		rmdirSync(tombstone.sessionFile);
+		renameSync(`${tombstone.sessionFile}.aside`, tombstone.sessionFile);
+		child.seen.length = 0;
+		await harness.session.prompt("@worker try again");
+		await vi.waitFor(() => expect(notes.filter((note) => note === "Resuming @worker")).toHaveLength(2), CHILD_START);
+		await vi.waitFor(
+			() => expect(child.seen.at(-1)).toEqual(expect.arrayContaining(["task theta", "try again"])),
+			CHILD_START,
+		);
+	});
+
+	for (const end of ["reload", "shutdown"] as const) {
+		it(`notifies nothing for a steer that settles after ${end === "reload" ? "/reload" : "the session's end"}, and raises no unhandled rejection`, async () => {
+			const gate = held();
+			const harness = await parent({ "task hold": [gate.behavior] });
+			const hold = holdChildInput(harness, "held steer");
+			const { notes } = await bind(harness);
+			await harness.session.prompt("@worker task hold");
+			await vi.waitFor(() => expect(gate.requests()).toBe(1), CHILD_START);
+			await harness.session.prompt("@worker held steer");
+			await vi.waitFor(() => expect(hold.probe.seen).toBe(true));
+			const unhandled: unknown[] = [];
+			const onUnhandled = (reason: unknown) => unhandled.push(reason);
+			process.on("unhandledRejection", onUnhandled);
+			try {
+				if (end === "reload") await harness.session.reload();
+				else await harness.session.shutdown();
+				hold.release();
+				gate.release();
+				await sleep(300);
+			} finally {
+				process.off("unhandledRejection", onUnhandled);
+			}
+			expect(unhandled).toEqual([]);
+			expect(notes).toEqual(["Started @worker"]);
+		});
+	}
 });

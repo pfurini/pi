@@ -4,7 +4,6 @@ description: Adversarially reviews planning artifacts (implementation plans, PRD
 model: openai-codex/gpt-6-astra
 thinking: high
 color: red
-persistSession: true
 output_transcript: true
 ---
 

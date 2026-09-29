@@ -4,7 +4,6 @@ description: Finds high-confidence defects and explicit repository-rule violatio
 color: green
 model: openai-codex/gpt-6-sol
 thinking: high
-persistSession: true
 output_transcript: true
 ---
 

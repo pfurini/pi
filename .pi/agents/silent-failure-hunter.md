@@ -4,7 +4,6 @@ description: Finds changed failure paths that become indistinguishable from succ
 model: openai-codex/gpt-5.6-luna
 thinking: high
 color: red
-persistSession: true
 output_transcript: true
 ---
 

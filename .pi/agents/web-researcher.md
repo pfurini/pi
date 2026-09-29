@@ -3,7 +3,6 @@ name: web-researcher
 description: Researches current external facts, APIs, platform behavior, and technical claims from primary sources, returning cited evidence, applicability, conflicts, and unresolved gaps.
 model: sonnet
 color: magenta
-persistSession: true
 output_transcript: true
 ---
 

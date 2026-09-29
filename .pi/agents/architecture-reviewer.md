@@ -4,7 +4,6 @@ description: Finds structural issues in changed code that compound as requiremen
 model: openai-codex/gpt-6-luna
 thinking: high
 color: blue
-persistSession: true
 output_transcript: true
 ---
 

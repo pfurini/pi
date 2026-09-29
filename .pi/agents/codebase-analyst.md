@@ -3,7 +3,6 @@ name: codebase-analyst
 description: Traces how a specific behavior works through control flow, data flow, state ownership, boundaries, and side effects with precise file:line evidence.
 model: sonnet
 color: cyan
-persistSession: true
 output_transcript: true
 ---
 

@@ -4,7 +4,6 @@ description: Finds repository documentation made false by a change and missing d
 model: openai-codex/gpt-5.6-luna
 thinking: high
 color: magenta
-persistSession: true
 output_transcript: true
 ---
 

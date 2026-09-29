@@ -4,7 +4,6 @@ description: Finds meaningful invariants that changed types fail to express or e
 model: openai-codex/gpt-6-luna
 thinking: high
 color: yellow
-persistSession: true
 output_transcript: true
 ---
 

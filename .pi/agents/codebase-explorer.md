@@ -3,7 +3,6 @@ name: codebase-explorer
 description: Locates where a concern lives and returns the concrete files, precedents, primitives, tests, and validation commands that describe the codebase as it exists.
 model: sonnet
 color: green
-persistSession: true
 output_transcript: true
 ---
 

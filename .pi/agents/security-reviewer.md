@@ -4,7 +4,6 @@ description: Finds reachable security defects in changed code — broken authent
 color: red
 model: openai-codex/gpt-6-astra
 thinking: high
-persistSession: true
 output_transcript: true
 ---
 

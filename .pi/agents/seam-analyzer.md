@@ -4,7 +4,6 @@ description: Hunts for a missing type at a seam — structure flattened and rebu
 color: purple
 model: openai-codex/gpt-6-sol
 thinking: high
-persistSession: true
 output_transcript: true
 ---
 

@@ -4,7 +4,6 @@ description: Finds meaningful changed behavior that lacks regression protection.
 model: openai-codex/gpt-6-luna
 thinking: high
 color: cyan
-persistSession: true
 output_transcript: true
 ---
 

@@ -4,7 +4,6 @@ description: Finds avoidable machinery and quality debt in changed code across f
 model: openai-codex/gpt-6-luna
 thinking: high
 color: green
-persistSession: true
 output_transcript: true
 ---
 

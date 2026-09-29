@@ -4,7 +4,6 @@ description: Finds changed comments and docstrings that misstate behavior, prese
 model: openai-codex/gpt-5.6-luna
 thinking: high
 color: blue
-persistSession: true
 output_transcript: true
 ---
 

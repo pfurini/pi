@@ -5,12 +5,14 @@
  * and `schedulingEnabled` (D17) and without the boolean spelling of `agentMentions`. A value of the
  * wrong type or out of range is dropped with one warning per key.
  */
-import { lstatSync } from "node:fs";
-import { join } from "node:path";
-import { getAgentDir } from "../../../../config.ts";
-import { stripBom } from "../../../../utils/text.ts";
-import { FileSettingsStorage, type SettingsManager } from "../../../settings-manager.ts";
-import { writeFileAtomically } from "../atomic-write.ts";
+import type { SettingsManager } from "../../../settings-manager.ts";
+import {
+	acceptsSetting,
+	describeSetting,
+	forkBuiltinSection,
+	type SettingCheck,
+	writeForkBuiltinProjectSection,
+} from "../../settings-section.ts";
 
 export type JoinMode = "async" | "group" | "smart";
 export type ToolDescriptionMode = "full" | "compact" | "custom";
@@ -80,9 +82,7 @@ export const DEFAULT_SUBAGENT_SETTINGS: Readonly<SubagentSettings> = {
 	viewerMarkdown: "assistant",
 };
 
-type Check = { kind: "integer"; min: number; max: number } | { kind: "boolean" } | { kind: "enum"; values: string[] };
-
-const CHECKS: Record<Exclude<keyof SubagentSettings, "fallbackSubagent">, Check> = {
+const CHECKS: Record<Exclude<keyof SubagentSettings, "fallbackSubagent">, SettingCheck> = {
 	maxConcurrent: { kind: "integer", min: 1, max: 1024 },
 	maxConcurrentForeground: { kind: "integer", min: 0, max: 1024 },
 	defaultMaxTurns: { kind: "integer", min: 0, max: 10_000 },
@@ -112,20 +112,6 @@ export const SUBAGENT_SETTING_KEYS: readonly (keyof SubagentSettings)[] = [
 	"fallbackSubagent",
 ];
 
-function describe(check: Check): string {
-	if (check.kind === "integer") return `an integer from ${check.min} to ${check.max}`;
-	if (check.kind === "boolean") return "true or false";
-	return `one of ${check.values.join(", ")}`;
-}
-
-function accepts(check: Check, value: unknown): boolean {
-	if (check.kind === "integer") {
-		return typeof value === "number" && Number.isInteger(value) && value >= check.min && value <= check.max;
-	}
-	if (check.kind === "boolean") return typeof value === "boolean";
-	return typeof value === "string" && check.values.includes(value);
-}
-
 /** The valid keys of one scope's `forkBuiltins.subagents` object; each invalid key adds one warning. */
 export function sanitizeSubagentSettings(
 	raw: unknown,
@@ -153,17 +139,10 @@ export function sanitizeSubagentSettings(
 			warnings.push(`${where}: unknown key ${key}; it is ignored.`);
 			continue;
 		}
-		if (accepts(check, value)) (values as Record<string, unknown>)[key] = value;
-		else warnings.push(`${where}: ${key} must be ${describe(check)}; it is ignored.`);
+		if (acceptsSetting(check, value)) (values as Record<string, unknown>)[key] = value;
+		else warnings.push(`${where}: ${key} must be ${describeSetting(check)}; it is ignored.`);
 	}
 	return { values, warnings };
-}
-
-function subagentsSection(settings: object): unknown {
-	const forkBuiltins = (settings as { forkBuiltins?: unknown }).forkBuiltins;
-	return typeof forkBuiltins === "object" && forkBuiltins !== null
-		? (forkBuiltins as Record<string, unknown>).subagents
-		: undefined;
 }
 
 /**
@@ -174,8 +153,14 @@ export function readSubagentSettings(settingsManager: SettingsManager): {
 	settings: Readonly<SubagentSettings>;
 	warnings: string[];
 } {
-	const global = sanitizeSubagentSettings(subagentsSection(settingsManager.getGlobalSettings()), "global");
-	const project = sanitizeSubagentSettings(subagentsSection(settingsManager.getProjectSettings()), "project");
+	const global = sanitizeSubagentSettings(
+		forkBuiltinSection(settingsManager.getGlobalSettings(), "subagents"),
+		"global",
+	);
+	const project = sanitizeSubagentSettings(
+		forkBuiltinSection(settingsManager.getProjectSettings(), "subagents"),
+		"project",
+	);
 	return {
 		// Frozen: the service hands these out, and no reader may change what the next one sees (F13).
 		settings: Object.freeze({ ...DEFAULT_SUBAGENT_SETTINGS, ...global.values, ...project.values }),
@@ -191,7 +176,8 @@ export function readSubagentSettings(settingsManager: SettingsManager): {
 export function projectSubagentValues(
 	settingsManager: Pick<SettingsManager, "getProjectSettings">,
 ): Partial<SubagentSettings> {
-	return sanitizeSubagentSettings(subagentsSection(settingsManager.getProjectSettings()), "project").values;
+	return sanitizeSubagentSettings(forkBuiltinSection(settingsManager.getProjectSettings(), "subagents"), "project")
+		.values;
 }
 
 /**
@@ -210,28 +196,5 @@ export function writeProjectSubagentSettings(cwd: string, values: Partial<Subage
 		const reasons = warnings.map((warning) => warning.replace(/; it is ignored\.$/, "."));
 		throw new Error(`Refusing to write subagent settings: ${reasons.join(" ")}`);
 	}
-	const dir = join(cwd, ".pi");
-	const file = join(dir, "settings.json");
-	for (const path of [dir, file]) {
-		if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
-			throw new Error(`Refusing to write subagent settings through a symlink: ${path}`);
-		}
-	}
-	// The storage's agent directory only locates the global file, which this never touches.
-	new FileSettingsStorage(cwd, getAgentDir()).withLock("project", (current) => {
-		const parsed: unknown = current ? JSON.parse(stripBom(current)) : {};
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-			throw new Error("The project settings.json does not hold a JSON object");
-		}
-		const settings = parsed as Record<string, unknown>;
-		const forkBuiltins =
-			typeof settings.forkBuiltins === "object" && settings.forkBuiltins !== null
-				? (settings.forkBuiltins as Record<string, unknown>)
-				: {};
-		const text = `${JSON.stringify({ ...settings, forkBuiltins: { ...forkBuiltins, subagents: values } }, null, 2)}\n`;
-		if (current === undefined) return text;
-		// The storage writes in place; an existing file is replaced whole instead, and the storage writes nothing.
-		writeFileAtomically(file, text);
-		return undefined;
-	});
+	writeForkBuiltinProjectSection(cwd, "subagents", "subagent", values);
 }

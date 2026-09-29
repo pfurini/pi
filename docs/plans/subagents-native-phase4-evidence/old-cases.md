@@ -35,7 +35,7 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 26 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > clears completed task after REMINDER_INTERVAL turns | T2.11 | |
 | 27 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > clears each task independently based on its own completion turn | T2.11 | |
 | 28 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > does not clear pending or in_progress tasks | T2.11 | |
-| 29 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > cleans up dependency edges when auto-clearing | T1.6 | |
+| 29 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > cleans up dependency edges when auto-clearing | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
 | 30 | test/auto-clear.test.ts > auto-clear: on_task_complete mode > returns true when tasks are cleared | T2.11 | |
 | 31 | test/auto-clear.test.ts > auto-clear: on_list_complete mode > does not clear when some tasks are still pending | T2.10 | |
 | 32 | test/auto-clear.test.ts > auto-clear: on_list_complete mode > does not clear immediately when all tasks complete | T2.10 | |
@@ -108,7 +108,7 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 99 | test/session-handoff.test.ts > session handoff > returns nothing for a key that has no handoff | T2.14 | |
 | 100 | test/session-handoff.test.ts > session handoff > replaces an earlier handoff for the same key | T2.14 | |
 | 101 | test/session-handoff.test.ts > session handoff > reads the source when taken, so changes made after leaving it are included | T3.8 | |
-| 102 | test/session-handoff.test.ts > session handoff > returns a copy, so the next session cannot change the old one's tasks | T1.12 | |
+| 102 | test/session-handoff.test.ts > session handoff > returns a copy, so the next session cannot change the old one's tasks | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does |
 | 103 | test/session-handoff.test.ts > session handoff > keeps the registry on globalThis, where a re-evaluated module still finds it | Dropped: D47, one service per session (globalThis registries) | |
 | 104 | test/session-lifecycle.test.ts > fork across extension instances > seeds the forked session's file with the parent's tasks (session scope) | T2.14 | |
 | 105 | test/session-lifecycle.test.ts > fork across extension instances > seeds the forked session's file under session-global scope | Dropped: D49, scopes (session-global scope) | |
@@ -117,7 +117,7 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 108 | test/session-lifecycle.test.ts > fork across extension instances > does not duplicate a shared project list | Dropped: D49, scopes (project scope) | |
 | 109 | test/session-lifecycle.test.ts > fork across extension instances > does not duplicate a list shared through a PI_TASKS path | Dropped: D49, scopes (PI_TASKS) | |
 | 110 | test/session-lifecycle.test.ts > fork across extension instances > keeps the fork independent of the parent | T2.14 | |
-| 111 | test/session-lifecycle.test.ts > fork across extension instances > leaves a fork target that already has tasks as it is | T1.12 | |
+| 111 | test/session-lifecycle.test.ts > fork across extension instances > leaves a fork target that already has tasks as it is | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does |
 | 112 | test/session-lifecycle.test.ts > fork across extension instances > does not carry tasks into /new or /resume | T2.14 | |
 | 113 | test/session-lifecycle.test.ts > fork across extension instances > relinks a subagent still running for a carried task | Dropped: D47, one service per session (re-linking agents across a fork; the session end now aborts them, T3.8) | |
 | 114 | test/session-lifecycle.test.ts > fork across extension instances > still seeds a fork when the host reuses one instance | Dropped: D47, one service per session (a second session_start to the same instance) | |
@@ -275,12 +275,12 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 266 | test/task-paths.test.ts > sessionTaskFile under `session-global` > does not confuse one session's workspace file for another's | Dropped: D49, scopes (session-global scope) | |
 | 267 | test/task-paths.test.ts > sessionTaskFile under `session-global` > follows a relocated agent directory | Dropped: D49, scopes (session-global scope) | |
 | 268 | test/task-paths.test.ts > sessionTaskFile under `session-global` > keeps sessions in one workspace together | Dropped: D49, scopes (session-global scope) | |
-| 269 | test/task-sort.test.ts > sortTasks presets > '%s' matches the original comparator | T1.15 | |
-| 270 | test/task-sort.test.ts > sortTasks presets > 'status' keeps completed first with ids ascending inside each group | T1.15 | |
-| 271 | test/task-sort.test.ts > sortTasks presets > 'active' puts in-progress first, then pending, then completed | T1.15 | |
-| 272 | test/task-sort.test.ts > sortTasks presets > 'recent' breaks updatedAt ties by descending id | T1.15 | |
-| 273 | test/task-sort.test.ts > sortTasks presets > defaults to id order | T1.15 | |
-| 274 | test/task-sort.test.ts > sortTasks presets > returns a copy without mutating the input | T1.15 | |
+| 269 | test/task-sort.test.ts > sortTasks presets > '%s' matches the original comparator | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders id orders tasks by numeric id; test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group; test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id; test/fork-builtins/tasks/sort.test.ts > task sort orders oldest puts the earliest update first and breaks a tie by ascending id |
+| 270 | test/task-sort.test.ts > sortTasks presets > 'status' keeps completed first with ids ascending inside each group | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group |
+| 271 | test/task-sort.test.ts > sortTasks presets > 'active' puts in-progress first, then pending, then completed | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders active puts in progress first, then pending, then completed, by id inside each group |
+| 272 | test/task-sort.test.ts > sortTasks presets > 'recent' breaks updatedAt ties by descending id | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id |
+| 273 | test/task-sort.test.ts > sortTasks presets > defaults to id order | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders id orders tasks by numeric id; test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values |
+| 274 | test/task-sort.test.ts > sortTasks presets > returns a copy without mutating the input | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders returns a sorted copy and leaves the input as it was |
 | 275 | test/task-sort.test.ts > sortTasks custom specs > applies a custom status rank with an id tie-break | Dropped: D49, custom sort specs | |
 | 276 | test/task-sort.test.ts > sortTasks custom specs > sorts statuses left out of the rank last, tied among themselves | Dropped: D49, custom sort specs | |
 | 277 | test/task-sort.test.ts > sortTasks custom specs > reverses a single key with direction 'desc' | Dropped: D49, custom sort specs | |
@@ -301,64 +301,64 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 292 | test/task-store-concurrency.test.ts > TaskStore — shared file access > removes its own lock even after reclaiming a stale one | Dropped: D49, scopes (cross-process lock) | |
 | 293 | test/task-store-concurrency.test.ts > TaskStore — shared file access > leaves no lock or temp file behind after a mutation | Dropped: D49, scopes (cross-process lock) | |
 | 294 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > snapshots the latest state written by another session | Dropped: D49, scopes (shared-file re-read) | |
-| 295 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > seeds an empty store and carries the ID counter over | T1.12 | |
-| 296 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > is a no-op on a store that already has tasks, so re-seeding never duplicates | T1.12 | |
-| 297 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > does not write the parent's file when the seeded copy is mutated | T1.12 | |
-| 298 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with auto-incrementing IDs | T1.1 | |
-| 299 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with optional fields | T1.1 | |
-| 300 | test/task-store.test.ts > TaskStore (in-memory) > gets a task by ID | T1.2 | |
-| 301 | test/task-store.test.ts > TaskStore (in-memory) > returns undefined for non-existent task | T1.2 | |
-| 302 | test/task-store.test.ts > TaskStore (in-memory) > lists all tasks sorted by ID | T1.2 | |
-| 303 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by status when sortOrder is 'status' | T1.15 | |
-| 304 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by most recently updated when sortOrder is 'recent' | T1.15 | |
-| 305 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by least recently updated when sortOrder is 'oldest' | T1.15 | |
-| 306 | test/task-store.test.ts > TaskStore (in-memory) > updates task status | T1.3 | |
-| 307 | test/task-store.test.ts > TaskStore (in-memory) > updates multiple fields at once | T1.3 | |
-| 308 | test/task-store.test.ts > TaskStore (in-memory) > deletes a task with status: deleted | T1.6 | |
-| 309 | test/task-store.test.ts > TaskStore (in-memory) > preserves ID counter after deletion | T1.1 | |
-| 310 | test/task-store.test.ts > TaskStore (in-memory) > merges metadata with null key deletion | T1.4 | |
-| 311 | test/task-store.test.ts > TaskStore (in-memory) > sets up bidirectional blocks via addBlocks | T1.5 | |
-| 312 | test/task-store.test.ts > TaskStore (in-memory) > sets up bidirectional blocks via addBlockedBy | T1.5 | |
-| 313 | test/task-store.test.ts > TaskStore (in-memory) > does not duplicate dependency edges | T1.5 | |
-| 314 | test/task-store.test.ts > TaskStore (in-memory) > cleans up dependency edges on deletion | T1.6 | |
-| 315 | test/task-store.test.ts > TaskStore (in-memory) > clears completed tasks | T1.6 | |
-| 316 | test/task-store.test.ts > TaskStore (in-memory) > returns not found for update on non-existent task | T1.3 | |
-| 317 | test/task-store.test.ts > TaskStore (in-memory) > delete method works | T1.6 | |
-| 318 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with metadata via TaskCreate | T1.1 | |
-| 319 | test/task-store.test.ts > TaskStore (in-memory) > allows circular dependencies with warning | T1.5 | |
-| 320 | test/task-store.test.ts > TaskStore (in-memory) > allows self-dependency with warning | T1.5 | |
-| 321 | test/task-store.test.ts > TaskStore (in-memory) > stores dangling edge IDs with warning | T1.5 | |
-| 322 | test/task-store.test.ts > TaskStore (in-memory) > returns no warnings for valid dependencies | T1.5 | |
-| 323 | test/task-store.test.ts > TaskStore (in-memory) > accepts whitespace-only subjects (matches Claude Code) | T1.1 | |
-| 324 | test/task-store.test.ts > TaskStore (in-memory) > updates activeForm field | T1.3 | |
-| 325 | test/task-store.test.ts > TaskStore (in-memory) > updates description field | T1.3 | |
-| 326 | test/task-store.test.ts > TaskStore (in-memory) > returns empty changedFields when updating non-existent task | T1.3 | |
-| 327 | test/task-store.test.ts > TaskStore (in-memory) > clearCompleted cleans up dependency edges | T1.6 | |
-| 328 | test/task-store.test.ts > TaskStore (in-memory) > handles multiple addBlocks in one call | T1.5 | |
-| 329 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on self-dependency | T1.5 | |
-| 330 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on dangling ref | T1.5 | |
-| 331 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on cycle | T1.5 | |
-| 332 | test/task-store.test.ts > TaskStore (in-memory) > clearCompleted returns 0 when no completed tasks | T1.6 | |
+| 295 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > seeds an empty store and carries the ID counter over | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does |
+| 296 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > is a no-op on a store that already has tasks, so re-seeding never duplicates | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does |
+| 297 | test/task-store-concurrency.test.ts > TaskStore — snapshot and seed > does not write the parent's file when the seeded copy is mutated | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does |
+| 298 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with auto-incrementing IDs | T1.1 | test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges; test/fork-builtins/tasks/store.test.ts > the task store never reuses an id, a deleted one included |
+| 299 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with optional fields | T1.1 | test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges |
+| 300 | test/task-store.test.ts > TaskStore (in-memory) > gets a task by ID | T1.2 | test/fork-builtins/tasks/store.test.ts > the task store finds a task by id, answers undefined for a missing one, and lists every task in numeric id order |
+| 301 | test/task-store.test.ts > TaskStore (in-memory) > returns undefined for non-existent task | T1.2 | test/fork-builtins/tasks/store.test.ts > the task store finds a task by id, answers undefined for a missing one, and lists every task in numeric id order |
+| 302 | test/task-store.test.ts > TaskStore (in-memory) > lists all tasks sorted by ID | T1.2 | test/fork-builtins/tasks/store.test.ts > the task store finds a task by id, answers undefined for a missing one, and lists every task in numeric id order |
+| 303 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by status when sortOrder is 'status' | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group |
+| 304 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by most recently updated when sortOrder is 'recent' | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id |
+| 305 | test/task-store.test.ts > TaskStore (in-memory) > lists tasks sorted by least recently updated when sortOrder is 'oldest' | T1.15 | test/fork-builtins/tasks/sort.test.ts > task sort orders oldest puts the earliest update first and breaks a tie by ascending id |
+| 306 | test/task-store.test.ts > TaskStore (in-memory) > updates task status | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt |
+| 307 | test/task-store.test.ts > TaskStore (in-memory) > updates multiple fields at once | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt |
+| 308 | test/task-store.test.ts > TaskStore (in-memory) > deletes a task with status: deleted | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
+| 309 | test/task-store.test.ts > TaskStore (in-memory) > preserves ID counter after deletion | T1.1 | test/fork-builtins/tasks/store.test.ts > the task store never reuses an id, a deleted one included |
+| 310 | test/task-store.test.ts > TaskStore (in-memory) > merges metadata with null key deletion | T1.4 | test/fork-builtins/tasks/store.test.ts > the task store merges metadata shallowly and deletes a key set to null |
+| 311 | test/task-store.test.ts > TaskStore (in-memory) > sets up bidirectional blocks via addBlocks | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each |
+| 312 | test/task-store.test.ts > TaskStore (in-memory) > sets up bidirectional blocks via addBlockedBy | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each |
+| 313 | test/task-store.test.ts > TaskStore (in-memory) > does not duplicate dependency edges | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each |
+| 314 | test/task-store.test.ts > TaskStore (in-memory) > cleans up dependency edges on deletion | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
+| 315 | test/task-store.test.ts > TaskStore (in-memory) > clears completed tasks | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
+| 316 | test/task-store.test.ts > TaskStore (in-memory) > returns not found for update on non-existent task | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store changes nothing and reports no field for an unknown id |
+| 317 | test/task-store.test.ts > TaskStore (in-memory) > delete method works | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
+| 318 | test/task-store.test.ts > TaskStore (in-memory) > creates tasks with metadata via TaskCreate | T1.1 | test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges |
+| 319 | test/task-store.test.ts > TaskStore (in-memory) > allows circular dependencies with warning | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 320 | test/task-store.test.ts > TaskStore (in-memory) > allows self-dependency with warning | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 321 | test/task-store.test.ts > TaskStore (in-memory) > stores dangling edge IDs with warning | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 322 | test/task-store.test.ts > TaskStore (in-memory) > returns no warnings for valid dependencies | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each |
+| 323 | test/task-store.test.ts > TaskStore (in-memory) > accepts whitespace-only subjects (matches Claude Code) | T1.1 | test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges |
+| 324 | test/task-store.test.ts > TaskStore (in-memory) > updates activeForm field | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt |
+| 325 | test/task-store.test.ts > TaskStore (in-memory) > updates description field | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt |
+| 326 | test/task-store.test.ts > TaskStore (in-memory) > returns empty changedFields when updating non-existent task | T1.3 | test/fork-builtins/tasks/store.test.ts > the task store changes nothing and reports no field for an unknown id |
+| 327 | test/task-store.test.ts > TaskStore (in-memory) > clearCompleted cleans up dependency edges | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
+| 328 | test/task-store.test.ts > TaskStore (in-memory) > handles multiple addBlocks in one call | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge; test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each |
+| 329 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on self-dependency | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 330 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on dangling ref | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 331 | test/task-store.test.ts > TaskStore (in-memory) > addBlockedBy warns on cycle | T1.5 | test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge |
+| 332 | test/task-store.test.ts > TaskStore (in-memory) > clearCompleted returns 0 when no completed tasks | T1.6 | test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll |
 | 333 | test/task-store.test.ts > TaskStore (in-memory) > list sorts pending → in_progress → completed with all three present | T2.3 | |
-| 334 | test/task-store.test.ts > TaskStore (file-backed) > persists tasks to disk | T1.7 | |
-| 335 | test/task-store.test.ts > TaskStore (file-backed) > persists in_progress updates to disk | T1.7 | |
-| 336 | test/task-store.test.ts > TaskStore (file-backed) > persists completed tasks to disk | T1.7 | |
-| 337 | test/task-store.test.ts > TaskStore (file-backed) > restores all tasks across instances | T1.7 | |
-| 338 | test/task-store.test.ts > TaskStore (file-backed) > persists ID counter across instances | T1.7 | |
-| 339 | test/task-store.test.ts > TaskStore (absolute path) > accepts absolute path and persists tasks | T1.7 | |
-| 340 | test/task-store.test.ts > TaskStore (absolute path) > persists completed tasks when using absolute path | T1.7 | |
+| 334 | test/task-store.test.ts > TaskStore (file-backed) > persists tasks to disk | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 335 | test/task-store.test.ts > TaskStore (file-backed) > persists in_progress updates to disk | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 336 | test/task-store.test.ts > TaskStore (file-backed) > persists completed tasks to disk | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 337 | test/task-store.test.ts > TaskStore (file-backed) > restores all tasks across instances | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 338 | test/task-store.test.ts > TaskStore (file-backed) > persists ID counter across instances | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 339 | test/task-store.test.ts > TaskStore (absolute path) > accepts absolute path and persists tasks | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
+| 340 | test/task-store.test.ts > TaskStore (absolute path) > persists completed tasks when using absolute path | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
 | 341 | test/task-store.test.ts > TaskStore (absolute path) > recreates the parent directory before later mutations | Dropped: D53, a file another process deleted counts as a change | |
-| 342 | test/task-store.test.ts > TaskStore (absolute path) > normalizes legacy task records missing blockedBy/blocks/metadata on load | T1.8 | |
-| 343 | test/task-store.test.ts > TaskStore (absolute path) > creates the backing directory lazily — not on construction, but on first write | T1.7 | |
+| 342 | test/task-store.test.ts > TaskStore (absolute path) > normalizes legacy task records missing blockedBy/blocks/metadata on load | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) resumes a pi-tasks file, filling the fields old files lack; test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
+| 343 | test/task-store.test.ts > TaskStore (absolute path) > creates the backing directory lazily — not on construction, but on first write | T1.7 | test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list |
 | 344 | test/task-store.test.ts > TaskStore (list ID resolution) > resolves a bare list ID under the user's home directory, not the working directory | Dropped: D49, scopes (PI_TASKS list name) | |
-| 345 | test/task-store.test.ts > TaskStore (malformed files) > continues IDs after the highest existing task when nextId is missing | T1.8 | |
-| 346 | test/task-store.test.ts > TaskStore (malformed files) > starts from 1 when nextId is missing and there are no tasks | T1.8 | |
-| 347 | test/task-store.test.ts > TaskStore (malformed files) > does not reissue an ID that a task already holds | T1.8 | |
+| 345 | test/task-store.test.ts > TaskStore (malformed files) > continues IDs after the highest existing task when nextId is missing | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
+| 346 | test/task-store.test.ts > TaskStore (malformed files) > starts from 1 when nextId is missing and there are no tasks | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
+| 347 | test/task-store.test.ts > TaskStore (malformed files) > does not reissue an ID that a task already holds | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
 | 348 | test/task-store.test.ts > TaskStore (malformed files) > keeps the tasks it has when the file has no task array | Dropped: D49, scopes (shared-file re-read) | |
 | 349 | test/task-store.test.ts > TaskStore (malformed files) > keeps the tasks it has when the file is not valid JSON | Dropped: D49, scopes (shared-file re-read) | |
 | 350 | test/task-store.test.ts > TaskStore (malformed files) > keeps the tasks it has when the file holds a JSON array | Dropped: D49, scopes (shared-file re-read) | |
-| 351 | test/task-store.test.ts > TaskStore (malformed files) > skips entries that are not task records | T1.8 | |
-| 352 | test/task-store.test.ts > TaskStore (malformed files) > respects a valid nextId | T1.8 | |
+| 351 | test/task-store.test.ts > TaskStore (malformed files) > skips entries that are not task records | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
+| 352 | test/task-store.test.ts > TaskStore (malformed files) > respects a valid nextId | T1.8 | test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId |
 | 353 | test/task-widget-lifecycle.test.ts > TaskWidget.dispose > stops the timer and leaves nothing that can reach the UI | T4.5 | |
 | 354 | test/task-widget-lifecycle.test.ts > TaskWidget.dispose > draws again once a UI is handed back | T4.9 | |
 | 355 | test/task-widget-lifecycle.test.ts > TaskWidget.dispose > swallows a UI that fails while the widget is cleared | T4.5 | |
@@ -380,7 +380,7 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 371 | test/task-widget.test.ts > TaskWidget > shows all tasks when limit exceeds task count | T4.4 | |
 | 372 | test/task-widget.test.ts > TaskWidget > shows all tasks when showAll is true even with maxVisible set | T4.4 | |
 | 373 | test/task-widget.test.ts > TaskWidget > truncates from top when hiddenAt is 'top' | T4.4 | |
-| 374 | test/task-widget.test.ts > TaskWidget > truncates from bottom when hiddenAt holds an unrecognised value | T1.13 | |
+| 374 | test/task-widget.test.ts > TaskWidget > truncates from bottom when hiddenAt holds an unrecognised value | T1.13 | test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning |
 | 375 | test/task-widget.test.ts > TaskWidget > truncates from bottom by default | T4.4 | |
 | 376 | test/task-widget.test.ts > TaskWidget > collapseCompleted > replaces completed tasks with a single count line | T4.4 | |
 | 377 | test/task-widget.test.ts > TaskWidget > collapseCompleted > leaves the header counts untouched | T4.4 | |
@@ -441,19 +441,19 @@ Each task T1 to T4 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 432 | test/tasks-command.test.ts > /tasks task detail > shows a placeholder screen when there is nothing to view | T4.7 | |
 | 433 | test/tasks-command.test.ts > /tasks clearing > clears only completed tasks | T4.7 | |
 | 434 | test/tasks-command.test.ts > /tasks clearing > clears every task and removes the now-empty session file | T4.7 | |
-| 435 | test/tasks-command.test.ts > /tasks clearing > keeps the file when clearing completed leaves work behind | T1.12 | |
+| 435 | test/tasks-command.test.ts > /tasks clearing > keeps the file when clearing completed leaves work behind | T1.12 | test/fork-builtins/tasks/store.test.ts > the task store deletes the file of an empty file-backed list only |
 | 436 | test/tasks-command.test.ts > /tasks create > creates a task from the subject and description prompts | T4.7 | |
 | 437 | test/tasks-command.test.ts > /tasks create > creates nothing when the subject prompt is cancelled | T4.7 | |
 | 438 | test/tasks-command.test.ts > /tasks create > creates nothing when the description prompt is cancelled | T4.7 | |
-| 439 | test/tasks-config.test.ts > tasks config > returns an empty config when no files exist | T1.13 | |
-| 440 | test/tasks-config.test.ts > tasks config > loads global defaults from the agent directory | T1.13 | |
-| 441 | test/tasks-config.test.ts > tasks config > merges project overrides over global defaults | T1.13 | |
+| 439 | test/tasks-config.test.ts > tasks config > returns an empty config when no files exist | T1.13 | test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values |
+| 440 | test/tasks-config.test.ts > tasks config > loads global defaults from the agent directory | T1.13 | test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values |
+| 441 | test/tasks-config.test.ts > tasks config > merges project overrides over global defaults | T1.13 | test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values |
 | 442 | test/tasks-config.test.ts > tasks config > ignores a malformed global config | Dropped: D48, tasks-config.json (malformed file) | |
 | 443 | test/tasks-config.test.ts > tasks config > falls back to global defaults when the project config is malformed | Dropped: D48, tasks-config.json (malformed file) | |
-| 444 | test/tasks-config.test.ts > tasks config > ignores non-object config values | T1.13 | |
-| 445 | test/tasks-config.test.ts > tasks config > saves project settings when no global defaults exist | T1.14 | |
+| 444 | test/tasks-config.test.ts > tasks config > ignores non-object config values | T1.13 | test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning |
+| 445 | test/tasks-config.test.ts > tasks config > saves project settings when no global defaults exist | T1.14 | test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back |
 | 446 | test/tasks-config.test.ts > tasks config > saves only values that differ from global defaults | Dropped: D48, a changed value stays in the project file even when it equals the global one | |
-| 447 | test/tasks-config.test.ts > tasks config > preserves a project override across save and reload cycles | T1.14 | |
+| 447 | test/tasks-config.test.ts > tasks config > preserves a project override across save and reload cycles | T1.14 | test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back |
 | 448 | test/tasks-config.test.ts > tasks config > round-trips a custom sortOrder spec | Dropped: D49, custom sort specs | |
 | 449 | test/tasks-config.test.ts > tasks config > does not copy a global sortOrder spec into the project override | Dropped: D49, custom sort specs | |
 | 450 | test/tasks-config.test.ts > tasks config > writes a sortOrder spec that differs from the global default | Dropped: D49, custom sort specs | |

@@ -1,0 +1,898 @@
+[
+ {
+  "id": "T4-M1",
+  "cases": [
+   1
+  ],
+  "what": "json mode shows the widget",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "if (ctx.mode !== \"tui\" && ctx.mode !== \"rpc\") return;",
+  "new": "if (ctx.mode === \"print\") return;",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory shows the widget in tui mode, sends plain lines in rpc mode, and nothing in print and json mode"
+  ]
+ },
+ {
+  "id": "T4-M2",
+  "cases": [
+   1
+  ],
+  "what": "rpc gets a component",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "const widget = new TaskWidget(service, ctx.ui, ctx.mode === \"rpc\", (error) =>",
+  "new": "const widget = new TaskWidget(service, ctx.ui, false, (error) =>",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory shows the widget in tui mode, sends plain lines in rpc mode, and nothing in print and json mode"
+  ]
+ },
+ {
+  "id": "T4-M3",
+  "cases": [
+   1
+  ],
+  "what": "the fork's previousSessionFile is dropped",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "service.onSessionStart(event.reason, \"previousSessionFile\" in event ? event.previousSessionFile : undefined);",
+  "new": "service.onSessionStart(event.reason, undefined);",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory hands a fork its parent's list through the previousSessionFile of its session_start"
+  ]
+ },
+ {
+  "id": "T4-M4",
+  "cases": [
+   1
+  ],
+  "what": "the reason is not passed",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "service.onSessionStart(event.reason, \"previousSessionFile\" in event ? event.previousSessionFile : undefined);",
+  "new": "service.onSessionStart(\"reload\", undefined);",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory tells the service a startup, so a finished list from before clears"
+  ]
+ },
+ {
+  "id": "T4-M5",
+  "cases": [
+   1
+  ],
+  "what": "a child registers /tasks",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\tif (child) return;\n\tpi.registerCommand(",
+  "new": "\tpi.registerCommand(",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory registers no command and builds no service in a child session at its start"
+  ]
+ },
+ {
+  "id": "T4-M6",
+  "cases": [
+   1
+  ],
+  "what": "the tasks presentation is no fork built-in",
+  "path": "src/core/fork-builtins.ts",
+  "old": "\t{ name: \"tasks\", factory: tasksPresentation, hidden: true },\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory hands a fork its parent's list through the previousSessionFile of its session_start"
+  ]
+ },
+ {
+  "id": "Q5",
+  "what": "a session without TaskCreate still gets the reminder",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (!this.session.getActiveToolNames().includes(TASK_CREATE_TOOL_NAME)) return undefined;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder never reaches a session whose model cannot call TaskCreate"
+  ],
+  "cases": [
+   2
+  ]
+ },
+ {
+  "id": "Q6",
+  "what": "other tools never mark a reminder due",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "else onOtherToolResult(this.cadence, this.store.list());",
+  "new": "else void onOtherToolResult;",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder reaches the model after four turns without a task tool, while the list holds tasks"
+  ],
+  "cases": [
+   2
+  ]
+ },
+ {
+  "id": "T4-M7",
+  "cases": [
+   2
+  ],
+  "what": "the hook drops the reminder",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "const reminder = bound ? existingTaskService(bound)?.takeReminder() : undefined;",
+  "new": "const reminder = undefined as string | undefined;",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child adds a due reminder as the last message of the request in tui and rpc mode"
+  ]
+ },
+ {
+  "id": "T4-M8",
+  "cases": [
+   2
+  ],
+  "what": "a child gets no reminder",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\t\tconst bound = resolve(ctx);\n\t\tconst reminder",
+  "new": "\t\tif (child) return;\n\t\tconst bound = resolve(ctx);\n\t\tconst reminder",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child reaches a child whose service exists"
+  ]
+ },
+ {
+  "id": "T4-M9",
+  "cases": [
+   3
+  ],
+  "what": "pending rows lose their glyph",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const glyph = task.status === \"in_progress\" ? theme.fg(\"accent\", \"◼\") : \"◻\";",
+  "new": "const glyph = task.status === \"in_progress\" ? theme.fg(\"accent\", \"◼\") : \"o\";",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through"
+  ]
+ },
+ {
+  "id": "T4-M10",
+  "cases": [
+   3
+  ],
+  "what": "completed rows are not struck through",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "theme.strikethrough(`${id} ${subject}`)",
+  "new": "`${id} ${subject}`",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through"
+  ]
+ },
+ {
+  "id": "T4-M11",
+  "cases": [
+   3
+  ],
+  "what": "completed blockers are named",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "return blocker && blocker.status !== \"completed\";",
+  "new": "return blocker !== undefined;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through"
+  ]
+ },
+ {
+  "id": "T4-M12",
+  "cases": [
+   3
+  ],
+  "what": "pending rows name their agent",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const agent = task.status === \"in_progress\" && agentId ? theme.fg",
+  "new": "const agent = agentId ? theme.fg",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows names the agent of an in-progress row, and of no pending or completed row"
+  ]
+ },
+ {
+  "id": "T4-M13",
+  "cases": [
+   3
+  ],
+  "what": "whole hours show minutes",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`;",
+  "new": "return `${hours}h ${restMinutes}m`;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens"
+  ]
+ },
+ {
+  "id": "T4-M14",
+  "cases": [
+   3
+  ],
+  "what": "token counts keep .0",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "(count / 1000).toFixed(1).replace(/\\.0$/, \"\")",
+  "new": "(count / 1000).toFixed(1)",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens"
+  ]
+ },
+ {
+  "id": "T4-M15",
+  "cases": [
+   3
+  ],
+  "what": "the activeForm is ignored",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "theme.fg(\"accent\", `${task.activeForm ? oneLine(task.activeForm) : subject}${agent}…`)",
+  "new": "theme.fg(\"accent\", `${subject}${agent}…`)",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens"
+  ]
+ },
+ {
+  "id": "T4-M16",
+  "cases": [
+   3
+  ],
+  "what": "lines are not clipped",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "truncateToWidth(line, width, \"...\")",
+  "new": "line",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows clips each line to the terminal width with three dots"
+  ]
+ },
+ {
+  "id": "T4-M17",
+  "cases": [
+   3
+  ],
+  "what": "task text reaches the terminal raw",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const oneLine = (text: string): string => displayText(text).replace(/\\s*\\n\\s*/g, \" \");",
+  "new": "const oneLine = (text: string): string => text;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines"
+  ]
+ },
+ {
+  "id": "T4-M18",
+  "cases": [
+   3
+  ],
+  "what": "task ids reach the terminal raw",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const id = `#${oneLine(task.id)}`;",
+  "new": "const id = `#${task.id}`;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines"
+  ]
+ },
+ {
+  "id": "T4-M19",
+  "cases": [
+   3
+  ],
+  "what": "agent labels reach the terminal raw",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "oneLine(task.metadata.agentId).slice(0, 5)",
+  "new": "task.metadata.agentId.slice(0, 5)",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines"
+  ]
+ },
+ {
+  "id": "T4-M20",
+  "cases": [
+   4
+  ],
+  "what": "completed rows stay under collapseCompleted",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const listed = settings.collapseCompleted ? tasks.filter((task) => task.status !== \"completed\") : tasks;",
+  "new": "const listed = tasks;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options replaces completed rows with one count line under collapseCompleted, and applies the limit to the rest"
+  ]
+ },
+ {
+  "id": "T4-M21",
+  "cases": [
+   4
+  ],
+  "what": "hiddenAt top hides the end",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const top = settings.hiddenAt === \"top\";",
+  "new": "const top = false;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on"
+  ]
+ },
+ {
+  "id": "T4-M22",
+  "cases": [
+   4
+  ],
+  "what": "showAll is ignored",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const visible = settings.showAll",
+  "new": "const visible = false",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on"
+  ]
+ },
+ {
+  "id": "T4-M23",
+  "cases": [
+   4
+  ],
+  "what": "sortOrder is ignored",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "const tasks = sortTasks(source.list(), settings.sortOrder);",
+  "new": "const tasks = [...source.list()];",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options orders the rows by sortOrder"
+  ]
+ },
+ {
+  "id": "Q21",
+  "what": "a failing setWidget escapes the update",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\ttry {\n\t\t\tthis.sync();\n\t\t} catch (error) {\n\t\t\tthis.stopTimer();\n\t\t\tthis.onError(error);\n\t\t}",
+  "new": "\t\tthis.sync();",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change"
+  ],
+  "cases": [
+   5
+  ]
+ },
+ {
+  "id": "Q22",
+  "what": "a failed registration counts as registered",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\t// Only a registration that succeeded counts; a failed one is tried again at the next change.\n\t\tthis.registered = true;\n\t}",
+  "new": "\t}",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change"
+  ],
+  "cases": [
+   5
+  ]
+ },
+ {
+  "id": "Q23",
+  "what": "a failing removal escapes dispose",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\ttry {\n\t\t\tthis.ui.setWidget(WIDGET_KEY, undefined);\n\t\t} catch (error) {\n\t\t\tthis.onError(error);\n\t\t}",
+  "new": "\t\tthis.ui.setWidget(WIDGET_KEY, undefined);",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing removal at dispose"
+  ],
+  "cases": [
+   5
+  ]
+ },
+ {
+  "id": "T4-M24",
+  "cases": [
+   5
+  ],
+  "what": "every change redraws",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\tif (this.pending) return;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle registers above the editor once the list has tasks, redraws on changes, and removes itself when the list empties"
+  ]
+ },
+ {
+  "id": "T4-M25",
+  "cases": [
+   5
+  ],
+  "what": "an emptied list keeps the widget",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\t\tif (this.registered) this.ui.setWidget(WIDGET_KEY, undefined);\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle registers above the editor once the list has tasks, redraws on changes, and removes itself when the list empties"
+  ]
+ },
+ {
+  "id": "T4-M26",
+  "cases": [
+   5
+  ],
+  "what": "the timer runs without work",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\tif (spinning) this.startTimer();\n\t\telse this.stopTimer();",
+  "new": "\t\tthis.startTimer();",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle runs the spinner timer only while a task is worked on, one frame per tick"
+  ]
+ },
+ {
+  "id": "T4-M27",
+  "cases": [
+   5
+  ],
+  "what": "a failing tick keeps the timer",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\t\t} catch (error) {\n\t\t\t\tthis.stopTimer();\n\t\t\t\tthis.onError(error);\n\t\t\t}\n\t\t}, FRAME_MS);",
+  "new": "\t\t\t} catch (error) {\n\t\t\t\tthis.onError(error);\n\t\t\t}\n\t\t}, FRAME_MS);",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops the spinner when a redraw fails in a tick, and draws nothing for a render that throws"
+  ]
+ },
+ {
+  "id": "T4-M28",
+  "cases": [
+   5
+  ],
+  "what": "a render error escapes",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\t} catch {\n\t\t\treturn [];\n\t\t}",
+  "new": "\t\t} catch (error) {\n\t\t\tthrow error;\n\t\t}",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops the spinner when a redraw fails in a tick, and draws nothing for a render that throws"
+  ]
+ },
+ {
+  "id": "T4-M29",
+  "cases": [
+   5
+  ],
+  "what": "dispose leaves the timer running",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\tthis.unsubscribe();\n\t\tthis.stopTimer();",
+  "new": "\t\tthis.unsubscribe();",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle reaches the UI no more after dispose"
+  ]
+ },
+ {
+  "id": "T4-M30",
+  "cases": [
+   5
+  ],
+  "what": "a disposed service keeps the widget running",
+  "path": "src/core/fork-builtins/tasks/ui/widget.ts",
+  "old": "\t\tif (!this.source.isDisposed) return false;",
+  "new": "\t\tif (this.source) return false;",
+  "files": [
+   "test/fork-builtins/tasks/ui-widget.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops without touching the UI once its service is disposed"
+  ]
+ },
+ {
+  "id": "T4-M31",
+  "cases": [
+   5
+  ],
+  "what": "session_shutdown keeps the widget",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\tpi.on(\"session_shutdown\", () => {\n\t\tunbind?.();",
+  "new": "\tpi.on(\"session_shutdown\", () => {",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory removes the widget at session_shutdown"
+  ]
+ },
+ {
+  "id": "T4-M32",
+  "cases": [
+   6
+  ],
+  "what": "warnings are not notified",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\t\t\t\tctx.ui.notify(change.message, \"warning\");\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory sends the service's warnings to the UI as notifications, held ones included"
+  ]
+ },
+ {
+  "id": "T4-M33",
+  "cases": [
+   6
+  ],
+  "what": "held warnings go to the widget",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\t\t// Subscribed first: the service hands the warnings it held to its first listener.\n\t\tconst offWarnings = service.subscribe((change) => {\n\t\t\tif (change.type !== \"warning\") return;\n\t\t\ttry {\n\t\t\t\tctx.ui.notify(change.message, \"warning\");\n\t\t\t} catch {\n\t\t\t\t// A UI that cannot notify cannot show the widget's failure either.\n\t\t\t}\n\t\t});\n\t\tconst widget = new TaskWidget(service, ctx.ui, ctx.mode === \"rpc\", (error) =>\n\t\t\tservice.warn(`The tasks widget failed: ${error instanceof Error ? error.message : String(error)}`),\n\t\t);",
+  "new": "\t\tconst widget = new TaskWidget(service, ctx.ui, ctx.mode === \"rpc\", (error) =>\n\t\t\tservice.warn(`The tasks widget failed: ${error instanceof Error ? error.message : String(error)}`),\n\t\t);\n\t\tconst offWarnings = service.subscribe((change) => {\n\t\t\tif (change.type !== \"warning\") return;\n\t\t\ttry {\n\t\t\t\tctx.ui.notify(change.message, \"warning\");\n\t\t\t} catch {\n\t\t\t\t// A UI that cannot notify cannot show the widget's failure either.\n\t\t\t}\n\t\t});",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory sends the service's warnings to the UI as notifications, held ones included"
+  ]
+ },
+ {
+  "id": "T4-M34",
+  "cases": [
+   7
+  ],
+  "what": "clear completed shows without completed tasks",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "if (done > 0) choices.push(`Clear completed (${done})`);",
+  "new": "choices.push(`Clear completed (${done})`);",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu offers view and create for an empty list, the clear entries with their counts, and Settings in the TUI only"
+  ]
+ },
+ {
+  "id": "T4-M35",
+  "cases": [
+   7
+  ],
+  "what": "RPC offers Settings",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "if (env.tui) choices.push(\"Settings\");",
+  "new": "choices.push(\"Settings\");",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu offers view and create for an empty list, the clear entries with their counts, and Settings in the TUI only"
+  ]
+ },
+ {
+  "id": "T4-M36",
+  "cases": [
+   7
+  ],
+  "what": "a row's task is read from its text",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "const picked = tasks[choices.indexOf(selected)];",
+  "new": "const picked = env.service.get([...selected.matchAll(/#(\\d+)/g)].at(-1)?.[1] ?? \"\");",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu opens the task whose row was picked when a subject holds #<n>"
+  ]
+ },
+ {
+  "id": "T4-M37",
+  "cases": [
+   7
+  ],
+  "what": "start does nothing",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "if (action === \"▸ Start (in_progress)\") env.service.update(taskId, { status: \"in_progress\" });",
+  "new": "if (action === \"never\") env.service.update(taskId, { status: \"in_progress\" });",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu lists the tasks with status glyphs, and the detail actions start, complete and delete"
+  ]
+ },
+ {
+  "id": "T4-M38",
+  "cases": [
+   7
+  ],
+  "what": "an empty view shows no placeholder",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\t\t\tawait env.ui.select(\"No tasks\", [BACK]);\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu shows a placeholder when there is nothing to view"
+  ]
+ },
+ {
+  "id": "T4-M39",
+  "cases": [
+   7
+  ],
+  "what": "a cancelled description still creates",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\tif (!description) return;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu creates a task from the subject and description prompts, and nothing when either is cancelled"
+  ]
+ },
+ {
+  "id": "T4-M40",
+  "cases": [
+   7
+  ],
+  "what": "clear all keeps the list",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\t\telse if (choice.startsWith(\"Clear all\")) service.clearAll();",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu clears the completed tasks, then all tasks, and deletes the emptied file"
+  ]
+ },
+ {
+  "id": "T4-M41",
+  "cases": [
+   7
+  ],
+  "what": "the menu lists raw task text",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "displayText(task.subject).replace(/\\n/g, \" \")",
+  "new": "task.subject",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu strips escape sequences from the task text it lists and titles"
+  ]
+ },
+ {
+  "id": "T4-M42",
+  "cases": [
+   7
+  ],
+  "what": "the menu lists raw task ids",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "#${displayText(task.id)} [${task.status}] ${displayText(task.subject).replace",
+  "new": "#${task.id} [${task.status}] ${displayText(task.subject).replace",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu strips escape sequences from the task text it lists and titles"
+  ]
+ },
+ {
+  "id": "T4-M43",
+  "cases": [
+   7
+  ],
+  "what": "alike choices stay alike",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "while (seen.has(label)) label += ` (row ${index + 1})`;",
+  "new": "if (seen.has(label)) label += ` (row ${index + 1})`;",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu keeps two tasks apart whose ids show alike once stripped"
+  ]
+ },
+ {
+  "id": "T4-M44",
+  "cases": [
+   8
+  ],
+  "what": "a save drops the project's own values",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "writeProjectTaskSettings(env.cwd, { ...projectTaskValues(env.settingsManager), [row.key]: parsed(row, value) });",
+  "new": "writeProjectTaskSettings(env.cwd, { [row.key]: parsed(row, value) });",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows seven rows with their values, and a change writes the project's own values plus that key and reloads"
+  ]
+ },
+ {
+  "id": "T4-M45",
+  "cases": [
+   8
+  ],
+  "what": "a save does not await the reload",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\t\tawait env.settingsManager.reload();\n\t\tenv.service.reloadSettings();",
+  "new": "\t\tvoid env.settingsManager.reload();\n\t\tenv.service.reloadSettings();",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows seven rows with their values, and a change writes the project's own values plus that key and reloads"
+  ]
+ },
+ {
+  "id": "T4-M46",
+  "cases": [
+   8
+  ],
+  "what": "a save keeps the values the session read",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\t\t// The file may have changed since the session read it; keep what it holds now.\n\t\tawait env.settingsManager.reload();\n\t\twriteProjectTaskSettings",
+  "new": "\t\twriteProjectTaskSettings",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list keeps a project value another process wrote after the session read the file"
+  ]
+ },
+ {
+  "id": "T4-M47",
+  "cases": [
+   8
+  ],
+  "what": "saves run at once",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "saving = saving.then(() => save(env, row, value));",
+  "new": "void save(env, row, value);",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list saves two quick changes one after another, so the second keeps the first"
+  ]
+ },
+ {
+  "id": "T4-M48",
+  "cases": [
+   8
+  ],
+  "what": "an untrusted project cycles values",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "values: trusted ? row.values : [shown(env.service.settings[row.key])],",
+  "new": "values: row.values,",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows an untrusted project's values read-only with a notice, and writes nothing"
+  ]
+ },
+ {
+  "id": "T4-M49",
+  "cases": [
+   8
+  ],
+  "what": "a failed save is silent",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "\t\tenv.ui.notify(`Task settings not saved: ${error instanceof Error ? error.message : String(error)}`, \"warning\");\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list warns when the write fails and changes nothing"
+  ]
+ },
+ {
+  "id": "T4-M50",
+  "cases": [
+   9
+  ],
+  "what": "a reload builds a new task service",
+  "path": "src/core/fork-builtins/tasks/service/sessions.ts",
+  "old": "\tregistered.add(session);\n}",
+  "new": "\tregistered.add(session);\n\tservices.delete(session);\n}",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory rebinds the widget to the same service and list when /reload loads the factory again"
+  ]
+ },
+ {
+  "id": "T4-M51",
+  "cases": [
+   9
+  ],
+  "what": "a reload keeps the old widget",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "\tpi.on(\"session_shutdown\", () => {\n\t\tunbind?.();\n\t\tunbind = undefined;",
+  "new": "\tpi.on(\"session_shutdown\", (event) => {\n\t\tif (event.reason !== \"reload\") unbind?.();\n\t\tunbind = undefined;",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory rebinds the widget to the same service and list when /reload loads the factory again"
+  ]
+ }
+]

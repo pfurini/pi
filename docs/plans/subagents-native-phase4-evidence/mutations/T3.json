@@ -1,0 +1,682 @@
+[
+ {
+  "id": "Q1",
+  "what": "TaskExecute spawns without a background slot",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "mode: \"detached-background\",",
+  "new": "mode: \"detached\",",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ],
+  "cases": [
+   1
+  ]
+ },
+ {
+  "id": "T3-M1",
+  "cases": [
+   1
+  ],
+  "what": "the description is the task description",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "description: task.subject,",
+  "new": "description: task.description,",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns"
+  ]
+ },
+ {
+  "id": "T3-M2",
+  "cases": [
+   1
+  ],
+  "what": "thinking and max_turns are dropped",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "params: { max_turns: options.maxTurns, thinking: options.thinking },",
+  "new": "params: {},",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns"
+  ]
+ },
+ {
+  "id": "T3-M3",
+  "cases": [
+   1
+  ],
+  "what": "the model is dropped",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "model: options.model ? await scope.service.resolveCallerModel(options.model, agentType) : undefined,",
+  "new": "model: undefined,",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns"
+  ]
+ },
+ {
+  "id": "T3-M4",
+  "cases": [
+   1
+  ],
+  "what": "the agent is not the owner",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.store.update(id, { owner: view.id, metadata: { agentId: view.id } });",
+  "new": "this.store.update(id, { metadata: { agentId: view.id } });",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns"
+  ]
+ },
+ {
+  "id": "Q12",
+  "what": "a refused spawn leaves the task in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.store.update(id, { status: \"pending\" });\n\t\t\t\tskipped.push",
+  "new": "skipped.push",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents a refused spawn leaves the task pending and names the reason"
+  ],
+  "cases": [
+   2
+  ]
+ },
+ {
+  "id": "T3-M5",
+  "cases": [
+   2
+  ],
+  "what": "a task that is not pending runs",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (task.status !== \"pending\") {",
+  "new": "if (false) {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready"
+  ]
+ },
+ {
+  "id": "T3-M6",
+  "cases": [
+   2
+  ],
+  "what": "an untyped task runs",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (typeof agentType !== \"string\" || !agentType) {",
+  "new": "if (false) {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready"
+  ]
+ },
+ {
+  "id": "T3-M7",
+  "cases": [
+   2
+  ],
+  "what": "completed blockers still block",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const open = task.blockedBy.filter((blocker) => this.store.get(blocker)?.status !== \"completed\");",
+  "new": "const open = task.blockedBy;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready"
+  ]
+ },
+ {
+  "id": "T3-M8",
+  "cases": [
+   2
+  ],
+  "what": "nothing ready answers nothing",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "return lines.length > 0 ? lines.join(\"\\n\\n\") : \"No tasks to execute.\";",
+  "new": "return lines.join(\"\\n\\n\");",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready"
+  ]
+ },
+ {
+  "id": "T3-M9",
+  "cases": [
+   3
+  ],
+  "what": "prerequisite results are cut at 8,000 characters",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "result.length > PREREQUISITE_RESULT_LIMIT",
+  "new": "result.length > PREREQUISITE_RESULT_LIMIT * 2",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context"
+  ]
+ },
+ {
+  "id": "T3-M10",
+  "cases": [
+   3
+  ],
+  "what": "the caller's context is dropped",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (additionalContext) prompt += `\\n\\n${additionalContext}`;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context"
+  ]
+ },
+ {
+  "id": "T3-M11",
+  "cases": [
+   3
+  ],
+  "what": "the closing instruction is dropped",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "return `${prompt}\\n\\nComplete this task fully. Do not attempt to manage tasks yourself.`;",
+  "new": "return prompt;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context"
+  ]
+ },
+ {
+  "id": "T3-M12",
+  "cases": [
+   3
+  ],
+  "what": "a prerequisite without a result is listed",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (typeof result !== \"string\" || !result) continue;",
+  "new": "if (typeof result !== \"string\" && result !== undefined) continue;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context"
+  ]
+ },
+ {
+  "id": "Q2",
+  "what": "a completed agent leaves its task in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (status === \"completed\" || status === \"steered\") {",
+  "new": "if (status === \"never\") {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ],
+  "cases": [
+   4
+  ]
+ },
+ {
+  "id": "T3-M13",
+  "cases": [
+   4
+  ],
+  "what": "a steered agent's task goes back to pending",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (status === \"completed\" || status === \"steered\") {",
+  "new": "if (status === \"completed\") {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > an agent's end completes the task with the result of a completed or steered agent"
+  ]
+ },
+ {
+  "id": "T3-M14",
+  "cases": [
+   4
+  ],
+  "what": "a stopped agent drops the earlier result",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "metadata: { result: result || task.metadata.result || null },",
+  "new": "metadata: { result: result || null },",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > an agent's end completes the task of a stopped agent and keeps an earlier result when the agent reports none"
+  ]
+ },
+ {
+  "id": "T3-M15",
+  "cases": [
+   4
+  ],
+  "what": "a failed agent's task keeps its result",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "metadata: { result: null, lastError: error || status } });",
+  "new": "metadata: { lastError: error || status } });",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > an agent's end sends the task of a failed agent back to pending, removes its result and records the error"
+  ]
+ },
+ {
+  "id": "T3-M16",
+  "cases": [
+   4
+  ],
+  "what": "a second end changes the task",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tthis.agentTasks.delete(agentId);\n\t\tconst task = this.store.get(taskId);",
+  "new": "\t\tconst task = this.store.get(taskId);",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > an agent's end changes no task for an agent TaskExecute did not start, or for a second end"
+  ]
+ },
+ {
+  "id": "Q3",
+  "what": "TaskOutput consumes nothing",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "scope.service.consume(agentId, scope.owner);",
+  "new": "void scope;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ],
+  "cases": [
+   5
+  ]
+ },
+ {
+  "id": "T3-M17",
+  "cases": [
+   5
+  ],
+  "what": "an empty id matches an agent",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t// An empty id would prefix-match whichever agent comes first.\n\t\tif (!ref) throw new Error(\"task_id is required\");",
+  "new": "\t\t// An empty id would prefix-match whichever agent comes first.",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent"
+  ]
+ },
+ {
+  "id": "T3-M18",
+  "cases": [
+   5,
+   6
+  ],
+  "what": "an agent id prefix finds nothing",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const matches = (agentId: unknown) => typeof agentId === \"string\" && agentId.startsWith(ref);",
+  "new": "const matches = (agentId: unknown) => typeof agentId === \"string\" && agentId === ref;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent",
+   "test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once"
+  ]
+ },
+ {
+  "id": "T3-M19",
+  "cases": [
+   5
+  ],
+  "what": "an ended agent's id finds nothing",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "return this.store.list().find((each) => matches(each.metadata.agentId));",
+  "new": "return undefined;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact"
+  ]
+ },
+ {
+  "id": "T3-M20",
+  "cases": [
+   5
+  ],
+  "what": "a task with no agent answers",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (typeof agentId !== \"string\") throw new Error(`No background process for task ${ref}`);",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent"
+  ]
+ },
+ {
+  "id": "T3-M21",
+  "cases": [
+   5
+  ],
+  "what": "block never waits",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (block && task.status === \"in_progress\" && this.agentTasks.has(agentId)) {",
+  "new": "if (false) {",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds",
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result"
+  ]
+ },
+ {
+  "id": "T3-M22",
+  "cases": [
+   5
+  ],
+  "what": "the wait has no timeout",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const signals = [AbortSignal.timeout(timeout), ...(signal ? [signal] : [])];",
+  "new": "const signals = [...(signal ? [signal] : [])];",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds"
+  ]
+ },
+ {
+  "id": "T3-M23",
+  "cases": [
+   5
+  ],
+  "what": "a failure's error is left out",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": ": lastError ? `Error: ${String(lastError)}` : undefined;",
+  "new": ": undefined;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact"
+  ]
+ },
+ {
+  "id": "Q11",
+  "what": "TaskStop leaves the agent running",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "scope.service.stop(agentId, scope.owner);",
+  "new": "void scope;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskStop stops the agent, and the task completes"
+  ],
+  "cases": [
+   6
+  ]
+ },
+ {
+  "id": "T3-M24",
+  "cases": [
+   6
+  ],
+  "what": "TaskStop trusts the task's metadata",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "task.status !== \"in_progress\" ||\n\t\t\tthis.agentTasks.get(agentId) !== task.id",
+  "new": "task.status !== \"in_progress\"",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskStop refuses a task with no running agent, an agent id only its metadata names, and an unknown id"
+  ]
+ },
+ {
+  "id": "T3-M25",
+  "cases": [
+   6
+  ],
+  "what": "TaskStop leaves the task in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tthis.store.update(task.id, { status: \"completed\" });\n\t\tthis.autoClear.trackCompletion(task.id, this.cadence.currentTurn);\n\t\tconst scope",
+  "new": "\t\tthis.autoClear.trackCompletion(task.id, this.cadence.currentTurn);\n\t\tconst scope",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once"
+  ]
+ },
+ {
+  "id": "T3-M26",
+  "cases": [
+   6
+  ],
+  "what": "TaskStop accepts shell_id",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "task_id: Type.String({ description: \"The ID of the task whose agent to stop\" }),",
+  "new": "task_id: Type.Optional(Type.String({ description: \"The ID of the task whose agent to stop\" })),\n\tshell_id: Type.Optional(Type.String()),",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskStop fails schema validation for shell_id alone"
+  ]
+ },
+ {
+  "id": "Q10",
+  "what": "a child's TaskExecute ignores its nested runtime",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const view = scope.nested ? await scope.nested.spawn(request) : await scope.service.spawn(request);",
+  "new": "const view = await scope.service.spawn(request);",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights"
+  ],
+  "cases": [
+   7
+  ]
+ },
+ {
+  "id": "Q14",
+  "what": "the scope ignores a child's lineage",
+  "path": "src/core/fork-builtins/subagents/service/sessions.ts",
+  "old": "\tif (lineage) {\n\t\treturn",
+  "new": "\tif (lineage && false) {\n\t\treturn",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights"
+  ],
+  "cases": [
+   7
+  ]
+ },
+ {
+  "id": "Q4",
+  "what": "the session's end leaves agent tasks in progress",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (this.store.get(taskId)?.status !== \"in_progress\") continue;",
+  "new": "continue;",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > tasks run by subagents the session's end sends a task whose agent still runs back to pending"
+  ],
+  "cases": [
+   8
+  ]
+ },
+ {
+  "id": "T3-M27",
+  "cases": [
+   8
+  ],
+  "what": "the session's end records another error",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "metadata: { result: null, lastError: SESSION_ENDED_ERROR } });",
+  "new": "metadata: { result: null, lastError: \"ended\" } });",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the task service ends first, and a fork carries it as pending",
+   "test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the subagent service ends first, and a fork carries it as pending"
+  ]
+ },
+ {
+  "id": "T3-M28",
+  "cases": [
+   8
+  ],
+  "what": "an ended agent's task records its status",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "metadata: { result: null, lastError: error || status } });",
+  "new": "metadata: { result: null, lastError: status } });",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the subagent service ends first, and a fork carries it as pending",
+   "test/suite/fork-tasks-execute.test.ts > an agent's end sends the task of a failed agent back to pending, removes its result and records the error"
+  ]
+ },
+ {
+  "id": "T3-M29",
+  "cases": [
+   9
+  ],
+  "what": "a reload builds a new task service",
+  "path": "src/core/fork-builtins/tasks/service/sessions.ts",
+  "old": "\tregistered.add(session);\n}",
+  "new": "\tregistered.add(session);\n\tservices.delete(session);\n}",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task"
+  ]
+ },
+ {
+  "id": "Q15",
+  "what": "task tools are no fork base tools",
+  "path": "src/core/fork-builtins/base-tools.ts",
+  "old": "for (const [name, create] of TASK_TOOL_FACTORIES) addOwned(definitions, name, () => create(options.session));",
+  "new": "for (const [name, create] of TASK_TOOL_FACTORIES) definitions.set(name, create(options.session));",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts",
+   "test/suite/fork-tasks-service.test.ts",
+   "test/fork-builtins/base-tools.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights",
+   "test/suite/fork-tasks-service.test.ts > the task service registers the task tools as active fork base tools"
+  ],
+  "cases": [
+   10
+  ]
+ },
+ {
+  "id": "T3-M30",
+  "cases": [
+   10
+  ],
+  "what": "TaskExecute takes no background slot",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "mode: \"detached-background\",",
+  "new": "mode: \"detached\",",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session"
+  ]
+ },
+ {
+  "id": "T3-M31",
+  "cases": [
+   10
+  ],
+  "what": "an ended agent's result is consumed",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tthis.agentTasks.delete(agentId);\n\t\tconst task = this.store.get(taskId);",
+  "new": "\t\tthis.agentTasks.delete(agentId);\n\t\tthis.scope?.service.consume(agentId);\n\t\tconst task = this.store.get(taskId);",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session"
+  ]
+ },
+ {
+  "id": "T3-M32",
+  "cases": [
+   11
+  ],
+  "what": "an agent task shows the session's tokens",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "? { startedAt: working.startedAt, inputTokens: agent.usage.input, outputTokens: agent.usage.output }",
+  "new": "? working",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task activity reports an agent task's own usage, and adds the parent's turn tokens to a task the session works on"
+  ]
+ },
+ {
+  "id": "T3-M33",
+  "cases": [
+   11
+  ],
+  "what": "the session's turn tokens are not added",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t\t\t\t\tactivity.inputTokens += usage.input ?? 0;\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > task activity reports an agent task's own usage, and adds the parent's turn tokens to a task the session works on"
+  ]
+ }
+]

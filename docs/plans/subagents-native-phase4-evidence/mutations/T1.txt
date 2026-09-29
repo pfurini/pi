@@ -1,0 +1,149 @@
+T1-M1 [1] tasks start in progress | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges
+T1-M2 [1] ids come from the task count | 4 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store never reuses an id, a deleted one included
+    test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list
+    test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId
+    test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does
+T1-M3 [2] list sorts ids as text | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store finds a task by id, answers undefined for a missing one, and lists every task in numeric id order
+T1-M4 [3] update keeps updatedAt | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt
+T1-M5 [3] changed fields out of order | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt
+T1-M6 [3] an unknown id reports fields | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store changes nothing and reports no field for an unknown id
+T1-M7 [4] a null metadata key is stored | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store merges metadata shallowly and deletes a key set to null
+T1-M8 [5] addBlocks duplicates the reverse edge | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each
+T1-M9 [5] addBlockedBy duplicates the reverse edge | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each
+T1-M10 [5] a missing target is not warned | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge
+T1-M11 [6] removal keeps blocks edges | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll
+T1-M12 [6] removal keeps blockedBy edges | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll
+T1-M13 [7] the file is compact JSON | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list
+T1-M14 [7] the directory is never created | 3 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list
+    test/fork-builtins/tasks/store.test.ts > the task store accepts a project root that is itself a symlink
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+T1-M15 [7] an update is not saved | 2 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list
+    test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds
+Q13 [8] old files are not normalized | 2 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) resumes a pi-tasks file, filling the fields old files lack
+    test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId
+T1-M16 [8] records without a string id load | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId
+T1-M17 [8] a stale nextId is trusted | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId
+Q7 [9] a failed write throws instead of falling back | 4 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory with one warning when the file cannot be written
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks
+    test/fork-builtins/tasks/store.test.ts > the task store leaves the saved file as it was when a later write fails, and keeps later changes in memory
+    test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds
+T1-M18 [9] the fallback keeps writing | 5 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory with one warning when the file cannot be written
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file another process changed since this store read it (D53)
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store leaves the saved file as it was when a later write fails, and keeps later changes in memory
+    test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)
+Q8 [10] a file that holds no task list is overwritten | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list
+Q19 [10] a file that holds no task list is taken over and overwritten | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list
+T1-M19 [10] a file without a tasks array loads | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file cannot be read or holds no tasks array, and never replaces the file
+T1-M20 [10] an unreadable file is kept as the save path | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file cannot be read or holds no tasks array, and never replaces the file
+Q18 [11] a retried write never saves again | 4 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+T1-M21 [11] a failed write is never retried | 3 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds
+T1-M22 [11] a retried write leaves the list in memory | 2 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks
+    test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds
+T1-M23 [12] seed replaces a list | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does
+T1-M24 [12] seed shares the parent's tasks | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does
+T1-M25 [12] a non-empty list's file is deleted | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store deletes the file of an empty file-backed list only
+T1-M26 [13] global values win | 2 of 6 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values
+    test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back
+T1-M27 [13] invalid values are kept | 2 of 6 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning
+    test/fork-builtins/tasks/settings.test.ts > task settings refuses a value the reader would drop, naming its key, and leaves settings.json as it was
+T1-M28 [13] an array section is read | 1 of 6 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning
+T1-M29 [14] task settings land in the subagents section | 1 of 6 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back
+T1-M30 [14] the writer accepts invalid values | 1 of 6 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings refuses a value the reader would drop, naming its key, and leaves settings.json as it was
+T1-M31 [14,16] the section writer follows symlinks | 2 of 13 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings refuses a symlinked .pi or settings.json, and leaves the file byte-identical when the write fails
+    test/fork-builtins/subagents/settings.test.ts > subagent settings refuses to write through a symlinked .pi or settings.json, dangling or not
+T1-M32 [15] id sorts as text | 5 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders id orders tasks by numeric id
+    test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group
+    test/fork-builtins/tasks/sort.test.ts > task sort orders active puts in progress first, then pending, then completed, by id inside each group
+    test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id
+    test/fork-builtins/tasks/sort.test.ts > task sort orders oldest puts the earliest update first and breaks a tie by ascending id
+T1-M33 [15] status ranks in progress first | 1 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group
+T1-M34 [15] active ranks pending first | 1 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders active puts in progress first, then pending, then completed, by id inside each group
+T1-M35 [15] recent breaks ties by ascending id | 1 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id
+T1-M36 [15] oldest breaks ties by descending id | 1 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders oldest puts the earliest update first and breaks a tie by ascending id
+T1-M37 [15] sorting changes the input | 1 of 6 failed, caught
+    test/fork-builtins/tasks/sort.test.ts > task sort orders returns a sorted copy and leaves the input as it was
+T1-M38 [16,14] the section writer drops the other sections | 2 of 13 failed, caught
+    test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back
+    test/fork-builtins/subagents/settings.test.ts > subagent settings writes only forkBuiltins.subagents in the project settings.json
+Q25 [17] the store follows a symlink below the project root | 5 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never writes or deletes through a symlink below the project root (D52)
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory when an ancestor cannot be checked
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store refuses a symlinked task file and reads, writes and deletes nothing through it (D52)
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+Q27 [17] an ancestor that cannot be checked throws out of the store | 3 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory when an ancestor cannot be checked
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+Q29 [17] a check that could not run is never retried | 2 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+T1-M39 [17] a symlinked task file is followed | 5 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never writes or deletes through a symlink below the project root (D52)
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory when an ancestor cannot be checked
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again
+    test/fork-builtins/tasks/store.test.ts > the task store refuses a symlinked task file and reads, writes and deletes nothing through it (D52)
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+T1-M40 [17] a symlinked root is refused | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store accepts a project root that is itself a symlink
+Q26 [18] a write overwrites another process's change | 3 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file another process changed since this store read it (D53)
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+    test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)
+T1-M41 [18] a deleted file is recreated | 3 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file another process changed since this store read it (D53)
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+    test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)
+T1-M42 [18] a changed file is deleted | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)
+T1-M43 [17] a check that failed at open is never retried | 1 of 28 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read
+restored | 0 of 47 failed
+clean: yes

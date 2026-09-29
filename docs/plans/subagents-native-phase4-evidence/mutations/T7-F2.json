@@ -1,0 +1,66 @@
+[
+ {
+  "id": "T7-F2-M1",
+  "cases": [
+   8
+  ],
+  "what": "an unknown status loads",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "status: STATUSES.includes(raw.status as TaskStatus) ? (raw.status as TaskStatus) : \"pending\",",
+  "new": "status: raw.status as TaskStatus,",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value"
+  ]
+ },
+ {
+  "id": "T7-F2-M2",
+  "cases": [
+   8
+  ],
+  "what": "a non-string subject loads",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "subject: text(raw.subject),",
+  "new": "subject: raw.subject as string,",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value"
+  ]
+ },
+ {
+  "id": "T7-F2-M3",
+  "cases": [
+   8
+  ],
+  "what": "non-string edges load",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "Array.isArray(value) ? value.filter((id): id is string => typeof id === \"string\") : [];",
+  "new": "Array.isArray(value) ? (value as string[]) : [];",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value"
+  ]
+ },
+ {
+  "id": "T7-F2-M4",
+  "cases": [
+   8
+  ],
+  "what": "a non-string owner loads",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "owner: optionalText(raw.owner),",
+  "new": "owner: raw.owner as string | undefined,",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value"
+  ]
+ }
+]

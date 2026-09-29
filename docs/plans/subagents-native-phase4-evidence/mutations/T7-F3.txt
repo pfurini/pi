@@ -1,0 +1,6 @@
+T7-F3-M1 [6] warnings are notified raw | 1 of 12 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory strips escape sequences from the warnings it notifies
+T7-F3-M2 [8] a failed save notifies its raw reason | 1 of 14 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list strips escape sequences from the reason a failed save notifies
+restored | 0 of 26 failed
+clean: yes

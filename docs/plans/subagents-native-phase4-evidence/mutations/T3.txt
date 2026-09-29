@@ -1,0 +1,145 @@
+Q1 [1] TaskExecute spawns without a background slot | 3 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+    test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session
+T3-M1 [1] the description is the task description | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+T3-M2 [1] thinking and max_turns are dropped | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task with the result of a completed or steered agent
+T3-M3 [1] the model is dropped | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+T3-M4 [1] the agent is not the owner | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+Q12 [2] a refused spawn leaves the task in progress | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents a refused spawn leaves the task pending and names the reason
+T3-M5 [2] a task that is not pending runs | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+T3-M6 [2] an untyped task runs | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+T3-M7 [2] completed blockers still block | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+T3-M8 [2] nothing ready answers nothing | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+T3-M9 [3] prerequisite results are cut at 8,000 characters | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+T3-M10 [3] the caller's context is dropped | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+T3-M11 [3] the closing instruction is dropped | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+T3-M12 [3] a prerequisite without a result is listed | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+Q2 [4] a completed agent leaves its task in progress | 7 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task with the result of a completed or steered agent
+    test/suite/fork-tasks-execute.test.ts > an agent's end changes no task for an agent TaskExecute did not start, or for a second end
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+    test/suite/fork-tasks-execute.test.ts > TaskStop refuses a task with no running agent, an agent id only its metadata names, and an unknown id
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+T3-M13 [4] a steered agent's task goes back to pending | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task with the result of a completed or steered agent
+T3-M14 [4] a stopped agent drops the earlier result | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task of a stopped agent and keeps an earlier result when the agent reports none
+T3-M15 [4] a failed agent's task keeps its result | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > an agent's end sends the task of a failed agent back to pending, removes its result and records the error
+T3-M16 [4] a second end changes the task | 4 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > an agent's end changes no task for an agent TaskExecute did not start, or for a second end
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+Q3 [5] TaskOutput consumes nothing | 3 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+T3-M17 [5] an empty id matches an agent | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent
+T3-M18 [5,6] an agent id prefix finds nothing | 4 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+    test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+T3-M19 [5] an ended agent's id finds nothing | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+T3-M20 [5] a task with no agent answers | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent
+T3-M21 [5] block never waits | 3 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+T3-M22 [5] the wait has no timeout | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+T3-M23 [5] a failure's error is left out | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+Q11 [6] TaskStop leaves the agent running | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskStop stops the agent, and the task completes
+    test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once
+T3-M24 [6] TaskStop trusts the task's metadata | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskStop refuses a task with no running agent, an agent id only its metadata names, and an unknown id
+T3-M25 [6] TaskStop leaves the task in progress | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once
+T3-M26 [6] TaskStop accepts shell_id | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskStop fails schema validation for shell_id alone
+Q10 [7] a child's TaskExecute ignores its nested runtime | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights
+Q14 [7] the scope ignores a child's lineage | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > task tools in a child session (D22) reach a child only when its agent names them, and a child's TaskExecute obeys its spawn rights
+Q4 [8] the session's end leaves agent tasks in progress | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents the session's end sends a task whose agent still runs back to pending
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the task service ends first, and a fork carries it as pending
+T3-M27 [8] the session's end records another error | 2 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents the session's end sends a task whose agent still runs back to pending
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the task service ends first, and a fork carries it as pending
+T3-M28 [8] an ended agent's task records its status | 4 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > an agent's end sends the task of a failed agent back to pending, removes its result and records the error
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the subagent service ends first, and a fork carries it as pending
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+T3-M29 [9] a reload builds a new task service | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+Q15 [10] task tools are no fork base tools | 31 of 55 failed, caught
+    test/fork-builtins/base-tools.test.ts > addForkBaseTools registers the ask_user_question, vcc_recall and subagent tools, all named for activation
+    test/fork-builtins/base-tools.test.ts > addForkBaseTools never overwrites a caller's tool of the same name
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents a refused spawn leaves the task pending and names the reason
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskStop stops the agent, and the task completes
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents the session's end sends a task whose agent still runs back to pending
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+    test/suite/fork-tasks-execute.test.ts > TaskExecute skips a missing, non-pending, untyped or blocked task, and answers No tasks to execute. when nothing is ready
+    test/suite/fork-tasks-execute.test.ts > TaskExecute builds the task prompt from the task, its prerequisites' results cut at 4,000 characters, and the caller's context
+    test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task with the result of a completed or steered agent
+    test/suite/fork-tasks-execute.test.ts > an agent's end sends the task of a failed agent back to pending, removes its result and records the error
+    test/suite/fork-tasks-execute.test.ts > an agent's end completes the task of a stopped agent and keeps an earlier result when the agent reports none
+    test/suite/fork-tasks-execute.test.ts > an agent's end changes no task for an agent TaskExecute did not start, or for a second end
+    test/suite/fork-tasks-execute.test.ts > TaskOutput finds a task by id, agent id or agent id prefix, and refuses an empty id, an unknown task and a task with no agent
+    test/suite/fork-tasks-execute.test.ts > TaskOutput waits until the agent ends, the timeout passes or the call aborts, and consumes only a result the task holds
+    test/suite/fork-tasks-execute.test.ts > TaskOutput reports a failed agent's error and consumes it, and consumes a result read after the fact
+    test/suite/fork-tasks-execute.test.ts > TaskStop finds the task by id, agent id or prefix, stops its agent and completes the task at once
+    test/suite/fork-tasks-execute.test.ts > TaskStop refuses a task with no running agent, an agent id only its metadata names, and an unknown id
+    test/suite/fork-tasks-execute.test.ts > TaskStop fails schema validation for shell_id alone
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the task service ends first, and a fork carries it as pending
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a running agent's task back to pending when the subagent service ends first, and a fork carries it as pending
+    test/suite/fork-tasks-execute.test.ts > the session's end and /reload keeps the service, the list and the agents across /reload, so an agent's end still reaches its task
+    test/suite/fork-tasks-execute.test.ts > task activity reports an agent task's own usage, and adds the parent's turn tokens to a task the session works on
+    test/suite/fork-tasks-service.test.ts > the task service registers the task tools as active fork base tools
+    test/suite/fork-tasks-service.test.ts > the task tools never activates a caller's base tool of the same name
+    test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata
+    test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+    test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task
+T3-M30 [10] TaskExecute takes no background slot | 3 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > tasks run by subagents TaskExecute runs a task through the subagent service, and TaskOutput hands over its result
+    test/suite/fork-tasks-execute.test.ts > TaskExecute starts one background agent per ready task with the subject, and forwards model, thinking and max_turns
+    test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session
+T3-M31 [10] an ended agent's result is consumed | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > TaskExecute takes background slots, so tasks past maxConcurrent queue, and an unread result notifies the session
+T3-M32 [11] an agent task shows the session's tokens | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > task activity reports an agent task's own usage, and adds the parent's turn tokens to a task the session works on
+T3-M33 [11] the session's turn tokens are not added | 1 of 23 failed, caught
+    test/suite/fork-tasks-execute.test.ts > task activity reports an agent task's own usage, and adds the parent's turn tokens to a task the session works on
+restored | 0 of 55 failed
+clean: yes

@@ -1,0 +1,138 @@
+T4-M1 [1] json mode shows the widget | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory shows the widget in tui mode, sends plain lines in rpc mode, and nothing in print and json mode
+T4-M2 [1] rpc gets a component | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory shows the widget in tui mode, sends plain lines in rpc mode, and nothing in print and json mode
+T4-M3 [1] the fork's previousSessionFile is dropped | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory hands a fork its parent's list through the previousSessionFile of its session_start
+T4-M4 [1] the reason is not passed | 2 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory tells the service a startup, so a finished list from before clears
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory hands a fork its parent's list through the previousSessionFile of its session_start
+T4-M5 [1] a child registers /tasks | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory registers no command and builds no service in a child session at its start
+T4-M6 [1] the tasks presentation is no fork built-in | 3 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory hands a fork its parent's list through the previousSessionFile of its session_start
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory registers no command and builds no service in a child session at its start
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child reaches a child whose service exists
+Q5 [2] a session without TaskCreate still gets the reminder | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the task reminder never reaches a session whose model cannot call TaskCreate
+Q6 [2] other tools never mark a reminder due | 3 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the task reminder reaches the model after four turns without a task tool, while the list holds tasks
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child adds a due reminder as the last message of the request in tui and rpc mode
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child reaches a child whose service exists
+T4-M7 [2] the hook drops the reminder | 3 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the task reminder reaches the model after four turns without a task tool, while the list holds tasks
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child adds a due reminder as the last message of the request in tui and rpc mode
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child reaches a child whose service exists
+T4-M8 [2] a child gets no reminder | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the task reminder in other modes and in a child reaches a child whose service exists
+T4-M9 [3] pending rows lose their glyph | 6 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows names the agent of an in-progress row, and of no pending or completed row
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows clips each line to the terminal width with three dots
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options replaces completed rows with one count line under collapseCompleted, and applies the limit to the rest
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on
+T4-M10 [3] completed rows are not struck through | 3 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows names the agent of an in-progress row, and of no pending or completed row
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on
+T4-M11 [3] completed blockers are named | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows counts the tasks by status, and shows each status with its glyph, striking completed rows through
+T4-M12 [3] pending rows name their agent | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows names the agent of an in-progress row, and of no pending or completed row
+T4-M13 [3] whole hours show minutes | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens
+T4-M14 [3] token counts keep .0 | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens
+T4-M15 [3] the activeForm is ignored | 2 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows shows a worked-on task with the spinner, its activeForm or subject, its agent, its elapsed time and its tokens
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines
+T4-M16 [3] lines are not clipped | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows clips each line to the terminal width with three dots
+T4-M17 [3] task text reaches the terminal raw | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines
+T4-M18 [3] task ids reach the terminal raw | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines
+T4-M19 [3] agent labels reach the terminal raw | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's rows strips escape sequences and control characters from task text, and folds its newlines
+T4-M20 [4] completed rows stay under collapseCompleted | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options replaces completed rows with one count line under collapseCompleted, and applies the limit to the rest
+T4-M21 [4] hiddenAt top hides the end | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on
+T4-M22 [4] showAll is ignored | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options caps the rows at maxVisible with an overflow line at the hidden end, unless showAll is on
+T4-M23 [4] sortOrder is ignored | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's options orders the rows by sortOrder
+Q21 [5] a failing setWidget escapes the update | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change
+Q22 [5] a failed registration counts as registered | 2 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing setWidget and registers at the next change
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle registers above the editor once the list has tasks, redraws on changes, and removes itself when the list empties
+Q23 [5] a failing removal escapes dispose | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget contains a failing removal at dispose
+T4-M24 [5] every change redraws | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle registers above the editor once the list has tasks, redraws on changes, and removes itself when the list empties
+T4-M25 [5] an emptied list keeps the widget | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle registers above the editor once the list has tasks, redraws on changes, and removes itself when the list empties
+T4-M26 [5] the timer runs without work | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle runs the spinner timer only while a task is worked on, one frame per tick
+T4-M27 [5] a failing tick keeps the timer | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops the spinner when a redraw fails in a tick, and draws nothing for a render that throws
+T4-M28 [5] a render error escapes | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops the spinner when a redraw fails in a tick, and draws nothing for a render that throws
+T4-M29 [5] dispose leaves the timer running | 2 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle reaches the UI no more after dispose
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops without touching the UI once its service is disposed
+T4-M30 [5] a disposed service keeps the widget running | 1 of 16 failed, caught
+    test/fork-builtins/tasks/ui-widget.test.ts > the tasks widget's lifecycle stops without touching the UI once its service is disposed
+T4-M31 [5] session_shutdown keeps the widget | 2 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory removes the widget at session_shutdown
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory rebinds the widget to the same service and list when /reload loads the factory again
+T4-M32 [6] warnings are not notified | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory sends the service's warnings to the UI as notifications, held ones included
+T4-M33 [6] held warnings go to the widget | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory sends the service's warnings to the UI as notifications, held ones included
+T4-M34 [7] clear completed shows without completed tasks | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu offers view and create for an empty list, the clear entries with their counts, and Settings in the TUI only
+T4-M35 [7] RPC offers Settings | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu offers view and create for an empty list, the clear entries with their counts, and Settings in the TUI only
+T4-M36 [7] a row's task is read from its text | 3 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu opens the task whose row was picked when a subject holds #<n>
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu strips escape sequences from the task text it lists and titles
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu keeps two tasks apart whose ids show alike once stripped
+T4-M37 [7] start does nothing | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu lists the tasks with status glyphs, and the detail actions start, complete and delete
+T4-M38 [7] an empty view shows no placeholder | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu shows a placeholder when there is nothing to view
+T4-M39 [7] a cancelled description still creates | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu creates a task from the subject and description prompts, and nothing when either is cancelled
+T4-M40 [7] clear all keeps the list | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu clears the completed tasks, then all tasks, and deletes the emptied file
+T4-M41 [7] the menu lists raw task text | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu strips escape sequences from the task text it lists and titles
+T4-M42 [7] the menu lists raw task ids | 2 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu strips escape sequences from the task text it lists and titles
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu keeps two tasks apart whose ids show alike once stripped
+T4-M43 [7] alike choices stay alike | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the /tasks menu keeps two tasks apart whose ids show alike once stripped
+T4-M44 [8] a save drops the project's own values | 3 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows seven rows with their values, and a change writes the project's own values plus that key and reloads
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list keeps a project value another process wrote after the session read the file
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list saves two quick changes one after another, so the second keeps the first
+T4-M45 [8] a save does not await the reload | 2 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows seven rows with their values, and a change writes the project's own values plus that key and reloads
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list saves two quick changes one after another, so the second keeps the first
+T4-M46 [8] a save keeps the values the session read | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list keeps a project value another process wrote after the session read the file
+T4-M47 [8] saves run at once | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list saves two quick changes one after another, so the second keeps the first
+T4-M48 [8] an untrusted project cycles values | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list shows an untrusted project's values read-only with a notice, and writes nothing
+T4-M49 [8] a failed save is silent | 1 of 13 failed, caught
+    test/fork-builtins/tasks/ui-menu.test.ts > the task settings list warns when the write fails and changes nothing
+T4-M50 [9] a reload builds a new task service | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory rebinds the widget to the same service and list when /reload loads the factory again
+T4-M51 [9] a reload keeps the old widget | 1 of 11 failed, caught
+    test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory rebinds the widget to the same service and list when /reload loads the factory again
+restored | 0 of 40 failed
+clean: yes

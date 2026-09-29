@@ -1,0 +1,912 @@
+[
+ {
+  "id": "T2-M1",
+  "cases": [
+   1
+  ],
+  "what": "task tools are no fork base tools",
+  "path": "src/core/fork-builtins/base-tools.ts",
+  "old": "for (const [name, create] of TASK_TOOL_FACTORIES) addOwned(definitions, name, () => create(options.session));",
+  "new": "for (const [name, create] of TASK_TOOL_FACTORIES) definitions.set(name, create(options.session));",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts",
+   "test/fork-builtins/base-tools.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service registers the task tools as active fork base tools",
+   "test/suite/fork-tasks-service.test.ts > the task tools never activates a caller's base tool of the same name"
+  ]
+ },
+ {
+  "id": "T2-M2",
+  "cases": [
+   1
+  ],
+  "what": "the session is never registered",
+  "path": "src/core/fork-builtins/base-tools.ts",
+  "old": "\tregisterTaskSession(options.session);\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata"
+  ]
+ },
+ {
+  "id": "T2-M3",
+  "cases": [
+   2
+  ],
+  "what": "agentType is not stored",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (agentType) meta.agentType = agentType;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata"
+  ]
+ },
+ {
+  "id": "T2-M4",
+  "cases": [
+   2
+  ],
+  "what": "TaskCreate carries another description",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "description: TASK_CREATE_DESCRIPTION,",
+  "new": "description: TASK_LIST_DESCRIPTION,",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim"
+  ]
+ },
+ {
+  "id": "T2-M5",
+  "cases": [
+   2
+  ],
+  "what": "TaskCreate carries no guidelines",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "promptGuidelines: [...TASK_CREATE_GUIDELINES],",
+  "new": "promptGuidelines: [],",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim"
+  ]
+ },
+ {
+  "id": "T2-M6",
+  "cases": [
+   3
+  ],
+  "what": "TaskList puts in-progress tasks first",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "{ pending: 0, in_progress: 1, completed: 2 }",
+  "new": "{ pending: 1, in_progress: 0, completed: 2 }",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers"
+  ]
+ },
+ {
+  "id": "T2-M7",
+  "cases": [
+   3,
+   4
+  ],
+  "what": "completed blockers still block",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "return blocker && blocker.status !== \"completed\";",
+  "new": "return blocker !== undefined;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers",
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata"
+  ]
+ },
+ {
+  "id": "T2-M8",
+  "cases": [
+   3
+  ],
+  "what": "TaskList drops the owner",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "if (task.owner) line += ` (${task.owner})`;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers"
+  ]
+ },
+ {
+  "id": "T2-M9",
+  "cases": [
+   4
+  ],
+  "what": "double-escaped newlines stay",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "lines.push(`Description: ${task.description.replace(/\\\\n/g, \"\\n\")}`);",
+  "new": "lines.push(`Description: ${task.description}`);",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata"
+  ]
+ },
+ {
+  "id": "T2-M10",
+  "cases": [
+   4
+  ],
+  "what": "TaskGet drops blocks",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "if (task.blocks.length > 0) lines.push(`Blocks: ${hashes(task.blocks)}`);",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata"
+  ]
+ },
+ {
+  "id": "T2-M11",
+  "cases": [
+   5
+  ],
+  "what": "TaskUpdate drops warnings",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "if (warnings.length > 0) text += ` (warning: ${warnings.join(\"; \")})`;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task"
+  ]
+ },
+ {
+  "id": "T2-M12",
+  "cases": [
+   5
+  ],
+  "what": "TaskUpdate reports a missing task as updated",
+  "path": "src/core/fork-builtins/tasks/tools/tools.ts",
+  "old": "if (changedFields.length === 0 && !task) return textResult(`Task #${taskId} not found`);",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task"
+  ]
+ },
+ {
+  "id": "Q20",
+  "what": "a session Pi saves keeps its list in memory",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.settingsValue.taskScope === \"session\" && manager.getSessionFile()",
+  "new": "this.settingsValue.taskScope === \"never\" && manager.getSessionFile()",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service saves the list of a session Pi saves in <cwd>/.pi/tasks, and none of an in-memory session"
+  ],
+  "cases": [
+   6
+  ]
+ },
+ {
+  "id": "T2-M13",
+  "cases": [
+   6
+  ],
+  "what": "memory scope saves a file",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "this.settingsValue.taskScope === \"session\" && manager.getSessionFile()",
+  "new": "manager.getSessionFile()",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's storage saves nothing under taskScope memory, and a changed taskScope takes effect at the next session"
+  ]
+ },
+ {
+  "id": "T2-M14",
+  "cases": [
+   7
+  ],
+  "what": "the reminder waits three turns",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "export const REMINDER_INTERVAL = 4;",
+  "new": "export const REMINDER_INTERVAL = 3;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due once four turns passed without a task tool, after another tool ran, while the list holds tasks"
+  ]
+ },
+ {
+  "id": "T2-M15",
+  "cases": [
+   7
+  ],
+  "what": "an in-progress task keeps the long interval",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "return tasks.some((task) => task.status === \"in_progress\") ? ACTIVE_REMINDER_INTERVAL : REMINDER_INTERVAL;",
+  "new": "return REMINDER_INTERVAL;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due after two turns while a task is in progress"
+  ]
+ },
+ {
+  "id": "T2-M16",
+  "cases": [
+   7
+  ],
+  "what": "a task tool call keeps a pending reminder",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "\tcadence.injectedThisCycle = false;\n\tcadence.due = false;",
+  "new": "\tcadence.injectedThisCycle = false;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence resets at a task tool call, which also cancels a pending reminder"
+  ]
+ },
+ {
+  "id": "T2-M17",
+  "cases": [
+   7
+  ],
+  "what": "reminders repeat within a cycle",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "\tcadence.injectedThisCycle = true;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence sends one reminder per cycle, and a task tool call starts the next cycle"
+  ]
+ },
+ {
+  "id": "T2-M18",
+  "cases": [
+   7
+  ],
+  "what": "a text-only turn nudges for pending tasks",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "if (tasks.some((task) => task.status === \"in_progress\")) cadence.due = true;",
+  "new": "if (tasks.length > 0) cadence.due = true;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence marks a reminder due after two text-only turns while a task is in progress, and not for pending tasks alone"
+  ]
+ },
+ {
+  "id": "T2-M19",
+  "cases": [
+   7
+  ],
+  "what": "an empty list gets the reminder",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "if (cadence.injectedThisCycle || cadence.due || tasks.length === 0) return;",
+  "new": "if (cadence.injectedThisCycle || cadence.due) return;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due once four turns passed without a task tool, after another tool ran, while the list holds tasks"
+  ]
+ },
+ {
+  "id": "T2-M20",
+  "cases": [
+   7
+  ],
+  "what": "the service never reports other tools",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "else onOtherToolResult(this.cadence, this.store.list());",
+  "new": "else void onOtherToolResult;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active"
+  ]
+ },
+ {
+  "id": "T2-M21",
+  "cases": [
+   7
+  ],
+  "what": "the service counts no turn",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t\t\tthis.cadence.currentTurn++;\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active"
+  ]
+ },
+ {
+  "id": "T2-M22",
+  "cases": [
+   8
+  ],
+  "what": "reminder tags stay in fields",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": ".replace(/<\\/?system-reminder>/gi, \"\")",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields"
+  ]
+ },
+ {
+  "id": "T2-M23",
+  "cases": [
+   8
+  ],
+  "what": "newlines stay in fields",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": ".replace(/[\\r\\n]+/g, \" \")",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields"
+  ]
+ },
+ {
+  "id": "T2-M24",
+  "cases": [
+   8
+  ],
+  "what": "the reminder lists twelve tasks",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "const REMINDER_MAX_TASKS = 10;",
+  "new": "const REMINDER_MAX_TASKS = 12;",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text lists at most ten tasks, unfinished ones first, and names how many it left out"
+  ]
+ },
+ {
+  "id": "T2-M25",
+  "cases": [
+   8
+  ],
+  "what": "completed tasks come first",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "const rank = (task: Task): number => (task.status === \"in_progress\" ? 0 : task.status === \"pending\" ? 1 : 2);",
+  "new": "const rank = (task: Task): number => (task.status === \"in_progress\" ? 2 : task.status === \"pending\" ? 1 : 0);",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text lists at most ten tasks, unfinished ones first, and names how many it left out"
+  ]
+ },
+ {
+  "id": "T2-M26",
+  "cases": [
+   8
+  ],
+  "what": "activeForm is left out",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "\t\t...(task.activeForm && { activeForm: sanitizeField(task.activeForm) }),\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields"
+  ]
+ },
+ {
+  "id": "T2-M27",
+  "cases": [
+   8
+  ],
+  "what": "an empty list is echoed",
+  "path": "src/core/fork-builtins/tasks/reminder.ts",
+  "old": "if (tasks.length === 0) {",
+  "new": "if (tasks.length < 0) {",
+  "files": [
+   "test/fork-builtins/tasks/reminder.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/reminder.test.ts > the task reminder's text nudges toward TaskCreate for an empty list"
+  ]
+ },
+ {
+  "id": "T2-M28",
+  "cases": [
+   9
+  ],
+  "what": "a session without TaskCreate gets the reminder",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (!this.session.getActiveToolNames().includes(TASK_CREATE_TOOL_NAME)) return undefined;",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active"
+  ]
+ },
+ {
+  "id": "T2-M29",
+  "cases": [
+   10,
+   11
+  ],
+  "what": "completed tasks linger three turns",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "export const CLEAR_DELAY_TURNS = 4;",
+  "new": "export const CLEAR_DELAY_TURNS = 3;",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete clears the whole list four turns after its last task completed, and never while a task is open",
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete clears each completed task four turns after it completed, and leaves open tasks alone"
+  ]
+ },
+ {
+  "id": "T2-M30",
+  "cases": [
+   10
+  ],
+  "what": "a task back at work keeps the countdown",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "\tresetBatchCountdown(): void {\n\t\tthis.allCompletedAtTurn = undefined;\n\t}",
+  "new": "\tresetBatchCountdown(): void {}",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete cancels the countdown when a task goes back to work or a new task is created"
+  ]
+ },
+ {
+  "id": "T2-M31",
+  "cases": [
+   10
+  ],
+  "what": "a new batch inherits the old countdown",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "\t\tthis.allCompletedAtTurn = undefined;\n\t\tconst afterFinishedRun",
+  "new": "\t\tconst afterFinishedRun",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete counts the new batch's own countdown from its last completion"
+  ]
+ },
+ {
+  "id": "T2-M32",
+  "cases": [
+   10
+  ],
+  "what": "an auto-cleared list keeps its file",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (this.autoClear.onTurnStart(this.cadence.currentTurn)) {\n\t\t\t\t\tthis.store.deleteFileIfEmpty();",
+  "new": "if (this.autoClear.onTurnStart(this.cadence.currentTurn)) {",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks"
+  ]
+ },
+ {
+  "id": "T2-M33",
+  "cases": [
+   10
+  ],
+  "what": "a deletion keeps the file",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (fields.status === \"deleted\") this.store.deleteFileIfEmpty();",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks"
+  ]
+ },
+ {
+  "id": "T2-M34",
+  "cases": [
+   10
+  ],
+  "what": "clear all keeps the file",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "const count = this.store.clearAll();\n\t\tthis.store.deleteFileIfEmpty();",
+  "new": "const count = this.store.clearAll();",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks"
+  ]
+ },
+ {
+  "id": "T2-M35",
+  "cases": [
+   11
+  ],
+  "what": "a reverted task is still cleared",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "if (store.get(taskId)?.status !== \"completed\") this.completedAtTurn.delete(taskId);",
+  "new": "if (false) this.completedAtTurn.delete(taskId);",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete forgets a task that went back to work or was deleted"
+  ]
+ },
+ {
+  "id": "T2-M36",
+  "cases": [
+   11,
+   13
+  ],
+  "what": "completions are not tracked",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "if (mode === \"on_task_complete\") this.completedAtTurn.set(taskId, currentTurn);",
+  "new": "if (mode === \"on_task_complete\") void currentTurn;",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete clears each completed task four turns after it completed, and leaves open tasks alone",
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete follows a mode change from the next completion and turn"
+  ]
+ },
+ {
+  "id": "T2-M37",
+  "cases": [
+   12
+  ],
+  "what": "never mode retires a finished list",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "if (!afterFinishedRun || this.mode() === \"never\") return;",
+  "new": "if (!afterFinishedRun) return;",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts",
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches never clears anything in never mode, whatever the turns or runs",
+   "test/suite/fork-tasks-service.test.ts > the task service's batches retires a list an earlier run finished when a later run creates a task, and keeps it under never"
+  ]
+ },
+ {
+  "id": "T2-M38",
+  "cases": [
+   12
+  ],
+  "what": "a run arms more than once",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "\t\tthis.runEnded = false;\n\t\tif (!afterFinishedRun",
+  "new": "\t\tif (!afterFinishedRun",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches keeps a list built within the same run, and arms once per run"
+  ]
+ },
+ {
+  "id": "T2-M39",
+  "cases": [
+   12
+  ],
+  "what": "a list built in the same run is retired",
+  "path": "src/core/fork-builtins/tasks/auto-clear.ts",
+  "old": "const afterFinishedRun = this.runEnded;",
+  "new": "const afterFinishedRun = true;",
+  "files": [
+   "test/fork-builtins/tasks/auto-clear.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches keeps a list built within the same run, and arms once per run"
+  ]
+ },
+ {
+  "id": "T2-M40",
+  "cases": [
+   12
+  ],
+  "what": "a settled run marks no batch boundary",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t\tcase \"agent_settled\":\n\t\t\t\tthis.autoClear.onRunEnded();\n",
+  "new": "\t\t\tcase \"agent_settled\":\n",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's batches retires a list an earlier run finished when a later run creates a task, and keeps it under never"
+  ]
+ },
+ {
+  "id": "T2-M41",
+  "cases": [
+   13
+  ],
+  "what": "startup keeps an all-completed list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (tasks.length > 0 && tasks.every((task) => task.status === \"completed\")) {",
+  "new": "if (false) {",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at startup and deletes its file",
+   "test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at new and deletes its file"
+  ]
+ },
+ {
+  "id": "T2-M42",
+  "cases": [
+   13
+  ],
+  "what": "resume and reload clear an all-completed list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (reason === \"reload\" || reason === \"resume\" || reason === \"fork\") this.autoClear.onRunEnded();",
+  "new": "if (reason === \"fork\") this.autoClear.onRunEnded();",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at resume and treats it as a finished run",
+   "test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at reload and treats it as a finished run"
+  ]
+ },
+ {
+  "id": "T2-M43",
+  "cases": [
+   13
+  ],
+  "what": "reload keeps the old settings",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tif (reason === \"reload\") {\n\t\t\tthis.reloadSettings();",
+  "new": "\t\tif (reason === \"reload\") {",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service at session start rereads the settings at /reload, so a changed auto-clear mode applies from the next completion and turn"
+  ]
+ },
+ {
+  "id": "T2-M44",
+  "cases": [
+   13
+  ],
+  "what": "reload retries no write",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t\tthis.store.retryWrite();\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service at session start retries a failed write at /reload"
+  ]
+ },
+ {
+  "id": "Q9",
+  "what": "a fork takes no list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (read) this.store.seed(structuredClone(read()));",
+  "new": "if (read) void read;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager",
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first"
+  ],
+  "cases": [
+   14
+  ]
+ },
+ {
+  "id": "Q24",
+  "what": "a saved session's fork takes the latest list, whoever left it",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "previousSessionFile ? handoffsByFile.get(previousSessionFile) :",
+  "new": "previousSessionFile ? [...handoffsByFile.values()].at(-1) :",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first"
+  ],
+  "cases": [
+   14
+  ]
+ },
+ {
+  "id": "Q28",
+  "what": "a fork of an unsaved session takes no list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": ": handoffsByManager.get(manager);",
+  "new": ": undefined;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager"
+  ],
+  "cases": [
+   14
+  ]
+ },
+ {
+  "id": "T2-M45",
+  "cases": [
+   14
+  ],
+  "what": "every session start takes a parent's list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tif (reason === \"fork\") {\n\t\t\tconst manager",
+  "new": "\t\tif (reason === \"fork\" || reason === \"new\" || reason === \"resume\" || reason === \"startup\") {\n\t\t\tconst manager",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's fork handoff gives a new or resumed session nothing, even when a parent left a list"
+  ]
+ },
+ {
+  "id": "T2-M46",
+  "cases": [
+   14
+  ],
+  "what": "a handoff is handed over twice",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "if (previousSessionFile) handoffsByFile.delete(previousSessionFile);",
+  "new": "if (previousSessionFile) void handoffsByFile;",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's fork handoff writes the carried list to the fork's own file, independent of its parent"
+  ]
+ },
+ {
+  "id": "T2-M47",
+  "cases": [
+   14
+  ],
+  "what": "a later end keeps the earlier list",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\t\thandoffsByFile.delete(file);\n\t\t\thandoffsByFile.set(file, read);",
+  "new": "\t\t\tif (!handoffsByFile.has(file)) handoffsByFile.set(file, read);",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's fork handoff hands a fork the list its parent's session left last"
+  ]
+ },
+ {
+  "id": "T2-M48",
+  "cases": [
+   15
+  ],
+  "what": "a warning repeats",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tif (this.warned.has(message)) return;\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once"
+  ]
+ },
+ {
+  "id": "T2-M49",
+  "cases": [
+   15
+  ],
+  "what": "held warnings are dropped",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tfor (const message of pending) listener({ type: \"warning\", message });\n",
+  "new": "",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once"
+  ]
+ },
+ {
+  "id": "T2-M50",
+  "cases": [
+   15
+  ],
+  "what": "warnings are not held",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tif (this.listeners.size === 0) this.pendingWarnings.push(message);\n\t\telse this.emit({ type: \"warning\", message });",
+  "new": "\t\tthis.emit({ type: \"warning\", message });",
+  "files": [
+   "test/suite/fork-tasks-service.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once"
+  ]
+ },
+ {
+  "id": "Q16",
+  "what": "the service imports the widget",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "import { AutoClear } from \"../auto-clear.ts\";",
+  "new": "import { AutoClear } from \"../auto-clear.ts\";\nimport \"../ui/widget.ts\";",
+  "files": [
+   "test/fork-builtins/tasks/layering.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering keeps presentation code out of the service",
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering imports only from its own or a lower layer"
+  ],
+  "cases": [
+   16
+  ]
+ },
+ {
+  "id": "Q17",
+  "what": "the subagents module imports the tasks module",
+  "path": "src/core/fork-builtins/subagents/names.ts",
+  "old": "/** Fork-owned: the names of the three subagent base tools (plan T5). */",
+  "new": "import \"../tasks/names.ts\";\n/** Fork-owned: the names of the three subagent base tools (plan T5). */",
+  "files": [
+   "test/fork-builtins/tasks/layering.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/layering.test.ts > tasks module layering is never imported by the subagents module"
+  ],
+  "cases": [
+   16
+  ]
+ }
+]

@@ -1,0 +1,842 @@
+[
+ {
+  "id": "T1-M1",
+  "cases": [
+   1
+  ],
+  "what": "tasks start in progress",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "status: \"pending\",",
+  "new": "status: \"in_progress\",",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store numbers tasks from 1, keeps the subject as given and starts each task pending with no edges"
+  ]
+ },
+ {
+  "id": "T1-M2",
+  "cases": [
+   1
+  ],
+  "what": "ids come from the task count",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "id: String(this.nextId++),",
+  "new": "id: String(this.tasks.size + 1),",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store never reuses an id, a deleted one included"
+  ]
+ },
+ {
+  "id": "T1-M3",
+  "cases": [
+   2
+  ],
+  "what": "list sorts ids as text",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": ".sort((a, b) => Number(a.id) - Number(b.id));",
+  "new": ".sort((a, b) => a.id.localeCompare(b.id));",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store finds a task by id, answers undefined for a missing one, and lists every task in numeric id order"
+  ]
+ },
+ {
+  "id": "T1-M4",
+  "cases": [
+   3
+  ],
+  "what": "update keeps updatedAt",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\ttask.updatedAt = Date.now();\n\t\tthis.save();\n\t\treturn { task, changedFields, warnings };",
+  "new": "\t\tthis.save();\n\t\treturn { task, changedFields, warnings };",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt"
+  ]
+ },
+ {
+  "id": "T1-M5",
+  "cases": [
+   3
+  ],
+  "what": "changed fields out of order",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "for (const key of [\"status\", \"subject\", \"description\", \"activeForm\", \"owner\"] as const) {",
+  "new": "for (const key of [\"subject\", \"status\", \"description\", \"activeForm\", \"owner\"] as const) {",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store updates status, subject, description, activeForm and owner, reports them in that order and bumps updatedAt"
+  ]
+ },
+ {
+  "id": "T1-M6",
+  "cases": [
+   3
+  ],
+  "what": "an unknown id reports fields",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (!task) return { task: undefined, changedFields: [], warnings: [] };",
+  "new": "if (!task) return { task: undefined, changedFields: Object.keys(fields), warnings: [] };",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store changes nothing and reports no field for an unknown id"
+  ]
+ },
+ {
+  "id": "T1-M7",
+  "cases": [
+   4
+  ],
+  "what": "a null metadata key is stored",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (value === null) delete task.metadata[key];\n\t\t\t\telse task.metadata[key] = value;",
+  "new": "task.metadata[key] = value;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store merges metadata shallowly and deletes a key set to null"
+  ]
+ },
+ {
+  "id": "T1-M8",
+  "cases": [
+   5
+  ],
+  "what": "addBlocks duplicates the reverse edge",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (target && !target.blockedBy.includes(task.id)) {",
+  "new": "if (target) {",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each"
+  ]
+ },
+ {
+  "id": "T1-M9",
+  "cases": [
+   5
+  ],
+  "what": "addBlockedBy duplicates the reverse edge",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (source && !source.blocks.includes(id)) {",
+  "new": "if (source) {",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store sets both edges of addBlocks and addBlockedBy once each"
+  ]
+ },
+ {
+  "id": "T1-M10",
+  "cases": [
+   5
+  ],
+  "what": "a missing target is not warned",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "else if (!target) warnings.push(`#${targetId} does not exist`);",
+  "new": "else if (!target) {\n\t\t}",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store warns for a self edge, a missing task and a cycle, and still records the edge"
+  ]
+ },
+ {
+  "id": "T1-M11",
+  "cases": [
+   6
+  ],
+  "what": "removal keeps blocks edges",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "task.blocks = task.blocks.filter((other) => !removed.has(other));",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll"
+  ]
+ },
+ {
+  "id": "T1-M12",
+  "cases": [
+   6
+  ],
+  "what": "removal keeps blockedBy edges",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "task.blockedBy = task.blockedBy.filter((other) => !removed.has(other));",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store removes tasks with every edge that points at them through deleted, delete, clearCompleted and clearAll"
+  ]
+ },
+ {
+  "id": "T1-M13",
+  "cases": [
+   7
+  ],
+  "what": "the file is compact JSON",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "const text = JSON.stringify(this.snapshot(), null, 2);",
+  "new": "const text = JSON.stringify(this.snapshot());",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list"
+  ]
+ },
+ {
+  "id": "T1-M14",
+  "cases": [
+   7
+  ],
+  "what": "the directory is never created",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "mkdirSync(dirname(path), { recursive: true });",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list"
+  ]
+ },
+ {
+  "id": "T1-M15",
+  "cases": [
+   7
+  ],
+  "what": "an update is not saved",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\ttask.updatedAt = Date.now();\n\t\tthis.save();\n\t\treturn { task, changedFields, warnings };",
+  "new": "\t\ttask.updatedAt = Date.now();\n\t\treturn { task, changedFields, warnings };",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store writes pi-tasks' format after every change, creates its directory at the first change, and reopens the same list"
+  ]
+ },
+ {
+  "id": "Q13",
+  "what": "old files are not normalized",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "loaded.push(normalizeTask(task));",
+  "new": "loaded.push(task);",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) resumes a pi-tasks file, filling the fields old files lack"
+  ],
+  "cases": [
+   8
+  ]
+ },
+ {
+  "id": "T1-M16",
+  "cases": [
+   8
+  ],
+  "what": "records without a string id load",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (!task || typeof task !== \"object\" || typeof task.id !== \"string\") continue;",
+  "new": "if (!task || typeof task !== \"object\") continue;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId"
+  ]
+ },
+ {
+  "id": "T1-M17",
+  "cases": [
+   8
+  ],
+  "what": "a stale nextId is trusted",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "const next = typeof nextId === \"number\" && Number.isInteger(nextId) && nextId > maxId ? nextId : maxId + 1;",
+  "new": "const next = typeof nextId === \"number\" ? nextId : maxId + 1;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store resumes an old pi-tasks file: fills missing fields, replaces wrong types, skips records without a string id and repairs nextId"
+  ]
+ },
+ {
+  "id": "Q7",
+  "what": "a failed write throws instead of falling back",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tthis.toMemory(errorText(error));\n\t\t\treturn \"failed\";",
+  "new": "\t\t\tthrow error;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory with one warning when the file cannot be written"
+  ],
+  "cases": [
+   9
+  ]
+ },
+ {
+  "id": "T1-M18",
+  "cases": [
+   9
+  ],
+  "what": "the fallback keeps writing",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "this.path = undefined;\n\t\tthis.warn(",
+  "new": "this.warn(",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store leaves the saved file as it was when a later write fails, and keeps later changes in memory"
+  ]
+ },
+ {
+  "id": "Q8",
+  "what": "a file that holds no task list is overwritten",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "this.toMemory(`${path} is not a task list (${errorText(error)})`);\n\t\t\treturn;",
+  "new": "this.path = path;\n\t\t\treturn;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list"
+  ],
+  "cases": [
+   10
+  ]
+ },
+ {
+  "id": "Q19",
+  "what": "a file that holds no task list is taken over and overwritten",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tthis.toMemory(`${path} is not a task list (${errorText(error)})`);\n\t\t\treturn;",
+  "new": "\t\t\tthis.path = path;\n\t\t\tthis.lastText = text;\n\t\t\treturn;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file that holds no task list"
+  ],
+  "cases": [
+   10
+  ]
+ },
+ {
+  "id": "T1-M19",
+  "cases": [
+   10
+  ],
+  "what": "a file without a tasks array loads",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tif (!data) {\n\t\t\tthis.toMemory(`${path} is not a task list (no tasks array)`);\n\t\t\treturn;\n\t\t}",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file cannot be read or holds no tasks array, and never replaces the file"
+  ]
+ },
+ {
+  "id": "T1-M20",
+  "cases": [
+   10
+  ],
+  "what": "an unreadable file is kept as the save path",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "this.toMemory(`${path} could not be read (${errorText(error)})`);",
+  "new": "this.path = path;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file cannot be read or holds no tasks array, and never replaces the file"
+  ]
+ },
+ {
+  "id": "Q18",
+  "what": "a retried write never saves again",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tif (outcome === \"refused\") return false;\n\t\tthis.path = path;\n\t\treturn true;",
+  "new": "\t\tif (outcome === \"refused\") return false;\n\t\treturn false;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks"
+  ],
+  "cases": [
+   11
+  ]
+ },
+ {
+  "id": "T1-M21",
+  "cases": [
+   11
+  ],
+  "what": "a failed write is never retried",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (this.write(path) === \"failed\") this.unsavedPath = path;",
+  "new": "this.write(path);",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks",
+   "test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds"
+  ]
+ },
+ {
+  "id": "T1-M22",
+  "cases": [
+   11
+  ],
+  "what": "a retried write leaves the list in memory",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tif (outcome === \"refused\") return false;\n\t\tthis.path = path;\n\t\treturn true;",
+  "new": "\t\tif (outcome === \"refused\") return false;\n\t\treturn true;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) saves the list again once a retried write succeeds, as /reload asks",
+   "test/fork-builtins/tasks/store.test.ts > the task store saves later changes to the file again after a retried write succeeds"
+  ]
+ },
+ {
+  "id": "T1-M23",
+  "cases": [
+   12
+  ],
+  "what": "seed replaces a list",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (this.tasks.size > 0) return;",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does"
+  ]
+ },
+ {
+  "id": "T1-M24",
+  "cases": [
+   12
+  ],
+  "what": "seed shares the parent's tasks",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "structuredClone(task)",
+  "new": "task",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store seeds only an empty store, with copies, from a snapshot that holds the list as the file does"
+  ]
+ },
+ {
+  "id": "T1-M25",
+  "cases": [
+   12
+  ],
+  "what": "a non-empty list's file is deleted",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if (!path || this.tasks.size > 0) return false;",
+  "new": "if (!path) return false;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store deletes the file of an empty file-backed list only"
+  ]
+ },
+ {
+  "id": "T1-M26",
+  "cases": [
+   13
+  ],
+  "what": "global values win",
+  "path": "src/core/fork-builtins/tasks/settings.ts",
+  "old": "settings: Object.freeze({ ...DEFAULT_TASK_SETTINGS, ...global.values, ...project.values }),",
+  "new": "settings: Object.freeze({ ...DEFAULT_TASK_SETTINGS, ...project.values, ...global.values }),",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings reads the defaults, then the global values, then the project values"
+  ]
+ },
+ {
+  "id": "T1-M27",
+  "cases": [
+   13
+  ],
+  "what": "invalid values are kept",
+  "path": "src/core/fork-builtins/tasks/settings.ts",
+  "old": "else if (acceptsSetting(check, value)) (values as Record<string, unknown>)[key] = value;",
+  "new": "else if (check) (values as Record<string, unknown>)[key] = value;",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning"
+  ]
+ },
+ {
+  "id": "T1-M28",
+  "cases": [
+   13
+  ],
+  "what": "an array section is read",
+  "path": "src/core/fork-builtins/tasks/settings.ts",
+  "old": "if (typeof raw !== \"object\" || raw === null || Array.isArray(raw)) {",
+  "new": "if (typeof raw !== \"object\" || raw === null) {",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings drops a wrong type, an out-of-range number, an unknown key and a non-object section, each with one warning"
+  ]
+ },
+ {
+  "id": "T1-M29",
+  "cases": [
+   14
+  ],
+  "what": "task settings land in the subagents section",
+  "path": "src/core/fork-builtins/tasks/settings.ts",
+  "old": "writeForkBuiltinProjectSection(cwd, \"tasks\", \"task\", values);",
+  "new": "writeForkBuiltinProjectSection(cwd, \"subagents\", \"task\", values);",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back"
+  ]
+ },
+ {
+  "id": "T1-M30",
+  "cases": [
+   14
+  ],
+  "what": "the writer accepts invalid values",
+  "path": "src/core/fork-builtins/tasks/settings.ts",
+  "old": "if (warnings.length > 0) {",
+  "new": "if (false) {",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings refuses a value the reader would drop, naming its key, and leaves settings.json as it was"
+  ]
+ },
+ {
+  "id": "T1-M31",
+  "cases": [
+   14,
+   16
+  ],
+  "what": "the section writer follows symlinks",
+  "path": "src/core/fork-builtins/settings-section.ts",
+  "old": "if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {",
+  "new": "if (false) {",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts",
+   "test/fork-builtins/subagents/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/settings.test.ts > task settings refuses a symlinked .pi or settings.json, and leaves the file byte-identical when the write fails",
+   "test/fork-builtins/subagents/settings.test.ts > subagent settings refuses to write through a symlinked .pi or settings.json, dangling or not"
+  ]
+ },
+ {
+  "id": "T1-M32",
+  "cases": [
+   15
+  ],
+  "what": "id sorts as text",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "const byId = (a: Task, b: Task): number => Number(a.id) - Number(b.id);",
+  "new": "const byId = (a: Task, b: Task): number => a.id.localeCompare(b.id);",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders id orders tasks by numeric id"
+  ]
+ },
+ {
+  "id": "T1-M33",
+  "cases": [
+   15
+  ],
+  "what": "status ranks in progress first",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "status: byStatus([\"completed\", \"in_progress\", \"pending\"]),",
+  "new": "status: byStatus([\"in_progress\", \"completed\", \"pending\"]),",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders status puts completed first, then in progress, then pending, by id inside each group"
+  ]
+ },
+ {
+  "id": "T1-M34",
+  "cases": [
+   15
+  ],
+  "what": "active ranks pending first",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "active: byStatus([\"in_progress\", \"pending\", \"completed\"]),",
+  "new": "active: byStatus([\"pending\", \"in_progress\", \"completed\"]),",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders active puts in progress first, then pending, then completed, by id inside each group"
+  ]
+ },
+ {
+  "id": "T1-M35",
+  "cases": [
+   15
+  ],
+  "what": "recent breaks ties by ascending id",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "b.updatedAt - a.updatedAt || byId(b, a)",
+  "new": "b.updatedAt - a.updatedAt || byId(a, b)",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders recent puts the latest update first and breaks a tie by descending id"
+  ]
+ },
+ {
+  "id": "T1-M36",
+  "cases": [
+   15
+  ],
+  "what": "oldest breaks ties by descending id",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "a.updatedAt - b.updatedAt || byId(a, b)",
+  "new": "a.updatedAt - b.updatedAt || byId(b, a)",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders oldest puts the earliest update first and breaks a tie by ascending id"
+  ]
+ },
+ {
+  "id": "T1-M37",
+  "cases": [
+   15
+  ],
+  "what": "sorting changes the input",
+  "path": "src/core/fork-builtins/tasks/sort.ts",
+  "old": "return [...tasks].sort(COMPARATORS[order]);",
+  "new": "return (tasks as Task[]).sort(COMPARATORS[order]);",
+  "files": [
+   "test/fork-builtins/tasks/sort.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/sort.test.ts > task sort orders returns a sorted copy and leaves the input as it was"
+  ]
+ },
+ {
+  "id": "T1-M38",
+  "cases": [
+   16,
+   14
+  ],
+  "what": "the section writer drops the other sections",
+  "path": "src/core/fork-builtins/settings-section.ts",
+  "old": "forkBuiltins: { ...forkBuiltins, [section]: values }",
+  "new": "forkBuiltins: { [section]: values }",
+  "files": [
+   "test/fork-builtins/tasks/settings.test.ts",
+   "test/fork-builtins/subagents/settings.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/subagents/settings.test.ts > subagent settings writes only forkBuiltins.subagents in the project settings.json",
+   "test/fork-builtins/tasks/settings.test.ts > task settings writes only forkBuiltins.tasks in the project settings.json, and a new manager reads it back"
+  ]
+ },
+ {
+  "id": "Q25",
+  "what": "the store follows a symlink below the project root",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tconst link = this.root ? symlinkBelow(this.root, path) : undefined;",
+  "new": "\t\tconst link = undefined;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never writes or deletes through a symlink below the project root (D52)"
+  ],
+  "cases": [
+   17
+  ]
+ },
+ {
+  "id": "Q27",
+  "what": "an ancestor that cannot be checked throws out of the store",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t} catch (error) {\n\t\t\treturn { reason: `${path} could not be checked (${errorText(error)})`, outcome: \"failed\" };\n\t\t}",
+  "new": "\t\t} finally {\n\t\t}",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) keeps the list in memory when an ancestor cannot be checked"
+  ],
+  "cases": [
+   17
+  ]
+ },
+ {
+  "id": "Q29",
+  "what": "a check that could not run is never retried",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "could not be checked (${errorText(error)})`, outcome: \"failed\" }",
+  "new": "could not be checked (${errorText(error)})`, outcome: \"refused\" }",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) retries a write whose check could not run, once the check can run again"
+  ],
+  "cases": [
+   17
+  ]
+ },
+ {
+  "id": "T1-M39",
+  "cases": [
+   17
+  ],
+  "what": "a symlinked task file is followed",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\tconst link = this.root ? symlinkBelow(this.root, path) : undefined;",
+  "new": "\t\tconst link = undefined;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store refuses a symlinked task file and reads, writes and deletes nothing through it (D52)"
+  ]
+ },
+ {
+  "id": "T1-M40",
+  "cases": [
+   17
+  ],
+  "what": "a symlinked root is refused",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\tlet current = root;",
+  "new": "\tlet current = root;\n\tif (lstatSync(root).isSymbolicLink()) return root;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store accepts a project root that is itself a symlink"
+  ]
+ },
+ {
+  "id": "Q26",
+  "what": "a write overwrites another process's change",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tif (readIfExists(path) !== this.lastText) {\n\t\t\t\tthis.toMemory(`${path} changed outside this session`);\n\t\t\t\treturn \"refused\";\n\t\t\t}",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store's memory fallback (D50) never overwrites a file another process changed since this store read it (D53)"
+  ],
+  "cases": [
+   18
+  ]
+ },
+ {
+  "id": "T1-M41",
+  "cases": [
+   18
+  ],
+  "what": "a deleted file is recreated",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tif (readIfExists(path) !== this.lastText) {\n\t\t\t\tthis.toMemory(`${path} changed outside this session`);\n\t\t\t\treturn \"refused\";\n\t\t\t}",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)"
+  ]
+ },
+ {
+  "id": "T1-M42",
+  "cases": [
+   18
+  ],
+  "what": "a changed file is deleted",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tif (readIfExists(path) !== this.lastText) {\n\t\t\t\tthis.toMemory(`${path} changed outside this session`);\n\t\t\t\treturn false;\n\t\t\t}",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store never recreates a file another process deleted, and leaves a changed file to its writer (D53)"
+  ]
+ },
+ {
+  "id": "T1-M43",
+  "cases": [
+   17
+  ],
+  "what": "a check that failed at open is never retried",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\tif (refused.outcome === \"failed\") this.unsavedPath = path;\n",
+  "new": "",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store retries a path whose check could not run at open, and never replaces a file it never read"
+  ]
+ }
+]

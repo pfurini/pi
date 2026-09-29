@@ -1,0 +1,18 @@
+[
+ {
+  "id": "T7-F1-M1",
+  "cases": [
+   8
+  ],
+  "what": "dispose skips a task the model changed",
+  "path": "src/core/fork-builtins/tasks/service/service.ts",
+  "old": "\t\tfor (const taskId of this.agentTasks.values()) {\n\t\t\tthis.store.update(taskId, { status: \"pending\"",
+  "new": "\t\tfor (const taskId of this.agentTasks.values()) {\n\t\t\tif (this.store.get(taskId)?.status !== \"in_progress\") continue;\n\t\t\tthis.store.update(taskId, { status: \"pending\"",
+  "files": [
+   "test/suite/fork-tasks-execute.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-execute.test.ts > the session's end and /reload sends a task the model changed while its agent ran back to pending too when the task service ends first"
+  ]
+ }
+]

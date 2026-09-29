@@ -1,0 +1,6 @@
+T7-F4-M1 [12] a failed deletion counts as one | 1 of 30 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file of an emptied list cannot be deleted, and retries the save later
+T7-F4-M2 [12] a failed deletion is never retried | 1 of 30 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file of an emptied list cannot be deleted, and retries the save later
+restored | 0 of 30 failed
+clean: yes

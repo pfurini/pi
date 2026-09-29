@@ -1,0 +1,156 @@
+T2-M1 [1] task tools are no fork base tools | 9 of 32 failed, caught
+    test/fork-builtins/base-tools.test.ts > addForkBaseTools registers the ask_user_question, vcc_recall and subagent tools, all named for activation
+    test/fork-builtins/base-tools.test.ts > addForkBaseTools never overwrites a caller's tool of the same name
+    test/suite/fork-tasks-service.test.ts > the task service registers the task tools as active fork base tools
+    test/suite/fork-tasks-service.test.ts > the task tools never activates a caller's base tool of the same name
+    test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata
+    test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+    test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task
+T2-M2 [1] the session is never registered | 4 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+    test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task
+T2-M3 [2] agentType is not stored | 2 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskCreate answers with the new task, stores agentType as metadata and merges the metadata
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+T2-M4 [2] TaskCreate carries another description | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim
+T2-M5 [2] TaskCreate carries no guidelines | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools sends the model Claude Code's task tool descriptions and TaskCreate's prompt guidelines verbatim
+T2-M6 [3] TaskList puts in-progress tasks first | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+T2-M7 [3,4] completed blockers still block | 2 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+T2-M8 [3] TaskList drops the owner | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskList answers No tasks found, or pending, in-progress and completed tasks with owners and open blockers
+T2-M9 [4] double-escaped newlines stay | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+T2-M10 [4] TaskGet drops blocks | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskGet answers Task not found, or the task's fields, open blockers, blocks and metadata
+T2-M11 [5] TaskUpdate drops warnings | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task
+T2-M12 [5] TaskUpdate reports a missing task as updated | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task tools TaskUpdate answers the changed fields with warnings, or Task not found, and deleted removes the task
+Q20 [6] a session Pi saves keeps its list in memory | 10 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service saves the list of a session Pi saves in <cwd>/.pi/tasks, and none of an in-memory session
+    test/suite/fork-tasks-service.test.ts > the task service's storage saves the list in the session's workspace, never in the agent directory, keyed by cwd and session id
+    test/suite/fork-tasks-service.test.ts > the task service's storage saves nothing under taskScope memory, and a changed taskScope takes effect at the next session
+    test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks
+    test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at startup and deletes its file
+    test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at new and deletes its file
+    test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at resume and treats it as a finished run
+    test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at fork and treats it as a finished run
+    test/suite/fork-tasks-service.test.ts > the task service at session start retries a failed write at /reload
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff writes the carried list to the fork's own file, independent of its parent
+T2-M13 [6] memory scope saves a file | 3 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's storage saves nothing under taskScope memory, and a changed taskScope takes effect at the next session
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff hands a fork the list its parent's session left last
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff carries a memory-scope list into a fork
+T2-M14 [7] the reminder waits three turns | 2 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due once four turns passed without a task tool, after another tool ran, while the list holds tasks
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence resets at a task tool call, which also cancels a pending reminder
+T2-M15 [7] an in-progress task keeps the long interval | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due after two turns while a task is in progress
+T2-M16 [7] a task tool call keeps a pending reminder | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence resets at a task tool call, which also cancels a pending reminder
+T2-M17 [7] reminders repeat within a cycle | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence sends one reminder per cycle, and a task tool call starts the next cycle
+T2-M18 [7] a text-only turn nudges for pending tasks | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence marks a reminder due after two text-only turns while a task is in progress, and not for pending tasks alone
+T2-M19 [7] an empty list gets the reminder | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's cadence is due once four turns passed without a task tool, after another tool ran, while the list holds tasks
+T2-M20 [7] the service never reports other tools | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active
+T2-M21 [7] the service counts no turn | 3 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active
+    test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks
+    test/suite/fork-tasks-service.test.ts > the task service at session start rereads the settings at /reload, so a changed auto-clear mode applies from the next completion and turn
+T2-M22 [8] reminder tags stay in fields | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields
+T2-M23 [8] newlines stay in fields | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields
+T2-M24 [8] the reminder lists twelve tasks | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text lists at most ten tasks, unfinished ones first, and names how many it left out
+T2-M25 [8] completed tasks come first | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text lists at most ten tasks, unfinished ones first, and names how many it left out
+T2-M26 [8] activeForm is left out | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text echoes the list with activeForm, and strips newlines and reminder tags from the fields
+T2-M27 [8] an empty list is echoed | 1 of 8 failed, caught
+    test/fork-builtins/tasks/reminder.test.ts > the task reminder's text nudges toward TaskCreate for an empty list
+T2-M28 [9] a session without TaskCreate gets the reminder | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's reminder gives a due reminder only while TaskCreate is active
+T2-M29 [10,11] completed tasks linger three turns | 3 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete clears the whole list four turns after its last task completed, and never while a task is open
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete counts the new batch's own countdown from its last completion
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete clears each completed task four turns after it completed, and leaves open tasks alone
+T2-M30 [10] a task back at work keeps the countdown | 1 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete cancels the countdown when a task goes back to work or a new task is created
+T2-M31 [10] a new batch inherits the old countdown | 3 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete cancels the countdown when a task goes back to work or a new task is created
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete counts the new batch's own countdown from its last completion
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches retires a finished list when a later run creates a task (on_list_complete)
+T2-M32 [10] an auto-cleared list keeps its file | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks
+T2-M33 [10] a deletion keeps the file | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks
+T2-M34 [10] clear all keeps the file | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's auto-clear and files deletes the file of a list that auto-clear, a deletion or a clear empties, and keeps .pi/tasks
+T2-M35 [11] a reverted task is still cleared | 1 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete forgets a task that went back to work or was deleted
+T2-M36 [11,13] completions are not tracked | 2 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete clears each completed task four turns after it completed, and leaves open tasks alone
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_task_complete follows a mode change from the next completion and turn
+T2-M37 [12] never mode retires a finished list | 2 of 40 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's batches retires a list an earlier run finished when a later run creates a task, and keeps it under never
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches never clears anything in never mode, whatever the turns or runs
+T2-M38 [12] a run arms more than once | 1 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches keeps a list built within the same run, and arms once per run
+T2-M39 [12] a list built in the same run is retired | 2 of 11 failed, caught
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear on_list_complete cancels the countdown when a task goes back to work or a new task is created
+    test/fork-builtins/tasks/auto-clear.test.ts > auto-clear never, and new batches keeps a list built within the same run, and arms once per run
+T2-M40 [12] a settled run marks no batch boundary | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's batches retires a list an earlier run finished when a later run creates a task, and keeps it under never
+T2-M41 [13] startup keeps an all-completed list | 2 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at startup and deletes its file
+    test/suite/fork-tasks-service.test.ts > the task service at session start clears an all-completed list at new and deletes its file
+T2-M42 [13] resume and reload clear an all-completed list | 2 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at resume and treats it as a finished run
+    test/suite/fork-tasks-service.test.ts > the task service at session start keeps an all-completed list at reload and treats it as a finished run
+T2-M43 [13] reload keeps the old settings | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service at session start rereads the settings at /reload, so a changed auto-clear mode applies from the next completion and turn
+T2-M44 [13] reload retries no write | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service at session start retries a failed write at /reload
+Q9 [14] a fork takes no list | 5 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager
+    test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff writes the carried list to the fork's own file, independent of its parent
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff hands a fork the list its parent's session left last
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff carries a memory-scope list into a fork
+Q24 [14] a saved session's fork takes the latest list, whoever left it | 2 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service hands a fork its parent's list even when another saved session ends first
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff writes the carried list to the fork's own file, independent of its parent
+Q28 [14] a fork of an unsaved session takes no list | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service hands a fork of an unsaved session its list, which shares the parent's session manager
+T2-M45 [14] every session start takes a parent's list | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff gives a new or resumed session nothing, even when a parent left a list
+T2-M46 [14] a handoff is handed over twice | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff writes the carried list to the fork's own file, independent of its parent
+T2-M47 [14] a later end keeps the earlier list | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's fork handoff hands a fork the list its parent's session left last
+T2-M48 [15] a warning repeats | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once
+T2-M49 [15] held warnings are dropped | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once
+T2-M50 [15] warnings are not held | 1 of 29 failed, caught
+    test/suite/fork-tasks-service.test.ts > the task service's warnings holds warnings until the first listener subscribes, and sends each text once
+Q16 [16] the service imports the widget | 2 of 4 failed, caught
+    test/fork-builtins/tasks/layering.test.ts > tasks module layering imports only from its own or a lower layer
+    test/fork-builtins/tasks/layering.test.ts > tasks module layering keeps presentation code out of the service
+Q17 [16] the subagents module imports the tasks module | 1 of 4 failed, caught
+    test/fork-builtins/tasks/layering.test.ts > tasks module layering is never imported by the subagents module
+restored | 0 of 55 failed
+clean: yes

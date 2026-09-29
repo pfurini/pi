@@ -1,0 +1,34 @@
+[
+ {
+  "id": "T7-F3-M1",
+  "cases": [
+   6
+  ],
+  "what": "warnings are notified raw",
+  "path": "src/core/fork-builtins/tasks/ui/index.ts",
+  "old": "ctx.ui.notify(displayText(change.message), \"warning\");",
+  "new": "ctx.ui.notify(change.message, \"warning\");",
+  "files": [
+   "test/suite/fork-tasks-presentation.test.ts"
+  ],
+  "expect": [
+   "test/suite/fork-tasks-presentation.test.ts > the tasks presentation factory strips escape sequences from the warnings it notifies"
+  ]
+ },
+ {
+  "id": "T7-F3-M2",
+  "cases": [
+   8
+  ],
+  "what": "a failed save notifies its raw reason",
+  "path": "src/core/fork-builtins/tasks/ui/menu.ts",
+  "old": "env.ui.notify(`Task settings not saved: ${displayText(reason)}`, \"warning\");",
+  "new": "env.ui.notify(`Task settings not saved: ${reason}`, \"warning\");",
+  "files": [
+   "test/fork-builtins/tasks/ui-menu.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/ui-menu.test.ts > the task settings list strips escape sequences from the reason a failed save notifies"
+  ]
+ }
+]

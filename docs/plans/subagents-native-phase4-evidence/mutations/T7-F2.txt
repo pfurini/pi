@@ -1,0 +1,10 @@
+T7-F2-M1 [8] an unknown status loads | 1 of 29 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value
+T7-F2-M2 [8] a non-string subject loads | 1 of 29 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value
+T7-F2-M3 [8] non-string edges load | 1 of 29 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value
+T7-F2-M4 [8] a non-string owner loads | 1 of 29 failed, caught
+    test/fork-builtins/tasks/store.test.ts > the task store gives every field of a hand-edited or damaged record a valid value
+restored | 0 of 29 failed
+clean: yes

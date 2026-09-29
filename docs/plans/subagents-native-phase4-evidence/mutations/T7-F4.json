@@ -1,0 +1,34 @@
+[
+ {
+  "id": "T7-F4-M1",
+  "cases": [
+   12
+  ],
+  "what": "a failed deletion counts as one",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "if ((error as NodeJS.ErrnoException).code !== \"ENOENT\") {",
+  "new": "if (false) {",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file of an emptied list cannot be deleted, and retries the save later"
+  ]
+ },
+ {
+  "id": "T7-F4-M2",
+  "cases": [
+   12
+  ],
+  "what": "a failed deletion is never retried",
+  "path": "src/core/fork-builtins/tasks/store.ts",
+  "old": "\t\t\t\tthis.unsavedPath = path;\n\t\t\t\treturn false;",
+  "new": "\t\t\t\treturn false;",
+  "files": [
+   "test/fork-builtins/tasks/store.test.ts"
+  ],
+  "expect": [
+   "test/fork-builtins/tasks/store.test.ts > the task store moves the list to memory when the file of an emptied list cannot be deleted, and retries the save later"
+  ]
+ }
+]

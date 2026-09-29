@@ -34,6 +34,11 @@ export class TombstoneStore {
 		}
 	}
 
+	/** Forgets the tombstone under `handle`, so its names are free again. */
+	delete(handle: string): void {
+		this.entries.delete(handle);
+	}
+
 	/** Newest first. */
 	list(): Tombstone[] {
 		return [...this.entries.values()].sort((a, b) => b.completedAt - a.completedAt);

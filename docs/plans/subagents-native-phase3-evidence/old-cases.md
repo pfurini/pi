@@ -109,13 +109,13 @@ Each task T1 to T5 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 100 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > resumes again once the agent is re-enabled | T2.5 |  |
 | 101 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > keeps the agent resolvable when the resume itself fails | T4.15 |  |
 | 102 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > keeps the original description rather than relabelling from the message | T2.6 |  |
-| 103 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > does not let the tools steer or read an agent that is gone | T1.10 |  |
+| 103 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > does not let the tools steer or read an agent that is gone | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets the tools report an evicted agent's handle and an unknown one as not found |
 | 104 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > reports a session that is gone, rather than starting something else | T4.5 |  |
 | 105 | test/agent-mention-wiring.test.ts > resuming an evicted agent by name > forgets an unopenable session so the next mention starts fresh | T4.5 |  |
-| 106 | test/agent-mention-wiring.test.ts > handles as tool arguments > steers by handle, not just by raw id | T1.10 |  |
-| 107 | test/agent-mention-wiring.test.ts > handles as tool arguments > steers by the name the model gave the agent | T1.10 |  |
-| 108 | test/agent-mention-wiring.test.ts > handles as tool arguments > reads a result by handle | T1.10 |  |
-| 109 | test/agent-mention-wiring.test.ts > handles as tool arguments > still reports an unknown reference as not found | T1.10 |  |
+| 106 | test/agent-mention-wiring.test.ts > handles as tool arguments > steers by handle, not just by raw id | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets steer_subagent and get_subagent_result reach an agent by its handle and its alias |
+| 107 | test/agent-mention-wiring.test.ts > handles as tool arguments > steers by the name the model gave the agent | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets steer_subagent and get_subagent_result reach an agent by its handle and its alias |
+| 108 | test/agent-mention-wiring.test.ts > handles as tool arguments > reads a result by handle | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets steer_subagent and get_subagent_result reach an agent by its handle and its alias |
+| 109 | test/agent-mention-wiring.test.ts > handles as tool arguments > still reports an unknown reference as not found | T1.10 | test/suite/fork-subagents-mentions.test.ts > handle resolution lets the tools report an evicted agent's handle and an unknown one as not found |
 | 110 | test/e2e/mention-clone.e2e.test.ts > mention clone over a real session > sends the conversation under the live system prompt, with Agent as the only tool | T3.3 |  |
 | 111 | test/e2e/mention-clone.e2e.test.ts > mention clone over a real session > sends the compaction summary instead of the turns it replaced | T3.2 |  |
 | 112 | test/mention-clone.test.ts > the clone's request > is exactly one call | T3.1 |  |
@@ -138,36 +138,36 @@ Each task T1 to T5 fills `Covering tests` for its own `T<n>.<k>` rows, in the co
 | 129 | test/mention-clone.test.ts > when the clone cannot deliver > keeps a spawn the tool already started when the tool then throws | T4.2 |  |
 | 130 | test/mention-start-notification.test.ts > an agent started by a mention > relays its answer through the ordinary completion notification (direct mode) | T4.1 |  |
 | 131 | test/mention-start-notification.test.ts > an agent started by a mention > relays it when the clone fell back to a direct start (model mode) | T4.6 |  |
-| 132 | test/mention.test.ts > handleBase > lowercases so the handle matches how it is typed | T1.1 |  |
-| 133 | test/mention.test.ts > handleBase > keeps a hyphenated type as-is | T1.1 |  |
-| 134 | test/mention.test.ts > handleBase > reduces anything outside [\w-] to hyphens, without leaving edge hyphens | T1.1 |  |
-| 135 | test/mention.test.ts > handleBase > always produces something typeable | T1.1 |  |
-| 136 | test/mention.test.ts > handleBase > caps a long name so one agent can't own an unreadable row | T1.1 |  |
-| 137 | test/mention.test.ts > handleBase > never leaves a trailing hyphen the cap sliced into | T1.1 |  |
-| 138 | test/mention.test.ts > handleBase > only ever produces handles the suggestion trigger can match | T1.1 |  |
-| 139 | test/mention.test.ts > assignHandle > takes the plain base when it is free | T1.2 |  |
-| 140 | test/mention.test.ts > assignHandle > numbers from 2 on the first collision | T1.2 |  |
-| 141 | test/mention.test.ts > assignHandle > keeps counting past every taken form | T1.2 |  |
-| 142 | test/mention.test.ts > assignHandle > never hands out the reserved main handle | T1.2 |  |
-| 143 | test/mention.test.ts > assignHandle > skips a gap rather than reusing a live handle | T1.2 |  |
-| 144 | test/mention.test.ts > resolveHandleToType > finds the type a handle was derived from, whatever its casing | T1.3 |  |
-| 145 | test/mention.test.ts > resolveHandleToType > resolves a type whose slug differs from its name | T1.3 |  |
-| 146 | test/mention.test.ts > resolveHandleToType > is exact, not a prefix match — a partial handle must not start an agent | T1.3 |  |
-| 147 | test/mention.test.ts > resolveHandleToType > round-trips every registered type | T1.3 |  |
-| 148 | test/mention.test.ts > resolveHandleToType > refuses to resolve the reserved handle, even to a type named for it | T1.3 |  |
-| 149 | test/mention.test.ts > isReservedHandle > recognizes main whatever its casing | T1.4 |  |
-| 150 | test/mention.test.ts > isReservedHandle > leaves every ordinary handle alone | T1.4 |  |
-| 151 | test/mention.test.ts > stripAgentPrefix > unwraps Claude Code's manual @agent-<type> spelling | T1.5 |  |
-| 152 | test/mention.test.ts > stripAgentPrefix > keeps the remainder intact when it is itself prefixed | T1.5 |  |
-| 153 | test/mention.test.ts > stripAgentPrefix > returns nothing when there is no prefix or nothing behind it | T1.5 |  |
-| 154 | test/mention.test.ts > stripAgentPrefix > only unwraps a prefix at the very start | T1.5 |  |
-| 155 | test/mention.test.ts > describeMention > uses the message as the agent's short label | T1.6 |  |
-| 156 | test/mention.test.ts > describeMention > takes the first line and collapses whitespace | T1.6 |  |
-| 157 | test/mention.test.ts > describeMention > clips a long message rather than putting a paragraph in every agent surface | T1.6 |  |
-| 158 | test/mention.test.ts > parseMention > splits a leading handle from its message | T1.7 |  |
-| 159 | test/mention.test.ts > parseMention > trims the message and accepts a newline as the separator | T1.7 |  |
-| 160 | test/mention.test.ts > parseMention > rejects a bare handle — that belongs to the main model | T1.7 |  |
-| 161 | test/mention.test.ts > parseMention > rejects a leading file path so pi's @-attachment keeps working | T1.7 |  |
-| 162 | test/mention.test.ts > parseMention > rejects a mention that is not at the start of the input | T1.7 |  |
-| 163 | test/mention.test.ts > agentMentionReminder > is Claude Code's string, byte for byte | T1.8 |  |
-| 164 | test/mention.test.ts > agentMentionReminder > names the agent it was given | T1.8 |  |
+| 132 | test/mention.test.ts > handleBase > lowercases so the handle matches how it is typed | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase lowercases and keeps hyphens |
+| 133 | test/mention.test.ts > handleBase > keeps a hyphenated type as-is | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase lowercases and keeps hyphens |
+| 134 | test/mention.test.ts > handleBase > reduces anything outside [\w-] to hyphens, without leaving edge hyphens | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase turns other characters into single hyphens, without edge hyphens |
+| 135 | test/mention.test.ts > handleBase > always produces something typeable | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase never returns an empty handle |
+| 136 | test/mention.test.ts > handleBase > caps a long name so one agent can't own an unreadable row | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen |
+| 137 | test/mention.test.ts > handleBase > never leaves a trailing hyphen the cap sliced into | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase caps a long name at 64 characters without a trailing hyphen |
+| 138 | test/mention.test.ts > handleBase > only ever produces handles the suggestion trigger can match | T1.1 | test/fork-builtins/subagents/mentions.test.ts > handleBase only produces handles the suggestion trigger matches |
+| 139 | test/mention.test.ts > assignHandle > takes the plain base when it is free | T1.2 | test/fork-builtins/subagents/mentions.test.ts > assignHandle takes the free base, then numbers from 2 past every taken form |
+| 140 | test/mention.test.ts > assignHandle > numbers from 2 on the first collision | T1.2 | test/fork-builtins/subagents/mentions.test.ts > assignHandle takes the free base, then numbers from 2 past every taken form |
+| 141 | test/mention.test.ts > assignHandle > keeps counting past every taken form | T1.2 | test/fork-builtins/subagents/mentions.test.ts > assignHandle takes the free base, then numbers from 2 past every taken form |
+| 142 | test/mention.test.ts > assignHandle > never hands out the reserved main handle | T1.2 | test/fork-builtins/subagents/mentions.test.ts > assignHandle never hands out main |
+| 143 | test/mention.test.ts > assignHandle > skips a gap rather than reusing a live handle | T1.2 | test/fork-builtins/subagents/mentions.test.ts > assignHandle skips a gap rather than reusing a live handle |
+| 144 | test/mention.test.ts > resolveHandleToType > finds the type a handle was derived from, whatever its casing | T1.3 | test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing |
+| 145 | test/mention.test.ts > resolveHandleToType > resolves a type whose slug differs from its name | T1.3 | test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType finds the type a handle came from, whatever its casing |
+| 146 | test/mention.test.ts > resolveHandleToType > is exact, not a prefix match — a partial handle must not start an agent | T1.3 | test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType matches exactly, never a prefix or a numbered handle |
+| 147 | test/mention.test.ts > resolveHandleToType > round-trips every registered type | T1.3 | test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType round-trips every registered type |
+| 148 | test/mention.test.ts > resolveHandleToType > refuses to resolve the reserved handle, even to a type named for it | T1.3 | test/fork-builtins/subagents/mentions.test.ts > resolveHandleToType refuses main, even for a type named main |
+| 149 | test/mention.test.ts > isReservedHandle > recognizes main whatever its casing | T1.4 | test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else |
+| 150 | test/mention.test.ts > isReservedHandle > leaves every ordinary handle alone | T1.4 | test/fork-builtins/subagents/mentions.test.ts > isReservedHandle recognizes main in any casing and nothing else |
+| 151 | test/mention.test.ts > stripAgentPrefix > unwraps Claude Code's manual @agent-<type> spelling | T1.5 | test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix unwraps agent-<x> once |
+| 152 | test/mention.test.ts > stripAgentPrefix > keeps the remainder intact when it is itself prefixed | T1.5 | test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix unwraps agent-<x> once |
+| 153 | test/mention.test.ts > stripAgentPrefix > returns nothing when there is no prefix or nothing behind it | T1.5 | test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix returns nothing without the prefix, without a remainder, or with the prefix inside |
+| 154 | test/mention.test.ts > stripAgentPrefix > only unwraps a prefix at the very start | T1.5 | test/fork-builtins/subagents/mentions.test.ts > stripAgentPrefix returns nothing without the prefix, without a remainder, or with the prefix inside |
+| 155 | test/mention.test.ts > describeMention > uses the message as the agent's short label | T1.6 | test/fork-builtins/subagents/mentions.test.ts > describeMention keeps the first line and collapses whitespace |
+| 156 | test/mention.test.ts > describeMention > takes the first line and collapses whitespace | T1.6 | test/fork-builtins/subagents/mentions.test.ts > describeMention keeps the first line and collapses whitespace |
+| 157 | test/mention.test.ts > describeMention > clips a long message rather than putting a paragraph in every agent surface | T1.6 | test/fork-builtins/subagents/mentions.test.ts > describeMention clips a long message at 40 characters with an ellipsis |
+| 158 | test/mention.test.ts > parseMention > splits a leading handle from its message | T1.7 | test/fork-builtins/subagents/mentions.test.ts > parseMention splits a leading handle from a trimmed message |
+| 159 | test/mention.test.ts > parseMention > trims the message and accepts a newline as the separator | T1.7 | test/fork-builtins/subagents/mentions.test.ts > parseMention splits a leading handle from a trimmed message; test/fork-builtins/subagents/mentions.test.ts > parseMention accepts a newline as the separator |
+| 160 | test/mention.test.ts > parseMention > rejects a bare handle — that belongs to the main model | T1.7 | test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a bare handle |
+| 161 | test/mention.test.ts > parseMention > rejects a leading file path so pi's @-attachment keeps working | T1.7 | test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a leading file path |
+| 162 | test/mention.test.ts > parseMention > rejects a mention that is not at the start of the input | T1.7 | test/fork-builtins/subagents/mentions.test.ts > parseMention rejects a mention after other text |
+| 163 | test/mention.test.ts > agentMentionReminder > is Claude Code's string, byte for byte | T1.8 | test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder equals Claude Code's string byte for byte, trailing space included |
+| 164 | test/mention.test.ts > agentMentionReminder > names the agent it was given | T1.8 | test/fork-builtins/subagents/mentions.test.ts > agentMentionReminder names its agent |

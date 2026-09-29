@@ -147,6 +147,11 @@ const MAX_HANDLE_LENGTH = 64;
 /** `main` addresses the main model in a mention (phase 3), so no agent may hold it. */
 const RESERVED_HANDLES = new Set(["main"]);
 
+/** Whether a mention's handle names the main conversation, whatever its casing. */
+export function isReservedHandle(handle: string): boolean {
+	return RESERVED_HANDLES.has(handle.toLowerCase());
+}
+
 /** The handle a type or name slugs to. */
 export function handleBase(name: string): string {
 	const slug = name

@@ -169,6 +169,9 @@ export interface SpawnRequest {
 	onCreated?: (record: SubagentView) => void;
 }
 
+/** What a mention's handle addresses: a live agent, or an evicted one whose session can be reopened. */
+export type MentionTarget = { kind: "live"; view: SubagentView } | { kind: "tombstone"; entry: Tombstone };
+
 /** What became of a steer: `steer_subagent` and the conversation viewer report each kind. */
 export type SteerOutcome =
 	| { kind: "delivered" }
@@ -804,9 +807,36 @@ export class SubagentService {
 		return [...this.records.values()].filter((record) => !record.parent).sort((a, b) => b.startedAt - a.startedAt);
 	}
 
-	/** Evicted persisted agents a later phase can reopen by handle, newest first. */
+	/** Evicted persisted agents a mention can reopen by handle, newest first. */
 	listTombstones(): Tombstone[] {
 		return this.retention.tombstones.list();
+	}
+
+	/**
+	 * What `@name` addresses among the session's own agents, by handle, alias or id. A running or queued
+	 * agent wins, then the newest one with a session, then an evicted one by the same names. A record
+	 * whose run failed before its session existed comes last, so a reopen that failed to start leaves
+	 * the tombstone reachable and the retry reopens the same conversation.
+	 */
+	resolveMention(name: string): MentionTarget | undefined {
+		const wanted = name.toLowerCase();
+		const named = [...this.records.values()]
+			.filter((record) => !record.parent && (record.handle === wanted || record.alias === wanted))
+			.sort((a, b) => b.startedAt - a.startedAt);
+		const byId = this.records.get(name);
+		if (byId && !byId.parent) named.unshift(byId);
+		const live = named.find((record) => !isTerminal(record)) ?? named.find((record) => record.child);
+		if (live) return { kind: "live", view: live };
+		const entry = this.retention.tombstones
+			.list()
+			.find((tombstone) => tombstone.handle === wanted || tombstone.alias === wanted || tombstone.id === name);
+		if (entry) return { kind: "tombstone", entry };
+		return named[0] ? { kind: "live", view: named[0] } : undefined;
+	}
+
+	/** Forgets an evicted agent whose session is gone, so its names are free again. */
+	dropTombstone(handle: string): void {
+		this.retention.tombstones.delete(handle);
 	}
 
 	/**

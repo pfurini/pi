@@ -342,6 +342,11 @@ describe("session summary authentication ownership", () => {
 		});
 		expect(options?.sessionId).toBeTruthy();
 		expect(options?.sessionId).not.toBe(session.sessionId);
+		expect(options?.sessionContext).toEqual({
+			ownerSessionId: session.sessionId,
+			cwd: harness.tempDir,
+			agentDir: harness.tempDir,
+		});
 		expect(options?.onPayload).toBeUndefined();
 		expect(options?.onResponse).toBeUndefined();
 		expect(headerHook).toHaveBeenCalledTimes(1);

@@ -145,6 +145,22 @@ The stream must also honor request instrumentation supplied through `SimpleStrea
 
 These hooks power extension request inspection, response-header events, and provider-stream observation. Omitting them makes the provider behave differently from Pi’s built-in providers.
 
+## Local session context
+
+Session-bound chat streams receive `options.sessionContext`, typed as `ProviderSessionContext` from `@earendil-works/pi-ai`.
+
+- `ownerSessionId` identifies the session whose stream wrapper serves the request.
+- `cwd` and `agentDir` identify that session's working and configuration directories.
+
+`createAgentSession()` supplies a fresh snapshot per request and overrides caller-supplied context, including for extension-free children sharing a model runtime.
+The wrapper reads the current session identity; prompt replacement does not change the metadata.
+`options.sessionId` remains the independent caching/routing identity, so summaries and bare calls may use a different ID.
+
+Use session context only for local execution and resource ownership.
+Never copy session context into network payloads, headers, prompts, vendor metadata, or telemetry.
+Direct low-level callers may supply or omit session context.
+Hosts constructing `AgentSession` directly with a custom stream remain responsible for supplying the context.
+
 ## Report failures and usage
 
 Set a concrete terminal stop reason. Error and aborted messages need an `errorMessage`; successful messages need accurate input, output, cache, total-token, and cost values.

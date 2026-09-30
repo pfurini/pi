@@ -19,10 +19,12 @@
  *
  * Metadata support is the ordinary layout: a regular, single-link file owned
  * by the caller with no ACL entries, no BSD flags, and no extended attribute
- * beyond the system provenance one. Node exposes no primitive that preserves
- * other metadata across a rename, so a store carrying it is refused before
- * anything is written. The inventory runs through `/bin/ls -lOe@` on macOS;
- * other platforms preserve the mode only and perform no inventory.
+ * beyond the droppable ones. Node exposes no primitive that preserves other
+ * metadata across a rename, so a store carrying it is refused before anything
+ * is written. The droppable attributes are the system provenance one and the
+ * two a desktop editor leaves on open and save; a replacement drops them. The
+ * inventory runs through `/bin/ls -lOe@` on macOS; other platforms preserve
+ * the mode only and perform no inventory.
  */
 
 import { execFileSync } from "child_process";
@@ -53,7 +55,19 @@ export const STATE_DIR_SUFFIX = ".fence-state";
 /** The stale window both writers agree on; a live holder refreshes its lock every half window. */
 export const LOCK_STALE_MS = 30_000;
 
-const SYSTEM_XATTRS = new Set(["com.apple.provenance"]);
+/**
+ * The extended attributes a replacement may drop, pinned by pi-fence's docs/contracts/pi-auth-store.json.
+ * `com.apple.provenance` is the one macOS adds on its own. A desktop editor's open and save add the
+ * last-opened date and an opaque metadata label. Anything else is administrator-managed and refused.
+ */
+export const DROPPABLE_XATTRS: readonly string[] = ["com.apple.provenance", "com.apple.lastuseddate#PS"];
+/** Name prefixes of droppable attributes: the metadata label's name ends in a varying identifier. */
+export const DROPPABLE_XATTR_PREFIXES: readonly string[] = ["com.apple.metadata:kMDLabel_"];
+
+export function isDroppableXattr(name: string): boolean {
+	return DROPPABLE_XATTRS.includes(name) || DROPPABLE_XATTR_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
 const TEMP_MODE = 0o600;
 const META_KEYS = ["candidate", "mode", "operation", "predecessor", "size", "version"].join();
 const HEX_64 = /^[0-9a-f]{64}$/;
@@ -275,7 +289,7 @@ function preflight(target: string): Preflight {
 	} catch {
 		return { status: "error" };
 	}
-	if (metadata.acl || metadata.flags || metadata.xattrs.some((name) => !SYSTEM_XATTRS.has(name)))
+	if (metadata.acl || metadata.flags || metadata.xattrs.some((name) => !isDroppableXattr(name)))
 		return { status: "error" };
 	return { status: "ok", mode: stats.mode & 0o7777 };
 }

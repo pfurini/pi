@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
 	chmodSync,
@@ -16,6 +17,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	CANDIDATE_SUFFIX,
 	commitAtomicallySync,
+	DROPPABLE_XATTR_PREFIXES,
+	DROPPABLE_XATTRS,
+	isDroppableXattr,
 	LOCK_STALE_MS,
 	META_STAGING_SUFFIX,
 	META_SUFFIX,
@@ -73,6 +77,8 @@ describe("auth-atomic", () => {
 		expect(META_STAGING_SUFFIX).toBe(".atomic-meta.next");
 		expect(STATE_DIR_SUFFIX).toBe(".fence-state");
 		expect(LOCK_STALE_MS).toBe(30_000);
+		expect(DROPPABLE_XATTRS).toEqual(["com.apple.provenance", "com.apple.lastuseddate#PS"]);
+		expect(DROPPABLE_XATTR_PREFIXES).toEqual(["com.apple.metadata:kMDLabel_"]);
 		expect(transactionPaths("/x/auth.json")).toEqual({
 			candidate: "/x/auth.json.atomic",
 			meta: "/x/auth.json.atomic-meta",
@@ -116,6 +122,43 @@ describe("auth-atomic", () => {
 		expect(readFileSync(target, "utf8")).toBe(seedText);
 		expect(readFileSync(paths.candidate, "utf8")).toBe('{"orphan":true}');
 	});
+
+	test("drops only the provenance attribute and the two a desktop editor leaves on open and save", () => {
+		expect(isDroppableXattr("com.apple.provenance")).toBe(true);
+		expect(isDroppableXattr("com.apple.lastuseddate#PS")).toBe(true);
+		expect(isDroppableXattr("com.apple.metadata:kMDLabel_7k4335sdyex3gvczfq6tlanjii")).toBe(true);
+		for (const name of [
+			"com.apple.lastuseddate",
+			"com.apple.metadata:kMDItemUserTags",
+			"com.apple.quarantine",
+			"com.example.marker",
+		]) {
+			expect(isDroppableXattr(name), name).toBe(false);
+		}
+	});
+
+	test.skipIf(process.platform !== "darwin")(
+		"replaces a store an editor saved and drops the editor attributes",
+		() => {
+			const editorAttributes = ["com.apple.lastuseddate#PS", "com.apple.metadata:kMDLabel_fixture771003"];
+			for (const name of editorAttributes) execFileSync("/usr/bin/xattr", ["-w", name, "fixture", target]);
+			expect(commitAtomicallySync(target, nextText)).toEqual({ status: "committed" });
+			expect(readFileSync(target, "utf8")).toBe(nextText);
+			const remaining = execFileSync("/usr/bin/xattr", [target], { encoding: "utf8" });
+			for (const name of editorAttributes) expect(remaining).not.toContain(name);
+			expect(listing()).toEqual(["auth.json"]);
+		},
+	);
+
+	test.skipIf(process.platform !== "darwin")(
+		"refuses a store carrying any other extended attribute without touching it",
+		() => {
+			execFileSync("/usr/bin/xattr", ["-w", "com.example.marker", "fixture", target]);
+			expect(commitAtomicallySync(target, nextText)).toEqual({ status: "not-installed", stage: "preflight" });
+			expect(readFileSync(target, "utf8")).toBe(seedText);
+			expect(listing()).toEqual(["auth.json"]);
+		},
+	);
 
 	test("reconcile: clean when nothing is pending", () => {
 		expect(reconcileTransactionSync(target)).toEqual({ status: "clean" });

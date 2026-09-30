@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getAgentDir } from "../src/config.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 
@@ -69,5 +70,20 @@ describe("ExtensionContext.agentDir", () => {
 		expect(captured).not.toBe(getAgentDir());
 
 		session.dispose();
+	});
+
+	// Upstream's builtin:<name> extensions load through a separate path; it must pass the agent dir too.
+	it("reports the session agent dir to a builtin:<name> extension at load", async () => {
+		const seen: string[] = [];
+		const loader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir,
+			extensionFactories: [{ name: "probe", builtin: true, factory: (pi) => void seen.push(pi.agentDir) }],
+		});
+		await loader.reload();
+
+		expect(loader.getExtensions().extensions.map((extension) => extension.path)).toContain("builtin:probe");
+		expect(seen).toEqual([agentDir]);
+		loader.dispose?.();
 	});
 });

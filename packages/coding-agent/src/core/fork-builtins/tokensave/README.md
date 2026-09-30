@@ -90,7 +90,7 @@ Everything else passes unmodified: complex regular expressions, pipelines, `git 
 
 The guard inspects `bash`, `grep`, `find` and `anchor_grep` (from pi-hashline-edit-pro). It checks the project the search reads, not the session cwd. For `grep`, `find` and `anchor_grep`, that is the `path` input, resolved as the `grep` tool resolves it. For `bash`, it is the last non-flag argument that exists as a path, with `~` expanded, or else the cwd. When that project differs from the session's, the block message tells the model to pass `project`. A call that is not a symbol search passes without a root lookup or an index probe.
 
-Both modes stand down when the model cannot call `tokensave_find_symbol`, because the block message and the notice point at it. That covers subagents whose tool list leaves the TokenSave tools out, and a running skill whose `disallowed-tools` blocks the tool (`pi.getCallableTools()` reports it). A worker's `toolSelection` therefore governs the guard.
+Both modes stand down when the model cannot call `tokensave_find_symbol`, because the block message and the notice point at it. That covers subagents whose tool list leaves the TokenSave tools out, and a running skill whose `disallowed-tools` blocks the tool (`pi.getModelCallableTools()` reports it). A worker's `toolSelection` therefore governs the guard.
 
 ## Empty indexes
 

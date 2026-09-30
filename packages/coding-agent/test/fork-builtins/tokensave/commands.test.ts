@@ -25,7 +25,7 @@ function fakePi() {
 		getActiveTools(): string[] {
 			return [];
 		},
-		getCallableTools(): string[] {
+		getModelCallableTools(): string[] {
 			return [];
 		},
 	} as unknown as ExtensionAPI & { commands: Record<string, FakeCommand> };

@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import type { ExtensionToolContext } from "../src/core/extensions/types.ts";
 import { createReadToolDefinition, MAX_READ_FILE_BYTES, type ReadOperations } from "../src/core/tools/read.ts";
 
 type ReadTool = ReturnType<typeof createReadToolDefinition>;
 
 /** execute() types ctx as required, but the tool only reads ctx?.model. */
 function runRead(tool: ReadTool, args: { path: string; offset?: number; limit?: number }) {
-	return tool.execute("call", args, undefined, undefined, {} as ExtensionContext);
+	return tool.execute("call", args, undefined, undefined, {} as ExtensionToolContext);
 }
 
 /** Text of the first content block, which is where the read tool puts file contents. */

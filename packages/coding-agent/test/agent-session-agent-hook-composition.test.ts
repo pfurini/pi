@@ -93,7 +93,7 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 		}
 	});
 
-	it("getCallableToolNames: agrees with the loop's gate, which blocks only on a non-empty reason", async () => {
+	it("getModelCallableToolNames: agrees with the loop's gate, which blocks only on a non-empty reason", async () => {
 		const embedderDisallow = (name: string) => (name === "bash" ? "" : name === "read" ? "blocked" : undefined);
 		const { session, cleanup } = await createTestSession({
 			inMemory: true,
@@ -101,7 +101,7 @@ describe("AgentSession chains Agent hooks over AgentOptions", () => {
 		});
 		try {
 			expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["bash", "read"]));
-			const callable = session.getCallableToolNames();
+			const callable = session.getModelCallableToolNames();
 			expect(callable).toContain("bash");
 			expect(callable).not.toContain("read");
 		} finally {

@@ -72,7 +72,7 @@ function plugin(options: { agentDir?: string; refs?: () => string } = {}) {
 			commands[name] = def;
 		},
 		getActiveTools: () => ["bash", ...Object.keys(tools)],
-		getCallableTools: () => ["bash", ...Object.keys(tools)],
+		getModelCallableTools: () => ["bash", ...Object.keys(tools)],
 		exec: async () => ({ code: 0, stdout: options.refs?.() ?? "", stderr: "", killed: false }),
 	};
 	pluginTokensave(pi as unknown as ExtensionAPI);

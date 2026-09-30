@@ -53,7 +53,7 @@ describe.each(["ask_user_question", "vcc_recall"])("%s as a fork base tool", (na
 	it("registers and activates with a custom ResourceLoader, as builtin", async () => {
 		const harness = await sessionWith();
 		const tool = harness.session.getAllTools().find((info) => info.name === name);
-		expect(tool?.sourceInfo.path).toBe(`<builtin:${name}>`);
+		expect(tool?.sourceInfo.path).toBe(`builtin:${name}`);
 		expect(await prompt(harness), "the tools the model received").toContain(name);
 	});
 

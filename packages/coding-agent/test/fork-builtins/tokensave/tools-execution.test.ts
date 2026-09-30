@@ -61,7 +61,7 @@ function fakePi() {
 		getActiveTools(): string[] {
 			return Object.keys(tools);
 		},
-		getCallableTools(): string[] {
+		getModelCallableTools(): string[] {
 			return pi.getActiveTools();
 		},
 	};

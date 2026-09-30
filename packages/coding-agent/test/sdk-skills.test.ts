@@ -289,4 +289,21 @@ describe("createAgentSession default active tools", () => {
 		expect(session.getActiveToolNames()).toContain("slash_command");
 		session.dispose();
 	});
+
+	// `+name`/`-name` entries resolve against DEFAULT_TOOL_NAMES, which carries the fork's skill and
+	// slash_command tools; a name whose tool is not registered is ignored.
+	it("keeps the skill tool active when defaultTools only adds or removes tools", async () => {
+		writeSkill();
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.inMemory(),
+			settingsManager: SettingsManager.inMemory({ defaultTools: ["-write"] }),
+		});
+		const active = session.getActiveToolNames();
+		expect(active).toEqual(expect.arrayContaining(["read", "bash", "edit", "skill"]));
+		expect(active).not.toContain("write");
+		expect(active).not.toContain("slash_command");
+		session.dispose();
+	});
 });

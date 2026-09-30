@@ -353,3 +353,55 @@ Each task section above lists its own deviations. Across the phase:
 - Phase 4 review F8 (splitting the task service), F9 (a typed execution state), F10 (one task-id comparator) and F14 (read-only task snapshots) are deferred.
 - The requirements lens noted three plan wordings to clarify in a later plan: T1 case 5 detects direct two-task cycles only; T3 case 2's `No tasks to execute.` answers an empty id list; the TaskStop schema requires `task_id` but accepts extra properties.
 - Closed: the agent files' unknown keys (phase 3 Section 10). `47c063242` removed `persistSession` from `.pi/agents`, and on 2026-09-29, with Paolo's yes, `~/.pi/agent/agents/*.md` lost it too and five files took `thinking:`.
+
+## Cutover
+
+Outcome: completed
+Source: ead5b84cbb547858164dcf84ab6331c22bad5d2a
+Entry: absent
+Build: native
+
+The cutover ran on 2026-09-29 and 2026-09-30. All three steps ran with Paolo's yes, recorded in /tmp/sn4-impl/approvals.md before each step. Paolo ran every command in his own terminal (R14). All six checklist items passed. No rollback step ran.
+
+### T10 checks
+
+All passed on 2026-09-29:
+
+- The main checkout is on `personal`, and `personal` equals /tmp/sn4-impl/personal.ref (`57e5e56be`), an ancestor of the branch.
+- The main checkout's full status equals /tmp/sn4-impl/main-status.pre-cutover (empty), and the `.pi/agents` drift equals /tmp/sn4-impl/agents-drift.expected.
+- The live settings hold the pi-tasks entry once, on line 25 after `npm:@narumitw/pi-btw` on line 24, and still matched /tmp/sn4-impl/live-settings.sha256.
+- No lockfile, shrinkwrap or `package.json` differs between `personal` and the branch.
+- Nothing outside `docs/plans/` changed between T8's commit `86429da73` and the branch head.
+- No backup destination existed, the main checkout's `dist` held no tasks module, and the disk held 835,812,412 KB free.
+
+### Steps
+
+| Step | Command | Exit line | Approval |
+| --- | --- | --- | --- |
+| C1 | `git -C $M merge --ff-only feat/subagents-native > $R/C1-merge.log 2>&1` (Paolo's terminal) | `C1 exit 0` | C1: 2026-09-29, Paolo selected "Yes, I will run C1" |
+| C2 | `cp $LIVE $R/settings.json.pre-cutover` and `cmp`; `node $E3/settings-entry.mjs --save $R/C2 $LIVE remove ../../Developer/ai/pi-tasks > $R/C2.log 2>&1` (Paolo's terminal) | `C2 exit 0` | C2: 2026-09-29, Paolo selected "Yes, I will run C2" |
+| C3 | `ls -d … > $R/dist-dirs.txt`; `tar -cf $R/dist-pre-cutover.tar …`; `find … \| xargs -0 shasum -a 256 > $R/dist-pre-cutover.sha256`; `npm run build:offline > $R/C3-build.log 2>&1` (Paolo's terminal) | `C3 snapshot ok`, `C3 exit 0` | C3: 2026-09-29, Paolo selected "Yes, I accept the risk and will run C3" (P19 list shown: one pi process, PID 87410, this session) |
+
+Verifications:
+
+- C1: the merge log reads `Updating 57e5e56be..ead5b84cb`, `Fast-forward`. `personal` equals the branch head, written to /tmp/sn4-impl/cutover-head.ref. The status stayed empty, and `diff -rq $M/.pi/agents .pi/agents` printed nothing.
+- C2: the helper printed `before 8b386434…` and `after a1eb611a…`. `diff $R/C2.before $R/C2.after` shows exactly one removed line, `    "../../Developer/ai/pi-tasks",`, and no added line. The live file equals `C2.after`, and the entry count is 0.
+- C3: `dist-dirs.txt` lists 12 directories, all within RB3's guard pattern. The snapshot is 53 MB with a 3,796-file manifest. The build log's last line is `Built packages/coding-agent/dist/bundle (56 files, 8.9 MiB)`. `dist/core/fork-builtins/tasks/ui/index.js` exists, and the status stayed empty. `cli.js --help` with the isolated home /tmp/sn4-impl/c3-home exited 0 and wrote only `auth.json` and `models-store.json` there.
+
+### T14 checklist
+
+Paolo ran the checklist on 2026-09-30 in a new session with PATH `pi` in `/Users/paolof/Developer/Projects/neomedica/yaoteq`. The session file is `~/.pi/agent/sessions/--Users-paolof-Developer-Projects-neomedica-yaoteq--/2026-09-30T10-19-14-128Z_01a0f1d3-554f-7602-aae1-fd8a3f69ba27.jsonl`, and its task file is `.pi/tasks/tasks-01a0f1d3-554f-7602-aae1-fd8a3f69ba27.json` in that project. /tmp/sn4-impl/checklist.md records:
+
+1. pass: Paolo: "ok all points fine"
+2. pass: Paolo: "ok all points fine"
+3. pass: Paolo: "ok all points fine"
+4. pass: Paolo: "ok all points fine"
+5. pass: Paolo: "ok all points fine"
+6. pass: Paolo: "ok all points fine"
+
+### Open items after the cutover
+
+- The handoff's sections 14.1 and 14.5 still describe pi-tasks as loaded; updating them needs Paolo's yes (P20). Paolo asked to close the session quickly, so the update was not asked.
+- `personal` receives this record with the next fast-forward (R9).
+- /tmp/sn4-impl keeps the `dist` snapshot and the settings record; removing it, /tmp/sn3-impl, the probe worktrees or this worktree needs Paolo's yes.
+- The workflow work's worker exclusion stays open (D43, D51; `## Open items` above).

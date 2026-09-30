@@ -172,8 +172,12 @@ export class McpOAuthCredentialStore {
 		return true;
 	}
 
+	/**
+	 * Read-only, so a store this session may not read reads as empty: a sandbox that denies
+	 * `mcp-auth.json` still connects servers that authenticate by header. Writes stay refused.
+	 */
 	private read(): StoredStates {
-		return this.backend.withLock((current) => ({ result: parseStates(current) }));
+		return this.backend.withLock((current) => ({ result: parseStates(current) }), { readOnly: true });
 	}
 
 	private write(update: (states: StoredStates) => void): void {

@@ -68,6 +68,10 @@ const bashOutputSchema = Type.Object({
 	}),
 	truncated: Type.Boolean({ description: "Whether `output` omits part of the command output" }),
 	full_output_path: Type.Optional(Type.String({ description: "Temp file with the full output, when truncated" })),
+	// Fork: the temp file stops at a size cap (temp-file-registry.ts), after which it holds a prefix.
+	full_output_capped: Type.Optional(
+		Type.Boolean({ description: "Whether `full_output_path` holds only the start of the output" }),
+	),
 	exit_code: Type.Number(),
 	wall_time_seconds: Type.Number(),
 });
@@ -473,7 +477,10 @@ export function createShellToolDefinition(
 					output: fullOutput.content,
 					truncated: fullOutput.truncated,
 					...(fullOutput.truncated && snapshot.fullOutputPath
-						? { full_output_path: snapshot.fullOutputPath }
+						? {
+								full_output_path: snapshot.fullOutputPath,
+								...(snapshot.fullOutputCapped ? { full_output_capped: true } : {}),
+							}
 						: {}),
 					exit_code: exitCode,
 					wall_time_seconds: wallTimeSeconds,

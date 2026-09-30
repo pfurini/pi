@@ -1303,6 +1303,11 @@ export class AgentSession {
 		this.agent.prepareRequest = async (request, signal) => {
 			const failed = this._failedResponse;
 			this._failedResponse = undefined;
+			// The live selection, so a model chosen at turn_start applies to this request. A skill's
+			// per-turn override (C3a) wins while it is active.
+			const override = this.agent.pendingTurnOverride;
+			const selectedModel = override?.model ?? this.agent.state.model;
+			const selectedThinkingLevel = override?.thinkingLevel ?? this.agent.state.thinkingLevel;
 			const prepare = async () => {
 				const projection = this.sessionManager.buildSessionProjection();
 				const canonicalContext = {
@@ -1319,24 +1324,29 @@ export class AgentSession {
 					{
 						...request,
 						context: canonicalContext,
-						model: request.model,
-						thinkingLevel: request.thinkingLevel,
+						model: selectedModel,
+						thinkingLevel: selectedThinkingLevel,
 					},
 					signal,
 				);
 				return { previous, context: previous?.context ?? canonicalContext, projection };
 			};
 			let { previous, context, projection } = await prepare();
-			// A skill's per-turn override arrives as request.model and request.thinkingLevel (C3a).
-			const model = previous?.model ?? request.model;
-			const thinkingLevel = previous?.thinkingLevel ?? request.thinkingLevel;
+			const model = previous?.model ?? selectedModel;
+			const thinkingLevel = previous?.thinkingLevel ?? selectedThinkingLevel;
 			if (!isVirtualModel(model)) return { ...previous, context, model, thinkingLevel };
 
 			// The selection stays in agent state; only this request uses the routed model. A routing
 			// failure rejects, which ends the run with an error response. Only messages the user wrote
-			// start a turn; extension messages can follow them, e.g. from before_agent_start.
-			const lastResponse = context.messages.findLastIndex((message) => message.role === "assistant");
-			const userTurn = context.messages.slice(lastResponse + 1).some((message) => message.role === "user");
+			// start a turn; extension messages can follow them, e.g. from before_agent_start. Fork: a
+			// synthetic skill pair (A.4) stands in for the user's message, so it is not a response.
+			const isSyntheticPair = (message: AgentMessage) => this._syntheticPairMessages.has(message);
+			const lastResponse = context.messages.findLastIndex(
+				(message) => message.role === "assistant" && !isSyntheticPair(message),
+			);
+			const userTurn = context.messages
+				.slice(lastResponse + 1)
+				.some((message) => message.role === "user" || isSyntheticPair(message));
 			const state = getVirtualModelState(this.sessionManager.getBranch(), model.provider, model.id);
 			const route = await this._modelRuntime.resolveModel(model, convertToLlm(context.messages), {
 				reason: failed ? "retry" : userTurn ? "user" : "continuation",

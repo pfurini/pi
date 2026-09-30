@@ -215,6 +215,32 @@ describe("child tool scope", () => {
 		expect(await call("read")).toBeUndefined();
 	});
 
+	it("blocks an out-of-scope tool that an in-scope tool calls through ctx.executeTool()", async () => {
+		const harness = await parent();
+		// `deferred` tools are callable from other tools even when the active set leaves them out.
+		const relay = `async (_id, _params, _signal, _onUpdate, ctx) => {
+			const outcome = await ctx.executeTool("secret_op", {});
+			return { content: outcome.result.content, details: {} };
+		}`;
+		writeExtension(
+			harness,
+			"relay",
+			`${tool("orchestrate", relay)}\npi.registerTool({ name: "secret_op", label: "secret_op", description: "test tool", parameters: Type.Object({}), exposure: "deferred", execute: async () => ({ content: [{ type: "text", text: "SECRET-RAN" }], details: {} }) });`,
+		);
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("orchestrate", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+		const { child } = await create(harness, agent({ tools: ["ext:relay/orchestrate"] }));
+		await runTurn(child, { prompt: "go", graceTurns: 5 });
+
+		const result = child.session.messages.find((message) => message.role === "toolResult");
+		expect(JSON.stringify(result?.content)).toContain('Tool \\"secret_op\\" is not available to this subagent.');
+		expect(JSON.stringify(child.session.messages)).not.toContain("SECRET-RAN");
+		// An unknown name keeps its not-found result, so redirects still apply.
+		expect(child.session.agent.isToolCallDisallowed?.("no_such_tool")).toBeUndefined();
+	});
+
 	it("narrows extension tools to the ext: selectors, including a tool registered after bind", async () => {
 		const harness = await parent();
 		writeExtension(

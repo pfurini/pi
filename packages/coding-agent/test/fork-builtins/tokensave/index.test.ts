@@ -45,7 +45,7 @@ function fakePi(agentDir = mkdtempSync(join(tmpdir(), "pi-tokensave-agentdir-"))
 			return ["read", "bash", "edit", "write", ...Object.keys(tools)];
 		},
 		// A skill's `disallowed-tools` narrows the callable set; tests override this for it.
-		getCallableTools() {
+		getModelCallableTools() {
 			return pi.getActiveTools();
 		},
 	};
@@ -361,8 +361,8 @@ test("the guard stands down while a skill disallows tokensave_find_symbol, but t
 	});
 
 	// The Pi fork: the skill's `disallowed-tools` keeps the tool active but not callable.
-	const pi = fakePi() as ExtensionAPI & { handlers: Record<string, Handler>; getCallableTools: () => string[] };
-	pi.getCallableTools = () => pi.getActiveTools().filter((name) => name !== "tokensave_find_symbol");
+	const pi = fakePi() as ExtensionAPI & { handlers: Record<string, Handler>; getModelCallableTools: () => string[] };
+	pi.getModelCallableTools = () => pi.getActiveTools().filter((name) => name !== "tokensave_find_symbol");
 	pluginTokensave(pi);
 	const projectDir = initializedProjectDir();
 

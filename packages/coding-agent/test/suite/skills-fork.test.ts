@@ -710,6 +710,27 @@ describe("C3b fork routing: user/synthetic sole-skill delivery", () => {
 });
 
 /**
+ * RPC clients wait for `agent_settled` only after a "started" disposition. A sole fork spawn
+ * (or a repeat-blocked refusal) runs no parent turn, so it must report "handled".
+ */
+describe("C3b fork routing: prompt disposition", () => {
+	it("reports a sole fork spawn and a repeat-blocked refusal as handled, and an inline skill as started", async () => {
+		const stub = createStubSubagentsExtension();
+		const harness = await createForkHarness([forkBg, { name: "inline", body: "inline body" }], { stub });
+		harness.setResponses([fauxAssistantMessage("ok")]);
+		const dispositions: string[] = [];
+		const preflightResult = (disposition: string) => dispositions.push(disposition);
+
+		await harness.session.prompt("/skill:forkbg", { preflightResult });
+		await harness.session.prompt("/skill:forkbg", { preflightResult });
+		await harness.session.prompt("/skill:inline", { preflightResult });
+
+		expect(stub.spawns.length).toBe(1);
+		expect(dispositions).toEqual(["handled", "handled", "started"]);
+	});
+});
+
+/**
  * A sole `context: fork` invocation delivers no message at all, so its spawn
  * notice is the prompt's only durable trace. Without the recall text on that
  * notice the prompt survives live (the editor caches it) but vanishes from a

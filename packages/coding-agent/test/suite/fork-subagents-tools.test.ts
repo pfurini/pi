@@ -557,7 +557,7 @@ describe("registration", () => {
 	it("registers the three tools as active builtins, and drops them with PI_FORK_BUILTINS=off or the allow and exclude lists", async () => {
 		const on = await session();
 		for (const name of SUBAGENT_TOOLS) {
-			expect(on.session.getAllTools().find((info) => info.name === name)?.sourceInfo.path).toBe(`<builtin:${name}>`);
+			expect(on.session.getAllTools().find((info) => info.name === name)?.sourceInfo.path).toBe(`builtin:${name}`);
 		}
 		expect(on.session.getActiveToolNames()).toEqual(expect.arrayContaining(SUBAGENT_TOOLS));
 		const names = (harness: Harness) => harness.session.getAllTools().map((info) => info.name);

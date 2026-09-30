@@ -312,8 +312,10 @@ export function resolveExtensionPlan(
 /**
  * Keeps the child's active set inside its scope as extensions register tools. Re-narrows now and
  * after every turn, and blocks a call to an out-of-scope tool, which covers a tool registered
- * inside a turn before the next re-narrow. Returns the re-narrow for the runner to call before
- * each prompt. The listeners die with the session.
+ * inside a turn before the next re-narrow. The block also sits in the pre-lookup gate, which calls
+ * other tools make through ctx.executeTool() pass too; those can reach `codemode` and `deferred`
+ * tools the active set leaves out. Returns the re-narrow for the runner to call before each prompt.
+ * The listeners die with the session.
  */
 export function installToolScope(session: AgentSession, loader: DefaultResourceLoader, scope: ToolScope): () => void {
 	const inScope = (): Set<string> => {
@@ -346,12 +348,17 @@ export function installToolScope(session: AgentSession, loader: DefaultResourceL
 	session.subscribe((event) => {
 		if (event.type === "turn_end") renarrow();
 	});
+	const outOfScope = (name: string) => `Tool "${name}" is not available to this subagent.`;
 	const previous = session.agent.beforeToolCall;
 	session.agent.beforeToolCall = async (context, signal) => {
 		if (!inScope().has(context.toolCall.name)) {
-			return { block: true, reason: `Tool "${context.toolCall.name}" is not available to this subagent.` };
+			return { block: true, reason: outOfScope(context.toolCall.name) };
 		}
 		return previous?.(context, signal);
 	};
+	// Only registered tools: an unknown name keeps its not-found result and redirect (ADR-0006).
+	const previousDisallowed = session.agent.isToolCallDisallowed;
+	session.agent.isToolCallDisallowed = (name) =>
+		session.getToolDefinition(name) && !inScope().has(name) ? outOfScope(name) : previousDisallowed?.(name);
 	return renarrow;
 }

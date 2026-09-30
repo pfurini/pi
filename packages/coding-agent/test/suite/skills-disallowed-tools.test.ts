@@ -210,7 +210,7 @@ describe("C3a disallowed-tools: queued activation", () => {
 		});
 		const run = harness.session.prompt("start");
 		await started;
-		await harness.session.steer("/skill:nobash");
+		const disposition = await harness.session.steer("/skill:nobash");
 		release();
 		await run;
 
@@ -219,6 +219,8 @@ describe("C3a disallowed-tools: queued activation", () => {
 		expect(requests[0].toolNames).not.toContain("bash");
 		expect(requests[1].toolNames).not.toContain("bash");
 		expect(bashExecutions).toBe(0);
+		// An invocation-bearing steer queues a resolved snapshot and reports it queued (RPC disposition).
+		expect(disposition).toBe("queued");
 		expect(toolResultFor(harness, "bash")?.isError).toBe(true);
 	});
 });
@@ -245,8 +247,59 @@ describe("C3a disallowed-tools: pre-lookup policy block", () => {
 	});
 });
 
+describe("C3a disallowed-tools: calls another tool makes", () => {
+	it("blocks a disallowed tool called through ctx.executeTool(), and lets it run once the skill expires", async () => {
+		let bashRuns = 0;
+		const bash: AgentTool = {
+			...passthroughTool("bash"),
+			execute: async () => {
+				bashRuns++;
+				return { content: [{ type: "text", text: "bash ran" }], details: {} };
+			},
+		};
+		const nested: Array<{ isError: boolean; text: string }> = [];
+		const harness = await createDisallowHarness(
+			[{ name: "nobash", frontmatter: { "disallowed-tools": ["bash"] }, body: "body" }],
+			[bash],
+			{
+				extensionFactories: [
+					(pi) => {
+						pi.registerTool({
+							name: "run_bash",
+							label: "run_bash",
+							description: "Runs bash through ctx.executeTool(), as a codemode script does.",
+							parameters: Type.Object({}),
+							execute: async (_id, _params, _signal, _onUpdate, ctx) => {
+								const outcome = await ctx.executeTool("bash", {});
+								const text = (outcome.result.content[0] as { text: string }).text;
+								nested.push({ isError: outcome.isError, text });
+								return { content: [{ type: "text", text }], details: {} };
+							},
+						});
+					},
+				],
+			},
+		);
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("run_bash", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+			fauxAssistantMessage([fauxToolCall("run_bash", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done again"),
+		]);
+
+		await harness.session.prompt("/skill:nobash");
+		await harness.session.prompt("plain prompt");
+
+		expect(nested).toHaveLength(2);
+		expect(nested[0].isError).toBe(true);
+		expect(nested[0].text).toContain("disallowed-tools policy");
+		expect(nested[1]).toEqual({ isError: false, text: "bash ran" });
+		expect(bashRuns).toBe(1);
+	});
+});
+
 describe("C3a disallowed-tools: callable tools for extensions", () => {
-	it("pi.getCallableTools() leaves out a tool the active skill disallows; pi.getActiveTools() keeps it", async () => {
+	it("pi.getModelCallableTools() leaves out a tool the active skill disallows; pi.getActiveTools() keeps it", async () => {
 		const seen: Array<{ active: string[]; callable: string[] }> = [];
 		const harness = await createDisallowHarness(
 			[{ name: "nobash", frontmatter: { "disallowed-tools": ["bash"] }, body: "body" }],
@@ -255,7 +308,7 @@ describe("C3a disallowed-tools: callable tools for extensions", () => {
 				extensionFactories: [
 					(pi) => {
 						pi.on("tool_call", () => {
-							seen.push({ active: pi.getActiveTools(), callable: pi.getCallableTools() });
+							seen.push({ active: pi.getActiveTools(), callable: pi.getModelCallableTools() });
 						});
 					},
 				],

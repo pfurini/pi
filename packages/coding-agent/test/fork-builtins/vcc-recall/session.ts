@@ -1,7 +1,7 @@
 // Fork-owned: in-memory sessions and a tool runner for the ported vcc_recall tests.
 // pi-vcc's tests wrote JSONL files; these helpers hold the same entries in a SessionManager.
 import type { TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionContext, ToolDefinition } from "../../../src/core/extensions/types.ts";
+import type { ExtensionToolContext, ToolDefinition } from "../../../src/core/extensions/types.ts";
 import { createRecallToolDefinition } from "../../../src/core/fork-builtins/vcc-recall/recall.ts";
 import {
 	type FileEntry,
@@ -48,7 +48,7 @@ export async function recall(
 	sessionManager: ReadonlySessionManager,
 	params: Record<string, unknown>,
 ): Promise<string> {
-	const ctx = { sessionManager } as unknown as ExtensionContext;
+	const ctx = { sessionManager } as unknown as ExtensionToolContext;
 	const result = await tool.execute("tool-call", params, undefined, undefined, ctx);
 	return (result.content[0] as TextContent).text;
 }

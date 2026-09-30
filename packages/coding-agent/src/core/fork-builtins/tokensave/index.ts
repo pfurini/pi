@@ -136,7 +136,7 @@ export default function pluginTokensave(pi: ExtensionAPI): void {
 		// child can load this extension yet leave its tools inactive (`tools:` lists, `ext:`
 		// selectors), and a running skill's `disallowed-tools` blocks tools that stay active.
 		// The guard must not point the model at a tool it cannot call.
-		if (!pi.getCallableTools().includes("tokensave_find_symbol")) return;
+		if (!pi.getModelCallableTools().includes("tokensave_find_symbol")) return;
 
 		if (state.binaryAvailable === undefined) {
 			state.binaryAvailable = await checkTokensaveAvailable();

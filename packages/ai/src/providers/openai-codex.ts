@@ -37,7 +37,7 @@ function openaiCodexAmbientApiKeyAuth(): ApiKeyAuth {
 export function openaiCodexProvider(): Provider<"openai-codex-responses"> {
 	return createProvider({
 		id: "openai-codex",
-		name: "OpenAI Codex",
+		name: "OpenAI Codex (legacy)",
 		baseUrl: "https://chatgpt.com/backend-api",
 		auth: {
 			apiKey: openaiCodexAmbientApiKeyAuth(),

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
+import { type FileHandle, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_MAX_TEMP_FILE_BYTES, registerTempFile } from "../temp-file-registry.ts";
@@ -36,6 +37,12 @@ export interface OutputSnapshot {
 	lineCapChars: number;
 }
 
+export interface FullOutput {
+	content: string;
+	/** Whether `content` omits part of the output. */
+	truncated: boolean;
+}
+
 function defaultTempFilePath(prefix: string): string {
 	const id = randomBytes(8).toString("hex");
 	return join(tmpdir(), `${prefix}-${id}.log`);
@@ -43,6 +50,15 @@ function defaultTempFilePath(prefix: string): string {
 
 function byteLength(text: string): number {
 	return Buffer.byteLength(text, "utf-8");
+}
+
+/** The longest suffix of `text` that fits in `maxBytes` UTF-8 bytes, starting at a character boundary. */
+function lastBytesOf(text: string, maxBytes: number): string {
+	const buffer = Buffer.from(text, "utf-8");
+	if (buffer.length <= maxBytes) return text;
+	let start = buffer.length - Math.max(0, maxBytes);
+	while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) start++;
+	return buffer.subarray(start).toString("utf-8");
 }
 
 /**
@@ -197,6 +213,58 @@ export class OutputAccumulator {
 			stream.once("finish", onFinish);
 			stream.end();
 		});
+	}
+
+	/**
+	 * The complete output, for callers that can take more than the display snapshot. Call after
+	 * `finish()` and `closeTempFile()`. Output longer than `maxBytes` raw bytes keeps its first and
+	 * last `maxBytes / 2` bytes around an omission marker.
+	 */
+	async readFullOutput(maxBytes: number): Promise<FullOutput> {
+		if (!this.tempFilePath) {
+			return { content: new TextDecoder().decode(Buffer.concat(this.rawChunks)), truncated: false };
+		}
+		const file = await open(this.tempFilePath, "r");
+		try {
+			const size = (await file.stat()).size;
+			if (this.tempFileCapped) return await this.readCappedOutput(file, size, maxBytes);
+			if (size <= maxBytes) {
+				return { content: new TextDecoder().decode(await file.readFile()), truncated: false };
+			}
+			const headBytes = Math.floor(maxBytes / 2);
+			const tailBytes = maxBytes - headBytes;
+			const head = Buffer.alloc(headBytes);
+			const tail = Buffer.alloc(tailBytes);
+			await file.read(head, 0, headBytes, 0);
+			await file.read(tail, 0, tailBytes, size - tailBytes);
+			// Cut at character boundaries: streaming decode holds back an incomplete trailing sequence,
+			// and the tail skips leading continuation bytes.
+			const headText = new TextDecoder().decode(head, { stream: true });
+			let tailStart = 0;
+			while (tailStart < tail.length && (tail[tailStart] & 0xc0) === 0x80) tailStart++;
+			const tailText = new TextDecoder().decode(tail.subarray(tailStart));
+			const omitted = size - headBytes - tailBytes;
+			return { content: `${headText}\n\n[... ${omitted} bytes omitted ...]\n\n${tailText}`, truncated: true };
+		} finally {
+			await file.close();
+		}
+	}
+
+	/**
+	 * Fork: a capped temp file holds only a prefix of the output (`writeToTempFile`), so the end
+	 * of the output comes from the decoded rolling tail, which keeps at least twice the display byte
+	 * limit. The head fills the rest of the budget from the file and never reaches into the tail.
+	 */
+	private async readCappedOutput(file: FileHandle, size: number, maxBytes: number): Promise<FullOutput> {
+		const tail = lastBytesOf(this.tailText, maxBytes - Math.min(Math.floor(maxBytes / 2), size));
+		const tailBytes = byteLength(tail);
+		const headBytes = Math.max(0, Math.min(maxBytes - tailBytes, size, this.totalDecodedBytes - tailBytes));
+		const head = Buffer.alloc(headBytes);
+		await file.read(head, 0, headBytes, 0);
+		const headText = new TextDecoder().decode(head, { stream: true });
+		const omitted = this.totalDecodedBytes - byteLength(headText) - tailBytes;
+		if (omitted <= 0) return { content: headText + tail, truncated: false };
+		return { content: `${headText}\n\n[... ${omitted} bytes omitted ...]\n\n${tail}`, truncated: true };
 	}
 
 	getLastLineBytes(): number {

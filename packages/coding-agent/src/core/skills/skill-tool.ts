@@ -79,6 +79,10 @@ export function createSkillToolDefinition(
 	return {
 		name: "skill",
 		label: "skill",
+		// Declared to the model, never callable through ctx.executeTool(): an invocation activates
+		// the skill for the turn and is recorded on the session entry of its result, which nested
+		// calls never persist. It also keeps the tool declared under codemode `only` mode.
+		exposure: "model-only",
 		description:
 			"Invoke a skill listed in <available_skills> and receive its fully rendered instructions. " +
 			"Use this when the task matches a skill's description. Do not guess skill names: " +

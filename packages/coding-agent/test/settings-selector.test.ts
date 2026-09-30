@@ -51,6 +51,7 @@ function createConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig {
 		fullscreenExitOutput: "transcript",
 		fullscreenScrollbar: "auto",
 		fullscreenCopyOnSelect: true,
+		fullscreenWheelScrollLines: "auto",
 		mermaidRenderingMode: "streaming",
 		warnings: {},
 		...overrides,
@@ -93,6 +94,7 @@ function createCallbacks(): SettingsCallbacks {
 		onFullscreenExitOutputChange: vi.fn(),
 		onFullscreenScrollbarChange: vi.fn(),
 		onFullscreenCopyOnSelectChange: vi.fn(),
+		onFullscreenWheelScrollLinesChange: vi.fn(),
 		onMermaidRenderingModeChange: vi.fn(),
 		onWarningsChange: vi.fn(),
 		onCancel: vi.fn(),
@@ -128,10 +130,12 @@ describe("SettingsSelectorComponent", () => {
 		const onExitOutputChange = vi.fn();
 		const onScrollbarChange = vi.fn();
 		const onCopyOnSelectChange = vi.fn();
+		const onWheelScrollLinesChange = vi.fn();
 		const config = {
 			fullscreenExitOutput: "transcript",
 			fullscreenScrollbar: "auto",
 			fullscreenCopyOnSelect: true,
+			fullscreenWheelScrollLines: 7,
 			warnings: {},
 			defaultModel: "not set",
 			availableDefaultModels: [],
@@ -143,6 +147,7 @@ describe("SettingsSelectorComponent", () => {
 			onFullscreenExitOutputChange: onExitOutputChange,
 			onFullscreenScrollbarChange: onScrollbarChange,
 			onFullscreenCopyOnSelectChange: onCopyOnSelectChange,
+			onFullscreenWheelScrollLinesChange: onWheelScrollLinesChange,
 		} as unknown as SettingsCallbacks;
 
 		const cycle = (label: string, count: number) => {
@@ -157,6 +162,9 @@ describe("SettingsSelectorComponent", () => {
 		expect(onScrollbarChange.mock.calls.flat()).toEqual(["always", "hidden", "auto"]);
 		cycle("Fullscreen copy on select", 2);
 		expect(onCopyOnSelectChange.mock.calls.flat()).toEqual([false, true]);
+		// #9758: custom values from settings.json stay in the cycle.
+		cycle("Fullscreen wheel scrolling", 3);
+		expect(onWheelScrollLinesChange.mock.calls.flat()).toEqual([10, "auto", 1]);
 	});
 
 	it("keeps the configured fixed theme marked while browsing", () => {
@@ -166,7 +174,7 @@ describe("SettingsSelectorComponent", () => {
 			modelThinkingLevels: {},
 			currentTheme: "dark",
 			terminalTheme: "dark",
-			availableThemes: ["dark", "light"],
+			availableThemes: ["system", "dark", "light"],
 			warnings: {},
 		} as unknown as SettingsConfig;
 		const callbacks = { onThemePreview: vi.fn(), onCancel: () => {} } as unknown as SettingsCallbacks;
@@ -175,7 +183,9 @@ describe("SettingsSelectorComponent", () => {
 		list.selectItem("theme");
 		list.handleInput("\r");
 		let output = stripAnsi(list.render(120).join("\n"));
-		expect(output).toContain("    Automatic");
+		expect(output).toMatch(
+			/ {4}system +Theme created from your terminal's colors\n {4}automatic +Use separate themes/,
+		);
 		expect(output).toContain("→ ✓ dark");
 
 		list.handleInput("\x1b[B");

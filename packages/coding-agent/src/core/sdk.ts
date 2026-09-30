@@ -38,6 +38,7 @@ import {
 	createWriteTool,
 	withFileMutationQueue,
 } from "./tools/index.ts";
+import { getBranchSelection } from "./virtual-models.ts";
 
 // Default fallback for extensions that construct Agent instances or invoke low-level
 // agent loops without supplying streamFn. The composed default routes served models
@@ -74,7 +75,7 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi uses the `defaultTools` setting for the initial built-in
+	 * When omitted, pi uses the resolved `defaultTools` setting for the initial
 	 * selection when configured. Otherwise it enables the default built-in tools
 	 * (read, bash, edit, write) — plus the `skill` / `slash_command` tools when a
 	 * model-visible skill or command exists. Extension/custom tools remain enabled
@@ -216,14 +217,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
 
+	// Assistant messages name the physical model that answered, so a virtual selection is only in
+	// model_change entries.
+	const sessionModel = getBranchSelection(sessionManager.getBranch(), (provider, modelId) =>
+		modelRuntime.getModel(provider, modelId),
+	);
+
 	// If session has data, try to restore model from it
-	if (!model && hasExistingSession && existingSession.model) {
-		const restoredModel = modelRuntime.getModel(existingSession.model.provider, existingSession.model.modelId);
+	if (!model && hasExistingSession && sessionModel) {
+		const restoredModel = modelRuntime.getModel(sessionModel.provider, sessionModel.modelId);
 		if (restoredModel && modelRuntime.hasConfiguredAuth(restoredModel.provider)) {
 			model = restoredModel;
 		}
 		if (!model) {
-			modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
+			modelFallbackMessage = `Could not restore model ${sessionModel.provider}/${sessionModel.modelId}`;
 		}
 	}
 
@@ -282,7 +289,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// set, which appends the `skill` / `slash_command` tools when a model-visible skill or
 	// command exists. A hardcoded ["read","bash","edit","write"] here shadowed that branch, so
 	// those two tools were never active on a real launch (only in harnesses that set
-	// baseToolsOverride).
+	// baseToolsOverride). `+name`/`-name` settings resolve against DEFAULT_TOOL_NAMES, which
+	// carries the same two tools for that reason.
 	const initialActiveToolNames: string[] | undefined = options.tools
 		? [...options.tools].filter((name) => !excludedToolNameSet?.has(name))
 		: options.noTools
@@ -370,6 +378,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				}),
 		};
 	};
+	// Warm only requests for the selected model. Requests a virtual selection routed, or that an
+	// extension redirected, may not be repeated by the next request, so warming them could be wasted.
 	const cacheContextIsCurrent = (requestModel: Model<any>) => {
 		const messages = agent.state.messages;
 		return () => {

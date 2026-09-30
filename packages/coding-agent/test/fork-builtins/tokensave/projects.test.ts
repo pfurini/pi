@@ -490,7 +490,7 @@ describe("guard and reconciliation per root", () => {
 			},
 			registerCommand() {},
 			getActiveTools: () => ["bash", ...Object.keys(tools)],
-			getCallableTools: () => ["bash", ...Object.keys(tools)],
+			getModelCallableTools: () => ["bash", ...Object.keys(tools)],
 			exec: async () => ({ code: 0, stdout: `*\trefs/heads/main\t${"a".repeat(40)}`, stderr: "", killed: false }),
 		};
 		pluginTokensave(pi as unknown as ExtensionAPI);

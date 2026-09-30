@@ -42,7 +42,7 @@ Use relative paths from the skill directory when referring to bundled files. Pi 
 
 At startup, Pi scans configured skill locations and adds a budgeted, versioned listing to the system prompt. The listing can expose a full description, name only, or nothing according to frontmatter and `skillVisibility`.
 
-When a task matches, the model invokes the dedicated `skill` tool. Explicit `/name` and `/skill:name` commands use the same renderer. Verified model/provider combinations can receive a synthetic tool-call/result pair; other models receive a `<skill>` user-message block.
+When a task matches, the model invokes the dedicated `skill` tool. Explicit `/name` and `/skill:name` commands use the same renderer. Verified model/provider combinations can receive a synthetic tool-call/result pair; other models receive a `<skill>` user-message block. The `skill` tool is `model-only`: codemode scripts and other tools cannot call it through `ctx.executeTool()`.
 
 Arguments after an invocation use the same zero-based grammar as commands and prompt templates. Skill rendering then applies variable substitution, optional shell injection, tool-name guidance, model/effort overrides, and `disallowed-tools`. A `context: fork` skill can run through the subagent extension instead of entering parent context.
 

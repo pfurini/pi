@@ -80,7 +80,7 @@ function execute(
 	args: Record<string, unknown>,
 	onUpdate?: (update: AgentToolResult<AgentToolDetails>) => void,
 ): Promise<AgentToolResult<AgentToolDetails>> {
-	const ctx = harness.session.extensionRunner.createContext();
+	const ctx = harness.session.extensionRunner.createToolContext(`tc-${Math.random()}`, undefined);
 	return agentDefinition(harness).execute(`tc-${Math.random()}`, args, undefined, onUpdate as never, ctx) as Promise<
 		AgentToolResult<AgentToolDetails>
 	>;

@@ -4,6 +4,10 @@
  * while a task is in progress, the next model request carries one transient user message: a nudge
  * for an empty list, or the list itself. No session keeps the message. The wording follows Claude
  * Code's todo reminders.
+ *
+ * Keep the whole message wrapped in system-reminder tags: claude-bridge treats exactly that shape
+ * as a one-request message (pi-claude-bridge `src/session-history.ts`). Any other trailing message
+ * that the next request lacks makes it retire its live Claude Code query.
  */
 import type { Task } from "./store.ts";
 

@@ -384,23 +384,25 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		if (!options.force) {
 			// Whole-message-initial slash context (A.1 rule 4): command-name completion offers
 			// all commands including controls, and argument completion is available only here.
-			if (cursorLine === 0 && textBeforeCursor.startsWith("/")) {
-				const spaceIndex = textBeforeCursor.indexOf(" ");
+			// Leading whitespace is ignored, as on submit, and kept on insertion.
+			const commandText = textBeforeCursor.trimStart();
+			if (cursorLine === 0 && commandText.startsWith("/")) {
+				const spaceIndex = commandText.indexOf(" ");
 
 				if (spaceIndex === -1) {
-					const filtered = this.getSlashCommandItems(textBeforeCursor.slice(1), { includeControls: true });
+					const filtered = this.getSlashCommandItems(commandText.slice(1), { includeControls: true });
 
 					if (filtered.length === 0) return null;
 
 					return {
 						items: filtered,
-						prefix: textBeforeCursor,
+						prefix: commandText,
 						kind: "command",
 					};
 				}
 
-				const commandName = textBeforeCursor.slice(1, spaceIndex);
-				const argumentText = textBeforeCursor.slice(spaceIndex + 1);
+				const commandName = commandText.slice(1, spaceIndex);
+				const argumentText = commandText.slice(spaceIndex + 1);
 
 				const command = this.commands.find((cmd) => {
 					const name = "name" in cmd ? cmd.name : cmd.value;

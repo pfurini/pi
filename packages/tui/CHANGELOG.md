@@ -5,6 +5,13 @@
 ### Added
 
 - Mid-prompt `/` autocomplete with per-source badges: the slash menu triggers and applies at the cursor for command runs at message start or after whitespace on any editor line, renders a `builtin`/`extension`/`command`/`prompt`/`skill` badge per candidate, and keeps control commands (both `builtin` and `extension`) and argument completion whole-message-initial. Suggestions carry a `kind` discriminant (`command`/`argument`/`file`/`symbol`, exported as `AutocompleteSuggestionKind`) so the editor submits on Enter only for a completed slash command and never for a `/`-prefixed file or argument completion.
+- Added `TuiAltScreen.getScreenLines()`, which returns the lines of the last rendered frame.
+
+### Fixed
+
+- Fixed color bleeding past mouse selections and search highlights in fullscreen mode when a styled token ends at the highlight boundary ([#10169](https://github.com/earendil-works/pi/issues/10169))
+
+## [0.99.2] - 2026-09-30
 
 ## [0.99.1] - 2026-09-29
 

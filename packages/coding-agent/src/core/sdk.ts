@@ -499,6 +499,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			customTools: options.customTools,
 			modelRuntime,
 			initialActiveToolNames,
+			usesDefaultTools: options.tools === undefined && !options.noTools,
 			cacheWarmer,
 			allowedToolNames,
 			excludedToolNames,

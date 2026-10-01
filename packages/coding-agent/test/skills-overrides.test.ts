@@ -132,6 +132,15 @@ describe("computeDisallowedUnion", () => {
 		expect([...union].sort()).toEqual(["bash", "read"]);
 	});
 
+	// Upstream #10239: MCP tools spell `-` as `_`; a policy written with `-` must still block them.
+	it("maps a hyphenated MCP name to the current tool name", () => {
+		const { union } = computeDisallowedUnion(
+			[record({ disallowedTools: ["mcp__prod-db__delete-record"] })],
+			DEFAULT_TOOL_REDIRECTS,
+		);
+		expect([...union]).toEqual(["mcp__prod_db__delete_record"]);
+	});
+
 	it("reduces a Tool(pattern) entry to the bare tool with a diagnostic", () => {
 		const { union, diagnostics } = computeDisallowedUnion(
 			[record({ disallowedTools: ["Bash(rm -rf)"] })],

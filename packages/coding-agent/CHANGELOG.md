@@ -45,6 +45,7 @@
 - A skill's `disallowed-tools` and a subagent's tool scope now also block tools that other tools call through `ctx.executeTool()`, such as codemode scripts.
 - The `skill` tool is `model-only`: codemode scripts and other tools cannot call it, and codemode `only` mode keeps it declared to the model.
 - The fork's built-ins still load under `--no-extensions`, unlike upstream's `builtin:<name>` extensions. `PI_FORK_BUILTINS=off` turns them off.
+- A skill's `disallowed-tools` and a subagent's `tools:`, `disallowed_tools` and `ext:` narrowing accept MCP tool names written with `-`. Since 0.99.2 MCP tool names spell `-` as `_`, and a hyphenated entry would otherwise stop blocking or selecting its tool.
 
 ### Fixed
 

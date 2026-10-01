@@ -160,4 +160,11 @@ describe("wording helpers and canonicalizeToolName consistency", () => {
 		expect(canonicalizeToolName("task")).toBe("Agent");
 		expect(canonicalizeToolName("unmapped")).toBe("unmapped");
 	});
+
+	// Upstream #10239 renamed MCP tools from `-` to `_`; a policy written with the old spelling still names them.
+	it("maps the hyphenated MCP spelling to the current underscore spelling", () => {
+		expect(canonicalizeToolName("mcp__prod-db__delete-record")).toBe("mcp__prod_db__delete_record");
+		expect(canonicalizeToolName("mcp__prod_db__delete_record")).toBe("mcp__prod_db__delete_record");
+		expect(canonicalizeToolName("unmapped-tool")).toBe("unmapped-tool");
+	});
 });

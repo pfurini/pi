@@ -111,6 +111,22 @@ describe("child tool scope", () => {
 		expect(result.narrowing.has("notes")).toBe(false);
 		expect(scope(agent({ tools: ["ext:mcp"] }), { isolated: true }).extNames.size).toBe(0);
 	});
+
+	// Upstream #10239: MCP tools spell `-` as `_`; tools:, disallowed_tools and ext: narrowing written with `-` still name them.
+	it("resolves hyphenated MCP names to the current underscore spelling", () => {
+		const result = scope(
+			agent({
+				tools: ["read", "mcp__prod-db__query", "ext:mcp/mcp__prod-db__search"],
+				disallowedTools: ["mcp__prod-db__delete-record"],
+			}),
+			{ knownToolNames: new Set(["read", "mcp__prod_db__query"]) },
+		);
+		expect(result.selected.has("mcp__prod_db__query")).toBe(true);
+		expect(result.disallowed.has("mcp__prod_db__delete_record")).toBe(true);
+		expect(result.excludeTools).toContain("mcp__prod_db__delete_record");
+		expect([...(result.narrowing.get("mcp") ?? [])]).toEqual(["mcp__prod_db__search"]);
+		expect(result.warnings).toEqual([]);
+	});
 });
 
 function extension(path: string): Extension {

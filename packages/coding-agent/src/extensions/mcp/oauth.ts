@@ -20,11 +20,13 @@ import {
 	McpOAuthProvider,
 	type McpOAuthState,
 	type McpOAuthStateStore,
+	type OAuthCallback,
 	type OAuthCallbackPage,
 	OAuthCallbackServer,
 	type OAuthChallenge,
 	type OAuthClientInformationMixed,
 	parseWwwAuthenticate,
+	stepUpScope,
 } from "@earendil-works/pi-mcp/oauth";
 import lockfile from "proper-lockfile";
 import { APP_NAME, getAgentDir } from "../../config.ts";
@@ -53,6 +55,10 @@ export interface McpOAuthSettings {
 	callbackUrl?: string;
 	/** Scopes to request, separated by spaces. */
 	scope?: string;
+	/** `client_name` for dynamic client registration. Default: `APP_NAME`. */
+	clientName?: string;
+	/** See `McpOAuthConfig.authServerMetadataUrl`. */
+	authServerMetadataUrl?: URL;
 }
 
 /** Where the loopback callback server listens and the redirect URI it serves. */
@@ -203,7 +209,7 @@ function createProvider(
 	return new McpOAuthProvider({
 		serverUrl,
 		redirectUrl,
-		clientMetadata: { client_name: APP_NAME },
+		clientMetadata: { client_name: settings.clientName ?? APP_NAME },
 		clientId: settings.clientId,
 		clientSecret: settings.clientSecret,
 		store,
@@ -255,6 +261,7 @@ export function createMcpAuthProvider(options: {
 				const result = await authorizeMcp(provider, {
 					serverUrl,
 					resourceMetadataUrl: challenge?.resourceMetadataUrl,
+					authorizationServerMetadataUrl: settings.authServerMetadataUrl,
 					scope: challenge?.scope,
 					fetch: (input, init) =>
 						fetch(input, { ...init, signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS) }),
@@ -309,7 +316,9 @@ export class McpSignInCancelledError extends Error {
 	}
 }
 
-function codeFromRedirectUrl(input: string, state: string): string {
+type AuthorizationResponse = Pick<OAuthCallback, "code" | "iss">;
+
+function responseFromRedirectUrl(input: string, state: string): AuthorizationResponse {
 	let url: URL;
 	try {
 		url = new URL(input.trim());
@@ -321,20 +330,20 @@ function codeFromRedirectUrl(input: string, state: string): string {
 	if (url.searchParams.get("state") !== state) throw new Error("The redirect URL belongs to a different sign-in");
 	const code = url.searchParams.get("code");
 	if (!code) throw new Error("The redirect URL does not contain an authorization code");
-	return code;
+	return { code, iss: url.searchParams.get("iss") ?? undefined };
 }
 
 /** Wait for the browser callback or a pasted redirect URL, whichever comes first. */
-async function waitForAuthorizationCode(
+async function waitForAuthorizationResponse(
 	callback: OAuthCallbackServer,
 	state: string,
 	prompt: McpSignInPrompt,
-): Promise<string> {
+): Promise<AuthorizationResponse> {
 	const controller = new AbortController();
-	const fromBrowser = callback.waitForCallback(state).then((result) => result.code);
+	const fromBrowser = callback.waitForCallback(state);
 	const fromUser = prompt.promptForRedirectUrl(controller.signal).then((input) => {
 		if (!input?.trim()) throw new McpSignInCancelledError();
-		return codeFromRedirectUrl(input, state);
+		return responseFromRedirectUrl(input, state);
 	});
 	try {
 		return await Promise.race([fromBrowser, fromUser]);
@@ -382,6 +391,7 @@ export async function signInMcpServer(options: {
 }): Promise<void> {
 	const { serverUrl, store, settings } = options;
 	const stored = await store.load();
+	const stepUp = options.challenge?.error === "insufficient_scope";
 	const callbackOptions = callbackSettings(settings);
 	// Reuse the port of the registered redirect URI so the registered client stays valid.
 	const registered = registeredRedirectUrls(stored?.clientInformation)[0];
@@ -410,18 +420,23 @@ export async function signInMcpServer(options: {
 		const flow = {
 			serverUrl,
 			resourceMetadataUrl: options.challenge?.resourceMetadataUrl,
-			// A server asking for more scope gets it on top of the configured scope.
-			scope: mergeScopes(settings.scope, options.challenge?.scope),
+			authorizationServerMetadataUrl: settings.authServerMetadataUrl,
+			// A server asking for more scope gets it on top of the configured scope and, since the challenge
+			// may list only the missing scopes, on top of the scope granted so far.
+			scope: mergeScopes(
+				settings.scope,
+				stepUp ? stepUpScope(stored?.tokens?.scope, options.challenge?.scope) : options.challenge?.scope,
+			),
 		};
 		// A refresh keeps the granted scope; a server asking for more needs the browser flow.
-		const skipRefresh = options.challenge?.error === "insufficient_scope";
+		const skipRefresh = stepUp;
 		if ((await authorizeMcp(provider, { ...flow, skipRefresh })) === "AUTHORIZED") return;
 		if (!authorizationUrl) throw new Error("OAuth flow did not produce an authorization URL");
 
 		const state = await provider.state();
 		options.prompt.showAuthorizationUrl(authorizationUrl);
-		const code = await waitForAuthorizationCode(callback, state, options.prompt);
-		await authorizeMcp(provider, { ...flow, authorizationCode: code });
+		const { code, iss } = await waitForAuthorizationResponse(callback, state, options.prompt);
+		await authorizeMcp(provider, { ...flow, authorizationCode: code, iss });
 	} finally {
 		await callback.close();
 	}

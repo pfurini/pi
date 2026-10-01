@@ -15,6 +15,8 @@
 - Added `harness/listing-budget.ts`, the new home of the A.6 skill listing-budget oracle (`buildBudgetedListingBlock`, `estimateListingEntryCost`, `skillListingBudgetCodeUnits`, `est`, `escapeXml`, the v2 delimiters, and the entry/diagnostic types) relocated from pi-coding-agent so the harness can apply the byte-identical algorithm; pi-coding-agent re-exports it unchanged.
 - Added the optional `{ contextWindow, budgetFraction }` second parameter to `formatSkillsForSystemPrompt()`: with a positive context window the listing block is the byte-exact A.6 budgeted v2 oracle (name-sorted emission, 1,536-code-unit description cap, skeleton floor), while omitted/non-positive windows keep the previous unbudgeted v1 output byte-for-byte.
 
+## [0.99.2] - 2026-09-30
+
 ## [0.99.1] - 2026-09-29
 
 ## [0.99.0] - 2026-09-29

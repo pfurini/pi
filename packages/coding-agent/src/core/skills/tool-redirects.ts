@@ -45,15 +45,25 @@ function findToolRedirect(name: string, redirects: Readonly<Record<string, strin
 }
 
 /**
+ * The current spelling of an MCP tool name. Since upstream 0.99.2 (#10239) MCP tool names
+ * spell `-` as `_`, so a policy written as `mcp__prod-db__query` still names
+ * `mcp__prod_db__query`. Other names pass through unchanged.
+ */
+export function canonicalMcpToolName(name: string): string {
+	return /^mcp__/i.test(name) ? name.replaceAll("-", "_") : name;
+}
+
+/**
  * Resolve a declared tool name to its canonical Pi name through the redirect
- * map. Names with no mapping pass through unchanged (comparison against the
- * active tool set is itself case-insensitive at the call site).
+ * map, then to the current MCP spelling. Names with no mapping pass through
+ * unchanged (comparison against the active tool set is itself case-insensitive
+ * at the call site).
  */
 export function canonicalizeToolName(
 	name: string,
 	redirects: Readonly<Record<string, string>> = DEFAULT_TOOL_REDIRECTS,
 ): string {
-	return findToolRedirect(name, redirects) ?? name;
+	return canonicalMcpToolName(findToolRedirect(name, redirects) ?? name);
 }
 
 /** Options for the C1d unknown-tool redirect policy (ADR-0006). */

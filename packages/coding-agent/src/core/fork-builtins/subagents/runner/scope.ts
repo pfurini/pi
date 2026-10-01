@@ -10,6 +10,7 @@
  * - `extensions:`, `exclude_extensions:` and `isolated` decide which extensions load, inline
  *   built-ins such as `<inline:tokensave>` included; `ext:` selectors narrow which of their tools
  *   stay active, re-applied as tools register late. `disallowed_tools` wins over everything.
+ * - An MCP tool name written with `-` (the spelling before 0.99.2) names the current `_` spelling.
  *
  * Children leave `allowedToolNames` unset, because it is fixed at construction and would drop
  * tools that extensions register later; scope goes through `excludeTools` and the active set.
@@ -20,6 +21,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import type { AgentSession } from "../../../agent-session.ts";
 import type { LoadExtensionsResult } from "../../../extensions/types.ts";
 import type { DefaultResourceLoader } from "../../../resource-loader.ts";
+import { canonicalMcpToolName } from "../../../skills/tool-redirects.ts";
 import { allToolNames } from "../../../tools/index.ts";
 import type { AgentDefinition } from "../definitions/types.ts";
 import { AGENT_TOOL_NAME, GET_RESULT_TOOL_NAME, STEER_TOOL_NAME } from "../names.ts";
@@ -80,7 +82,7 @@ export function selectedPlainTools(tools: readonly string[] | undefined): Set<st
 	const selected = new Set<string>();
 	for (const entry of entries) {
 		if (entry === "*") for (const name of DEFAULT_CHILD_TOOLS) selected.add(name);
-		else if (!entry.startsWith("ext:")) selected.add(entry);
+		else if (!entry.startsWith("ext:")) selected.add(canonicalMcpToolName(entry));
 	}
 	return selected;
 }
@@ -91,7 +93,7 @@ export function resolveToolScope(input: ToolScopeInput): ToolScope {
 	const selected = selectedPlainTools(definition.tools);
 	if (input.memory === "read-write") for (const name of ["read", "write", "edit"]) selected.add(name);
 	if (input.memory === "read-only") selected.add("read");
-	const disallowed = new Set(definition.disallowedTools ?? []);
+	const disallowed = new Set((definition.disallowedTools ?? []).map(canonicalMcpToolName));
 	const injected = new Set(input.injectedToolNames);
 
 	for (const name of definition.tools ?? []) {
@@ -101,7 +103,7 @@ export function resolveToolScope(input: ToolScopeInput): ToolScope {
 				type: "tools-error",
 				message: `agent "${definition.name}" names "${name}" in tools:, but a subagent receives it only through allowed_subagents`,
 			});
-		} else if (!input.knownToolNames.has(name) && !PI_TOOL_NAMES.includes(name)) {
+		} else if (!input.knownToolNames.has(canonicalMcpToolName(name)) && !PI_TOOL_NAMES.includes(name)) {
 			warnings.push({
 				type: "tools-error",
 				message: `tool "${name}" requested by agent "${definition.name}" is not a known tool`,
@@ -144,7 +146,7 @@ function parseExtSelectors(entries: readonly string[]): {
 		const tool = slash === -1 ? "" : body.slice(slash + 1).trim();
 		if (!tool) continue;
 		const tools = narrowing.get(name) ?? new Set<string>();
-		tools.add(tool);
+		tools.add(canonicalMcpToolName(tool));
 		narrowing.set(name, tools);
 	}
 	return { extNames, narrowing };

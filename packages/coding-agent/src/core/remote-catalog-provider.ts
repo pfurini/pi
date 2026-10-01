@@ -34,22 +34,23 @@ function contextWindowOf(model: AnyModel): number | undefined {
 }
 
 function mergeModels<TModel extends AnyModel>(baseline: readonly TModel[], dynamic: readonly TModel[]): TModel[] {
-	const merged = [...baseline];
+	const keyOf = (model: TModel) => `${getModelType(model)}\0${model.id}`;
+	const merged = new Map<string, TModel>();
+	for (const model of baseline) merged.set(keyOf(model), model);
 	for (const model of dynamic) {
-		const index = merged.findIndex((entry) => getModelType(entry) === getModelType(model) && entry.id === model.id);
-		if (index < 0) {
-			merged.push(model);
-			continue;
-		}
+		const key = keyOf(model);
+		const known = merged.get(key);
 		// A remote catalog may lag a generated correction, so it can raise but not lower a known context limit.
-		const staticWindow = contextWindowOf(merged[index]!);
+		const knownWindow = known === undefined ? undefined : contextWindowOf(known);
 		const dynamicWindow = contextWindowOf(model);
-		merged[index] =
-			staticWindow !== undefined && dynamicWindow !== undefined && staticWindow > dynamicWindow
-				? { ...model, contextWindow: staticWindow }
-				: model;
+		merged.set(
+			key,
+			knownWindow !== undefined && dynamicWindow !== undefined && knownWindow > dynamicWindow
+				? { ...model, contextWindow: knownWindow }
+				: model,
+		);
 	}
-	return merged;
+	return [...merged.values()];
 }
 
 function parseCatalog(providerId: string, value: unknown): AnyModel[] {

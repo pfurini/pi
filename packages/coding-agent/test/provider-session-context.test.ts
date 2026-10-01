@@ -120,13 +120,13 @@ describe("provider session context", () => {
 		await parent.session.extensionRunner.emit({ type: "agent_settled" });
 		expect(captured).toHaveLength(2);
 		expect(captured[0].sessionContext).toEqual({
-			ownerSessionId: child.session.sessionId,
+			agentSessionId: child.session.sessionId,
 			cwd: child.cwd,
 			agentDir: child.agentDir,
 		});
 		expect(captured[0].sessionId).toBe(child.session.sessionId);
 		expect(captured[1].sessionContext).toEqual({
-			ownerSessionId: parent.session.sessionId,
+			agentSessionId: parent.session.sessionId,
 			cwd: parent.cwd,
 			agentDir: parent.agentDir,
 		});
@@ -151,7 +151,7 @@ describe("provider session context", () => {
 		faux.setResponses([capture, capture, capture]);
 		const requestOptions: SimpleStreamOptions = {
 			sessionId: "summary-route",
-			sessionContext: { ownerSessionId: "fake", cwd: "/fake", agentDir: "/fake-agent" },
+			sessionContext: { agentSessionId: "fake", cwd: "/fake", agentDir: "/fake-agent" },
 		};
 		const stream = () => session.agent.streamFunction(virtual, normalizeContext({ messages: [] }), requestOptions);
 		expect((await (await stream()).result()).stopReason).toBe("stop");
@@ -160,12 +160,12 @@ describe("provider session context", () => {
 		session.sessionManager.newSession();
 		await (await stream()).result();
 		expect(captured).toHaveLength(3);
-		expect(captured[0].sessionContext).toEqual({ ownerSessionId: oldOwner, cwd, agentDir });
+		expect(captured[0].sessionContext).toEqual({ agentSessionId: oldOwner, cwd, agentDir });
 		expect(captured[1].sessionContext).toEqual(captured[0].sessionContext);
 		expect(captured[1].sessionContext).not.toBe(captured[0].sessionContext);
 		expect(session.sessionId).not.toBe(oldOwner);
-		expect(captured[2].sessionContext).toEqual({ ownerSessionId: session.sessionId, cwd, agentDir });
+		expect(captured[2].sessionContext).toEqual({ agentSessionId: session.sessionId, cwd, agentDir });
 		expect(captured.map((options) => options.sessionId)).toEqual(["summary-route", "summary-route", "summary-route"]);
-		expect(requestOptions.sessionContext?.ownerSessionId).toBe("fake");
+		expect(requestOptions.sessionContext?.agentSessionId).toBe("fake");
 	});
 });

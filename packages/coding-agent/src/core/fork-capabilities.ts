@@ -35,4 +35,7 @@ export const piForkCapabilities: ReadonlySet<string> = new Set([
 	// Stateful providers can opt into retaining the originating model for the immediate
 	// tool-result continuation when session state switches to another provider.
 	"originating-provider-tool-continuation",
+	// Session-bound chat streams carry StreamOptions.sessionContext (agentSessionId, cwd, agentDir),
+	// also for extension-free children that share a model runtime (sdk.ts buildRequestOptions).
+	"provider-session-context",
 ]);

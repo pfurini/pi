@@ -8,7 +8,7 @@ import type { Api, FetchFunction, Model, SimpleStreamOptions } from "../src/type
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 const sessionContext: ProviderSessionContext = {
-	ownerSessionId: "local-only-owner-9f41",
+	agentSessionId: "local-only-owner-9f41",
 	cwd: "/local-only-workspace-9f41",
 	agentDir: "/local-only-agent-9f41",
 };
@@ -104,7 +104,7 @@ describe("local provider session context", () => {
 			expect(ambient).not.toHaveBeenCalled();
 			expect(payloads).toHaveLength(1);
 			const serialized = JSON.stringify({ requests, payloads });
-			for (const forbidden of ["sessionContext", "ownerSessionId", ...Object.values(sessionContext)]) {
+			for (const forbidden of ["sessionContext", "agentSessionId", ...Object.values(sessionContext)]) {
 				expect(serialized).not.toContain(forbidden);
 			}
 		});

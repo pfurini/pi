@@ -12,7 +12,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ProviderSessionContext } from "@earendil-works/pi-ai";
 import { parseFrontmatter } from "../../../../utils/frontmatter.ts";
 import type { ExtensionUIContext } from "../../../extensions/types.ts";
 import type { ModelRuntime } from "../../../model-runtime.ts";
@@ -27,6 +27,11 @@ export interface CreateWizardEnvironment {
 	/** The session's scoped models, which the manual path offers (P20). */
 	scopedModels(): readonly { model: Model<Api> }[];
 	modelRuntime: Pick<ModelRuntime, "completeSimple">;
+	/**
+	 * The session's local provider context. The completion bypasses the session's stream wrapper,
+	 * so a provider that runs in the session's directories (claude-bridge) needs it supplied here.
+	 */
+	sessionContext(): ProviderSessionContext;
 }
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -183,7 +188,7 @@ async function generate(
 	};
 	let reply: AssistantMessage;
 	try {
-		reply = await env.modelRuntime.completeSimple(model, context);
+		reply = await env.modelRuntime.completeSimple(model, context, { sessionContext: env.sessionContext() });
 	} catch (error) {
 		env.ui.notify(`Generation failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		return undefined;

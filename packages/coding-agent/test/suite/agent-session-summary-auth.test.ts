@@ -343,7 +343,7 @@ describe("session summary authentication ownership", () => {
 		expect(options?.sessionId).toBeTruthy();
 		expect(options?.sessionId).not.toBe(session.sessionId);
 		expect(options?.sessionContext).toEqual({
-			ownerSessionId: session.sessionId,
+			agentSessionId: session.sessionId,
 			cwd: harness.tempDir,
 			agentDir: harness.tempDir,
 		});

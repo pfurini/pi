@@ -185,6 +185,7 @@ export default function subagentsPresentation(pi: ExtensionAPI): void {
 				model: () => ctx.model,
 				scopedModels: () => ctx.scopedModels,
 				modelRuntime: bound.modelRuntime,
+				sessionContext: () => ({ agentSessionId: bound.sessionId, cwd: ctx.cwd, agentDir: ctx.agentDir }),
 			});
 		},
 	});

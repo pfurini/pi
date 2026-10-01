@@ -358,7 +358,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			: sessionAbortController.signal;
 		return {
 			...options,
-			sessionContext: { ownerSessionId: sessionManager.getSessionId(), cwd, agentDir },
+			sessionContext: { agentSessionId: sessionManager.getSessionId(), cwd, agentDir },
 			signal,
 			timeoutMs: options.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs,
 			websocketConnectTimeoutMs: options.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs(),

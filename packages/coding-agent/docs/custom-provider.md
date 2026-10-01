@@ -149,7 +149,7 @@ These hooks power extension request inspection, response-header events, and prov
 
 Session-bound chat streams receive `options.sessionContext`, typed as `ProviderSessionContext` from `@earendil-works/pi-ai`.
 
-- `ownerSessionId` identifies the session whose stream wrapper serves the request.
+- `agentSessionId` identifies the session whose stream wrapper serves the request. A subagent child carries its own id, not its parent's.
 - `cwd` and `agentDir` identify that session's working and configuration directories.
 
 `createAgentSession()` supplies a fresh snapshot per request and overrides caller-supplied context, including for extension-free children sharing a model runtime.

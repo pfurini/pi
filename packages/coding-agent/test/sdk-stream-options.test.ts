@@ -227,14 +227,14 @@ describe("createAgentSession stream options", () => {
 			{},
 			{
 				sessionId: "summary-routing-id",
-				sessionContext: { ownerSessionId: "spoofed-owner", cwd: "/spoofed/cwd", agentDir: "/spoofed/agent" },
+				sessionContext: { agentSessionId: "spoofed-owner", cwd: "/spoofed/cwd", agentDir: "/spoofed/agent" },
 			},
 		);
 
 		expect(options?.sessionId).toBe("summary-routing-id");
-		expect(options?.sessionContext).toEqual({ ownerSessionId: expect.any(String), cwd, agentDir });
-		expect(options?.sessionContext?.ownerSessionId).not.toBe("spoofed-owner");
-		expect(options?.sessionContext?.ownerSessionId).not.toBe(options?.sessionId);
+		expect(options?.sessionContext).toEqual({ agentSessionId: expect.any(String), cwd, agentDir });
+		expect(options?.sessionContext?.agentSessionId).not.toBe("spoofed-owner");
+		expect(options?.sessionContext?.agentSessionId).not.toBe(options?.sessionId);
 	});
 
 	it("forwards httpIdleTimeoutMs as timeoutMs for OpenAI Codex", async () => {

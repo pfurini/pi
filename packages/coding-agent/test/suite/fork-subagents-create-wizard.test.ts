@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/pi-ai";
+import type { Context, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../../src/core/event-bus.ts";
@@ -37,6 +37,7 @@ const pick =
 async function session(reply = "", onRequest?: () => void) {
 	vi.stubEnv("PI_FORK_BUILTINS", "on");
 	const requests: Context[] = [];
+	const requestOptions: Array<SimpleStreamOptions | undefined> = [];
 	const harness = await createHarness({
 		// The factory finds its session over the bus it shares with the base tools.
 		eventBus: createEventBus(),
@@ -46,8 +47,9 @@ async function session(reply = "", onRequest?: () => void) {
 	harnesses.push(harness);
 	harness.setResponses(
 		Array.from({ length: 20 }, () =>
-			router({}, (context) => {
+			router({}, (context, options) => {
 				requests.push(context);
+				requestOptions.push(options);
 				onRequest?.();
 				return fauxAssistantMessage(reply);
 			}),
@@ -90,7 +92,7 @@ async function session(reply = "", onRequest?: () => void) {
 		await harness.session.prompt("/agents");
 	};
 	const notes = () => log.notes.map((note) => note.message);
-	return { harness, requests, log, create, notes, projectAgents };
+	return { harness, requests, requestOptions, log, create, notes, projectAgents };
 }
 
 const MANUAL = ["Manual", "read-only", "inherit", "high"].map(pick);
@@ -122,11 +124,17 @@ describe("the /agents create wizard", () => {
 	});
 
 	it("generates with one tool-less request that joins no message, writes the parsed file, and the agent spawns", async () => {
-		const { harness, requests, create, notes, projectAgents } = await session(GENERATED);
+		const { harness, requests, requestOptions, create, notes, projectAgents } = await session(GENERATED);
 		const messages = harness.session.messages.length;
 		await create({ select: [pick("Generate")], input: ["an agent that reviews diffs", "reviewer"] });
 		const path = join(projectAgents, "reviewer.md");
 		expect(requests).toHaveLength(1);
+		// The completion bypasses the session's stream wrapper, so the wizard supplies the session context itself.
+		expect(requestOptions[0]?.sessionContext).toEqual({
+			agentSessionId: harness.session.sessionId,
+			cwd: harness.tempDir,
+			agentDir: harness.tempDir,
+		});
 		// The provider sees the prompt as a leading system message; it declares no tool, and one user message follows.
 		const [system, ...rest] = requests[0].messages;
 		expect(system).toMatchObject({ role: "system" });
